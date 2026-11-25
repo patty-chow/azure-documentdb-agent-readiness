@@ -1,0 +1,633 @@
+{
+  "verdict": "ready_with_gaps",
+  "summary": "The build can start: a live vector-capable Azure DocumentDB cluster is available (DOCUMENTDB_URI) and python, pip and Docker are present so a Flask app, seed script and index creation can be run against the live cluster. However no DocumentDB agent skills or MCP documentation servers are installed, mongosh is not available for manual DB inspection, and several cold-answer facts could not be verified from the supplied materials. The run can proceed with workarounds, but the builder should adopt specific corrections (billing model, local-emulator guidance, embedding storage format) and add missing accelerators or document how to cope without them.",
+  "summary_points": [
+    "A live, vector-capable DocumentDB cluster is present and its connection string is provided via DOCUMENTDB_URI — the sample can connect and run against that cluster.",
+    "Python 3.13, pip and Docker are available so the Flask app, seed script and index creation can be implemented and executed against the live cluster.",
+    "No DocumentDB agent skills or MCP servers are installed (installed_skills and mcp_servers are empty), so the builder cannot use any agent-provided guidance or data-plane helpers — this slows debugging and discovery.",
+    "mongosh is not present on PATH, which removes a quick manual verification path; use short Python/pymongo verification scripts as a workaround.",
+    "Several cold answers could not be grounded in the supplied artifacts; where the prompt and run-environment conflict (embedding binary vs numeric array, local container vs live cluster, RU vs compute-tier billing) the run-environment guidance must be followed."
+  ],
+  "tools": [
+    {
+      "name": "python",
+      "kind": "other",
+      "needed_for": "Run the Flask app, seed script, and local verification scripts; install packages (pymongo, openai, flask).",
+      "available": true,
+      "detail": "Python 3.13.13 on PATH (inventory)",
+      "impact_if_missing": "Cannot run the sample app or seed scripts.",
+      "workaround": "Install Python (recommended) or run inside a Docker image that contains the correct Python runtime.",
+      "references": [
+        {
+          "title": "machine_inventory",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "name": "pip / package manager",
+      "kind": "other",
+      "needed_for": "Install Python dependencies (pymongo, openai, flask, numpy, etc.).",
+      "available": true,
+      "detail": "pip available through the Python environment (implied by 'python' in run environment).",
+      "impact_if_missing": "Cannot install or pin dependencies locally.",
+      "workaround": "Use a container pre-built with dependencies or include a requirements.txt and a Dockerfile that installs them.",
+      "references": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "name": "DOCUMENTDB_URI (env var)",
+      "kind": "credential",
+      "needed_for": "Connection string to the live DocumentDB cluster used by the app and seed script.",
+      "available": true,
+      "detail": "Run environment declares DOCUMENTDB_URI is present in the environment and must be read at runtime (skill.md).",
+      "impact_if_missing": "App cannot connect to the target cluster; index creation and seeding cannot be performed.",
+      "workaround": "Obtain the cluster connection string from the environment where the sample runs, or ask infra owner to provide it to the runner. Do not write the secret into files; include a .env.example placeholder instead.",
+      "references": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "name": "OPENAI_API_KEY (env var) or equivalent embedding-provider credential",
+      "kind": "credential",
+      "needed_for": "Obtain embeddings from text-embedding-ada-002 during seeding and /search. The prompt assumes an OpenAI embedding model.",
+      "available": false,
+      "detail": "No embedding-provider credentials are present in the supplied inventory or skill.md; prompt_review assumes an OpenAI key in env but does not define it.",
+      "impact_if_missing": "Embedding calls will fail and seed/indexing can't produce embeddings; the /search endpoint cannot embed queries.",
+      "workaround": "Set OPENAI_API_KEY (or the env var the sample chooses) in the runtime environment before running seed.py or the app. Alternatively, provide a small precomputed embedding JSON file for offline testing when a key is not available.",
+      "references": [
+        {
+          "title": "Prompt review",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "name": "az (Azure CLI)",
+      "kind": "cli",
+      "needed_for": "Inspect Azure resources and (optionally) run management commands related to the account. Useful for cluster inspection and extension-based CosmosDB helpers.",
+      "available": true,
+      "detail": "az installed (azure-cli 2.89.1) and az login is signed in (inventory); az has extensions including cosmosdb-preview listed in the inventory detail.",
+      "impact_if_missing": "Harder to inspect Azure resource properties from the local machine; but not required to run the sample against DOCUMENTDB_URI.",
+      "workaround": "Proceed with data-plane operations using pymongo and the DOCUMENTDB_URI. Use az only for optional management checks.",
+      "references": [
+        {
+          "title": "machine_inventory",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "name": "mongosh",
+      "kind": "cli",
+      "needed_for": "Manual connectivity checks, ad-hoc queries and index inspection from the shell.",
+      "available": false,
+      "detail": "mongosh not found on PATH (inventory).",
+      "impact_if_missing": "No quick shell for manual checks and index validation; increases reliance on Python scripts to verify collections and indexes.",
+      "workaround": "Use small Python scripts with pymongo to inspect databases, collections and indexes, or install mongosh locally.",
+      "references": [
+        {
+          "title": "machine_inventory",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "name": "docker",
+      "kind": "other",
+      "needed_for": "Optionally run a local DocumentDB engine or MongoDB image for offline testing.",
+      "available": true,
+      "detail": "Docker present but skill.md explicitly says no local DocumentDB gateway is running and to use the live cluster.",
+      "impact_if_missing": "Would lose option to spin up a local engine for isolated tests, but live cluster is the canonical target per run environment.",
+      "workaround": "Use the live cluster (DOCUMENTDB_URI) as required by the run environment. If local testing is required, pull/run the appropriate image (see accelerators_missed) and ensure it's compatible.",
+      "references": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "name": "git",
+      "kind": "other",
+      "needed_for": "Source control and packaging of the sample repository.",
+      "available": true,
+      "detail": "git on PATH (inventory).",
+      "impact_if_missing": "Impedes source control tasks, but not necessary for a one-off local build.",
+      "workaround": "Use zip uploads or copy the folder; install git for normal development.",
+      "references": [
+        {
+          "title": "machine_inventory",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "name": "Installed agent skills / MCP servers",
+      "kind": "skill",
+      "needed_for": "Agent-oriented helper functions, data-modeling guidance and indexed search commands that speed development and reduce guesswork.",
+      "available": false,
+      "detail": "installed_skills is an empty list and mcp_servers is empty (inventory).",
+      "impact_if_missing": "No agent guidance or pre-built commands for index creation, schema/inspection or vector utilities; more manual work required.",
+      "workaround": "Follow run-environment directions and official docs; add accelerators (npx skills add Azure/documentdb-agent-kit and mcp entries) if available.",
+      "references": [
+        {
+          "title": "known_accelerators",
+          "url": ""
+        }
+      ]
+    }
+  ],
+  "accelerators_missed": [
+    "Azure DocumentDB MCP Toolkit (mcp entry `documentdb`) — would give data-plane query/index tools; not installed. Add by creating an mcp.json entry and running the MCP server that includes `documentdb`.",
+    "DocumentDB Agent Kit (skill) — contains agent skills and design guidance; not installed. Install with: npx skills add Azure/documentdb-agent-kit",
+    "Azure MCP Server (mcp entry `azure`) — central Azure control-plane MCP server; not installed. Add by listing `azure` in mcp.json or starting the MCP server that supplies it.",
+    "Microsoft Learn MCP Server (mcp entry `learn`) — documentation search via MCP; not installed. Add by listing `learn` in mcp.json or starting the Learn MCP server.",
+    "Local DocumentDB / engine container image for offline testing — there is no local DocumentDB gateway running (skill.md) even though Docker is present; for local runs you would need to run the official documentdb image or a compatible MongoDB 7.0 image. Example install/run: docker pull mongo:7.0 && docker run -d -p 27017:27017 --name mongo mongo:7.0"
+  ],
+  "confusions": [
+    {
+      "question_id": "Q01",
+      "question": "What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster?",
+      "cold_answer": "Microsoft.DocumentDB/databaseAccounts",
+      "grounded_answer": "could_not_verify: no authoritative resource-provider string was present in the provided materials.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "unknown",
+      "why_the_confusion_arose": "No supplied documentation or MCP server in the inventory that documents the resource provider namespace; the cold answer looks like the Cosmos DB provider but we have no provided doc to confirm it applies to this managed DocumentDB product.",
+      "confusion_sources": [],
+      "build_risk": "If the builder assumes the wrong resource provider and tries to script resource creation (not allowed by run_policy), IaC templates or az commands will target the wrong resource type.",
+      "improvements": [
+        "Add a short reference page or MCP snippet that states the supported Azure resource provider name and the CLI command group for cluster management."
+      ]
+    },
+    {
+      "question_id": "Q02",
+      "question": "Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension?",
+      "cold_answer": "Use the built-in az cosmosdb group. Example: az cosmosdb create ... (az cosmosdb is in the core az CLI, not an extension.)",
+      "grounded_answer": "could_not_verify: the supplied materials do not include an authoritative CLI group reference for this managed DocumentDB product.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "azure_cosmos_db_for_nosql",
+      "why_the_confusion_arose": "The cold answer matches the Azure Cosmos DB SQL API (az cosmosdb) and may not reflect a separate managed DocumentDB resource type; without a docs server this cannot be checked.",
+      "confusion_sources": [],
+      "build_risk": "If the builder runs az cosmosdb commands assuming they apply to this cluster, they may target a different resource or fail.",
+      "improvements": [
+        "Provide an MCP snippet or short 'how-to inspect' doc listing the exact az command group and extension required to manage the DocumentDB cluster."
+      ]
+    },
+    {
+      "question_id": "Q03",
+      "question": "Which Bicep and Terraform resource types deploy a cluster?",
+      "cold_answer": "Microsoft.DocumentDB/databaseAccounts (ARM/Bicep) and azurerm_cosmosdb_account (Terraform).",
+      "grounded_answer": "could_not_verify: no Bicep/Terraform resource types for this managed DocumentDB product are present in the supplied materials.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "azure_cosmos_db_for_nosql",
+      "why_the_confusion_arose": "The cold answer appears to repeat Cosmos DB resource types; the run-environment contains no IaC references to validate or refute this mapping.",
+      "confusion_sources": [],
+      "build_risk": "If IaC is later added by the builder using the wrong resource type, deployments will fail or create the wrong service.",
+      "improvements": [
+        "Add a short 'IaC reference' doc or MCP snippet showing the exact Bicep/Terraform resource types for the managed DocumentDB offering, or explicitly state that this sample does not include IaC."
+      ]
+    },
+    {
+      "question_id": "Q04",
+      "question": "What does a connection string look like: scheme, host suffix, port, and the options it must carry?",
+      "cold_answer": "Standard MongoDB URI form with mongodb://... hostSuffix like <account>.mongo.cosmos.azure.com; TLS on port 10255 sometimes; otherwise 27017; include ssl=true and replicaSet where provided.",
+      "grounded_answer": "could_not_verify: the supplied run environment only says DOCUMENTDB_URI is available; it does not define the URI format, host suffix or default port.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "Different managed MongoDB-compatible offerings and Cosmos DB Mongo API use different host suffixes and ports; without docs the model's generic MongoDB/Cosmos DB guidance can't be validated.",
+      "confusion_sources": [],
+      "build_risk": "If the builder hardcodes a port/host suffix assumption, the app could fail to connect when the actual DOCUMENTDB_URI uses a different host/port/options.",
+      "improvements": [
+        "Include a one-line example of DOCUMENTDB_URI format in the run-environment doc (with credentials redacted), or a small helper function that normalizes URIs using the provided env var."
+      ]
+    },
+    {
+      "question_id": "Q05",
+      "question": "How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else?",
+      "cold_answer": "Either RUs (Cosmos DB) or compute tiers (vCore) could apply; many Cosmos offerings use RUs but some managed MongoDB clusters expose instance/compute tiers.",
+      "grounded_answer": "outdated: the supplied run environment explicitly states the cluster is a compute-tier cluster (compute tier M30) — this instance is provisioned by compute tier and is not a request-units-only Cosmos DB instance.",
+      "grounding_source": "Run environment (skill.md)",
+      "grounding_links": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ],
+      "outcome": "outdated",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "Cold answer mixed billing models (RUs) used by Cosmos DB with the compute-tier (M30) description supplied for this actual cluster.",
+      "confusion_sources": [],
+      "build_risk": "If the builder attempts to set throughput via RUs or assumes RU-based autoscaling, those management operations won't apply to a compute-tier M30 cluster and may confuse reviewers.",
+      "improvements": [
+        "State explicitly in the run-environment readme that the sample cluster is compute-tier (M30) and that throughput is not configured by RUs for this cluster."
+      ]
+    },
+    {
+      "question_id": "Q06",
+      "question": "Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID?",
+      "cold_answer": "Use MongoDB users (SCRAM) normally; Azure AD data-plane auth historically not available for the MongoDB API.",
+      "grounded_answer": "could_not_verify: the supplied materials do not document which authentication methods are enabled for the provided cluster; skill.md only instructs to read DOCUMENTDB_URI from the env.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "The cold answer reflects a common distinction between MongoDB user auth and Azure AD-based auth for other Cosmos DB APIs, but the run-environment doesn't say which is enabled.",
+      "confusion_sources": [],
+      "build_risk": "If the builder assumes Azure AD auth is available or conversely assumes only SCRAM credentials, authentication attempts may fail. The sample must read the provided DOCUMENTDB_URI and follow its authentication method.",
+      "improvements": [
+        "Document in the run-environment which auth method the cluster expects (SCRAM username/password in the URI vs Azure AD) so the sample code knows how to authenticate."
+      ]
+    },
+    {
+      "question_id": "Q07",
+      "question": "Which client library should an application use? Is there a service-specific SDK?",
+      "cold_answer": "Use the standard MongoDB drivers (pymongo for Python).",
+      "grounded_answer": "correct: use standard MongoDB drivers for a MongoDB-wire-protocol cluster; the run environment specifies MongoDB 7.0 wire protocol so pymongo is the appropriate driver for Python.",
+      "grounding_source": "Prompt review",
+      "grounding_links": [
+        {
+          "title": "Prompt review",
+          "url": ""
+        }
+      ],
+      "outcome": "correct",
+      "confused_with": "none",
+      "why_the_confusion_arose": "N/A",
+      "confusion_sources": [],
+      "build_risk": "Low if pymongo is used; risk occurs only if a service-specific Cosmos SDK for SQL API is used instead of the MongoDB driver.",
+      "improvements": []
+    },
+    {
+      "question_id": "Q08",
+      "question": "Which vector index types are supported, and what does the command that creates one look like?",
+      "cold_answer": "IVF, HNSW and DiskANN methods are supported; sample createIndex example using knnVector with method name 'ivf' and dimensions 1536.",
+      "grounded_answer": "correct: the run environment explicitly states the cluster supports DiskANN, HNSW and IVF vector indexes and exposes MongoDB 7.0 wire protocol compatible index types.",
+      "grounding_source": "Run environment (skill.md)",
+      "grounding_links": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ],
+      "outcome": "correct",
+      "confused_with": "none",
+      "why_the_confusion_arose": "N/A",
+      "confusion_sources": [],
+      "build_risk": "None — the cluster supports the requested index types, so the builder can create a knn/ivf index with the correct dimensions.",
+      "improvements": []
+    },
+    {
+      "question_id": "Q09",
+      "question": "How are full-text search and hybrid search done?",
+      "cold_answer": "Either MongoDB $text or Azure Cognitive Search hybrid approaches; application-level combination of vector knn results and text scoring is common.",
+      "grounded_answer": "could_not_verify: supplied materials do not describe a recommended hybrid-search pattern for this cluster; run-environment states only the cluster supports vector indexes.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "mongodb_atlas_or_server",
+      "why_the_confusion_arose": "Hybrid search patterns differ across Atlas, Cosmos+Azure Cognitive Search, and self-hosted MongoDB; no canonical guidance is present in the given artifacts.",
+      "confusion_sources": [],
+      "build_risk": "If the builder relies on Atlas Search features or Azure Cognitive Search integration not available here, the hybrid search part will fail or require additional integration code.",
+      "improvements": [
+        "Provide a short recommended approach for combining vector and text signals for this DocumentDB service (for example: do vector knn first then re-rank by text score) in the sample guidance."
+      ]
+    },
+    {
+      "question_id": "Q10",
+      "question": "Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not?",
+      "cold_answer": "Clusters advertise supported server/wire versions (e.g., MongoDB 7.0) but some server-side features/commands may be missing; check the advertised wire version.",
+      "grounded_answer": "could_not_verify the general feature-compatibility matrix from the supplied materials, except that the run environment states the cluster uses MongoDB 7.0 wire protocol.",
+      "grounding_source": "Run environment (skill.md)",
+      "grounding_links": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "The cold answer is a generic caution; we can only confirm the wire protocol (7.0) from the run-environment, not the full list of unsupported commands.",
+      "confusion_sources": [],
+      "build_risk": "If the builder uses MongoDB server features not supported by the managed service (e.g., certain admin commands), scripts may fail during execution.",
+      "improvements": [
+        "Add a concise compatibility matrix (supported MongoDB server versions and unsupported features) to the run-environment doc."
+      ]
+    },
+    {
+      "question_id": "Q11",
+      "question": "How do you run the database locally for development and tests: which image or emulator, and which port?",
+      "cold_answer": "Run a local MongoDB container (mongo:7.0) on 27017; Cosmos emulator doesn't reliably support the MongoDB API.",
+      "grounded_answer": "wrong: the run environment explicitly instructs to build and verify against the live cluster and says 'Docker is installed, but no local DocumentDB gateway is running; build and verify against the live cluster instead of a local container.'",
+      "grounding_source": "Run environment (skill.md)",
+      "grounding_links": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ],
+      "outcome": "wrong",
+      "confused_with": "mongodb_atlas_or_server",
+      "why_the_confusion_arose": "The cold answer describes a generic local MongoDB development flow; the run-environment specifically prohibits using a local DocumentDB gateway for this sample.",
+      "confusion_sources": [],
+      "build_risk": "If the builder runs against a local MongoDB image instead of the live cluster, test results may not reflect the managed service behaviour; also the run-environment's verification requirement would be unmet.",
+      "improvements": [
+        "Clarify in the sample README that the official test/verification run must target the provided live cluster and not a local container."
+      ]
+    },
+    {
+      "question_id": "Q12",
+      "question": "Are change streams supported, and does anything have to be enabled first?",
+      "cold_answer": "Support depends on the offering and server version; historically Cosmos DB's MongoDB API lagged on change streams.",
+      "grounded_answer": "could_not_verify: the supplied materials do not state whether change streams are supported on this cluster.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "The cold answer is cautious because change-stream support historically differs between managed providers; no explicit statement is present in the run-environment.",
+      "confusion_sources": [],
+      "build_risk": "If the builder relies on change streams without checking, production behavior may differ or fail.",
+      "improvements": [
+        "Add a line to the run-environment doc that states whether change streams are supported on the provided cluster and any required configuration."
+      ]
+    },
+    {
+      "question_id": "Q13",
+      "question": "Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it?",
+      "cold_answer": "No confident mapping; rely on Azure Monitor / general Azure management plane.",
+      "grounded_answer": "could_not_verify: inventory shows no MCP servers are running; known_accelerators lists a DocumentDB MCP Toolkit and Azure MCP Server as relevant accelerators but they are not installed.",
+      "grounding_source": "known_accelerators",
+      "grounding_links": [
+        {
+          "title": "known_accelerators",
+          "url": ""
+        }
+      ],
+      "outcome": "could_not_verify",
+      "confused_with": "unknown",
+      "why_the_confusion_arose": "The cold answer reflects uncertainty and there is no MCP server in the inventory to confirm the mapping.",
+      "confusion_sources": [],
+      "build_risk": "Lack of an MCP server means the agent cannot rely on pre-built data-plane commands to manage indexes and inspect the cluster; more manual steps required.",
+      "improvements": [
+        "Ship an MCP 'documentdb' entry or an MCP snippet that contains the data-plane helpers and document references."
+      ]
+    },
+    {
+      "question_id": "Q14",
+      "question": "What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project?",
+      "cold_answer": "Microsoft's DocumentDB was the original name for what became Azure Cosmos DB; the open-source DocumentDB projects are unrelated.",
+      "grounded_answer": "could_not_verify: the supplied materials do not include a product history or lineage document to authoritatively confirm the earlier naming and how this new managed MongoDB-compatible 'Azure DocumentDB' maps to Cosmos DB or the open-source project.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "legacy_vcore_naming",
+      "why_the_confusion_arose": "The product naming overlaps (DocumentDB, Cosmos DB, and open-source projects) and no authoritative timeline was supplied.",
+      "confusion_sources": [],
+      "build_risk": "Misnaming in docs may confuse users about compatibility or which SDKs to use.",
+      "improvements": [
+        "Add a one-paragraph history in the sample README clarifying the relationship between this managed DocumentDB product, Azure Cosmos DB, and any similarly named open-source projects."
+      ]
+    },
+    {
+      "question_id": "Q15",
+      "question": "What engine is underneath, and does that change anything in application code?",
+      "cold_answer": "Underlying engine is the provider's engine exposing a MongoDB wire protocol; use MongoDB drivers but watch for behavioral differences.",
+      "grounded_answer": "could_not_verify beyond the supplied statement the cluster uses MongoDB 7.0 wire protocol (skill.md) — the other compatibility implications are not documented in the supplied materials.",
+      "grounding_source": "Run environment (skill.md)",
+      "grounding_links": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "The cold answer is a general caution; only the wire protocol is stated in run-environment, but no full compatibility matrix is supplied.",
+      "confusion_sources": [],
+      "build_risk": "If the builder assumes full parity with upstream MongoDB server behaviour, some aggregation stages or admin commands may fail.",
+      "improvements": [
+        "Include a brief compatibility checklist in the run-environment doc (supported server/wire versions and noteworthy unsupported features)."
+      ]
+    },
+    {
+      "question_id": "S01",
+      "question": "What index definition does this sample need for vector search?",
+      "cold_answer": "Create a knnVector index on embedding with knnVector: { dimensions: 1536, method: { name: 'ivf', nlist: 100 }, similarity: 'cosine' }",
+      "grounded_answer": "partly_wrong: the run environment confirms IVF/HNSW/DiskANN support and 1536-dim requirement, so an IVF-style knn index is appropriate; however the exact createIndex syntax and parameter names may vary between providers/driver versions and the supplied materials do not provide the authoritative command text.",
+      "grounding_source": "Run environment (skill.md)",
+      "grounding_links": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "mongodb_atlas_or_server",
+      "why_the_confusion_arose": "Cold answer provides an example MongoDB-7-style createIndex but we cannot confirm this exact syntax is accepted by the managed cluster from the supplied artifacts.",
+      "confusion_sources": [],
+      "build_risk": "If the builder copies a createIndex command verbatim and the syntax differs on the target cluster/driver, index creation will fail.",
+      "improvements": [
+        "Include a tested index creation snippet in the sample repo that the seed script runs against the provided cluster, and mark any provider-specific options in comments."
+      ]
+    },
+    {
+      "question_id": "S02",
+      "question": "What aggregation / query stage will the sample use to do a top-K vector nearest-neighbours query?",
+      "cold_answer": "Use a vector-aware stage (knn) such as { $search: { knn: { vector: <BINARY_EMBED>, path: 'embedding', k: 10 } } }",
+      "grounded_answer": "could_not_verify: no canonical aggregation example was included in the supplied artifacts to confirm the exact operator and stage names available on the managed cluster.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "mongodb_atlas_or_server",
+      "why_the_confusion_arose": "Different providers expose different search/query syntax; the run-environment only indicates vector index support but not the exact aggregation operator names.",
+      "confusion_sources": [],
+      "build_risk": "If the builder assumes an operator name that the managed service does not support, queries will fail at runtime.",
+      "improvements": [
+        "Provide a definitive aggregation example in the sample repo that the seed script and unit tests run against the live cluster."
+      ]
+    },
+    {
+      "question_id": "S03",
+      "question": "How will the app authenticate to the cluster in this sample?",
+      "cold_answer": "Read DOCUMENTDB_URI from env and pass it to pymongo.MongoClient(...)",
+      "grounded_answer": "partly_wrong: the run environment explicitly requires reading DOCUMENTDB_URI from the environment (correct), but the supplied materials do not include a tested snippet showing pymongo.MongoClient usage; the builder should use pymongo but verify the cluster's auth mechanism embedded in DOCUMENTDB_URI.",
+      "grounding_source": "Run environment (skill.md)",
+      "grounding_links": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        },
+        {
+          "title": "Prompt review",
+          "url": ""
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "none",
+      "why_the_confusion_arose": "Cold answer assumes pymongo usage and that credentials are in the URI; the run-environment says only that DOCUMENTDB_URI is present — the actual auth method must be derived from that URI at runtime.",
+      "confusion_sources": [],
+      "build_risk": "If the builder hardcodes a credential retrieval method incompatible with the URI's auth method, connection attempts will fail.",
+      "improvements": [
+        "Add a small 'connect_and_check.py' utility in the sample that reads DOCUMENTDB_URI and attempts a read from sample_retail_01 to show a canonical connection pattern."
+      ]
+    },
+    {
+      "question_id": "S04",
+      "question": "What binary format will the sample store embeddings in?",
+      "cold_answer": "Store embeddings as BSON Binary containing float32 bytes (numpy.astype('float32').tobytes() wrapped in bson.Binary).",
+      "grounded_answer": "partly_wrong: the prompt requested 'store them as BSON binary vectors' but the prompt_review and run-environment point out a contradiction: some vector indexes require numeric-array storage rather than opaque BSON Binary. The supplied materials do not resolve which storage form the managed cluster will index; do not assume Binary bytes without testing.",
+      "grounding_source": "Prompt review / Run environment (skill.md)",
+      "grounding_links": [
+        {
+          "title": "Prompt review",
+          "url": ""
+        },
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "mongodb_atlas_or_server",
+      "why_the_confusion_arose": "The cold answer reflects a common technique for embedding storage, but the prompt and run-environment disagree about whether embeddings should be binary bytes or numeric arrays that the vector index consumes directly.",
+      "confusion_sources": [],
+      "build_risk": "If embeddings are stored in an index-incompatible form, the vector index won't be usable and queries will return no results or errors.",
+      "improvements": [
+        "Decide and document the storage form in the sample (numeric array field vs BSON Binary) and include a tested seed script accordingly; include a short note explaining the trade-offs."
+      ]
+    },
+    {
+      "question_id": "S05",
+      "question": "Which TCP port will the driver try first when connecting to the cluster from the sample code?",
+      "cold_answer": "Default MongoDB port 27017 unless DOCUMENTDB_URI specifies another port such as 10255 for Azure-hosted endpoints.",
+      "grounded_answer": "could_not_verify: the run environment only says DOCUMENTDB_URI is supplied and that the cluster is reachable; it does not define a default port to assume.",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "Different managed endpoints use different ports; the only safe approach is to use the port specified inside DOCUMENTDB_URI.",
+      "confusion_sources": [],
+      "build_risk": "Hardcoding a port interferes with the ability to accept the provided DOCUMENTDB_URI; use the URI's port instead.",
+      "improvements": [
+        "Document in README: always parse the port from DOCUMENTDB_URI and never assume a hardcoded port."
+      ]
+    }
+  ],
+  "information_gaps": [
+    {
+      "title": "Embedding provider environment variable name and example",
+      "description": "Skill.md and prompt_review assume an embedding model (text-embedding-ada-002) but do not specify which env var the sample should expect for the provider API key (e.g. OPENAI_API_KEY). I looked in: Run environment (skill.md), Prompt review and machine_inventory and found no defined embedding-provider env var."
+    },
+    {
+      "title": "Authoritative index creation command text",
+      "description": "The exact createIndex / aggregation syntax the managed cluster accepts for creating an IVF knn vector index (parameter names, method sub-document shape) is not present in the supplied materials. I looked in: Run environment (skill.md) and Prompt review; neither contains the tested command snippet."
+    },
+    {
+      "title": "Embedding storage form to use (BSON Binary vs numeric array)",
+      "description": "The prompt requests BSON binary vectors while sample tooling/notes indicate numeric-array fields may be required for indexing. No authoritative statement in the supplied materials resolves which storage form the target cluster indexes. I looked in: Prompt review and Run environment (skill.md)."
+    },
+    {
+      "title": "Authentication method configured for the provided cluster",
+      "description": "The provided DOCUMENTDB_URI env var is declared present, but there is no sample code or docs describing whether it encodes SCRAM credentials or if another auth method is used. I looked in: Run environment (skill.md) and machine_inventory; neither describes the auth method."
+    },
+    {
+      "title": "Index tuning parameters for small sample dataset",
+      "description": "The prompt requests 'sensible IVF parameters' for a small seed dataset but no recommended nlist, nprobe or similar values are provided. I looked in: Prompt review, Run environment (skill.md) and known_accelerators and found no guidance."
+    }
+  ],
+  "blockers": [],
+  "guidance_for_builder": [
+    {
+      "instruction": "Treat the provided cluster as a compute-tier (M30) managed DocumentDB instance; do not assume Cosmos DB RU billing or RU-based throughput.",
+      "sources": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "instruction": "Read the connection string from DOCUMENTDB_URI at runtime and derive authentication from that URI; do not hardcode ports or auth schemes in the sample.",
+      "sources": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "instruction": "Do not rely on a local DocumentDB gateway; run seeding, index creation and query verification against the live cluster as the run-environment requires.",
+      "sources": [
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "instruction": "Decide and document the embedding storage format (numeric array vs BSON Binary) and include a tested seed script that creates the vector index in the exact form accepted by the target cluster.",
+      "sources": [
+        {
+          "title": "Prompt review",
+          "url": ""
+        },
+        {
+          "title": "Run environment (skill.md)",
+          "url": ""
+        }
+      ]
+    }
+  ],
+  "inventory_recommendations": [
+    {
+      "name": "azd",
+      "worth_adding": false,
+      "recommendation": "Not required for this sample (the run-environment forbids provisioning new clusters). If the team wants developer convenience for template-based deploys, install azd on PATH; otherwise note in docs that azd is optional.",
+      "references": []
+    },
+    {
+      "name": "bicep",
+      "worth_adding": false,
+      "recommendation": "Not required because the sample will use the provided cluster and the run policy forbids provisioning. If IaC is to be added later, install bicep on PATH and include Bicep templates in repo.",
+      "references": []
+    },
+    {
+      "name": "terraform",
+      "worth_adding": false,
+      "recommendation": "Not required for this immediate sample run because the cluster is provided; add terraform if the repository later includes provisioning IaC.",
+      "references": []
+    },
+    {
+      "name": "dotnet",
+      "worth_adding": false,
+      "recommendation": "Not needed for a Python Flask sample. If multi-language samples are desired, install dotnet via platform package manager.",
+      "references": []
+    },
+    {
+      "name": "mongosh",
+      "worth_adding": true,
+      "recommendation": "Worth adding for manual verification and ad-hoc index inspection. Install by following official mongosh installation docs (download the mongosh binary or install via package manager) so the developer can run shell commands against DOCUMENTDB_URI.",
+      "references": [
+        {
+          "title": "machine_inventory",
+          "url": ""
+        }
+      ]
+    }
+  ]
+}

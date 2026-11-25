@@ -1,0 +1,33 @@
+{
+  "status": "completed",
+  "summary": "A small Python Flask sample was created that seeds a DocumentDB collection with product documents, stores embeddings as BSON Binary float32 vectors, attempts to create a server-side IVF vector index, and exposes a /search endpoint that will embed a natural-language query (when OPENAI_API_KEY is provided) and return the top-10 semantically similar products. The repository includes a fallback using precomputed embeddings so the seed can run without an OpenAI key and client-side ranking (unpacking BSON Binary embeddings) so semantic search can be demonstrated even when server-side vector index creation fails or when no embedding key is present. I compiled the code, installed dependencies, seeded the database (documents inserted), and executed a client-side verification search using a precomputed query embedding — that returned a ranked top-10 as expected. Server-side index creation failed on this cluster with an \"Unknown plugin index specified: 'knnVector'\" error; the seed script catches and reports this and still inserts documents.",
+  "files_created": [
+    "requirements.txt",
+    "README.md",
+    ".env.example",
+    "data/sample_products.json",
+    "data/sample_embeddings.json",
+    "utils.py",
+    "seed.py",
+    "app.py",
+    "verify_search.py"
+  ],
+  "how_to_run": "1) Create and activate a Python virtualenv and install deps:\n   python -m venv .venv\n   source .venv/bin/activate   # macOS/Linux\n   .\\.venv\\Scripts\\activate  # Windows\n   pip install -r requirements.txt\n\n2) Ensure environment variables:\n   - DOCUMENTDB_URI must be set to the provided Azure DocumentDB connection string (the sample reads this at runtime).\n   - (Optional) OPENAI_API_KEY to compute embeddings at seed or query time. If not set, the seed will use the included data/sample_embeddings.json file.\n\n3) Seed the database (creates collection, inserts docs, attempts to create server-side vector index):\n   python seed.py\n\n   Note: seed.py will drop sample_retail_01.products for idempotence, insert documents with an \"embedding\" BSON Binary field (float32 bytes), and then attempt to create a server-side IVF/knn index. If the cluster rejects the createIndexes call the script prints the error and exits successfully with the inserted documents available.\n\n4) Run the Flask app (for runtime query embedding with OpenAI API key present):\n   # With OPENAI_API_KEY set\n   flask --app app run --port 5000\n\n   Then POST a JSON body to /search: {\"q\": \"your natural-language query\"}\n\n5) If you don't have OPENAI_API_KEY but want to verify semantic ranking using the precomputed embeddings already loaded into the DB, run:\n   python verify_search.py\n\n6) Cleanup: drop the sample_retail_01 database or the products collection using your preferred MongoDB tool or with a short Python script that calls client.drop_database('sample_retail_01').",
+  "verification_done": [
+    "py_compile: compiled app.py, seed.py, utils.py (syntax check) — OK",
+    "pip install -r requirements.txt — OK (dependencies installed)",
+    "python seed.py — OK: dropped collection, inserted 10 documents, attempted server-side vector index creation (server returned error).",
+    "python verify_search.py — OK: performed client-side ranking using precomputed embedding for product 1 and returned top-10 ranked products."
+  ],
+  "not_verified": [
+    "Server-side vector index creation using a vendor-specific createIndexes knnVector index specification — failed at runtime with error 'Unknown plugin index specified: \"knnVector\"'. The seed script attempted a plausible MongoDB 7-style createIndexes body but the target cluster rejected it. Exact supported index specification for IVF/knn on this particular DocumentDB cluster was not available in supplied materials and must be sourced from cluster vendor docs or control-plane tooling.",
+    "/search endpoint embedding path using OpenAI (app.py) — not executed end-to-end because OPENAI_API_KEY was not set in this run. The code path is present and was lint/compile-checked but not exercised against the OpenAI API.",
+    "Server-side vector search queries (e.g., using an accepted vector index / $vectorSearch stage) — not executed because server-side vector index creation failed and the exact server-side query syntax for the cluster was not confirmed."
+  ],
+  "open_issues": [
+    "Server-side index creation: The createIndexes body used in seed.py is a plausible MongoDB 7+ vector-index attempt (key: {embedding: 'knnVector'}, knnVector: {...}) but this cluster returned 'Unknown plugin index specified: \"knnVector\"'. Investigate the cluster vendor docs or ask infra owners for the exact createIndexes format (plugin name, options) supported by this DocumentDB instance and update seed.py accordingly. (This was expected to be a gap per readiness_report.)",
+    "Embedding key not supplied: OPENAI_API_KEY was not set in the run environment. To test the live embedding flow for query-time /search and full end-to-end seeding via OpenAI, set OPENAI_API_KEY in the environment before running seed.py and starting the Flask app. The sample includes a fallback precomputed embeddings file so the sample can be seeded without the key.",
+    "Embedding storage vs index compatibility: The prompt requested storing embeddings as BSON Binary float32 bytes. Some DocumentDB/MongoDB vector-index implementations expect numeric-array fields rather than raw BSON Binary, or they expect a different plugin name. If your cluster requires numeric arrays, modify seed.py to store an additional field (e.g., 'embedding_vector': [float,...]) or switch the primary storage format to meet the cluster's indexer requirements.",
+    "Index tuning parameters: The seed script uses an arbitrary nlist=100 for the IVF index attempt. For small sample datasets this is fine, but for production tuning nlist/nprobe and other IVF/HNSW parameters should be chosen based on dataset size and latency/recall requirements."
+  ]
+}
