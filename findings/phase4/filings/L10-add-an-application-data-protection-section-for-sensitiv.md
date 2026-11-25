@@ -24,7 +24,7 @@ The Security page covers only infrastructure controls (network, identity, transp
 - how to record LLM-made decisions as history with provenance instead of overwriting fields;
 - how long agent memory holding identifiers should live, and how TTL indexes behave on Azure DocumentDB.
 
-Learn also has no Azure DocumentDB TTL page: the indexing page has no TTL section, the compatibility page only lists the TTL index property as supported, the only statement of the purge behaviour is a 2025-10-10 release note, and search returns the request-unit-based Azure Cosmos DB for MongoDB `_ts` TTL page, which does not apply to vCore clusters. The Security page's Data encryption section covers only encryption at rest and TLS; no Azure DocumentDB Learn page mentions client-side field-level encryption, Queryable Encryption, HIPAA, PHI or LLM data flows.
+Learn also has no Azure DocumentDB TTL page: the indexing page has no TTL section, the compatibility page only lists the TTL index property as supported, the only statement of the purge behaviour is a 2025-10-10 release note, and search returns the request-unit-based Azure Cosmos DB for MongoDB `_ts` TTL page, which does not apply to vCore clusters. The Security page's Data encryption section covers only encryption at rest and TLS. Client-side field-level encryption appears only as a "Yes" with an empty Notes cell in the compare-mongodb-atlas Security and compliance table and in a 2025-10-10 [Preview] release note on schema enforcement with CSFLE, with no how-to; no Azure DocumentDB Learn page mentions Queryable Encryption, HIPAA, PHI or LLM data flows.
 
 ## Why it matters
 
@@ -48,7 +48,7 @@ Keep it Azure DocumentDB-specific; link out to Learn "Data, privacy, and securit
 - Record LLM-made decisions as append-only history (`$push`) with provenance, not as overwrites.
 - Put a TTL index on short-lived agent memory and session data.
 
-Also add one sentence to the existing Data encryption section: explicit client-side field-level encryption (CSFLE) is listed as supported (compare-mongodb-atlas, Security and compliance table; release notes 2025-10-10 "[Preview] Add schema enforcement with CSFLE integration"), automatic CSFLE is not documented, and Queryable Encryption is not supported (the engine rejects `encryptedFields` with CommandNotSupported "encryptedFields not supported yet", `pg_documentdb/src/commands/create_collection_view.c:526-529`).
+Also add one sentence to the existing Data encryption section: explicit client-side field-level encryption (CSFLE) is listed as supported (compare-mongodb-atlas, Security and compliance table; release notes 2025-10-10 "[Preview] Add schema enforcement with CSFLE (client side field level encryption) integration"), automatic CSFLE is not documented, and Queryable Encryption is not supported (the engine rejects `encryptedFields` with CommandNotSupported "encryptedFields not supported yet", `pg_documentdb/src/commands/create_collection_view.c:526-529`).
 
 **2. New how-to "Protect sensitive data in applications and AI pipelines"** (suggested `azure/documentdb/how-to-protect-sensitive-data-ai.md`, `ms.topic: how-to`, under Security in `toc.yml`). Code first, one screen per section:
 

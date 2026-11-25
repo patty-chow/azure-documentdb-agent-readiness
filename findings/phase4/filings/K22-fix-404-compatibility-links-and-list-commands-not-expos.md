@@ -48,12 +48,16 @@ managed service, so do NOT generate code that calls:
   `dataSize`, `dbHash`, `lockInfo`, `$listSessions`, `killAllSessions`
 - `$planCacheStats` and plan-cache commands (the engine manages plan caching)
 - The `bulkWrite` *command*, i.e. the MongoDB 8.0 database-level command
-  behind client-level `MongoClient.bulkWrite()` (the service returns code 59
-  CommandNotFound); collection-level `collection.bulkWrite()` maps to
+  behind client-level `MongoClient.bulkWrite()` (the DocumentDB gateway
+  returns code 59 CommandNotFound); collection-level `collection.bulkWrite()` maps to
   insert/update/delete and works
 - `compact`, `convertToCapped`, `setDefaultRWConcern`
-- Replication, role-management and shard-balancer commands (Azure and
-  Microsoft Entra ID manage these)
+- Replication and shard-balancer commands (Azure manages these). Role
+  management is reduced, not absent: the built-in roles are only
+  `readAnyDatabase`, `readWriteAnyDatabase` + `clusterAdmin` and `root`,
+  `updateRole` is unsupported, and custom roles (`createRole`, `rolesInfo`,
+  `grantPrivilegesToRole`, `revokePrivilegesFromRole`) are a preview
+  documented on Learn - see the security skill
 - `$where`, `$function`, `$accumulator` (deprecated in MongoDB 8.0; `$where`
   also cannot use indexes)
 - Atlas-only features: this is not an Atlas cluster, so there is no Atlas
@@ -61,9 +65,10 @@ managed service, so do NOT generate code that calls:
   the GA path is a classic text index with `$text`; the `$search` stage with
   a search index (`createSearchIndexes`, `$listSearchIndexes`) is a preview
   feature that must first be enabled on the cluster (portal Settings >
-  Features > Full-text search, then wait about 10 minutes; until then
-  `createSearchIndexes` fails with code 115 "Search index creation is not
-  supported yet") - see the full-text-search skill. For vector search use
+  Features > Full-text search, then wait about 10 minutes; on a cluster
+  without the preview enabled `createSearchIndexes` fails with code 115
+  "Search index creation is not supported yet") - see the full-text-search
+  skill. For vector search use
   `$search` with `cosmosSearch` (vector-ivf / vector-hnsw / vector-diskann)
   over number[] embeddings (see the vector-search skill)
 
@@ -81,7 +86,7 @@ https://learn.microsoft.com/azure/documentdb/compatibility-query-language
 
 Add a short "Service-managed commands" subsection just above `## References` (line 202) with the same bullets; this file already carries the correct link and the kit's `$where` guidance (line 142).
 
-Corrections from draft verification already applied: "six links in five files" (not six files); `$search` with a search index is supported (as a preview feature), so the list says "no Atlas Search service and no `$vectorSearch`" rather than "no `$search`"; the unsupported `bulkWrite` is the MongoDB 8.0 database-level command behind client-level `MongoClient.bulkWrite()`, not `collection.bulkWrite()`; the list says role-management, not user-management, because `createUser` is supported; `$listSearchIndexes` is no longer in the "not exposed" list because it is supported (the full-text-search keyword and structured pages, the limitations page and the 2026-11-17 DocumentDB blog post all use it to wait for `status: "READY"`), and the compatibility table's row marking it unsupported is stale.
+Corrections from draft verification already applied: "six links in five files" (not six files); `$search` with a search index is supported (as a preview feature), so the list says "no Atlas Search service and no `$vectorSearch`" rather than "no `$search`"; the unsupported `bulkWrite` is the MongoDB 8.0 database-level command behind client-level `MongoClient.bulkWrite()`, not `collection.bulkWrite()`; the list no longer calls user-management or role-management commands unavailable, because `createUser` is supported and custom roles (`createRole`, `rolesInfo`, `grantPrivilegesToRole`) are a Learn-documented preview (see "Resolved"); it names replication and shard-balancer commands only; `$listSearchIndexes` is no longer in the "not exposed" list because it is supported (the full-text-search keyword and structured pages, the limitations page and the 2026-11-17 DocumentDB blog post all use it to wait for `status: "READY"`), and the compatibility table's row marking it unsupported is stale.
 
 ## Evidence
 
@@ -101,10 +106,11 @@ Other affected samples: 11-care-gap-identification-pipeline, 11-preference-cente
 - `$listSearchIndexes`: settled as supported, so it is removed from the kit's "not exposed" list; the compatibility table row marking it unsupported is stale. Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-keyword; https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-structured; https://learn.microsoft.com/en-us/azure/documentdb/limitations ("Search-index management supports creation and listing"); DocumentDB blog post 2026-11-17 (https://devblogs.microsoft.com/documentdb/?p=259).
 - Full-text search GA status and which path to recommend first: settled. Full-text search via `$search` with a search index "remains in preview" while `$text` and classic text indexes are GA; enablement is self-serve (portal Settings > Features > Full-text search, Azure CLI PATCH of `properties.previewFeatures` adding `FullTextSearch`, Bicep or Terraform), followed by a ten-minute wait, and `createSearchIndexes` on a cluster without the preview enabled returns code 115 "Search index creation is not supported yet". The kit therefore names the text index as the GA path and `$search` as the opt-in preview. Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview (dated 2026-11-04, updated 2026-11-17); https://devblogs.microsoft.com/documentdb/?p=259 (2026-11-17); runs/07-voice-of-customer-sentiment-hub/20261124-204049 (code 115 observation).
 - `bulkWrite` distinction: settled. The compatibility page's `bulkWrite: No` is the MongoDB 8.0 database-level command (multi-namespace, used by `MongoClient.bulkWrite()`, which the Node driver scopes to server 8.0+ and driver 6.10+); the page states that client-side wrappers relying on supported server commands are compatible, and `insert`, `update`, `delete` and `findAndModify` are Yes, so collection-level `db.collection.bulkWrite()` works. The engine's `bulk_write.c` is a stub and the gateway returns 59 CommandNotFound for the 8.0 command; a run executed collection-level `bulkWrite(ops, { ordered: false })` against the Azure cluster with `ok: 1`. Sources: https://learn.microsoft.com/en-us/azure/documentdb/compatibility-query-language (Database commands table and the note above it); https://www.mongodb.com/docs/manual/reference/command/bulkWrite/; https://www.mongodb.com/docs/drivers/node/current/crud/bulk-write/; https://github.com/documentdb/documentdb/blob/main/pg_documentdb/src/commands/bulk_write.c; https://github.com/documentdb/documentdb/issues/770; https://github.com/documentdb/documentdb/issues/108; runs/02-real-time-event-stream-ingestion/20261124-203233/events.jsonl.
+- Role-management commands: settled as reduced, not absent, so the kit's list no longer tells agents to avoid them wholesale. Built-in roles are `readAnyDatabase`, `readWriteAnyDatabase` + `clusterAdmin` (granted together per the RBAC page) and `root`; custom roles with database- and collection-level privileges are "currently in preview" (`createRole`, `dropRole`, `rolesInfo`, `grantPrivilegesToRole`, `revokePrivilegesFromRole`; `updateRole` unsupported; custom-to-custom inheritance unsupported; only find/insert/update/delete actions), and the engine gates them behind the `enableRoleCrud` flag. Sources: https://learn.microsoft.com/en-us/azure/documentdb/how-to-configure-role-based-access-control (ms.date 2026-11-16, updated 2026-11-17, Important box); https://learn.microsoft.com/en-us/azure/documentdb/secondary-users ("Custom roles", "Preview limitations"); https://learn.microsoft.com/en-us/azure/documentdb/how-to-connect-role-based-access-control (updated 2026-11-23); https://github.com/documentdb/documentdb/blob/main/CHANGELOG.md (v1.0-0 createRole/dropRole/rolesInfo entry); https://github.com/documentdb/documentdb/blob/main/pg_documentdb/src/configs/feature_flag_configs.c (DEFAULT_ENABLE_ROLE_CRUD).
 
 ## Open questions
 
-1. [needs SME confirmation] The remaining "not exposed" command list (`serverStatus`, `top`, `connPoolStats`, `dataSize`, `dbHash`, `lockInfo`, `$listSessions`, `killAllSessions`, `$planCacheStats` and plan-cache commands, `compact`, `convertToCapped`, `setDefaultRWConcern`, and the replication, role-management and balancer rows) is taken from the Learn compatibility table as fetched on 2026-11-25 (ms.date 2025-11-05, updated 2026-06-13), which is already stale on `$listSearchIndexes` and disagrees with `compatibility-features` on the session commands (`killSessions` Yes vs listed as restricted; `killAllSessions` No) and on `getShardMap`/`balancerStart`/`balancerStatus`/`balancerStop` (N/A vs "retain control over"). Please confirm the list matches current gateway behavior on managed clusters before a skill tells agents never to call these commands.
+1. [needs SME confirmation] The remaining "not exposed" command list (`serverStatus`, `top`, `connPoolStats`, `dataSize`, `dbHash`, `lockInfo`, `$listSessions`, `killAllSessions`, `$planCacheStats` and plan-cache commands, `compact`, `convertToCapped`, `setDefaultRWConcern`, and the replication and balancer rows), together with the per-category counts quoted in the kit text (58/60 aggregation stages, 44/45 query and projection operators), is taken from the Learn compatibility table as fetched on 2026-11-25 (ms.date 2025-11-05, updated 2026-06-13), which is already stale on `$listSearchIndexes` and the role-management rows and disagrees with `compatibility-features` on the session commands (`killSessions` Yes vs listed as restricted; `killAllSessions` No) and on `getShardMap`/`balancerStart`/`balancerStatus`/`balancerStop` (N/A vs "retain control over"). Please confirm the list matches current gateway behavior on managed clusters before a skill tells agents never to call these commands.
 
 ## Source drafts
 
