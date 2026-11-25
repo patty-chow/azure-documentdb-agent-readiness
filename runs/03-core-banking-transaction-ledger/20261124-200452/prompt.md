@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose core banking ledger that stores every debit and credit as an immutable document in DocumentDB. Use multi-document transactions to atomically append the transaction and update the account balance snapshot. Enforce idempotency with a transactionRef field and unique index to prevent double-posting.
