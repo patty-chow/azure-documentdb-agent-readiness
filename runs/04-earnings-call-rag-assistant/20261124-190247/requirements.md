@@ -8,17 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement the pipeline in Python and use LlamaIndex as the indexing/retrieval framework for ingestion, embedding, indexing, and retrieval.
-- Build the system as a Single-agent application where a single agent/process performs ingestion, vector storage, retrieval, and answer generation.
-- Ingest earnings call PDF transcripts: accept PDF files, extract full transcript text, and record a persistent source identifier (e.g., filename or transcript ID) for each transcript.
-- During ingestion, chunk the extracted transcript text into segments with configurable chunk size and overlap; chunking must be parameterized relative to the target LLM context window to enable context engineering.
-- Embed every chunk and persist the embedding vectors and chunk text into Azure DocumentDB, storing for each vector a document containing at minimum: the embedding array, chunk text, source transcript identifier, and chunk timestamp range (start and end timestamps or page/offset).
-- Store vector documents in Azure DocumentDB using its MongoDB-compatible API so that the vector collection is queryable for similarity search (vector and metadata persisted together).
-- Implement a similarity-search retrieval function that queries the Azure DocumentDB vector collection and returns the top-k most relevant chunks for a natural-language analyst query, ranked by similarity score.
-- Apply context engineering on retrieval: compose the retrieved chunks so their combined token/character length fits inside the configured LLM context window (drop or truncate lower-ranked chunks until within limit) before passing context to the LLM.
-- Generate answers by combining the retrieved context and the analyst question through LlamaIndex (RAG), and ensure each factual claim or quoted passage in the answer includes an explicit citation showing the source transcript identifier and the chunk timestamp range.
-- Provide a runnable demo entrypoint (CLI or minimal HTTP endpoint) that accepts an analyst natural-language question, runs retrieval against Azure DocumentDB, and returns a grounded answer with cited transcript filenames and timestamps.
-- Include an automated or example script that demonstrates the full end-to-end flow: ingest at least one earnings call PDF, build/store vectors in Azure DocumentDB, run a sample query, and output an answer with source+timestamp citations.
+- Build a Python RAG pipeline with LlamaIndex that ingests earnings call transcripts from PDF files and extracts their text.
+- Split each transcript into chunks with LlamaIndex, keeping on every chunk metadata that identifies its source transcript and the timestamp of the passage (e.g. the speaker-turn time printed in the transcript).
+- Embed each chunk with the embedding model configured in LlamaIndex and store each chunk in Azure DocumentDB as a document holding the chunk text, its embedding array and its source and timestamp metadata (e.g. through pymongo or a LlamaIndex vector store integration).
+- Create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field in code, with dimensions matching the embedding model's output.
+- Provide a single-agent question-answering flow that takes an analyst's natural-language question, embeds it and runs a $search / cosmosSearch vector similarity query against Azure DocumentDB that returns the top-k most relevant chunks with their text and metadata.
+- Apply context engineering before generation: select and trim the retrieved passages so that their combined size fits within the LLM's context window (e.g. by token counting), then assemble the prompt from those passages.
+- Generate the answer with the LLM through LlamaIndex from the assembled context of retrieved passages.
+- Include in each answer a citation of the source transcript and timestamp of the passages the answer draws on.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
