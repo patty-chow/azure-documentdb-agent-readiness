@@ -1,0 +1,629 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core dynamic-pricing behaviour: three DocumentDB-backed query tools (competitor prices, demand metrics via an aggregation pipeline, margin rules), an LLM prompt that requests step-by-step reasoning, deterministic fallback pricing, and an atomic find_one_and_update to persist the recommended price. Key infra and hygiene pieces exist (singleton MongoClient, idempotent seed, .env.example, README). Shortcomings that matter to publishability and long-term correctness: the builder did not deliver a LangChain initialize_agent-based agent (switched to a lightweight orchestration because ChatOpenAI imports failed in this environment), dependencies are not pinned, optimistic concurrency and retry/backoff handling are not implemented, projections and TTL indexing are missing, and there are no unit tests that run without a live cluster. See requirement_results and checks for file/line evidence and minimal fixes.",
+  "requirement_results": [
+    {
+      "requirement": "A single Python LangChain agent that, given a product to price, calls LangChain tools to gather current demand metrics, competitor prices and margin rules, then recommends a new price.",
+      "status": "partly_met",
+      "evidence": "app/main.py lines 82-96 (call_model_for_price builds a prompt) and app/agent.py tool functions (get_competitor_prices_tool, get_demand_metrics_tool, get_margin_rules_tool). However the implementation uses a lightweight orchestration and direct OpenAI SDK calls rather than a LangChain initialize_agent-based agent.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Either pin a LangChain version that exposes ChatOpenAI/initialize_agent and update requirements.txt accordingly, or add a conditional wrapper and a requirements/test variant that demonstrates initialize_agent (e.g., pin langchain==0.0.200 or the project-tested version)."
+    },
+    {
+      "requirement": "A LangChain tool that computes the product's current demand metrics in Azure DocumentDB with an aggregation pipeline (e.g. recent sales counts or sales velocity), using a MongoDB driver (e.g. PyMongo).",
+      "status": "met",
+      "evidence": "app/agent.py lines 78-86: aggregation pipeline with $match and $group is used to compute aggregated views / units_sold for the SKU.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A LangChain tool that queries Azure DocumentDB for the competitor price documents for the product.",
+      "status": "met",
+      "evidence": "app/agent.py lines 38-41 and 52-60: get_competitor_prices_tool queries competitor_prices, sorts by timestamp descending, and returns a JSON summary.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A LangChain tool that reads the margin rule documents stored in Azure DocumentDB and returns the margin constraints that apply to the product.",
+      "status": "met",
+      "evidence": "app/agent.py lines 101-116 and 120-126: get_margin_rules_tool looks up sku-specific, category and DEFAULT rules, deduplicates, and returns JSON.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The agent's prompt instructs the LLM to reason step-by-step over the demand metrics, competitor prices and margin rules before it recommends a new price.",
+      "status": "met",
+      "evidence": "app/main.py lines 88-95: the prompt includes the collected tool outputs and the instruction 'Based on the above, reason step-by-step, then return a JSON object...'.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The recommended price is written back to the product document in Azure DocumentDB with a single atomic update of that document (e.g. update_one or find_one_and_update).",
+      "status": "met",
+      "evidence": "app/agent.py lines 143-147: find_one_and_update with return_document=ReturnDocument.AFTER. app/main.py lines 126-130 call agent.update_price_tool to perform the write.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/db.py lines 6-8 read DOCUMENTDB_URI from env and error if missing. app/.env.example contains placeholders (DOCUMENTDB_URI, OPENAI_API_KEY, MODEL). No real secrets are committed.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI, OPENAI_API_KEY, and MODEL (placeholders).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use any vector indexes; vector features are intentionally omitted (see decisions D010/D021 and README note).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add vector search later, ensure the index 'dimension' matches the embedding model output and document the expected embedding dimension in README and the seed script."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexes created or used in this sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is added, include index parameter defaults and a short note in README describing how to tune numLists / m / efConstruction / lBuild / lSearch for larger datasets."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/db.py lines 10-21 implement a singleton MongoClient and get_client(), reused by get_db().",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/seed.py lines 42-61 use update_one(upsert=True) for products and margin_rules and perform existence checks for competitor_prices and demand_metrics before inserting. app/seed.py lines 66-67 call db.init_indexes then upsert_sample_data.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample has no /search HTTP endpoint; it is a CLI sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "N/A for this CLI sample. If a /search endpoint is added, include explicit input validation and clear error messages for empty queries and embedding failures."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No vector/semantic search implemented in this sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is added, include similarity/score in the result objects returned by the search tool."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "not_met",
+      "evidence": "app/requirements.txt contains range/prefix constraints (e.g. 'pymongo>=4.4', 'langchain>=0.0.287') rather than pinned exact versions.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Pin tested package versions (example: 'pymongo==4.20.1', 'langchain==1.5.2', 'openai==3.59.0', 'python-dotenv==1.2.4') and commit the pinned requirements.txt."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No tests are present in the repository (no tests/ or pytest files). The builder_report notes tests were not added.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small pytest suite that mocks the MongoDB client (e.g., use mongomock or monkeypatch pymongo's MongoClient) so CI can verify tool behaviour without a live cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/ARM/Terraform/az CLI IaC files in the repo. The run environment provided an existing cluster and the sample intentionally does not provision resources.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal Bicep or Terraform AzAPI snippet that demonstrates creating Microsoft.DocumentDB/mongoClusters with conservative defaults (tier M10 or free-tier guardrails) and a note in README that provisioning may incur cost."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes sections for what the sample shows (lines 5-9), prerequisites (lines 11-14), quickstart setup/run steps (lines 28-46), and cleanup note (lines 48-49).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and other top-level files refer to 'Azure DocumentDB' and 'DocumentDB'. No references to 'Amazon DocumentDB' or 'Azure Cosmos DB for MongoDB (RU)' appear in the sample sources.",
+      "cause": "none",
+      "smallest_fix": "none"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Use a single MongoClient (one shared client instance per process) and configure connection-pool sizing and timeouts rather than creating a client per request.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "app/db.py lines 10-21 implement a singleton MongoClient via global _client and get_client()",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Env-var secrets",
+      "practice": "Never hard-code the cluster connection string or credentials in source; read DOCUMENTDB_URI (or MONGODB_URI) from environment variables or Key Vault and keep only a .env.example with placeholders.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/db.py lines 6-8 read DOCUMENTDB_URI from env; app/.env.example contains placeholders rather than real credentials.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid secrets in logs",
+      "practice": "Do not commit or print connection strings, API keys, or other secrets in code or logs; keep secrets out of source control and examples.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "No connection strings or API keys are present in source; .env.example contains placeholders. The code prints a warning only when OPENAI_API_KEY missing, not secrets.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver timeouts & TLS",
+      "practice": "Set driver timeouts (serverSelectionTimeoutMS, connectTimeoutMS, maxIdleTimeMS) and require TLS in the connection string so clients fail fast on network problems and use secure transport.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-build-java-console-app#connect-to-the-cluster",
+      "status": "followed",
+      "evidence": "app/db.py lines 16-20 set serverSelectionTimeoutMS=5000 and connectTimeoutMS=10000. .env.example suggests tls=true in the placeholder URI.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Java",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Java",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-build-java-console-app#connect-to-the-cluster"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries & idempotency",
+      "practice": "Handle transient faults by implementing retries with exponential backoff and making write operations idempotent.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "violated",
+      "evidence": "No explicit retry-with-backoff wrapper for DB operations. update_price_tool uses find_one_and_update (atomic) which helps idempotency, but there is no retry policy around DB calls and seed uses simple insert/update without exponential backoff.",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Wrap DB calls (writes and critical reads) with a small retry policy using exponential backoff (e.g., tenacity) and make non-idempotent writes detect unknown outcomes (or use idempotent upserts).",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation timing",
+      "practice": "Create the indexes your queries need and prefer creating or modifying indexes after bulk data loads to avoid write overhead; track createIndex progress.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#queryable-fields-should-always-have-indexes-created",
+      "status": "followed",
+      "evidence": "app/db.py lines 50-61 create the sample indexes (products.sku unique, competitor_prices sku+timestamp, demand_metrics sku+timestamp, margin_rules sku_or_category). app/seed.py calls db.init_indexes at startup (seed.py lines 66-67).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "Consider creating indexes after bulk seeding for large datasets and/or use non-blocking createIndex as explained in the docs. For this small sample the current approach is acceptable.",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#queryable-fields-should-always-have-indexes-created"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index fields for queries",
+      "practice": "Index fields used in frequent equality filters and sorts and use compound indexes when queries filter or sort by multiple fields together.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field",
+      "status": "followed",
+      "evidence": "app/db.py lines 58-61 create compound indexes on competitor_prices (sku + timestamp) and demand_metrics (sku + timestamp) which match the query patterns used by tools (app/agent.py lines 40-41, 76-82).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL for time-series",
+      "practice": "Use TTL indexes (expireAfterSeconds) on a timestamp field to automatically expire time-series/metric documents.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/time-to-live#ttl-indexes",
+      "status": "not_applicable",
+      "evidence": "demand_metrics collection exists (app/db.py lines 52-55) but the sample does not create a TTL index; for a small demo this is optional.",
+      "source": "Expire data with Azure Cosmos DB for MongoDB and per-document TTL",
+      "searched": "",
+      "fix": "If metric collection growth is a concern, add a TTL index (e.g., coll.create_index([(\"timestamp\", ASCENDING)], expireAfterSeconds=...) ) in db.init_indexes and document the retention policy in README.",
+      "sources": [
+        {
+          "title": "Expire data with Azure Cosmos DB for MongoDB and per-document TTL",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/time-to-live#ttl-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use projections",
+      "practice": "Use projections (select only required fields) on find/aggregate queries to reduce network payload and RU consumption when you don't need full documents.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/find#projections",
+      "status": "violated",
+      "evidence": "get_competitor_prices_tool (app/agent.py lines 38-41) calls coll.find(...) without a projection, which fetches full documents although only price, source, and timestamp are used in the summary. Similarly, get_margin_rules_tool uses find_one and serializes the whole document (app/agent.py lines 101-116, 120-126).",
+      "source": "find",
+      "searched": "",
+      "fix": "Add projections to find calls (e.g., coll.find(filter, { 'price': 1, 'source': 1, 'timestamp': 1 })) and to find_one where only specific fields are needed.",
+      "sources": [
+        {
+          "title": "find",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/find#projections"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Single-document atomic updates",
+      "practice": "Use single-document atomic operations (findOneAndUpdate / findAndModify / $set / $inc) for per-item updates.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#database-commands",
+      "status": "followed",
+      "evidence": "app/agent.py lines 143-147 perform an atomic find_one_and_update and return the updated document.",
+      "source": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#database-commands"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Optimistic concurrency",
+      "practice": "Implement optimistic concurrency control using system _etag (ETag) or a version field and conditional updates.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/database-transactions-optimistic-concurrency#optimistic-concurrency-control",
+      "status": "violated",
+      "evidence": "README.md line 54 explicitly notes the sample 'does not implement optimistic concurrency control.' update_price_tool uses a single atomic update but does not filter by _etag or version (app/agent.py lines 143-147).",
+      "source": "Transactions and optimistic concurrency control",
+      "searched": "",
+      "fix": "Implement an optional optimistic concurrency pattern: include a version field or read _etag and include it in the update filter (e.g., {'sku': sku, '_etag': current_etag}) and surface a retry/failure path if the update fails due to a mismatch.",
+      "sources": [
+        {
+          "title": "Transactions and optimistic concurrency control",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/database-transactions-optimistic-concurrency#optimistic-concurrency-control"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotency",
+      "practice": "Make seed and provisioning scripts idempotent: use upserts or conditional inserts and avoid destructive operations.",
+      "category": "seed_and_idempotency",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "app/seed.py lines 42-61 use update_one(upsert=True) for products/margin_rules and check for existing exact matches before inserting competitor_prices/demand_metrics.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Tune client connection options",
+      "practice": "Tune client connection options such as serverSelectionTimeoutMS, socket/connect timeouts, and maxPoolSize to your network and workload.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-build-java-console-app#connect-to-the-cluster",
+      "status": "followed",
+      "evidence": "app/db.py lines 16-20 set serverSelectionTimeoutMS and connectTimeoutMS. maxPoolSize is not set in code; defaults are used.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Java",
+      "searched": "",
+      "fix": "Add configurable pool sizing (e.g., via env var MONGO_MAX_POOL_SIZE) and consider exposing socketTimeoutMS/maxIdleTimeMS in db.get_client().",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Java",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-build-java-console-app#connect-to-the-cluster"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent writes",
+      "practice": "Make write operations idempotent or detect unknown outcomes when retrying non-idempotent writes.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "update_price_tool uses find_one_and_update which is an idempotent single-document update (app/agent.py lines 143-147). seed.py uses upserts for products and margin rules (app/seed.py lines 42-61).",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Do not expose connection strings to model",
+      "practice": "Do not expose raw DB keys or connection strings to external models or agents; instead wire models to parameterized tools that perform DB access on the model's behalf.",
+      "category": "security",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P30",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "This practice is marked prior_knowledge_only (no explicit Azure DocumentDB docs about LLM usage). The sample does not pass DOCUMENTDB_URI to the model — it calls the LLM with JSON summaries of tool outputs only (app/main.py lines 84-92) — so it happens to follow the practice, but there is no public Azure DocumentDB page stating it.",
+      "source": "prior_knowledge",
+      "searched": "Searched for guidance about not sending connection strings to LLMs; no Azure DocumentDB-specific public guidance was found.",
+      "fix": "Publish a short note in the docs (or add an agent-kit rule) that sample authors must not send raw connection strings or keys to models, and that tools should provide parameterized access instead.",
+      "sources": [],
+      "what_would_help": "A short sentence in the 'security' quickstart: 'Do not pass connection strings or keys to an LLM; expose DB queries via parameterized tools.'"
+    },
+    {
+      "topic": "Audit trail: retryWrites choice",
+      "practice": "Record design choices that affect behaviour (e.g., retryWrites True/False) in the decisions log so reviewers can see why they were chosen.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/db.py line 20 sets retryWrites=True on MongoClient creation but no decision in decisions.jsonl documents this choice. The decisions record shows related connection decisions, but not this specific flag.",
+      "source": "repo",
+      "searched": "",
+      "fix": "Add a logged decision explaining the retryWrites choice (or change to retryWrites=false if that was intended), and document the rationale in README or db.py comments.",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator-approved readiness with gaps is consistent with later build actions that proceeded despite known gaps; events show approvals logged."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Python runtime is consistent with the prompt and the produced files; the repository is Python-based."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Synchronous pymongo and singleton client pattern were chosen and implemented (app/db.py)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "Initial preference for OpenAI + LangChain is defensible, but it relied on a model_default assumption. The build later changed to direct OpenAI SDK calls due to LangChain import issues (see D012 and events), so the original choice was not fully implemented."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Duplicate operator approval; matches the run logs."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Repeated Python runtime decision; events and files match this choice."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Decision to use synchronous pymongo singleton is consistent with code and with documentdb-driver guidance loaded by the build (events show documentdb-driver skill loaded)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from the environment was implemented (app/db.py lines 6-8) and is consistent with the run environment guidance."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "questionable",
+      "comment": "Making the LLM provider configurable is reasonable, but the decision source is model_default and no authoritative 'which LLM to use' doc exists; readiness notes flagged this gap and the code implements OPENAI_API_KEY/MODEL env vars."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Decision not to include vector search was explicit and implemented; no vector indexes created and the README notes vector search is not used."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "The build implemented a lightweight orchestration exposing DB functions as tools; events show the implementation and later edits to call OpenAI SDK directly."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "The ImportError is logged in events.jsonl and the code was changed to call the OpenAI SDK directly (events lines show the error and subsequent write_file to overwrite src/agent.py). The reason is supported by the trace."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Operator re-approval; consistent with prior D001/D005."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Duplicate runtime decision; consistent with repo contents."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Decision to use synchronous pymongo is consistent and supported; a public quickstart documents tested PyMongo versions and singleton patterns (evidence available)."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Decision to read DOCUMENTDB_URI from environment is implemented and present in db.py."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Decision not to provision new Azure resources is consistent with the run environment and events; the MCP server was used for verification instead."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "sound",
+      "comment": "Data model decision (products, demand_metrics, competitor_prices, margin_rules) was implemented (db.init_indexes and seed) and matches the code."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "Index decisions were implemented. Events show index listing matching the chosen index shapes."
+    },
+    {
+      "decision_id": "D020",
+      "assessment": "questionable",
+      "comment": "Choosing OpenAI as default is pragmatic but the decision_source is model_default; the readiness findings earlier flagged the lack of a canonical LLM choice. The code implements OPENAI_API_KEY/MODEL but this remains a documentation/decider gap for the product team."
+    },
+    {
+      "decision_id": "D021",
+      "assessment": "sound",
+      "comment": "Decision not to use embeddings/vector search is explicit and implemented; the sample focuses on structured queries and deterministic logic."
+    },
+    {
+      "decision_id": "D022",
+      "assessment": "sound",
+      "comment": "Decision to use a single-document atomic find_one_and_update is implemented (app/agent.py lines 143-147). The README documents that optimistic concurrency is not implemented."
+    },
+    {
+      "decision_id": "D023",
+      "assessment": "sound",
+      "comment": "Events show the documentdb MCP server tools were used to list databases, list indexes and verify documents (events lines 35-38 etc.)."
+    },
+    {
+      "decision_id": "D024",
+      "assessment": "sound",
+      "comment": "The lightweight orchestration fallback approach is implemented and justified by the LangChain import errors in the event trace."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "LLM provider and env var guidance",
+      "what_was_missing": "No official, canonical guidance on which LLM/embedding provider to prefer for DocumentDB samples or which env var names to standardize (OPENAI_API_KEY and MODEL are used by the sample, but this is a builder choice).",
+      "where_searched": "Microsoft Learn quickstarts, sample run readiness notes, installed skills; searches for 'LangChain provider recommendation for DocumentDB' yielded no canonical guidance.",
+      "effect_on_this_build": "The builder made model-default choices (D004, D009, D020). That left the sample reliant on OpenAI by convention and required a developer decision that should be documented centrally.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'LLM provider and environment variables' doc page in the agent-kit describing recommended env var names (OPENAI_API_KEY, MODEL), how to switch to Azure OpenAI, and a note on test-mode fallbacks (mock LLM). Include example snippets for OpenAI and Azure OpenAI and a sentence recommending not to commit keys.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Agent-LangChain tool-wrapper examples",
+      "what_was_missing": "No copy-paste, authoritative example showing how to expose DocumentDB MCP server operations as LangChain Tool classes and how to wire initialize_agent safely across LangChain versions.",
+      "where_searched": "Installed skills (documentdb-*), Microsoft Learn, open-source samples; readiness findings show a missing worked example.",
+      "effect_on_this_build": "The builder tried to use LangChain initialize_agent, hit import errors and switched to a robust lightweight orchestration (D012/D024). If a canonical wrapper existed, the fragile initialize_agent approach could have been used or at least ported more easily.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a 'LangChain tool wrappers for DocumentDB' page in the agent-kit: show a small Tool class or function wrapper pattern for pymongo-based queries, include conditional examples for both older and newer LangChain import paths (ChatOpenAI vs langchain.chat_models), and a tiny test harness that uses a mock LLM so authors can validate tool wiring without an API key.",
+      "priority": "high"
+    },
+    {
+      "topic": "Not sending secrets to LLMs (DocumentDB-specific guidance)",
+      "what_was_missing": "No Azure DocumentDB public guidance explicitly addressing LLM/agent patterns that might mistakenly send connection strings or keys to the model; the practice exists in prior knowledge but not in company docs.",
+      "where_searched": "Microsoft Learn, installed skills, and open web searches for 'Azure DocumentDB do not send connection string to LLM' returned no useful official guidance.",
+      "effect_on_this_build": "The builder implemented tools correctly and did not send secrets to the model, but agents and builders could accidentally leak secrets when wiring tools to LLM prompts unless guidance is explicit.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'LLMs and secrets' note on the DocumentDB security quickstart: single paragraph stating 'Do not provide connection strings or DB keys to LLM prompts; instead expose parameterized tools that call the DB on the model's behalf' and a small example showing correct vs incorrect patterns.",
+      "priority": "high"
+    },
+    {
+      "topic": "Pinning tested driver versions",
+      "what_was_missing": "Guidance that sample authors should pin driver versions to the ones that the quickstarts/tests were built against (and an example pinned requirements.txt).",
+      "where_searched": "Microsoft Learn quickstarts/doc pages include 'tested driver version' notes in some quickstarts but there is no centralized 'pin your dependencies' sample guidance.",
+      "effect_on_this_build": "The builder left flexible dependency specifiers (>=) that resulted in LangChain version mismatches causing import errors and a change in agent implementation.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a small 'Pin runtime & dependency versions' section to the DocumentDB sample guidance that shows an example requirements.txt with pinned versions used in CI and explains how to re-run with the requirements-dev.txt file used for the gallery build. Also add a CI snippet that validates 'pip install -r requirements.txt' and a smoke run of the CLI in CI.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index-creation best practice for seed scripts",
+      "what_was_missing": "Advice for samples: create indexes after bulk seeding or use nonblocking createIndex for large historic datasets and include a note in seed scripts.",
+      "where_searched": "Indexing docs on Learn (found) but no sample-level rule telling sample authors where to put init_indexes in the seed flow.",
+      "effect_on_this_build": "The sample creates indexes during seed startup. For a small sample this is fine; for larger seeded datasets authors might want to create indexes afterwards to reduce write cost and blocking.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add an agent-kit rule and a 1-paragraph cookbook: 'For seeds < 10k records create indexes before or during seeding; for larger seeds run seed -> create indexes (nonblocking) -> verify createIndex progress with db.currentOp()'. Provide an example change to seed.py showing idempotent post-seed createIndex.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Retry / backoff guidance in sample patterns",
+      "what_was_missing": "A short copy-paste implementation (or recommended small helper) showing how to add exponential backoff retries around pymongo operations in Python samples.",
+      "where_searched": "Readiness notes and installed skills mention retries but there is no small snippet in the agent-kit demonstrating recommended retry wrappers and idempotency patterns for writes.",
+      "effect_on_this_build": "The sample omitted retries/backoff, leaving production resilience untested and increasing the chance of transient failures being exposed to users.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Provide a 1-file helper (db_retry.py) demonstrating a minimal tenacity-based retry decorator for reads/writes, and show a small code snippet in README that instructs authors to use it for any networked DB call. Explain which operations should be idempotent and how to detect unknown outcomes.",
+      "priority": "high"
+    }
+  ]
+}
