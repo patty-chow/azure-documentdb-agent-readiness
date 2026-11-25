@@ -1,14 +1,14 @@
-# Gallery insights (101 samples, latest run of each)
+# Gallery insights (101 samples, best default-arm run of each)
 
 ## Verdicts
 
 | Sample | Prompt | Readiness | Readiness score | Build | Audit |
 |---|---|---|---|---|---|
-| 01-anti-money-laundering-pattern-detector | sufficient_with_assumptions | ready_with_gaps | 49 (v1) | completed | pass_with_findings |
-| 01-fraud-detection-with-vector-similarity | sufficient_with_assumptions | ready_with_gaps | 29 (v1) | completed | pass_with_findings |
-| 01-patient-record-summarizer-rag | sufficient_with_assumptions | ready_with_gaps | 40 (v1) | completed | pass_with_findings |
-| 01-product-catalog-with-vector-search | sufficient_with_assumptions | ready_with_gaps | 36 (v1) | completed | pass_with_findings |
-| 01-unified-customer-profile-store | sufficient_with_assumptions | ready_with_gaps | 58 (v1) | completed | pass_with_findings |
+| 01-anti-money-laundering-pattern-detector | sufficient_with_assumptions | ready_with_gaps | 80 (v1) | completed | pass_with_findings |
+| 01-fraud-detection-with-vector-similarity | sufficient_with_assumptions | ready_with_gaps | 77 (v1) | partial | pass_with_findings |
+| 01-patient-record-summarizer-rag | sufficient_with_assumptions | ready_with_gaps | 74 (v1) | partial | pass_with_findings |
+| 01-product-catalog-with-vector-search | sufficient_with_assumptions | ready_with_gaps | 68 (v1) | partial | pass_with_findings |
+| 01-unified-customer-profile-store | sufficient_with_assumptions | ready_with_gaps | 76 (v1) | partial | pass_with_findings |
 | 02-ai-powered-product-recommendations | sufficient_with_assumptions | ready_with_gaps | 73 (v1) | completed | pass_with_findings |
 | 02-clinical-trial-matching-orchestration | sufficient_with_assumptions | ready_with_gaps | 71 (v1) | completed | pass_with_findings |
 | 02-real-time-event-stream-ingestion | sufficient_with_assumptions | ready_with_gaps | 78 (v1) | partial | pass_with_findings |
@@ -54,12 +54,12 @@
 | 10-multi-tenant-storefront-saas | sufficient_with_assumptions | ready_with_gaps | 75 (v1) | completed | pass_with_findings |
 | 10-support-ticket-rag-assistant | sufficient_with_assumptions | ready_with_gaps | 80 (v1) | completed | pass_with_findings |
 | 10-wealth-management-rag-portal | sufficient_with_assumptions | ready_with_gaps | 70 (v1) | completed | pass_with_findings |
-| 11-care-gap-identification-pipeline | sufficient_with_assumptions | ready_with_gaps | 34 (v1) | completed | pass_with_findings |
-| 11-correspondent-banking-risk-screener | sufficient_with_assumptions | ready_with_gaps | 32 (v1) | completed | pass_with_findings |
-| 11-market-news-sentiment-orchestration | sufficient_with_assumptions | ready_with_gaps | 38 (v1) | completed | pass_with_findings |
-| 11-preference-center-consent-store | sufficient_with_assumptions | ready_with_gaps | 38 (v1) | completed | pass_with_findings |
-| 11-visual-similarity-search-image-embeddings | sufficient_with_assumptions | ready_with_gaps | 42 (v1) | partial | pass_with_findings |
-| 12-abandoned-cart-recovery-orchestration | - | - | - | - | - |
+| 11-care-gap-identification-pipeline | sufficient_with_assumptions | ready_with_gaps | 74 (v1) | completed | fail |
+| 11-correspondent-banking-risk-screener | sufficient_with_assumptions | ready_with_gaps | 74 (v1) | completed | pass_with_findings |
+| 11-market-news-sentiment-orchestration | sufficient_with_assumptions | ready_with_gaps | 69 (v1) | completed | pass_with_findings |
+| 11-preference-center-consent-store | sufficient_with_assumptions | ready_with_gaps | 72 (v1) | completed | pass_with_findings |
+| 11-visual-similarity-search-image-embeddings | sufficient_with_assumptions | ready_with_gaps | 67 (v1) | partial | pass_with_findings |
+| 12-abandoned-cart-recovery-orchestration | sufficient_with_assumptions | ready_with_gaps | 51 (v1) | completed | pass_with_findings |
 | 12-clv-prediction-pipeline | sufficient_with_assumptions | ready_with_gaps | 64 (v1) | completed | pass_with_findings |
 | 12-cross-border-payment-audit-trail | sufficient_with_assumptions | ready_with_gaps | 71 (v1) | completed | pass_with_findings |
 | 12-hospital-bed-occupancy-tracker | sufficient_with_assumptions | ready_with_gaps | 76 (v1) | completed | pass_with_findings |
@@ -110,11 +110,10 @@
 
 | Sample | Met |
 |---|---|
-| 01-anti-money-laundering-pattern-detector | 8 of 19 |
-| 01-fraud-detection-with-vector-similarity | 11 of 20 |
+| 01-anti-money-laundering-pattern-detector | 11 of 19 |
+| 01-fraud-detection-with-vector-similarity | 8 of 20 |
 | 01-patient-record-summarizer-rag | 12 of 21 |
-| 01-product-catalog-with-vector-search | 13 of 19 |
-| 01-unified-customer-profile-store | 10 of 19 |
+| 01-unified-customer-profile-store | 12 of 19 |
 | 02-ai-powered-product-recommendations | 8 of 12 |
 | 02-clinical-trial-matching-orchestration | 9 of 19 |
 | 02-real-time-event-stream-ingestion | 9 of 18 |
@@ -160,11 +159,12 @@
 | 10-multi-tenant-storefront-saas | 11 of 21 |
 | 10-support-ticket-rag-assistant | 13 of 20 |
 | 10-wealth-management-rag-portal | 17 of 20 |
-| 11-care-gap-identification-pipeline | 10 of 19 |
-| 11-correspondent-banking-risk-screener | 9 of 20 |
-| 11-market-news-sentiment-orchestration | 13 of 20 |
-| 11-preference-center-consent-store | 15 of 21 |
-| 11-visual-similarity-search-image-embeddings | 7 of 19 |
+| 11-care-gap-identification-pipeline | 9 of 19 |
+| 11-correspondent-banking-risk-screener | 10 of 20 |
+| 11-market-news-sentiment-orchestration | 12 of 20 |
+| 11-preference-center-consent-store | 13 of 23 |
+| 11-visual-similarity-search-image-embeddings | 13 of 19 |
+| 12-abandoned-cart-recovery-orchestration | 11 of 19 |
 | 12-clv-prediction-pipeline | 9 of 18 |
 | 12-cross-border-payment-audit-trail | 11 of 18 |
 | 12-hospital-bed-occupancy-tracker | 10 of 16 |
@@ -213,34 +213,28 @@
 
 ## Unmet requirements, by cause
 
-### prompt_silent (375)
+### prompt_silent (364)
 
-- **01-anti-money-laundering-pattern-detector**: Unit tests run without a live cluster. - fix: Add a separate unit-test module that uses a mocking library (e.g., mongomock or patching MongoClient) so tests can run offline and deterministically.
-- **01-fraud-detection-with-vector-similarity**: A cosmosSearch index of kind vector-ivf is created in code on that embedding field, with dimensions matching the embedding model's output (similarity e.g. COS). - fix: Add a verified create_index call that supplies provider-specific vectorOptions including algorithm and dims (e.g., pull dims from an EMBED_DIM constant or from the embedding provider) and catch errors as currently done. Prefer shipping an agent-kit tested snippet for the exact provider syntax rather than inventing options in the sample.
-- **01-fraud-detection-with-vector-similarity**: A LangChain tool performs the vector search against Azure DocumentDB with a $search / cosmosSearch query using the new transaction's embedding as the query vector, and returns the similar historical cases. - fix: Implement and expose a LangChain Tool (or a small wrapper function) that executes the provider's tested vector-search aggregation (using the correct $search/$vectorSearch operator and meta-score projection), and have the agent call that tool. If operator names are uncertain, ship a tested example for the supported cluster and keep the current client-side fallback.
-- **01-fraud-detection-with-vector-similarity**: The vector index dimensions match the embedding model's output. - fix: Detect the embedding dimension at runtime (query the model API or expose EMBED_DIM as an env var), validate or fail fast if stored vectors and model dims mismatch, and/or re-seed stored patterns with the chosen model when OPENAI_API_KEY is provided.
-- **01-fraud-detection-with-vector-similarity**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add clear constants (INDEX_ALGO, INDEX_PARAMS, TOP_K, CANDIDATE_LIMIT) and a README section describing how to tune them for larger datasets, with concrete example values for IVF/HNSW/DiskANN and guidance to validate them against the target cluster.
-- **01-fraud-detection-with-vector-similarity**: "/search" returns a clear error for an empty query and when the embedding call fails. - fix: Add explicit request validation (return 400 with a helpful message for missing/empty required fields) and catch embedding-specific errors in the agent to return a clear 502/5xx with an explanatory message when the embedding provider fails.
-- **01-fraud-detection-with-vector-similarity**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a folder infra/ with example IaC templates (Bicep, ARM, Terraform) that declare the correct resource type for the managed DocumentDB cluster and default low-cost parameters; include a README explaining that provisioning is optional and how to configure region/tier.
-- **01-fraud-detection-with-vector-similarity**: The README covers what the sample shows, prerequisites, setup, run, and clean-up. - fix: Add a 'clean-up' section to README describing how to drop the sample collection (db.fraud_patterns.drop()) and any index cleanup, and when to run any deprovisioning scripts if IaC is provided.
-- **01-patient-record-summarizer-rag**: A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field, with `dimensions` matching the embedding model the app uses. - fix: Add idempotent, validated index-creation code to the seed script (e.g., a createIndex call that uses a variable EMBEDDING_DIM) and document it in README; prefer shipping a validated snippet in the agent-kit so builders don't guess provider-specific option names.
-- **01-patient-record-summarizer-rag**: Retrieval embeds the clinical question and runs the similarity search in Azure DocumentDB with `$search` / `cosmosSearch` (similarity COS, L2 or IP). - fix: Implement a DB-side $search/knn attempt with fallback: try the provider-specific $search/knn aggregation (guarded by a feature-detection step) and fall back to the existing application-side re-rank if it is not supported.
-- **01-patient-record-summarizer-rag**: A `.env.example` lists every setting with placeholder values. - fix: Add any optional or used env vars to .env.example (for example OPENAI_CHAT_MODEL, and note EMBEDDING_DIM if user should align index dimensions).
-- **01-patient-record-summarizer-rag**: The vector index dimensions match the embedding model's output. - fix: When adding DB-side index creation, reference EMBEDDING_DIM and use it when creating the vector index so dimensions are consistent.
-- **01-patient-record-summarizer-rag**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add example index parameter defaults in the README and in seed.py (document initialCapacity/efConstruction/efSearch or IVF params) and describe how to change them for larger datasets.
-- **01-patient-record-summarizer-rag**: A seed script loads sample data and creates the index, and can be run twice without duplicating data. - fix: Make index creation in seed.py idempotent for vector index as well (wrap createIndex in try/except or check index_information), using deterministic names/parameters.
-- **01-patient-record-summarizer-rag**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Wrap embedding calls with try/except in the /search handler and return a clear 5xx/4xx error with a helpful message when embedding fails (and include brief guidance about OPENAI_API_KEY or network errors).
-- **01-patient-record-summarizer-rag**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add an example IaC snippet (Bicep/Terraform azapi resource) and a short note in README showing the exact resource type and minimal parameters; include it as an optional folder (infra/) that is clearly marked 'manual/optional'.
-- **01-product-catalog-with-vector-search**: A cosmosSearch index of kind vector-ivf is created in code on the embedding field, with dimensions matching text-embedding-ada-002 (1536). - fix: Provide a vendor-tested createIndexes snippet or make seed.py build and print the exact index command for an operator to adapt. Prefer: (1) include a documented, tested createIndexes command for each supported cluster flavour; (2) when OPENAI_API_KEY is used, validate dims==1536 before attempting index creation and error clearly otherwise.
-- **01-product-catalog-with-vector-search**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Document in README a short note about typical nlist/nprobe ranges relative to dataset size and where to change 'parameters' in seed.py; or include a link to vendor docs. Smallest fix: add a README subsection explaining 'nlist' and pointing operators to tune it for larger datasets.
-- **01-product-catalog-with-vector-search**: Unit tests run without a live cluster. - fix: Add a small test suite (pytest) that uses mocks or mongomock to test app logic (input validation, embedding call handling, local ranking) without a live DB; include instructions in README.
-- **01-product-catalog-with-vector-search**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: If you intend to publish an end-to-end sample, add an IaC snippet (Bicep or Terraform) or a small template showing the resource type/operators required, or explicitly state in README that infra is out-of-scope and the cluster must be provided by operators.
-- **01-unified-customer-profile-store**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Add a /search endpoint (or a separate sample) and implement explicit checks returning HTTP 400 for empty queries and 502/500 with clear error messages if embedding service calls fail.
-- **01-unified-customer-profile-store**: Search results include the similarity score. - fix: If search is added, include similarity score in the JSON response and tests that assert its presence.
-- **01-unified-customer-profile-store**: Dependencies are pinned in `requirements.txt`. - fix: Either pin exact dependency versions in package.json (remove caret and use exact versions) or add guidance in README to use npm ci and commit package-lock.json (already present).
-- **01-unified-customer-profile-store**: Unit tests run without a live cluster. - fix: Add unit tests that mock Mongoose (or use an in-memory Mongo stub) to test upsert logic and validation. For example, a test for upsertEvent that stubs db.model(...).updateOne and asserts called arguments.
-- **01-unified-customer-profile-store**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add an optional infra/ folder with an example (ARM/Bicep/Terraform) that shows the correct resource type and minimal parameters for creating a DocumentDB account, clearly marked optional.
-- **01-unified-customer-profile-store**: The README covers what the sample shows, prerequisites, setup, run, and clean-up. - fix: Add a short "clean-up" section to README with commands to drop the sample collection or instructions to run a cleanup script (or explain how to remove the sample DB/collection safely).
+- **01-anti-money-laundering-pattern-detector**: The vector index dimensions match the embedding model's output. - fix: Add optional vector index creation in seed.py that reads EMBEDDING_DIMS and creates a cosmosSearch vector index, or document that vectors are not used and remove embedding-related env defaults.
+- **01-anti-money-laundering-pattern-detector**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add a README section describing index algorithm and parameter choices for the sample data and a seed.py option to create vector indexes with adjustable params (numLists/efConstruction/M/lBuild/lSearch).
+- **01-anti-money-laundering-pattern-detector**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Add a /search endpoint that validates input, returns a 400 for empty queries, and catches embedding/LLM errors returning a clear 5xx/4xx error with diagnostic info.
+- **01-anti-money-laundering-pattern-detector**: Search results include the similarity score. - fix: If vector search is added, include searchScore in projection and return it in API responses; update README examples.
+- **01-anti-money-laundering-pattern-detector**: Unit tests run without a live cluster. - fix: Add unit tests that mock/get_db (e.g., use mongomock or monkeypatch get_db) so pytest runs offline, or provide explicit integration-test marker and document the requirement for a live DB in README.
+- **01-anti-money-laundering-pattern-detector**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a small Bicep or Terraform example that creates Microsoft.DocumentDB/mongoClusters with minimal default settings and a 'destroy' example for cleanup.
+- **01-fraud-detection-with-vector-similarity**: .env.example lists every setting with placeholder values. - fix: Add placeholders to .env.example for MODEL_NAME, EMBEDDING_DIMS (or MODEL_DIMS), INDEX_KIND, INDEX_NUM_LISTS and any other toggles (e.g., USE_LOCAL_EMBEDDINGS, ENABLE_LLM_EXPLANATIONS).
+- **01-fraud-detection-with-vector-similarity**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add a short README section with recommended index types and parameter ranges (small demo vs medium vs large) and show the exact JSON to change in the createIndexes call.
+- **01-fraud-detection-with-vector-similarity**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Wrap embedding and vector_search calls with explicit exception handling and return/print distinct errors for empty input and embedding failures (catch exceptions from sentence_transformers and pymongo and provide helpful messages).
+- **01-fraud-detection-with-vector-similarity**: Dependencies are pinned in requirements.txt. - fix: Pin exact compatible versions (==) or include a constraints file (pip-constraints.txt) with exact hashes to make CI reproducible.
+- **01-fraud-detection-with-vector-similarity**: Unit tests run without a live cluster. - fix: Add pytest-based unit tests that mock pymongo (e.g., with mongomock or monkeypatching) to validate compute_risk, explain, and embed logic without a live cluster.
+- **01-fraud-detection-with-vector-similarity**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a minimal IaC example (Bicep or Terraform) that creates an Azure DocumentDB mongoClusters resource (Microsoft.DocumentDB/mongoClusters) with cost-saving defaults, and reference it from the README.
+- **01-patient-record-summarizer-rag**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add a short README section explaining why these parameter choices were made for the small (~60-doc) sample and provide recommended knobs for larger datasets (e.g. increase m/efConstruction or choose DiskANN/IVF), with copy-paste example commands.
+- **01-patient-record-summarizer-rag**: Unit tests run without a live cluster. - fix: Add pytest-based unit tests that mock pymongo (or use mongomock) and mock the embedding provider so tests run offline; include instructions in README.
+- **01-patient-record-summarizer-rag**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a minimal Bicep or Terraform (AzAPI) template that creates Microsoft.DocumentDB/mongoClusters with low-cost defaults and documents how to reuse it; or explicitly document that the sample expects an existing cluster and why IaC is omitted.
+- **01-unified-customer-profile-store**: A `.env.example` lists every setting with placeholder values. - fix: Add any additional runtime env names (e.g., PORT, DB_NAME if used) to .env.example: 'PORT=3000' and 'DOCUMENTDB_URI=REPLACE_WITH_YOUR_DOCUMENTDB_URI'.
+- **01-unified-customer-profile-store**: /search returns a clear error for an empty query and when the embedding call fails. - fix: If adding search, implement /search with explicit validation for an empty query and clear error paths for embedding failures (HTTP 400 for empty query, 502/503 for embedding errors).
+- **01-unified-customer-profile-store**: Search results include the similarity score. - fix: If adding search, return per-result scores (e.g., similarity or distance) in the JSON response and document the score interpretation in README.
+- **01-unified-customer-profile-store**: Dependencies are pinned in `requirements.txt`. - fix: Add a lockfile (package-lock.json or pnpm-lock.yaml) to the repository or pin exact versions in package.json for repeatable installs.
+- **01-unified-customer-profile-store**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a Bicep/ARM or Terraform example that provisions Microsoft.DocumentDB/mongoClusters (or include an AVM module), parameterized for tier/region to allow reproducible infra deployment.
 - **02-clinical-trial-matching-orchestration**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add an 'Index tuning' subsection to README that shows example cosmosSearchOptions for the chosen algorithm (DiskANN/HNSW/IVF), ties parameters (m, efConstruction, numLists, lBuild) to dataset size, and includes the exact createIndexes JSON snippet the seed script would run for production.
 - **02-clinical-trial-matching-orchestration**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Validate request payloads in /match and return 400 for missing required fields; when an external embedding call fails, return a clear 502/503 error unless a documented fallback is acceptable, and log the failure explicitly.
 - **02-clinical-trial-matching-orchestration**: Dependencies are pinned in requirements.txt. - fix: Pin versions (e.g., fastapi==0.x.y) in requirements.txt and include a comment explaining compatible version ranges for langchain/openai/pymongo.
@@ -399,28 +393,23 @@
 - **10-support-ticket-rag-assistant**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a minimal Bicep/ARM or Terraform snippet that deploys Microsoft.DocumentDB/mongoClusters with parameterized tier, storage and location. Keep defaults low-cost for gallery samples.
 - **10-wealth-management-rag-portal**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Add validation in the API handler (return 400 for empty question) and wrap embedding and retrieval calls with try/except to return clear 4xx/5xx messages; e.g., in app.py: if not req.question.strip(): raise HTTPException(400,'empty question').
 - **10-wealth-management-rag-portal**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a small IaC sample (Bicep or Terraform) that deploys Microsoft.DocumentDB/mongoClusters with parameters for tier/region/storage; prefer adding this as an optional example directory (e.g., infra/bicep/main.bicep).
-- **11-care-gap-identification-pipeline**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add an 'infra/' folder with a simple example Bicep/Terraform snippet that declares the provider resource type for the targeted service (or explicitly state in README that the sample uses an existing cluster and will not provision infra).
-- **11-correspondent-banking-risk-screener**: A `.env.example` lists every setting with placeholder values. - fix: Add LLM_MODEL and any opt-in flags (e.g. ENABLE_VECTOR_INDEX or ENABLE_SERVER_SEARCH) to .env.example with placeholders and comments.
-- **11-correspondent-banking-risk-screener**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add a README section giving example index parameters for small/medium/large datasets and show how to tune 'm', 'efConstruction' (HNSW) or IVF parameters; include a note about costs and tests.
-- **11-correspondent-banking-risk-screener**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Decide desired behavior and document it: either return a 500 with a clear error on embedding failure, or keep the deterministic fallback but document it in the README and the API spec. For strict compliance, change review_correspondent to raise a 502/500 on embedding exceptions instead of automatically falling back.
-- **11-correspondent-banking-risk-screener**: Dependencies are pinned in `requirements.txt`. - fix: Pin the set of dependencies to specific versions (e.g. use == for each) in requirements.txt for reproducible installs.
-- **11-correspondent-banking-risk-screener**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a minimal Bicep or Terraform template demonstrating how to declare the Azure DocumentDB resource (or point to a canonical agent-kit template).
-- **11-correspondent-banking-risk-screener**: The README covers what the sample shows, prerequisites, setup, run, and clean-up. - fix: Add a 'cleanup' section with recommended steps to remove sample data or tear down any resources the reader may have created (or disclaim that live cluster is shared and provide safe cleanup commands).
-- **11-market-news-sentiment-orchestration**: The vector index dimensions match the embedding model's output. - fix: Add an EMBEDDING_DIM environment variable and validate embedText() output length against it before inserting documents; document the chosen embedding model in README and use EMBEDDING_DIM when creating vector indexes in the seed script.
-- **11-market-news-sentiment-orchestration**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add a README section describing recommended vector-index type and parameter defaults for the sample (including EMBEDDING_DIM) and add an optional seed script path or sample createIndex command that uses those parameters.
-- **11-market-news-sentiment-orchestration**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Add a /search endpoint that validates the query, returns 400 for empty queries, calls embedText() and returns a meaningful 502/5xx or JSON error when embedding fails, with logging for operators.
-- **11-market-news-sentiment-orchestration**: Search results include the similarity score. - fix: Implement a /search endpoint that runs the vector or hybrid search and returns results with a similarity or distance score field for each hit.
-- **11-market-news-sentiment-orchestration**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a small ARM/Bicep or Terraform sample template that declares the Azure DocumentDB resource (for example Bicep/ARM resource type Microsoft.DocumentDB/databaseAccounts or the appropriate provider resource) with cost-conscious defaults and parameterized region/tier.
-- **11-preference-center-consent-store**: Dependencies are pinned in `requirements.txt`. - fix: Pin the packages in requirements.txt to specific tested versions (e.g., fastapi==x.y.z, beanie==x.y.z, motor==x.y.z).
-- **11-preference-center-consent-store**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add an ARM/Bicep or Terraform snippet that provisions a sample DocumentDB/databaseAccount (or provide a separate infra folder).
-- **11-visual-similarity-search-image-embeddings**: The /visual-search handler runs the similarity search in Azure DocumentDB with a $search / cosmosSearch query over the vector-ivf index, passing the encoded query embedding. - fix: Either: (A) change the starter prompt to explicitly require the $search/cosmosSearch API, or (B) update the code to attempt both the $vectorSearch aggregation and a $search/cosmosSearch form (catching server errors) so the sample demonstrates the recommended API when available.
-- **11-visual-similarity-search-image-embeddings**: A .env.example lists every setting with placeholder values. - fix: Add placeholders for any optional settings the sample supports (e.g. CLIP_MODEL, OPTIONAL flags to force fallback, or timeouts) to .env.example.
-- **11-visual-similarity-search-image-embeddings**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Expand README with explicit, short guidance: why nlist=100 was chosen for ~20 items and how to tune nlist/nprobe/other params for larger datasets.
-- **11-visual-similarity-search-image-embeddings**: One database client is created and reused across requests. - fix: Create a module-level client at import or during app startup and reuse it (e.g., create MongoClient once and return it from get_client() or expose a get_shared_client() wrapper).
-- **11-visual-similarity-search-image-embeddings**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Decide sample behavior: either return 5xx/4xx on encoder failure or make fallback explicit and document it. To meet the requirement, return a clear 5xx/4xx when the real model attempt fails (or make fallback optional via config).
-- **11-visual-similarity-search-image-embeddings**: Dependencies are pinned in requirements.txt. - fix: Pin exact dependency versions for reproducible gallery builds (e.g., pymongo==4.x.y, fastapi==x.y.z) or add a separate requirements-lock.txt for CI.
-- **11-visual-similarity-search-image-embeddings**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add an optional IaC snippet (Bicep or Terraform) in docs showing the correct resource type and minimal parameters; mark it optional in README because the run environment forbids provisioning during the build.
-- **11-visual-similarity-search-image-embeddings**: The README covers what the sample shows, prerequisites, setup, run, and clean-up. - fix: Add a short 'clean-up' section and an explicit 'validate index' sub-section with commands (e.g., a pymongo snippet to list indexes and check vector index parameters).
+- **11-care-gap-identification-pipeline**: Unit tests run without a live cluster. - fix: Add pytest-based unit tests that use mongomock or the local DocumentDB gateway container and mock the LLM calls (e.g., monkeypatch LangChain).
+- **11-care-gap-identification-pipeline**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a Bicep or Terraform example targeting Microsoft.DocumentDB/mongoClusters with minimal defaults (M30 sample) and a clean-up script.
+- **11-correspondent-banking-risk-screener**: Store sanctions list entries and adverse media entries as documents in Azure DocumentDB, each with its embedding on the document. - fix: Have the seed script compute or call fill_embeddings automatically (call fill_embeddings during seed_all) so seeded documents include embeddings by default; or add an option to seed.py to include embeddings using the configured embedding provider.
+- **11-correspondent-banking-risk-screener**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Add explicit input validation and a /search endpoint (or return a 400 with a clear message if an empty query is provided) and catch embed errors to return a clear diagnostic error (e.g., 503 or 400 with 'embedding provider not configured').
+- **11-correspondent-banking-risk-screener**: Dependencies are pinned in requirements.txt. - fix: Pin dependency versions to specific releases (e.g., pymongo==4.20.1, openai==3.59.0, langchain==1.5.2, etc.) and document expected Python minor version.
+- **11-correspondent-banking-risk-screener**: Unit tests run without a live cluster. - fix: Add unit tests that mock the database (use mongomock or unittest.mock for pymongo) and test embedding/score logic and the FastAPI endpoint without requiring a live cluster.
+- **11-correspondent-banking-risk-screener**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add an IaC sample (Bicep/Terraform) using Microsoft.DocumentDB/mongoClusters (or AzAPI/Terraform fragment) with parameters for tier, storage and region and defaults for low-cost demo tiers.
+- **11-market-news-sentiment-orchestration**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Add an express route /search that validates the query param (return 400 on empty query) and catches embedding/LLM errors, returning a clear JSON error and http 502/503 as appropriate.
+- **11-market-news-sentiment-orchestration**: Dependencies are pinned in `requirements.txt`. - fix: Either commit package-lock.json (already present) and document 'Use npm ci' in README, or add an explicit pinned-dependencies manifest (e.g., exact versions in package.json or a shrinkwrap).
+- **11-market-news-sentiment-orchestration**: Unit tests run without a live cluster. - fix: Add unit tests that mock the MongoDB driver (e.g., use mongodb-memory-server or sinon stubs) and include npm test scripts; document test isolation in README.
+- **11-market-news-sentiment-orchestration**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a Bicep or Terraform example that uses Microsoft.DocumentDB/mongoClusters (or azurerm_mongo_cluster) and parameters for tier/region/storage.
+- **11-preference-center-consent-store**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a sample IaC template (Bicep/ARM or Terraform) using resource type Microsoft.DocumentDB/mongoClusters as an optional artifact (e.g., infra/mongoCluster.bicep).
+- **11-visual-similarity-search-image-embeddings**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add a short section in README explaining numLists/nlist/nProbes/efSearch guidance, recommended defaults for small samples (e.g., numLists=100 for ~20 items) and how to change them when scaling.
+- **11-visual-similarity-search-image-embeddings**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Add an explicit empty-file check near the start of visual_search (e.g., if not data: raise HTTPException(400, 'Empty image uploaded')).
+- **11-visual-similarity-search-image-embeddings**: Unit tests run without a live cluster. - fix: Add unit tests that mock MongoDB (eg. mongomock or pytest fixtures that patch get_db()) and mock the model encoding function to return a deterministic vector, so tests run without a live cluster.
+- **11-visual-similarity-search-image-embeddings**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a small Bicep or Terraform snippet that references Microsoft.DocumentDB/mongoClusters (or a minimal az deployment template) in an infra/ or deploy/ folder, or add a link to the documentdb-azure-deployment skill's quickstart in the README.
+- **12-abandoned-cart-recovery-orchestration**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a minimal Bicep or Terraform example using Microsoft.DocumentDB/mongoClusters (commented and gated behind a 'do not run unless you intend to provision' note).
 - **12-clv-prediction-pipeline**: A seed script loads sample data and creates the index, and can be run twice without duplicating data. - fix: Add idempotent index creation to seed() (call create_index with name) or document that seed and index-creation are separate. Prefer adding index creation to seed for single-step setup.
 - **12-clv-prediction-pipeline**: /search returns a clear error for an empty query and when the embedding call fails. - fix: If a search endpoint is intended, add a /search handler that validates input and returns clear error messages on empty query or embedding failures.
 - **12-clv-prediction-pipeline**: Dependencies are pinned in requirements.txt. - fix: Pin exact versions (==) in requirements.txt or provide a constraints file (requirements-lock.txt) created by pip-compile or pip freeze for reproducible builds.
@@ -591,17 +580,21 @@
 - **retail-semantic-search**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add a gallery-packaging skill rule: include optional, nonexecuted parameterized Microsoft.DocumentDB/mongoClusters infrastructure, or explicitly document an approved existing-cluster-only exception. Deployment skills teach how to provision but do not require artifacts for every app.
 - **retail-semantic-search**: The sample uses the name Azure DocumentDB throughout, and no former or neighbouring product name. - fix: Clarify the gallery naming rule: require correct identification and permit explicit disambiguation and unchanged API names. If literal exclusion is intended, state that separately; it is stricter than the public naming guidance.
 
-### builder_error (229)
+### builder_error (242)
 
-- **01-anti-money-laundering-pattern-detector**: Implement the agent in Python with LangChain as a single agent that is given a DocumentDB aggregation tool and invokes that tool to analyse transactions. - fix: Add a tiny example that registers AggregationTool as a LangChain Tool and runs an AgentExecutor (one file with a few lines showing Tool/AgentExecutor usage), or add an example function in run_detector.py demonstrating using LangChain to call the tool.
-- **01-anti-money-laundering-pattern-detector**: Known AML typology rules are expressed as stages of the aggregation pipeline, so the typology matching runs in Azure DocumentDB (e.g. circular transfers, structuring just below a threshold, rapid pass-through of funds). - fix: Move the heuristic computations into aggregation stages returned by the aggregation tool (e.g., construct a pipeline that $graphLookup -> $unwind/$group to compute tx_count, total_amount, time_span, and $match on thresholds) and return only flagged chains from the tool.
-- **01-anti-money-laundering-pattern-detector**: One database client is created and reused across requests. - fix: Create a module-level client in src/db.py (e.g., instantiate MongoClient once on first call and cache it) and have get_client()/get_db reuse that client.
-- **01-anti-money-laundering-pattern-detector**: Dependencies are pinned in `requirements.txt`. - fix: Pin openai and langchain to tested versions (replace >= with exact versions) and run a quick install to verify compatibility.
-- **01-anti-money-laundering-pattern-detector**: The README covers what the sample shows, prerequisites, setup, run, and clean-up. - fix: Add a short 'clean-up' section to README that explains how to remove seed data (e.g., commands to drop the sample_banking_01 database or delete sample collections).
-- **01-fraud-detection-with-vector-similarity**: The agent encodes a transaction's features into an embedding vector with an embedding model, and the same model is used for the stored fraud pattern vectors and for new transactions. - fix: Make the seed script use the same embedding provider as the agent when OPENAI_API_KEY is set (e.g., call the same LangChain OpenAIEmbeddings wrapper used by the agent or reorder logic so seed uses the configured embedding provider). Alternatively document clearly in README that patterns must be re-seeded with the real model and add an EMBED_DIM detection/validation step.
-- **01-fraud-detection-with-vector-similarity**: Dependencies are pinned in `requirements.txt`. - fix: Pin exact versions for reproducible builds (e.g., pymongo==4.20.1, langchain==<tested-version>, openai==<tested-version>) or add a lock file (pip-tools, pipfreeze) and document the tested set in README.
-- **01-patient-record-summarizer-rag**: A Python RAG agent built with LlamaIndex answers a clinical question about a patient: one agent retrieves relevant record sections from Azure DocumentDB and produces the summary from them. - fix: Add minimal LlamaIndex usage in the summarization pipeline (e.g., import llama_index and wrap prompt/context as an LlamaIndex query flow) or remove LlamaIndex from README and update requirement to document the integration path.
-- **01-unified-customer-profile-store**: The update merges the event's attributes with the `$set` operator on dotted paths inside the originating source system's sub-document (e.g. `crm.email`), writing only the fields present in the event. - fix: Update upsertEvent to set individual dotted fields instead of replacing the whole subdocument. Example smallest change: build update.$set entries per attribute key (e.g. for each [k,v] in attributes set update.$set[`sources.${source}.${k}`] = v) and then call updateOne(filter, update, { upsert: true }).
+- **01-anti-money-laundering-pattern-detector**: Implement the agent in Python with LangChain as a single agent that is given a DocumentDB aggregation tool and invokes that tool to analyse transactions. - fix: Wrap the aggregation functions as a LangChain Tool and create a simple LangChain Agent that calls that tool (or update run.py to instantiate a LangChain Agent with a Tool that calls aml_agent.analysis).
+- **01-anti-money-laundering-pattern-detector**: Dependencies are pinned in `requirements.txt`. - fix: Pin to exact tested package versions (e.g., pymongo==4.20.1, langchain==1.5.2, openai==3.59.0, python-dotenv==1.2.4 etc.) or add constraints file with exact versions.
+- **01-fraud-detection-with-vector-similarity**: A Python LangChain agent is the single entry point: it accepts a new transaction and runs the fraud check for it. - fix: Wrap the existing vector_search/compute_risk/explain functions in a LangChain Tool and provide a minimal LangChain Agent instantiation in run_agent.py (or add a separate agent.py that registers the tool and exposes the same CLI).
+- **01-fraud-detection-with-vector-similarity**: A cosmosSearch index of kind vector-ivf is created in code on that embedding field, with dimensions matching the embedding model's output (similarity e.g. COS). - fix: Add idempotent index-creation code (e.g., a create_index() in seed.py that issues the createIndexes command with cosmosSearchOptions including kind:'vector-ivf' and dimensions=len(vec)) so the sample can create/verify the index from code.
+- **01-fraud-detection-with-vector-similarity**: A LangChain tool performs the vector search against Azure DocumentDB with a $search / cosmosSearch query using the new transaction's embedding as the query vector, and returns the similar historical cases. - fix: Wrap vector_search as a LangChain Tool (or Retriever) and register it in the sample agent; add an example of calling the tool from a LangChain Agent in the CLI.
+- **01-fraud-detection-with-vector-similarity**: On each new transaction the agent invokes that vector search tool and derives a fraud risk score from the returned similar cases (e.g. based on how closely they match). - fix: Have the LangChain Agent call the registered LangChain Tool that performs the vector search, or document that the CLI is a minimal agent implementation; prefer adding the LangChain Tool wrapper so the sample matches the starter prompt.
+- **01-fraud-detection-with-vector-similarity**: A seed script loads sample data and creates the index, and can be run twice without duplicating data. - fix: Add idempotent index creation (createIndexes) to seed.py before upserts so seed.py fully prepares the collection and can be re-run safely.
+- **01-patient-record-summarizer-rag**: A Python RAG agent built with LlamaIndex answers a clinical question about a patient: one agent retrieves relevant record sections from Azure DocumentDB and produces the summary from them. - fix: Add and run a short script (e.g. scripts/run_llama_rag.py) that constructs a LlamaIndex VectorStoreIndex for the collection, ingests a small sample, and runs a query to produce a prompt-engineered summary; call it from the README so it is executed in verification.
+- **01-patient-record-summarizer-rag**: The summarization prompt is assembled deliberately (context engineering): instructions for a clinical summary, the retrieved sections as context and the clinical question are placed in a structured layout. - fix: Add a function assemble_clinical_prompt(sections, question, instructions) and call the chosen LLM (or LlamaIndex query engine) with that structured prompt; include the example prompt template in README.
+- **01-patient-record-summarizer-rag**: A seed script loads sample data and creates the index, and can be run twice without duplicating data. - fix: Either have the seed script call create_vector_index.py after seeding (guarded by existence-check) or document in README that users should run create_vector_index.py after seeding; prefer making seed idempotent and create the index if absent.
+- **01-patient-record-summarizer-rag**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Add explicit validation at the start of the /search handler (return 400 for empty question) and wrap the embedding call in try/except returning 502 or 500 with a clear error message on embedding failure.
+- **01-patient-record-summarizer-rag**: Dependencies are pinned in requirements.txt. - fix: Pin to specific versions (e.g. pymongo==4.20.1, fastapi==0.95.x) in requirements.txt or provide a constraints file; include the environment/venv used during verification.
+- **01-patient-record-summarizer-rag**: The README covers what the sample shows, prerequisites, setup, run, and clean-up. - fix: Add a 'Clean up' section describing how to drop the sample collection and any resource cleanup steps (e.g., drop database or delete cluster if provisioned via IaC).
 - **02-ai-powered-product-recommendations**: Generate vector embeddings for products from the co-purchase data (code contains a clearly defined step that creates embeddings per product from the mined co-purchase information). - fix: In src/seed.js, compute a co-purchase summary or neighborhood for each product (e.g., top co-purchased product IDs or co-purchase counts) and pass that aggregated textual/numeric representation into getEmbeddingForText so embeddings reflect co-purchase relationships rather than only product title.
 - **02-clinical-trial-matching-orchestration**: A Python pipeline built with LangChain acts as the orchestrator: it accepts a patient profile as input and runs the steps in order, vector search, then the eligibility agent, then the consent agent, passing each step's output to the next. - fix: Use LangChain Chains/Agents to wrap the eligibility and consent steps (e.g., create two simple Chains or Agents that accept the candidate list and patient profile) and call them from rank_and_match; or document that the LangChain ChatModel is used and rename 'agent' to 'LLM step' if Chain/Agent usage is not desired.
 - **02-clinical-trial-matching-orchestration**: An eligibility agent, built with LangChain, receives the candidate trials and applies each trial's inclusion and exclusion rules to the patient profile to decide which candidates the patient is eligible for. - fix: Wrap deterministic_eligibility_check in a LangChain Chain or Agent (or implement a simple LangChain Tool that executes the deterministic rules) so the project uses LangChain for all agent/chain steps as requested by the starter prompt.
@@ -718,12 +711,21 @@
 - **10-support-ticket-rag-assistant**: Context engineering keeps that prompt concise and focused on the current issue (e.g. only the ticket text plus the top 5 retrieved resolutions, trimmed to the relevant passages). - fix: After retrieval, split documents into passages, score passages, de-duplicate, and select/summarize passages to a configured token budget before building the LLM prompt. Minimum change: add server-side passaging + truncate-to-token-budget before generator.generate_suggestion.
 - **10-support-ticket-rag-assistant**: /search returns a clear error for an empty query and when the embedding call fails. - fix: Wrap embedding calls in try/except; return a 502/5xx with a clear, logged error message when embedding provider calls fail. Example: catch Exception from embedder and return {error:'embedding failed: ...'} with 502.
 - **10-wealth-management-rag-portal**: A Python application built with LlamaIndex that runs a single RAG agent answering relationship managers' questions about a client's positioning. - fix: Implement and call a LlamaIndex Retriever that wraps db.search_similar (e.g., subclass LlamaIndex's BaseRetriever and call it from agent.answer_question).
-- **11-care-gap-identification-pipeline**: A single Python agent built with LangChain runs the whole pipeline: it calls the aggregation tool, then prioritises the resulting patient list and generates outreach talking points. - fix: Wrap the pipeline orchestration in a LangChain Agent/Tool: e.g., add a LangChain Tool that calls get_all_patients_with_last_visit and register it with a LangChain Agent used by run_end_to_end, or update the README/prompt to not require LangChain.
-- **11-care-gap-identification-pipeline**: The agent has a LangChain tool that runs an aggregation pipeline against Azure DocumentDB through the Python MongoDB driver (e.g. PyMongo) and returns the patients missing recommended screenings. - fix: Create a LangChain Tool class/function that calls get_all_patients_with_last_visit and returns results, then register it with a LangChain Agent used by the pipeline.
-- **11-care-gap-identification-pipeline**: The aggregation pipeline works out who is missing a screening inside Azure DocumentDB from the patients' age, diagnosis and last-visit documents (e.g. a $match on age and diagnosis criteria and a comparison of the last-visit date against the screening interval). - fix: Move the screening-missing logic into the DB aggregation or add an aggregation stage that filters patients by age/diagnosis and computes whether last_visit exceeds the guideline interval; at minimum, implement a projection flag in the aggregation (e.g. computed last_visit and a boolean 'is_missing_mammogram' etc.)
-- **11-care-gap-identification-pipeline**: Dependencies are pinned in requirements.txt. - fix: Pin exact versions (e.g. pymongo==4.20.1) or provide a constraints/lock file to make reproducible installs.
-- **11-market-news-sentiment-orchestration**: A `.env.example` lists every setting with placeholder values. - fix: Add missing runtime environment placeholders (for example add 'PORT="3000"' and any other optional env keys such as OPENAI_API_BASE, EMBEDDING_DIM) to .env.example.
-- **11-market-news-sentiment-orchestration**: The README covers what the sample shows, prerequisites, setup, run, and clean-up. - fix: Add a 'Clean-up' subsection to README with the commands to drop the sample database/collections (for example a small script or instructions to run 'db.dropDatabase()' against sample_fintech_11, or how to remove created resources).
+- **11-care-gap-identification-pipeline**: The agent has a LangChain tool that runs an aggregation pipeline against Azure DocumentDB through the Python MongoDB driver (e.g. PyMongo) and returns the patients missing recommended screenings. - fix: Wrap the aggregation function in a LangChain Tool (e.g., Tool(name='documentdb_aggregate', func=run_aggregation)) and register it with the agent so the aggregation is exercised as a LangChain tool call.
+- **11-care-gap-identification-pipeline**: The aggregation pipeline works out who is missing a screening inside Azure DocumentDB from the patients' age, diagnosis and last-visit documents (e.g. a $match on age and diagnosis criteria and a comparison of the last-visit date against the screening interval). - fix: Move the screening predicate into the aggregation pipeline (use $addFields/$dateDiff and $match to flag gaps) or add a server-side computed field and $match to return only flagged patients.
+- **11-care-gap-identification-pipeline**: Dependencies are pinned in requirements.txt. - fix: Pin packages to exact tested versions (e.g., pymongo==4.20.1, langchain==1.5.2, openai==3.59.0) or provide a constraints file with tested hashes.
+- **11-correspondent-banking-risk-screener**: Embed correspondent bank entity profiles with a LangChain embeddings integration and store each profile's vector on its document in Azure DocumentDB using a MongoDB-compatible Python driver (e.g. pymongo). - fix: Use LangChain's Embeddings integration instead of calling OpenAI directly (e.g., replace embed_text with langchain.embeddings.OpenAIEmbeddings and call embed_documents or embed_query before storing).
+- **11-correspondent-banking-risk-screener**: Create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field in code, with dimensions matching the embedding model used. - fix: Fix the index `key` shape to map the embedding path to 'cosmosSearch' (e.g. "key": {"embedding": "cosmosSearch"}) and ensure cosmosSearchOptions shape exactly matches docs; add robust error handling and a clear README note about feature-gating (some clusters may reject createSearchIndexes).
+- **11-correspondent-banking-risk-screener**: The vector index dimensions match the embedding model's output. - fix: Ensure index creation code uses the EMBEDDING_DIMS env variable correctly and the index creation command uses the documented shape; document the required value in README when switching embedding models.
+- **11-market-news-sentiment-orchestration**: Implement the pipeline in Node.js with LangChain, with an orchestrator that runs the scraper agent, the sentiment agent and the alert agent in that order and passes each agent's output to the next. - fix: Require LangChain usage in the starter prompt or agent-kit rule; or update the sample's starter prompt to allow 'LangChain conceptually represented; a direct OpenAI call is acceptable as an explicit alternative' — better: pin a known-working LangChain version and show the supported import pattern in the documentdb agent-kit so builders don't drop it.
+- **11-preference-center-consent-store**: Unit tests run without a live cluster. - fix: Make DB startup tolerant for test imports (e.g., in startup_event skip init if DOCUMENTDB_URI is unset, or allow injecting a mock client during tests). The smallest change: in app/app/main.py startup_event check `if not DOCUMENTDB_URI: return` so tests can import app without requiring a live cluster, or change tests to patch init_db before importing app.
+- **11-preference-center-consent-store**: The sample runs with the commands in the README. - fix: Pin and verify a known-working Motor/PyMongo/Beanie combination and note the compatibility in README; adjust requirements.txt accordingly so uvicorn startup works reliably in the tested environment.
+- **11-preference-center-consent-store**: Tests exist and pass without a live cloud resource, or the README says what they need. - fix: Update tests to avoid starting the real startup (e.g., import app without triggering startup, patch init_db, or run with a mocked client); update README with test instructions.
+- **11-visual-similarity-search-image-embeddings**: A .env.example lists every setting with placeholder values. - fix: Add any additional runtime settings the sample can use (e.g., HF_TOKEN or other model-provider tokens, an optional LOG_LEVEL or ENABLE_MANAGEMENT_TOOLS flag) to .env.example with placeholder values and mention them in README.
+- **11-visual-similarity-search-image-embeddings**: Dependencies are pinned in requirements.txt. - fix: Pin exact tested package versions in requirements.txt (for example, replace 'fastapi>=0.95.0' with the exact version used during verification).
+- **12-abandoned-cart-recovery-orchestration**: The copy-generation agent hands off to a LangChain channel agent, passing the generated message together with the cart it was written for. - fix: Pass the cart to channelAgent.send (e.g. channelAgent.send(customer, message, cart)) and update channelAgent signature to accept the cart.
+- **12-abandoned-cart-recovery-orchestration**: A .env.example lists every setting with placeholder values. - fix: Add any missing placeholders referenced by code (e.g. TWILIO_FROM_NUMBER if the channel adapter will use it, and DB_NAME if you want override support); keep examples for all provider env vars the code checks.
+- **12-abandoned-cart-recovery-orchestration**: A seed script loads sample data and creates the index, and can be run twice without duplicating data. - fix: Move index creation into the seed script (createIndex + await) so seed both prepares data and ensures indexes exist before verification runs.
 - **12-clv-prediction-pipeline**: Implement the sample in Python with a LangChain agent that acts as the single agent of the pipeline, with the DocumentDB aggregation tool registered as a LangChain tool the agent can invoke during a run. - fix: Wrap compute_customer_metrics in a langchain.agents.Tool and register it when initializing the agent (few-line change in src/agent.py).
 - **12-hospital-bed-occupancy-tracker**: From change stream events detect status transitions and act only on events where the status changed (e.g., compare previous status with new one). - fix: Change the change-stream handler to detect transitions. Either enable and use pre-images/fullDocumentBeforeChange or persist the last-known status (or pre-image) and compare to fullDocument.status; then only perform the atomic summary update when status differs.
 - **12-hospital-bed-occupancy-tracker**: A live occupancy summary document is maintained per ward and updated from the change stream handler on every detected transition. - fix: Change handler to compute the delta from the transition and apply a targeted atomic update (see next). If you prefer full recompute, still make it conditional on observed status change to reduce work.
@@ -823,10 +825,9 @@
 - **20-identity-resolution-multi-agent**: The vector index dimensions match the embedding model's output. - fix: Either derive DIM from the chosen embedding model (if possible) or document in README and assert at startup that embedding vectors returned by the provider have the configured dimensionality; add a runtime check before index creation.
 - **20-store-locator-with-geospatial-search**: The README covers what the sample shows, prerequisites, setup, run, and clean-up. - fix: Add a 'Clean-up' section to README describing how to drop the stores collection, remove sample documents, and any cloud cleanup steps (if IaC provided, show `az`/Bicep/Terraform destroy commands).
 
-### tool_unavailable (48)
+### tool_unavailable (42)
 
-- **01-anti-money-laundering-pattern-detector**: Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. - fix: Add optional IaC snippets (Bicep/Terraform) as examples (clearly marked optional) using the appropriate Azure resource type; include a note the sample runs against an existing cluster by default.
-- **01-product-catalog-with-vector-search**: /search embeds the incoming query with text-embedding-ada-002 and runs the similarity search in Azure DocumentDB with a $search / cosmosSearch query over the vector-ivf index using that query vector. - fix: Add a guarded server-side path that issues the vendor-specific $search/$vector search when the index exists; otherwise keep the existing client-side fallback. Also add a seed/readme section showing the exact server-side query to use when the cluster accepts the vector index.
+- **01-fraud-detection-with-vector-similarity**: The vector index dimensions match the embedding model's output. - fix: Create the index from code in seed.py (use len(vec) for dimensions) and document the match; if you keep MCP-based verification, add a fallback createIndexes path in code.
 - **02-clinical-trial-matching-orchestration**: In code, through a MongoDB driver (e.g. PyMongo), create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field of the trial-criteria documents in Azure DocumentDB, with dimensions matching the embedding model the pipeline uses. - fix: Add a documented createIndexes runCommand (cosmosSearchOptions) in the seed script using EMBEDDING_DIM for 'dimensions' and algorithm-specific options; make index creation optional/guarded (ENV flag) and surface a clear error with instructions to enable management tools or run the MCP helper manually.
 - **02-clinical-trial-matching-orchestration**: Embed the patient profile with an embedding model and find candidate trials by running a $search / cosmosSearch aggregation against the trial-criteria collection in Azure DocumentDB, so the database returns the trials whose stored criteria embeddings are most similar to the profile. - fix: When a vector index exists, call collection.aggregate([... {$search: {cosmosSearch: {...}}} ...]) using the chosen index and EMBEDDING_DIM; add an index-existence check and a clear fallback message explaining client-side ranking is being used only when a server-side vector index is absent.
 - **02-clinical-trial-matching-orchestration**: The vector index dimensions match the embedding model's output. - fix: Use EMBEDDING_DIM when creating the service-side index (createIndexes runCommand) and validate that the index 'dimensions' equals EMBEDDING_DIM; fail early with a clear error if a mismatch would be created.
@@ -840,12 +841,7 @@
 - **08-regulatory-compliance-rag-checker**: Create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field of each collection in code, with dimensions matching the embedding model's output. - fix: Add a clear, runnable 'create_indexes_admin.py' that uses pymongo runCommand with example cosmosSearchOptions, and document in README that operators must run it with admin privileges (or set ENABLE_MANAGEMENT_TOOLS=true for the MCP tool) so the index is created and can be verified.
 - **08-regulatory-compliance-rag-checker**: The vector index dimensions match the embedding model's output. - fix: Document and assert the chosen embedding dims in the seed script; include a small verification step (explain/list_indexes) that confirms index dimensions after index creation in admin setup instructions.
 - **10-support-ticket-rag-assistant**: A single Python agent built with LlamaIndex handles an incoming support ticket end to end: retrieval from Azure DocumentDB, context injection and generation of a suggested resolution. - fix: Pin a llama-index version compatible with the chosen Python runtime (or choose a supported Python runtime) and add it back to requirements.txt, or add a small LlamaIndex→DocumentDB adapter in the codebase. Example prompt-line (for permanent fix): “Include a supported llama-index release in requirements.txt (or require Python 3.11) and add an adapter module that writes embeddings to a DocumentDB `embedding` number[] field.”
-- **11-correspondent-banking-risk-screener**: Embed correspondent bank entity profiles with a LangChain embeddings integration and store each profile's vector on its document in Azure DocumentDB using a MongoDB-compatible Python driver (e.g. pymongo). - fix: Add langchain-community (or adjust requirements) and/or change src/embeddings.py to prefer LangChain's OpenAIEmbeddings when available. Alternatively, document that the sample intentionally uses the openai client as a supported fallback; to strictly meet the checklist, add langchain-community to requirements.txt and update embed module to call LangChain first.
-- **11-correspondent-banking-risk-screener**: Create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field in code, with dimensions matching the embedding model used. - fix: Provide an agent-kit-verified createIndex snippet (or add a controlled, opt-in create_vector_index function) that uses a dimension constant derived from the embedding module. Prefer adding the verified createIndex example to the DocumentDB agent kit and an opt-in code path (e.g. ENABLE_VECTOR_INDEX env var) so builders don't attempt unverified parameters by default.
-- **11-correspondent-banking-risk-screener**: On each review cycle, run vector similarity search inside Azure DocumentDB with $search / cosmosSearch, using each correspondent's embedding as the query vector against the embedded sanctions list and adverse media entries. - fix: Add an opt-in server-side path that runs $search/cosmosSearch when a verified index exists (controlled by env var or config). Ship a tested agent-kit snippet demonstrating the exact createIndex & $search invocation for the managed DocumentDB so samples can enable it safely.
-- **11-correspondent-banking-risk-screener**: Derive a risk score for each correspondent from the similarity search results returned by Azure DocumentDB. - fix: When adding server-side search, adapt compute_risk_score to accept server-supplied scores and document the mapping; for now, document that compute_risk_score consumes similarity scores from whichever path (server or client) is configured.
-- **11-correspondent-banking-risk-screener**: The vector index dimensions match the embedding model's output. - fix: Add an explicit EMBEDDING_DIM constant in src/embeddings.py and use it when creating any server-side index (or in index-creation snippet shipped via agent kit). Provide a tested createIndex example that sets 'dimensions' to that constant.
-- **11-visual-similarity-search-image-embeddings**: Build the app in Python and encode each product image with the CLIP model into a 512-dimensional embedding. - fix: Ensure transformers and torch are available in the build/CI environment used to verify the sample, or provide a lightweight mock for CI; document the heavy ML deps and make them optional for demo runs.
+- **11-care-gap-identification-pipeline**: The agent prioritises the patient list returned by the tool using the LLM and the injected guidelines, producing an ordered list (e.g. with a priority level per patient). - fix: For end‑to‑end verification, set OPENAI_API_KEY in the environment. For safer default behavior, add a configurable LLM-mock mode or unit-test hook so LLM-driven prioritization can be tested without real credentials.
 - **12-cross-border-payment-audit-trail**: A seed script loads sample data and creates the index, and can be run twice without duplicating data. - fix: Make the seed script explicitly call the driver-based index creation and wait for it (e.g., await AuditEvent.collection.createIndexes([{ key: { paymentReference:1, stageTimestamp:1 } }], { background: false })) so the index is created idempotently and deterministically on repeated runs.
 - **13-chronic-disease-risk-predictor**: Create, in code, a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on that embedding field, with dimensions matching the embedding model's output and a similarity of COS, L2 or IP. - fix: Make ensure_vector_index resilient: (1) detect pre-existing incompatible documents and abort with a clear actionable error (explain expected vs found dimension and offer options), or (2) create index in a fresh collection before inserting seeded docs. Also handle MCP management-tool opt-in (see doc gap) so the MCP helper can be used in environments that allow it.
 - **13-product-q-a-chatbot-rag**: Create a cosmosSearch vector index in code (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field, with dimensions matching the embedding model used for the chunks. - fix: Make index creation tolerant: have seed.py attempt index creation only when an explicit flag (ENV or CLI) is set (e.g., ENABLE_MANAGEMENT_TOOLS=true) and otherwise print a clear manual index creation command in the script output/README. Alternatively, provide an IaC template that the operator can run separately.
@@ -874,7 +870,7 @@
 - **20-provider-directory-semantic-search**: Build the service in Python with LlamaIndex, and use LlamaIndex to produce the embedding vectors stored with the provider profiles. - fix: Add llama-index and a compatible openai pin to requirements.txt (or add an extras install target), and update seed.py and app/main.py to call LlamaIndex's embedding pipeline when available; include a CI step that installs those packages to surface dependency issues early.
 - **20-provider-directory-semantic-search**: Embed the incoming request with LlamaIndex and run the similarity search inside Azure DocumentDB with a $search / cosmosSearch query against that index using the request embedding. - fix: Either add LlamaIndex to the runtime (requirements) and use its embedding adapter in main.py/seed.py, or update README to state explicitly that LlamaIndex is optional and show the minimal code changes to enable it (preferred: add a small helper that delegates to LlamaIndex when installed).
 
-### skill_guidance_not_followed (16)
+### skill_guidance_not_followed (20)
 
 - **02-ai-powered-product-recommendations**: Use the Azure DocumentDB skill to read co-purchase order history from Azure DocumentDB (code shows an explicit call or adapter labeled "Azure DocumentDB skill" that queries the database). - fix: Add a thin adapter module (e.g., src/skill_adapters/documentdb.js) that wraps the DocumentDB skill guidance (or MCP calls) and update README to mention it; or update the skill to provide an explicit adapter template the builder can `require()`.
 - **03-substitute-product-finder**: A `/substitute` endpoint accepts a product ID, looks up that product's stored embedding and runs an Azure DocumentDB `$search` / cosmosSearch query with similarity COS that returns the 5 closest alternative products (the requested product itself excluded). - fix: Replace the knnBeta-style $search payload with the DocumentDB `$search` / 'cosmosSearch' payload and specify similarity: 'COS' per the vector-search docs; project $meta 'searchScore' and limit downstream results. (Example: build a cosmosSearch object matching createIndexes 'name' and path 'embedding'.)
@@ -888,62 +884,65 @@
 - **07-customer-review-sentiment-pipeline**: One database client is created and reused across requests. - fix: Change db.init_db/get_motor_client to create a module-level AsyncMongo/AsyncMongoClient singleton (one client per process), return that, and add a close/shutdown hook. Minimal prompt: add to starter-skill rule 'Make a single module-level Async client and expose get_motor_client()'.
 - **08-interest-rate-scenario-modeler**: A seed script loads sample data and creates the index, and can be run twice without duplicating data. - fix: Move index creation into the seed/migration script (seed.py) and check existing indexes before creating, so seed both loads data and ensures indexes in one idempotent step.
 - **09-clinical-notes-de-identification**: Enforce schema and model validation at the application or DB layer (Beanie/Pydantic or MongoDB validation) and include a schemaVersion field to support migrations. - fix: Add a schemaVersion field to both RawNote and DeidNote models and optionally add a small collection validation document or document the migration plan in README.
+- **11-correspondent-banking-risk-screener**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add recommended default algorithm params (efConstruction, M, numLists / nlist / lBuild etc.) for the chosen index kind, explain the choice for demo-scale data and provide a README section on how to change them for larger datasets.
+- **11-correspondent-banking-risk-screener**: Search results include the similarity score. - fix: Project the searchScore via {$project: {score: {$meta: 'searchScore'}, ...}} in the aggregation pipeline and include that 'score' in the matched entries returned by the API.
+- **11-preference-center-consent-store**: Recording consent appends a new entry to the consent history sub-array (e.g. with a push update that leaves earlier entries in place) and updates the document's current channel preferences and consentVersion. - fix: Use an atomic single-document update (findOneAndUpdate / updateOne with $push and $set and upsert=true) instead of read-modify-write; e.g. perform find_one_and_update(filter={'customerId': id}, update={'$push': {'history': history_item_dict}, '$set': {'channels': new_channels, 'retention_expires_at': retention, 'consentVersion': new_version}}, upsert=True, return_document=ReturnDocument.AFTER).
+- **11-preference-center-consent-store**: Withdrawing consent appends a new entry to the consent history sub-array (e.g. with a push update that leaves earlier entries in place) and updates the document's current channel preferences. - fix: Same as for recording: implement the withdraw as an atomic find_one_and_update with $push (history) and $set (channels, retention_expires_at, consentVersion) to avoid race conditions.
 - **19-cross-sell-recommendation-beanie**: A cosmosSearch vector index of kind vector-ivf, vector-hnsw or vector-diskann is created in code on the pair documents' embedding field with dimensions matching the OpenAI embedding model used and a similarity of COS, L2 or IP. - fix: Add an idempotent index-creation script (e.g., index_create.py or a `--create-index` flag in seed.py) that calls the DocumentDB `createSearchIndexes` path (driver runCommand or MCP) using EMBEDDING_DIMENSIONS and chosen kind (e.g., `vector-diskann`) and documents the command in README.
 - **19-cross-sell-recommendation-beanie**: The vector index dimensions match the embedding model's output. - fix: Add an idempotent index-creation script that reads EMBEDDING_DIMENSIONS and sets the index `dimensions` accordingly; include a runtime check that stored vectors' length equals EMBEDDING_DIMENSIONS before creating the index.
 - **19-proactive-outreach-orchestration**: The vector index dimensions match the embedding model's output. - fix: Add an idempotent index-creation script that uses the DocumentDB createIndexes shape with cosmosSearchOptions and reads EMBEDDING_MODEL (or EMBEDDING_DIMS) from env to set dimensions.
 - **19-proactive-outreach-orchestration**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Ship a documented default for vector-index parameters in README and an index-creation script that exposes build/search parameters (lBuild/lSearch/maxDegree/numLists) via env vars or a small config file.
 
-### skill_silent (7)
+### skill_silent (5)
 
 - **02-ai-powered-product-recommendations**: Implement the app in Node.js and integrate LlamaIndex for vector search operations (code imports/uses Node.js and LlamaIndex). - fix: Provide a skill or packaged example for LlamaIndex Node bindings (e.g., add a 'llamaindex-node' skill and examples) or change the starter prompt to allow an equivalent agent implementation when LlamaIndex bindings are unavailable.
 - **02-ai-powered-product-recommendations**: Build the agent using LlamaIndex so that vector search against the DiskANN index is performed via LlamaIndex APIs (code shows LlamaIndex creating/using the DiskANN-backed index for nearest-neighbor queries). - fix: Either (a) include the LlamaIndex Node package and an example adapter that runs the LlamaIndex pipeline against the DiskANN-backed collection, or (b) add an explicit skill that documents how to wire LlamaIndex to Azure DocumentDB and provide a small adapter template in the agent kit.
-- **11-care-gap-identification-pipeline**: The vector index dimensions match the embedding model's output. - fix: Document the embedding model and its output dimension in README/.env.example and parameterise any vector-index creation in the seed script so dims are set from a variable (e.g. EMBEDDING_DIM). If you intend to create the index, add a verified, idempotent createIndex call using those parameters.
-- **11-care-gap-identification-pipeline**: The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. - fix: Add a README section that documents recommended vector index algorithms/parameters for small/medium/large datasets and how to change the seed script to adjust those parameters.
 - **15-financial-advisor-chatbot-rag**: A Node.js application built with LlamaIndex runs a single RAG agent that answers a retail investor's financial questions in conversation. - fix: Either (A) change the starter prompt to allow 'LlamaIndex-like retrieval in Node.js' when no authoritative Node LlamaIndex exists, or (B) add a skill that documents a supported Node integration or an example that calls Python LlamaIndex as a microservice.
 - **retail-semantic-search**: A .env.example lists every setting with placeholder values. - fix: Add a sample-packaging rule: inventory every setting, distinguish fixed defaults from configurable environment inputs, and include placeholders for every required input.
 - **retail-semantic-search**: The vector index parameters are chosen for the catalog size, and the README says how to change them for a larger one. - fix: Extend the vector skill with a gallery rule requiring a README tuning section: catalog vector count, default rationale, representative recall/latency measurements, and where to change maxDegree, lBuild, k, and lSearch.
 
-### could_not_determine (5)
+### could_not_determine (1)
 
-- **01-product-catalog-with-vector-search**: For each product, the title and description are embedded with text-embedding-ada-002 and the resulting vector is stored on the product document in a form the cosmosSearch index can index (e.g. a numeric array). - fix: Seed script should either: (A) also store an indexable numeric-array field (e.g. 'embedding_vector': [float, ...]) alongside the BSON Binary so vendors that require numeric arrays can index it; or (B) detect the cluster's supported index storage form and store accordingly. Prefer adding the additional numeric-array field in seed.py (smallest change).
 - **03-substitute-product-finder**: A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field, with similarity COS and dimensions matching the embedding model's output size. - fix: Include 'similarity': 'COS' in the cosmosSearchOptions and (a) document/README that dimensions must match model; (b) verify index creation at startup or make the helper idempotently create/confirm the exact index, failing early if mismatched.
-- **11-visual-similarity-search-image-embeddings**: In code, create a cosmosSearch index of kind vector-ivf on the embedding field, with dimensions set to 512. - fix: Make ensure_vector_index idempotent and adaptive: list the collection's indexes, attempt create only if absent, and try alternate vendor option keys or surface the server's accepted index syntax in logs (or ship an authoritative createIndex example in docs).
-- **11-visual-similarity-search-image-embeddings**: The vector index dimensions match the embedding model's output. - fix: Ensure index creation succeeds (see ensure_vector_index idempotency/adaptation fix above) so the server-side index actually records the dimensions.
-- **11-visual-similarity-search-image-embeddings**: A seed script loads sample data and creates the index, and can be run twice without duplicating data. - fix: Keep upsert for data (good). For index creation: make index creation idempotent by checking list_indexes and creating only if absent, and log explicit post-create verification.
 
 ## Which neighbouring service the model mistook this one for
 
-- `azure_cosmos_db_for_mongodb_ru`: 668 wrong, partly wrong or outdated answers
-- `mongodb_atlas_or_server`: 254 wrong, partly wrong or outdated answers
-- `legacy_vcore_naming`: 93 wrong, partly wrong or outdated answers
-- `azure_cosmos_db_for_nosql`: 93 wrong, partly wrong or outdated answers
-- `open_source_documentdb`: 83 wrong, partly wrong or outdated answers
-- `none`: 55 wrong, partly wrong or outdated answers
-- `unknown`: 23 wrong, partly wrong or outdated answers
+- `azure_cosmos_db_for_mongodb_ru`: 731 wrong, partly wrong or outdated answers
+- `mongodb_atlas_or_server`: 275 wrong, partly wrong or outdated answers
+- `azure_cosmos_db_for_nosql`: 109 wrong, partly wrong or outdated answers
+- `legacy_vcore_naming`: 98 wrong, partly wrong or outdated answers
+- `open_source_documentdb`: 90 wrong, partly wrong or outdated answers
+- `none`: 58 wrong, partly wrong or outdated answers
+- `unknown`: 18 wrong, partly wrong or outdated answers
 - `amazon_documentdb`: 1 wrong, partly wrong or outdated answers
 
 ## Questions answered wrongly from memory
 
-- Q08 Which vector index types are supported, and what does the command that creates one look like? (95 samples)
-- Q11 How do you run the database locally for development and tests: which image or emulator, and which port? (92 samples)
-- Q02 Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension? (91 samples)
-- Q03 Which Bicep and Terraform resource types deploy a cluster? (91 samples)
-- Q04 What does a connection string look like: scheme, host suffix, port, and the options it must carry? (91 samples)
-- Q09 How are full-text search and hybrid search done? (89 samples)
-- Q10 Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not? (88 samples)
-- Q06 Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID? (88 samples)
-- Q01 What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster? (87 samples)
-- Q05 How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else? (80 samples)
-- Q15 What engine is underneath, and does that change anything in application code? (77 samples)
-- Q14 What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project? (76 samples)
-- Q12 Are change streams supported, and does anything have to be enabled first? (75 samples)
+- Q02 Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension? (101 samples)
+- Q03 Which Bicep and Terraform resource types deploy a cluster? (101 samples)
+- Q04 What does a connection string look like: scheme, host suffix, port, and the options it must carry? (101 samples)
+- Q09 How are full-text search and hybrid search done? (99 samples)
+- Q06 Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID? (98 samples)
+- Q11 How do you run the database locally for development and tests: which image or emulator, and which port? (98 samples)
+- Q01 What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster? (97 samples)
+- Q08 Which vector index types are supported, and what does the command that creates one look like? (97 samples)
+- Q10 Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not? (90 samples)
+- Q05 How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else? (88 samples)
+- Q15 What engine is underneath, and does that change anything in application code? (85 samples)
+- Q12 Are change streams supported, and does anything have to be enabled first? (83 samples)
+- Q14 What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project? (82 samples)
 - S01 What index definition does this sample need for vector search? (8 samples)
 - Q13 Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it? (6 samples)
-- Q07 Which client library should an application use? Is there a service-specific SDK? (4 samples)
-- S02 Where does the sample read the connection string from and what is its expected form? (1 samples)
-- S03 How should the Python app connect using pymongo (exact command/syntax)? (1 samples)
-- S03 How will the app authenticate to the cluster in this sample? (1 samples)
-- S04 What binary format will the sample store embeddings in? (1 samples)
+- Q07 Which client library should an application use? Is there a service-specific SDK? (3 samples)
+- S04 How does the agent perform vector similarity searches in aggregation pipelines? (1 samples)
+- S03 How will the sample perform a vector search from Python? (1 samples)
+- S02 How do I create the application collection with patientId as the partition key / access-control key? (1 samples)
+- S04 What vector index creation command will the sample try to run to verify vector support? (1 samples)
+- S01 What exact Azure resource and CLI command will I use to create the MongoDB-compatible account for the sample? (1 samples)
+- S02 What connection string will my Flask app use to talk to the Cosmos MongoDB API (concrete example)? (1 samples)
+- S04 How should embeddings be stored in the MongoDB documents for this sample? (1 samples)
+- S05 Can I create a vector-ivf index in Cosmos DB's MongoDB API so that the server will do ANN searches for me? (1 samples)
+- S03 Which Node.js client and connection options should the sample use? (1 samples)
 - S04 What vector index definition will the sample create for nearest-neighbour search? (1 samples)
 - S04 What vector index definition will this sample create for trial-criteria embeddings? (1 samples)
 - S05 Which database and collection names and throughput expectations should the sample use/create? (1 samples)
@@ -1013,10 +1012,16 @@
 - S03 What vector field name and dimensionality will the sample assume for embeddings? (1 samples)
 - S02 What client connection code will the Python sample use to open a TLS connection to the cluster? (1 samples)
 - S03 What vector index definition will the sample create for research_docs? (field name, dims, algorithm and example create command) (1 samples)
-- S04 What collection schema and indexes will the sample create? (1 samples)
-- S05 How will the Python agent authenticate to the cluster in code? (1 samples)
-- S04 How will the alert agent check for watchlist matches efficiently? (1 samples)
-- S04 What command will create a vector-ivf index the sample expects to use (syntax the sample will attempt)? (1 samples)
+- S03 What index definition will the sample create for vector search (service-specific format you will rely on)? (1 samples)
+- S05 How will the sample authenticate for management tasks vs data-plane tasks? (1 samples)
+- S03 What index definition will I create for vector search in this sample? (1 samples)
+- S04 Which port and TLS options will the sample expect in the connection string? (1 samples)
+- S05 How will I perform vector search queries from the application (aggregation stage / command)? (1 samples)
+- S01 What database and collection names will the sample use and where is the connection string read from? (1 samples)
+- S02 What Node.js client and exact connect command will the sample use to open a connection? (1 samples)
+- S04 How will the sample store and query scored articles for the orchestration pipeline? (1 samples)
+- S03 What createIndex call will the sample use to request an IVF vector index for the embedding field? (1 samples)
+- S05 How will the sample issue the vector search query to get top-8 nearest neighbors after encoding a query image? (1 samples)
 - S03 Which collections and indexes will the sample create for the abandoned-cart pipeline? (1 samples)
 - S01 What connection string environment variable and exact form will the sample read at runtime? (1 samples)
 - S01 Which client library and connection options will this sample use to connect to the DocumentDB cluster from Node.js? (1 samples)
@@ -1075,31 +1080,6 @@
 
 ## Questions no source could answer
 
-- Q01 What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster? (10 samples)
-- Q02 Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension? (10 samples)
-- Q04 What does a connection string look like: scheme, host suffix, port, and the options it must carry? (10 samples)
-- Q06 Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID? (10 samples)
-- Q03 Which Bicep and Terraform resource types deploy a cluster? (9 samples)
-- Q09 How are full-text search and hybrid search done? (9 samples)
-- Q12 Are change streams supported, and does anything have to be enabled first? (9 samples)
-- Q13 Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it? (8 samples)
-- Q11 How do you run the database locally for development and tests: which image or emulator, and which port? (6 samples)
-- Q05 How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else? (5 samples)
-- Q14 What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project? (3 samples)
-- Q15 What engine is underneath, and does that change anything in application code? (3 samples)
-- Q08 Which vector index types are supported, and what does the command that creates one look like? (2 samples)
-- Q10 Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not? (2 samples)
-- Q07 Which client library should an application use? Is there a service-specific SDK? (2 samples)
-- S03 What aggregation stage will the agent use to follow transaction document references and build counterparty chains? (1 samples)
-- S04 What index definition does this sample need to efficiently run graph and aggregation queries over transactions? (1 samples)
-- S05 What aggregation rules will the agent apply to flag suspicious patterns (concrete example pipeline)? (1 samples)
-- S03 What collection name and document schema will the sample use for stored fraud pattern vectors? (1 samples)
-- S04 What index creation command will the sample attempt to run for a vector index (example)? (1 samples)
-- S05 How will the sample perform vector search from application code (which driver construct or aggregation stage)? (1 samples)
-- S04 What aggregation or query will be used to perform a vector nearest-neighbour lookup for retrieval in the RAG flow? (1 samples)
-- S02 What aggregation / query stage will the sample use to do a top-K vector nearest-neighbours query? (1 samples)
-- S05 Which TCP port will the driver try first when connecting to the cluster from the sample code? (1 samples)
-- S03 What exact Mongoose connection invocation and options should the sample use to connect to the DocumentDB Mongo endpoint? (1 samples)
 - S05 How will match results be stored by the sample? (1 samples)
 - S04 What validation/schema or sample documents will the sample write when creating test data? (1 samples)
 - S05 What prompt engineering and flow will the agent use to categorize a transaction and persist the result? (1 samples)
@@ -1108,11 +1088,8 @@
 - S03 What minimal workflow document schema and index will the sample rely on? (1 samples)
 - S02 What collections and indexes will the sample create? (1 samples)
 - S02 How will Beanie connect to the DocumentDB cluster from Python? (1 samples)
-- S03 What collections and indexes will the sample create for care-gap identification? (1 samples)
-- S05 Which authentication method will the sample use in code? (1 samples)
-- S03 Which client library and commands will the sample use to create a vector index and run vector queries? (1 samples)
-- S03 What document shape and index will be used to store scraped news with embeddings so the agents can query efficiently? (1 samples)
-- S02 What aggregation returns the current preference state from append-only consent history? (1 samples)
+- S03 What index definition will the sample create for embeddings (vector search)? (1 samples)
+- S04 Which image-embedding model will the sample use to get 512-dimensional vectors? (1 samples)
 - S02 Which database name and collection names will the sample create and use? (1 samples)
 - S01 What exact vector index definition will this sample create for storing rationale embeddings? (1 samples)
 - S05 Which Python libraries and exact pip command will the sample install? (1 samples)
@@ -1126,10 +1103,10 @@
 
 ## Documentation and tooling gaps, by how many samples hit them
 
-### .env.example completeness (8 samples, highest priority: medium)
+### .env.example completeness (6 samples, highest priority: medium)
 
-- Samples: 01-patient-record-summarizer-rag, 04-customer-journey-mapper, 08-personalized-email-campaign-builder, 09-trade-settlement-tracker, 11-correspondent-banking-risk-screener, 11-market-news-sentiment-orchestration, 16-atm-network-status-monitor, 19-proactive-outreach-orchestration
-- Suggested fix: learn_doc: Expand .env.example to include OPENAI_CHAT_MODEL, EMBEDDING_DIM as a comment, and an example for providers that require TLS flags; add a short section in README explaining each env var.
+- Samples: 01-fraud-detection-with-vector-similarity, 04-customer-journey-mapper, 08-personalized-email-campaign-builder, 09-trade-settlement-tracker, 16-atm-network-status-monitor, 19-proactive-outreach-orchestration
+- Suggested fix: agent_kit_rule: An agent-kit rule and a sample .env.example template that includes: DOCUMENTDB_URI, MODEL_NAME, EMBEDDING_DIMS (or MODEL_DIMS), INDEX_KIND, INDEX_NUM_LISTS, USE_LOCAL_EMBEDDING (true/false), OPENAI_API_KEY, and an explanation line for each variable.
 
 ### iac example for microsoft.documentdb/mongoclusters (4 samples, highest priority: high)
 
@@ -1146,221 +1123,240 @@
 - Samples: 02-real-time-event-stream-ingestion, 07-voice-of-customer-sentiment-hub, 15-financial-advisor-chatbot-rag
 - Suggested fix: sample_or_quickstart: Add a small 'test' directory with unit tests that mock MongoClient and embedding/LLM functions (examples using sinon/jest). Document how tests simulate the seed and retrieval behaviors and how to run them in CI without secrets.
 
+### unit tests that run without a live cluster (3 samples, highest priority: high)
+
+- Samples: 07-lab-results-aggregator, 11-visual-similarity-search-image-embeddings, 17-seasonal-trend-spotter-agent
+- Suggested fix: sample_or_quickstart: Add a tests/ directory with pytest examples: (1) unit tests that mock Beanie/Motor operations using monkeypatch or mongomock, and (2) an optional integration test that uses the DocumentDB Gateway docker image (documentdb-local-deployment) started by a script or a docker-compose snippet. Include CI job examples that run unit tests without network access.
+
+### unit tests without live cluster (3 samples, highest priority: high)
+
+- Samples: 10-drug-formulary-semantic-search, 11-correspondent-banking-risk-screener, 12-hospital-bed-occupancy-tracker
+- Suggested fix: sample_or_quickstart: Add tests using mongomock or pytest monkeypatch to mock get_collection(), and mock LlamaIndex/OpenAI embedding calls. Provide example tox/pytest configuration and a short doc section describing running unit tests vs integration tests.
+
 ### dependency pinning guidance (3 samples, highest priority: medium)
 
 - Samples: 10-drug-formulary-semantic-search, 10-expense-report-auto-categorizer, 12-clv-prediction-pipeline
 - Suggested fix: agent_kit_rule: Add an agent-kit rule or README note: 'Pin all runtime dependencies in requirements.txt; use pip-tools or constraints files for reproducible installs.' Update requirements.txt to exact versions.
 
-### exact vector index creation syntax (2 samples, highest priority: high)
+### index tuning guidance in readme (2 samples, highest priority: medium)
 
-- Samples: 01-fraud-detection-with-vector-similarity, 11-visual-similarity-search-image-embeddings
-- Suggested fix: learn_doc: A short page in the agent-kit or README titled 'Creating a vector index on Azure DocumentDB (MongoDB-compatible)'. Include: (1) the tested createIndex call (code snippet) that works against the managed cluster, (2) example values for algorithm (ivf/hnsw/diskann), dims (match embedding model), and distance (cosine), (3) example error messages and how to fall back to client-side, (4) a minimal shell and Python/pymongo example. Mark as high priority.
+- Samples: 01-fraud-detection-with-vector-similarity, 02-clinical-trial-matching-orchestration
+- Suggested fix: sample_or_quickstart: A README section with example createIndexes JSON for IVF/HNSW/DiskANN, recommended numLists/m/efConstruction/lBuild ranges for small/medium/large datasets, and commands to update or drop/recreate indexes.
 
-### decisions recorded as model_default (2 samples, highest priority: medium)
+### tests that run without a live cluster (2 samples, highest priority: high)
 
-- Samples: 01-fraud-detection-with-vector-similarity, 17-rare-disease-literature-search
-- Suggested fix: agent_kit_rule: Add an agent-kit rule requiring explicit justification (in README or decisions.jsonl) when choosing a model_default for embedding/LLM/models or dependency pinning; require a short rationale and test notes for medical domain samples.
+- Samples: 01-fraud-detection-with-vector-similarity, 19-proactive-outreach-orchestration
+- Suggested fix: sample_or_quickstart: Add pytest tests: (1) unit tests for compute_risk and explain() using synthetic results; (2) integration-style tests using mongomock for seed upserts and vector_search pipeline shape (mock aggregate results), and a small test that asserts run_agent CLI handles empty input and embedding exceptions.
+
+### phi logging guidance (2 samples, highest priority: high)
+
+- Samples: 01-patient-record-summarizer-rag, 08-insurance-pre-auth-multi-agent
+- Suggested fix: learn_doc: Page titled 'Handling PHI in Azure DocumentDB samples' with: 1) short policy: never log PHI; 2) example logging configuration showing redaction middleware and redaction of patientId/embeddings/clinical text; 3) example code snippets for Python logging filters and how to enable structured logging without PHI; 4) placement in the 'Security' section of the DocumentDB docs.
 
 ### embedding model & dimensions guidance (2 samples, highest priority: high)
 
 - Samples: 03-next-best-action-multi-agent, 19-insider-threat-detection-pipeline
 - Suggested fix: learn_doc: Add a 'Embeddings and vectors' page to the sample-guide describing recommended embedding providers/models for samples (e.g., OpenAI text-embedding-3-small 1536), the reasons for the choice (cost/quality/compatibility), and the required EMBEDDING_DIMS. Include a short table of alternatives and the dimensions required, and update .env.example with a comment linking to this page.
 
-### readme clean-up instructions (2 samples, highest priority: medium)
+### iac quickstart for microsoft.documentdb/mongoclusters (2 samples, highest priority: medium)
 
-- Samples: 04-natural-language-product-search, 11-market-news-sentiment-orchestration
-- Suggested fix: learn_doc: Add a 'Clean up' section to README with exact mongosh commands: use sample_retail_04; db.products.drop(); db.runCommand({dropIndexes: 'products', index: 'default-vector-index'}) or show portal steps. Mention any IAM/role cleanup for created admin users.
+- Samples: 03-portfolio-tracker-with-live-alerts, 11-market-news-sentiment-orchestration
+- Suggested fix: sample_or_quickstart: A minimal Bicep file and an example az documentdb mongocluster create command with low-cost defaults and a 'do not run in restricted CI' note.
 
 ### index tuning & readme guidance (2 samples, highest priority: medium)
 
 - Samples: 06-symptom-triage-chatbot-rag, 17-rare-disease-literature-search
 - Suggested fix: discoverability: Add an 'Index tuning' subsection in README summarizing: why dimensions must match embedding model; recommended defaults for small demos (DiskANN: maxDegree=32, lBuild=50, lSearch=50), how to increase lSearch for recall, and links to the vector-search docs for large-corpus production tuning.
 
-### unit tests that run without a live cluster (2 samples, highest priority: high)
-
-- Samples: 07-lab-results-aggregator, 17-seasonal-trend-spotter-agent
-- Suggested fix: sample_or_quickstart: Add a tests/ directory with pytest examples: (1) unit tests that mock Beanie/Motor operations using monkeypatch or mongomock, and (2) an optional integration test that uses the DocumentDB Gateway docker image (documentdb-local-deployment) started by a script or a docker-compose snippet. Include CI job examples that run unit tests without network access.
-
 ### embedding model & dimension guidance (2 samples, highest priority: high)
 
 - Samples: 07-voice-of-customer-sentiment-hub, 17-rare-disease-literature-search
 - Suggested fix: learn_doc: A short Microsoft Learn page or sample README section titled 'Embedding model names and dimensions' listing common models (text-embedding-3-small:1536, text-embedding-3-large:1536, all-MiniLM-L6-v2:384, etc.), the env var names (EMBEDDING_MODEL, EMBEDDING_DIM), and a runtime validation snippet to assert the embedder returns the expected length.
-
-### unit tests without live cluster (2 samples, highest priority: high)
-
-- Samples: 10-drug-formulary-semantic-search, 12-hospital-bed-occupancy-tracker
-- Suggested fix: sample_or_quickstart: Add tests using mongomock or pytest monkeypatch to mock get_collection(), and mock LlamaIndex/OpenAI embedding calls. Provide example tox/pytest configuration and a short doc section describing running unit tests vs integration tests.
 
 ### iac example for mongoclusters (2 samples, highest priority: medium)
 
 - Samples: 10-expense-report-auto-categorizer, 20-interest-accrual-batch-processor
 - Suggested fix: sample_or_quickstart: Add a Bicep snippet to the repo demonstrating Microsoft.DocumentDB/mongoClusters with parameters for tier and storage, defaults that minimize cost for samples, and a short note advising users to prefer existing clusters where available.
 
-### pinned dependency guidance for samples (2 samples, highest priority: high)
-
-- Samples: 11-preference-center-consent-store, 17-stress-testing-multi-agent-runner
-- Suggested fix: agent_kit_rule: Add an agent-kit rule: 'All gallery Python samples must pin package versions in requirements.txt to the tested versions used during sample build. Provide a short table of pinned versions for fastapi, beanie, motor, pydantic and uvicorn. Example requirements.txt excerpt and a note explaining how to update pins for future releases.'
-
-### single shared mongoclient (1 samples, highest priority: medium)
+### vector-index & embedding alignment (1 samples, highest priority: high)
 
 - Samples: 01-anti-money-laundering-pattern-detector
-- Suggested fix: agent_kit_rule: Add a short rule in the agent kit: 'Create and reuse a single MongoClient per process; expose get_client() that returns a cached client. Example code snippet and rationale.'
+- Suggested fix: learn_doc: A short 'Embeddings & vector index' page: state a default embedding model (e.g., text-embedding-3-small, 1536 dims), show createIndexes JSON with cosmosSearchOptions that sets dimensions, algorithm (HNSW/IVF/DiskANN) and minimal tuning params, and a note on when to change numLists/efConstruction/M for larger datasets.
 
-### server feature and operator compatibility for documentdb (1 samples, highest priority: high)
-
-- Samples: 01-anti-money-laundering-pattern-detector
-- Suggested fix: discoverability: A small 'Feature matrix' page listing supported aggregation operators, the exact createIndex syntax for vector indexes and the recommended engine options and example commands tested against the validated cluster SKU; include an index-creation sample and an explain-based operator-test snippet.
-
-### vector index parameters and embedding-dimension guidance (1 samples, highest priority: medium)
+### seed data shape and acceptance criteria (1 samples, highest priority: medium)
 
 - Samples: 01-anti-money-laundering-pattern-detector
-- Suggested fix: learn_doc: A page titled 'Vector search on Azure DocumentDB — dimensions and index tuning' that states: the tested embedding dimensions for recommended models, how to create indexes with exact `createIndex` fields, and suggested efConstruction/efSearch/nprobe equivalents for small vs large datasets.
+- Suggested fix: sample_or_quickstart: A short sample-data page: list document examples for each typology (example transactions and accounts), expected detection outputs, and idempotent seeding rules. Include JSON fixtures and a seed acceptance checklist for tests.
 
-### secrets best practices (key vault / managed identity) (1 samples, highest priority: high)
-
-- Samples: 01-anti-money-laundering-pattern-detector
-- Suggested fix: learn_doc: Short 'Secrets & production config' page showing (1) example of reading secrets from Azure Key Vault using DefaultAzureCredential where supported, (2) fallback to env var for local dev, (3) explanation of which data-plane auth methods are supported for the validated cluster SKU.
-
-### offline unit-testing guidance (1 samples, highest priority: high)
+### test isolation guidance (unit tests without live cluster) (1 samples, highest priority: high)
 
 - Samples: 01-anti-money-laundering-pattern-detector
-- Suggested fix: sample_or_quickstart: Add 'tests_offline.md' and a small test module demonstrating how to patch the pymongo.MongoClient to use mongomock or a fake collection for unit tests; include a tox/pytest marker example.
+- Suggested fix: discoverability: A short agent-kit rule or README section showing 1) how to monkeypatch get_db to return a mongomock client for pytest, 2) a minimal example fixture, and 3) an integration-test marker for tests that require a live cluster.
 
-### index and createindex syntax for vector indexes (naming/disambiguation) (1 samples, highest priority: high)
+### management tools opt-in (mcp) and index creation (1 samples, highest priority: high)
 
 - Samples: 01-anti-money-laundering-pattern-detector
-- Suggested fix: naming_or_disambiguation: A minimal 'create_vector_index.py' sample with validated syntax and annotated parameter descriptions for the supported index types; include a short README paragraph about compatibility caveats.
+- Suggested fix: agent_kit_rule: Add a rule and README note: 'To use MCP management tools set ENABLE_MANAGEMENT_TOOLS=true in your environment or use the MCP proper connection profile; otherwise the sample will fall back to driver-based index creation. Provide sample commands and expected error message.'
 
-### vector-search aggregation/operator names (1 samples, highest priority: high)
+### which iac resource to use for vcore clusters (mongoclusters vs databaseaccounts) (1 samples, highest priority: high)
+
+- Samples: 01-anti-money-laundering-pattern-detector
+- Suggested fix: naming_or_disambiguation: A short 'Which resource type to use' micro-page: show the mongoClusters ARM/Bicep snippet, call out databaseAccounts is the legacy RU model, and provide the CLI snippet (az documentdb mongocluster create) for vCore clusters.
+
+### azure cli command group disambiguation (az documentdb vs az cosmosdb) (1 samples, highest priority: medium)
+
+- Samples: 01-anti-money-laundering-pattern-detector
+- Suggested fix: discoverability: Add a one-liner and examples to quickstarts and CLI pages: 'For vCore clusters use az documentdb mongocluster ...; az cosmosdb targets legacy databaseAccounts.'
+
+### vector index creation json template (1 samples, highest priority: medium)
+
+- Samples: 01-anti-money-laundering-pattern-detector
+- Suggested fix: learn_doc: A minimal 'createIndexes' JSON example for each algorithm, showing only required keys (name, key, cosmosSearchOptions.kind, dims, metric) and a short note where to tune parameters for scale.
+
+### connection-string examples for vcore clusters and aad/oidc connection string examples (1 samples, highest priority: high)
+
+- Samples: 01-anti-money-laundering-pattern-detector
+- Suggested fix: discoverability: A small connect.md reference with two canonical examples: SRV for SCRAM-SHA-256 and OIDC connection string example with authMechanism=MONGODB-OIDC and authMechanismProperties usage.
+
+### test isolation vs local gateway guidance (1 samples, highest priority: medium)
+
+- Samples: 01-anti-money-laundering-pattern-detector
+- Suggested fix: discoverability: A 'local dev & tests' quick page: show docker command for gateway image (port 10260), an example .env for local gateway (TLS/port adjustments), and a pytest fixture to switch between mongomock (unit) and real gateway (integration).
+
+### binary embedding storage format (1 samples, highest priority: high)
 
 - Samples: 01-fraud-detection-with-vector-similarity
-- Suggested fix: learn_doc: A short example in the README or an agent-kit page titled 'Running vector KNN queries' that shows the working aggregation pipeline for the managed cluster, including how to pass the query vector, how to request the top-k, how to project the provider's search score (e.g., $meta: 'searchScore'), and how to interpret returned fields. Include language and Python/pymongo examples, plus fallback recipes.
+- Suggested fix: learn_doc: A short 'Embedding storage formats' doc on the vector-search docs page that states: (1) DocumentDB expects vectors as number[] for cosmosSearch indexing; (2) show Python example: vec.tolist() then createIndexes cosmosSearchOptions; (3) discuss compression tradeoffs (product quantization) and link to product-quantization doc; (4) show how to store model metadata and dims.
 
-### embedding provider & embedding dimensions (1 samples, highest priority: high)
-
-- Samples: 01-fraud-detection-with-vector-similarity
-- Suggested fix: agent_kit_rule: Add an agent-kit rule and README section 'Embedding provider selection' that: (1) lists supported providers (OpenAI, etc.), (2) declares the env var names (e.g., OPENAI_API_KEY), (3) shows how to query or assert the embedding dimension and set EMBED_DIM via env var or model metadata, (4) instructs to re-seed stored vectors when switching providers, and (5) includes a short Python snippet to validate stored vectors' length against the model output at startup.
-
-### index tuning parameters for sample size (1 samples, highest priority: medium)
+### seed script should create index idempotently (1 samples, highest priority: high)
 
 - Samples: 01-fraud-detection-with-vector-similarity
-- Suggested fix: learn_doc: A 'Vector index tuning' page showing recommended defaults for demo (<10k vectors), medium (10k–1M), and large (>1M) datasets; provide sample create_index parameter sets for IVF and HNSW, guidance on measuring recall/throughput, and commands to rebuild indexes. Include examples and recommended monitoring metrics.
+- Suggested fix: sample_or_quickstart: A code snippet to include in seed.py that calls db.command({ 'createIndexes': '<collection>', 'indexes': [ { 'name': '...', 'key': {'vector': 'cosmosSearch'}, 'cosmosSearchOptions': { 'kind': 'vector-ivf', 'dimensions': <dims>, 'similarity':'COS', 'numLists': <n> } } ] }) and handles IndexExists gracefully. Document expected parameter choices for demo vs larger datasets.
 
-### langchain tool / example for provider-side vector search (1 samples, highest priority: medium)
-
-- Samples: 01-fraud-detection-with-vector-similarity
-- Suggested fix: sample_or_quickstart: Add a small module 'docdb_vector_tool.py' that defines a LangChain Tool (or simple function) that executes the tested aggregation pipeline for vector search and returns structured matches. Include usage examples in README and a test that mocks the driver to validate the tool.
-
-### client library version and pinning guidance (1 samples, highest priority: medium)
+### iac example for documentdb (1 samples, highest priority: high)
 
 - Samples: 01-fraud-detection-with-vector-similarity
-- Suggested fix: discoverability: Add a README subsection 'Tested dependency set' listing the exact versions used to verify the sample and consider shipping a pip freeze or constraints.txt. Also add a note advising how to update/pin safely.
+- Suggested fix: mcp_tool_or_description: Add 'iac/' with a Bicep file and a short Terraform/az API snippet that creates a low-cost cluster (e.g., small test tier) and documents how to retrieve connection strings (az documentdb mongocluster list-connection-strings) and set DOCUMENTDB_URI.
 
-### infrastructure as code (iac) examples (1 samples, highest priority: medium)
+### agent-tool integration example (1 samples, highest priority: medium)
 
 - Samples: 01-fraud-detection-with-vector-similarity
-- Suggested fix: mcp_tool_or_description: Add an infra/ directory with minimal Bicep and Terraform examples that create a low-cost, test DocumentDB cluster with notes on region/tier, plus a README link explaining this is optional and when to use it.
+- Suggested fix: sample_or_quickstart: Add agent_wrapper.py showing from langchain.tools import Tool (or the current LangChain Tool pattern) that wraps vector_search, then construct an Agent (or simple LLMChain) that calls the Tool; include an integration example in README.
 
-### authoritative index-creation snippet (vector index) (1 samples, highest priority: high)
-
-- Samples: 01-patient-record-summarizer-rag
-- Suggested fix: mcp_tool_or_description: Ship a small 'Create vector index' page in the agent-kit that includes: (a) an exact pymongo/mongo shell createIndex snippet for each supported indexType (hnsw, ivf, diskann) using a placeholder EMBEDDING_DIM variable; (b) example parameter values for small, medium and large workloads; (c) a one-line command to verify an index via collection.index_information().
-
-### $search/knn aggregation availability and example (1 samples, highest priority: high)
+### vector index reproducibility (1 samples, highest priority: medium)
 
 - Samples: 01-patient-record-summarizer-rag
-- Suggested fix: learn_doc: A page titled 'Hybrid search and $search/knn examples' with a verified aggregation pipeline example (copy-paste-ready) for the supported cluster and a short feature-detection snippet that the sample can run at startup and conditionally enable native retrieval.
+- Suggested fix: learn_doc: Short guidance page 'Vector index reproducibility' describing recommended config keys (algorithm, dimensions, similarity, m/efConstruction/numLists) and a versioned JSON snippet to check into repo; show where to store and how to reference the config during ingestion and index creation.
 
-### driver recommended connection settings (1 samples, highest priority: high)
-
-- Samples: 01-patient-record-summarizer-rag
-- Suggested fix: discoverability: Document 'Driver connection best-practices' in the agent-kit and sample README: show MongoClient(uri, maxPoolSize=50, serverSelectionTimeoutMS=5000, retryWrites=True) and explain why and when to change them.
-
-### retry/429 and bulk ingestion guidance (1 samples, highest priority: high)
+### application-layer patient authorization (1 samples, highest priority: high)
 
 - Samples: 01-patient-record-summarizer-rag
-- Suggested fix: learn_doc: Add a short 'Seeding at scale' page that contains: a bulk_write example, a rate-limiter pattern, and a snippet showing exponential backoff honoring Retry-After for 429 responses.
+- Suggested fix: learn_doc: Add a 'Protecting patient data' guidance page that explains: 1) use DB filters as a data-layer safeguard, 2) always enforce app-layer authorization (example middleware) and map authenticated identities to allowed patientIds, and 3) provide a minimal code example for FastAPI demonstrating auth checks before querying.
 
-### authentication choices and aad guidance (1 samples, highest priority: high)
-
-- Samples: 01-patient-record-summarizer-rag
-- Suggested fix: discoverability: Add an 'Authentication' section to the agent-kit and sample README that states supported auth methods, example connection URIs for SCRAM and for any supported AAD flows, and pointers to official docs.
-
-### provider iac snippet (1 samples, highest priority: medium)
+### driver recommendation discoverability (model_default decisions) (1 samples, highest priority: medium)
 
 - Samples: 01-patient-record-summarizer-rag
-- Suggested fix: mcp_tool_or_description: Provide one validated Bicep snippet and one Terraform azapi snippet that create Microsoft.DocumentDB/mongodbClusters with safe defaults, plus a note on required az CLI extension if any.
+- Suggested fix: discoverability: Promote the Quickstart 'Use Azure DocumentDB with MongoDB driver for Python' page in the documentdb-driver skill as an explicit recommended link and add an agent-kit rule: 'When selecting a Python Mongo-compatible driver, use pymongo and cite the Quickstart.'
 
-### authoritative index creation command (1 samples, highest priority: high)
+### exact createindexes json examples (1 samples, highest priority: high)
 
-- Samples: 01-product-catalog-with-vector-search
-- Suggested fix: mcp_tool_or_description: Provide a short 'Index creation' page in the agent kit and README that includes: (1) the exact createIndexes JSON accepted by the vendor for IVF and HNSW (example for the supported cluster), (2) the exact aggregation or $search stage to run top-k vector queries (with a k=10 example), and (3) a one-line command operators can paste into the seed script. Include a small test snippet in seed.py that runs only that command and prints the server response. Priority: high.
+- Samples: 01-patient-record-summarizer-rag
+- Suggested fix: discoverability: Add a 'Create a vector index' snippet to the vector-search quickstart and a one-line copy-paste JSON block labeled 'createIndexes runCommand for HNSW/IVF/DiskANN' with placeholders for name/dimensions/params.
 
-### embedding storage compatibility (binary vs numeric array) (1 samples, highest priority: high)
+### service naming & resource-type clarification (1 samples, highest priority: high)
 
-- Samples: 01-product-catalog-with-vector-search
-- Suggested fix: learn_doc: Add a short 'Embedding storage' page to the sample README/agent kit that: (1) states which storage forms the cluster supports for vector indexes, (2) shows seed.py snippets for both Binary and numeric-array storage (with code to populate both fields), and (3) recommends adding an 'embedding_vector' array field when the cluster requires arrays. Priority: high.
+- Samples: 01-patient-record-summarizer-rag
+- Suggested fix: naming_or_disambiguation: Add a 'Which DocumentDB product is this?' banner on the Overview and Quickstart pages that: 1) states current product name(s), 2) maps resource types (Microsoft.DocumentDB/mongoClusters) and CLI commands (az documentdb mongocluster) for vCore clusters, 3) warns about databaseAccounts/azurerm_cosmosdb_account being for RU-based accounts, and 4) supply example Bicep/Terraform snippets for mongoClusters.
 
-### embedding-provider env var and example (1 samples, highest priority: medium)
+### local gateway/dev image discoverability (1 samples, highest priority: high)
 
-- Samples: 01-product-catalog-with-vector-search
-- Suggested fix: discoverability: Add a short note in README (or agent-kit rule) that the sample uses OpenAI text-embedding-ada-002 and expects OPENAI_API_KEY, and where to change it if using another provider. Priority: medium.
+- Samples: 01-patient-record-summarizer-rag
+- Suggested fix: discoverability: Add a short 'Local development' section to the Quickstart with the exact docker-compose snippet for the DocumentDB Gateway image (port 10260), SKIP_INIT_DATA and TLS notes, and a note on using the gateway for vector/index testing.
 
-### index tuning guidance (1 samples, highest priority: medium)
+### offline unit tests example (1 samples, highest priority: medium)
 
-- Samples: 01-product-catalog-with-vector-search
-- Suggested fix: learn_doc: Add a README subsection 'Index tuning' that explains what nlist/efConstruction/efSearch (or the vendor equivalents) do, gives recommended ranges for small/medium/large datasets, and shows where to change parameters in seed.py. Priority: medium.
+- Samples: 01-patient-record-summarizer-rag
+- Suggested fix: sample_or_quickstart: Add a tests/ folder with pytest tests that mock get_db() and embed_text() (using monkeypatch or mongomock) demonstrating how to unit-test the /search logic and prompt-assembly without a live cluster.
 
-### authentication method documentation (1 samples, highest priority: high)
-
-- Samples: 01-product-catalog-with-vector-search
-- Suggested fix: learn_doc: Add a short 'Connection string and auth' section to README describing the expected DOCUMENTDB_URI format (example redacted URI), and note how to adapt the code if using Azure AD or other auth methods. Priority: high.
-
-### unit tests that run offline (1 samples, highest priority: high)
+### embedding storage type and indexing (1 samples, highest priority: high)
 
 - Samples: 01-product-catalog-with-vector-search
-- Suggested fix: sample_or_quickstart: Add pytest tests that mock pymongo (or use mongomock) to exercise embed_text error handling, /search input validation, and the local ranking path; include instructions in README on how to run tests without a cluster. Priority: high.
+- Suggested fix: discoverability: Add a short 'Indexable vector storage' note to the top of the 'Vector search' documentation and to the sample README. Example text: 'Important: To be indexed by DocumentDB's cosmosSearch vector indexes, store vectors as an array of numbers (e.g., embedding: [0.123, ...]). Storing embeddings as BSON Binary (packed float32) is compact but will not be indexed. If you must store Binary for offline use, also persist a number[] copy or use a separate index pipeline.'
 
-### infrastructure as code (1 samples, highest priority: medium)
+### conservative ivf defaults for demos (1 samples, highest priority: medium)
 
 - Samples: 01-product-catalog-with-vector-search
-- Suggested fix: learn_doc: Provide a small Bicep or Terraform example showing the resource-type and minimal options to create a comparable cluster (or clearly state in README that infra is out-of-scope and provide links to vendor docs). Priority: medium.
+- Suggested fix: agent_kit_rule: Add a short rule in documentdb-vector-search: 'Demo defaults: when N < 10k, use vector-ivf with nlist=8..32 (choose 8 for N<100, 32 for N~10k). For production datasets compute nlist ~ max(1, N/1000) and document the heuristic.' Include a small code snippet showing how to compute nlist from collection.count_documents({}).
 
-### authoritative mongoose connection options for documentdb (1 samples, highest priority: high)
+### index creation verification example (1 samples, highest priority: high)
+
+- Samples: 01-product-catalog-with-vector-search
+- Suggested fix: sample_or_quickstart: Provide a small index-creation helper that: (1) issues createSearchIndexes, (2) polls db.getCollectionInfos()/listIndexes or a documented admin status endpoint until index is reported as 'ready', and (3) logs the admin payload and response for manual troubleshooting. Include example output and failure handling.
+
+### pinned python driver versions (1 samples, highest priority: medium)
+
+- Samples: 01-product-catalog-with-vector-search
+- Suggested fix: learn_doc: Add a brief 'Tested driver versions' section to the documentdb-driver skill and the quickstart templates showing exact pip pins for a stable reference (e.g., 'This sample was tested with PyMongo==4.19.0; pin that in requirements.txt or supply a constraints file for reproducible installs').
+
+### microsoft entra id examples for data-plane auth (1 samples, highest priority: high)
+
+- Samples: 01-product-catalog-with-vector-search
+- Suggested fix: discoverability: Add a short 'Using Microsoft Entra ID for data-plane' subsection in the documentdb-connection skill with a PyMongo example, environment variables needed, and when the sample should use Entra vs connection-string (and include a link to the portal setting to enable Entra ID on the cluster).
+
+### guidance for retry/backoff for demo code (1 samples, highest priority: high)
+
+- Samples: 01-product-catalog-with-vector-search
+- Suggested fix: sample_or_quickstart: Add a small retry helper (e.g., using tenacity) to the agent kit and a one-line example in the sample: 'with retry_on_transient_errors(max_attempts=5): coll.aggregate(pipeline)'. Include special-case handling for 429 and respect Retry-After header.
+
+### ru/provisioning mapping for authors (1 samples, highest priority: high)
+
+- Samples: 01-product-catalog-with-vector-search
+- Suggested fix: learn_doc: A one-page 'Provisioning model for DocumentDB' that contrasts Cosmos RU vs DocumentDB tiers, gives recommended dev defaults (M10), and shows a Bicep example with tier and storage parameters.
+
+### agent discoverability for 'do not return embeddings' guidance (1 samples, highest priority: low)
+
+- Samples: 01-product-catalog-with-vector-search
+- Suggested fix: discoverability: Add a one-line rule in the vector-search quickstart: 'Never return raw vector values in API responses; project out embedding fields.'
+
+### distinct deployment resource guidance (mongoclusters vs databaseaccounts) (1 samples, highest priority: high)
 
 - Samples: 01-unified-customer-profile-store
-- Suggested fix: learn_doc: Page title: 'Connecting to Azure DocumentDB with Mongoose'
-Outline: brief explanation of using DOCUMENTDB_URI, an annotated sample mongoose.connect(process.env.DOCUMENTDB_URI, { /* recommended options */ }) pinning options known to be required for the product and explanation of which options to avoid; recommended maxPoolSize guidance and example for low/high concurrency; note on driver versions. Include tested snippet pinned to Mongoose 7.x.
+- Suggested fix: naming_or_disambiguation: A short 'Which resource to use' page or a top-note on the mongoClusters and databaseAccounts docs that: 1) defines when to use Microsoft.DocumentDB/mongoClusters vs Microsoft.DocumentDB/databaseAccounts; 2) shows exact Bicep/ARM snippet for creating a mongoClusters resource; 3) shows the az CLI group (az documentdb mongocluster) and example commands; 4) references Terraform/AVM modules for mongoClusters. Add a quick-check script that warns if templates use databaseAccounts when a sample declares it's for vCore DocumentDB.
 
-### authentication methods and whether microsoft entra id is supported (1 samples, highest priority: high)
-
-- Samples: 01-unified-customer-profile-store
-- Suggested fix: learn_doc: Short page titled 'Authentication options for Azure DocumentDB (MongoDB-compatible)'. Describe supported methods, example connection string forms, and recommended practice (use connection string stored in secret store for CI; mention whether AAD data-plane auth is supported or not).
-
-### exact vector-index creation api and examples (1 samples, highest priority: high)
+### azure cli and bicep examples for vcore clusters (1 samples, highest priority: high)
 
 - Samples: 01-unified-customer-profile-store
-- Suggested fix: learn_doc: Page titled 'Creating vector indexes on Azure DocumentDB'. Include exact index creation commands (db.collection.createIndex(...)) or management API calls accepted by this product, the index options format (metric, dims, algorithm_config), example parameters for small sample vs larger datasets, and guidance on RU costs for dims and algorithm choices.
+- Suggested fix: learn_doc: A small page 'Provision a vCore DocumentDB cluster' containing: az documentdb mongocluster create examples (with --tier M30), a Bicep snippet for Microsoft.DocumentDB/mongoClusters, and a Terraform AVM module example; include notes on required permissions and minimal cost defaults.
 
-### cli / arm resource type for provisioning examples (1 samples, highest priority: medium)
-
-- Samples: 01-unified-customer-profile-store
-- Suggested fix: discoverability: A small doc 'Provisioning examples' with az CLI example, an ARM/Bicep snippet, and a Terraform example using the correct provider/resource type. Mark them optional and include placeholders only.
-
-### change-stream and feature support matrix (1 samples, highest priority: medium)
+### canonical mongoose/driver version guidance for node 24 samples (1 samples, highest priority: medium)
 
 - Samples: 01-unified-customer-profile-store
-- Suggested fix: discoverability: Page 'Feature compatibility' listing the product's supported MongoDB wire protocol versions (e.g., 7.0 as in the run environment), and per-feature supported/unsupported status with short examples where relevant.
+- Suggested fix: discoverability: Add a one-line 'Recommended client stack' box to the Mongoose quickstart with 'Mongoose 7.x (tested with Node 24) and driver X.Y', plus an example package.json snippet showing exact pinned versions and how to update them.
 
-### agent discoverability: driver version pinning guidance (1 samples, highest priority: medium)
-
-- Samples: 01-unified-customer-profile-store
-- Suggested fix: agent_kit_rule: Agent-kit rule: 'For Node samples pin either in package.json exact versions OR require contributors to use npm ci and commit package-lock.json; include a README badge/instruction to 'npm ci' for reproducible builds.'
-
-### test strategy for samples that require a live cluster (1 samples, highest priority: high)
+### default retry/backoff guidance and a small retry helper (1 samples, highest priority: high)
 
 - Samples: 01-unified-customer-profile-store
-- Suggested fix: sample_or_quickstart: Quickstart 'Testing' showing two options: 1) unit tests that mock Mongoose using sinon + proxyquire (example test for upsertEvent), 2) optional integration tests that read DOCUMENTDB_URI from env and are gated with an environment variable. Provide npm test script examples.
+- Suggested fix: agent_kit_rule: An agent-kit rule and a one-file 'retry.js' helper that implements bounded exponential backoff with jitter and respects Retry-After; quickstart shows how to call the helper from an upsert path (example in Node).
+
+### seed script idempotency and index creation best practice (1 samples, highest priority: medium)
+
+- Samples: 01-unified-customer-profile-store
+- Suggested fix: discoverability: A short 'seed and migration' cookbook page showing 1) safe syncIndexes usage for small samples, 2) migration scripts for production index deployment, and 3) a sample idempotent seed that uses upserts and syncIndexes().
+
+### dependency pinning guidance for node samples (1 samples, highest priority: medium)
+
+- Samples: 01-unified-customer-profile-store
+- Suggested fix: discoverability: A short sample-repo checklist for Node: include package-lock.json (committed), pin direct dependencies to exact versions where reproducibility is important, and include a note for maintainers about updating devDependencies.
+
+### guidance for enabling and using mcp write tools in ci (1 samples, highest priority: medium)
+
+- Samples: 01-unified-customer-profile-store
+- Suggested fix: mcp_tool_or_description: Add a short MCP README note that explains write tools are opt-in, how to enable them for a trusted CI run (ENABLE_WRITE_TOOLS=true), and the security implications and audit trace recommendations.
+
+### clarify vector-index create payload and param examples (1 samples, highest priority: low)
+
+- Samples: 01-unified-customer-profile-store
+- Suggested fix: learn_doc: On the vector-search landing page add one-line JS examples for each 'kind' showing the exact createIndexes payload and minimal recommended defaults (dims, similarity, algorithm params) and a short note mapping popular embedding dims (e.g., 1536) to index choices.
 
 ### llamaindex node integration guidance (1 samples, highest priority: high)
 
@@ -1416,11 +1412,6 @@ Outline: brief explanation of using DOCUMENTDB_URI, an annotated sample mongoose
 
 - Samples: 02-clinical-trial-matching-orchestration
 - Suggested fix: agent_kit_rule: Add an agent-kit rule named 'mongodb-connection-sample' that enforces: use a singleton client, include recommended options (e.g., maxPoolSize, minPoolSize or documentdb-specific flags), and assert retryWrites=false or document why not. Provide an example MongoClient initialization snippet.
-
-### index tuning guidance in readme (1 samples, highest priority: medium)
-
-- Samples: 02-clinical-trial-matching-orchestration
-- Suggested fix: discoverability: An 'Index tuning' appendix in README that shows recommended small-dataset defaults used in the sample and links to the authoritative vector tuning docs, plus commands to re-create the index with adjusted parameters.
 
 ### prior-knowledge-only practices (eligibility schema) (1 samples, highest priority: medium)
 
@@ -1657,11 +1648,6 @@ Outline: brief explanation of using DOCUMENTDB_URI, an annotated sample mongoose
 - Samples: 03-portfolio-tracker-with-live-alerts
 - Suggested fix: agent_kit_rule: Agent-kit rule: 'For Node samples, commit package-lock.json, call npm ci in Quickstart, and either pin versions in package.json or document that users should run npm ci for reproducible installs.'
 
-### iac quickstart for microsoft.documentdb/mongoclusters (1 samples, highest priority: medium)
-
-- Samples: 03-portfolio-tracker-with-live-alerts
-- Suggested fix: sample_or_quickstart: A minimal Bicep file and an example az documentdb mongocluster create command with low-cost defaults and a 'do not run in restricted CI' note.
-
 ### agent confusion & naming guidance (1 samples, highest priority: high)
 
 - Samples: 03-portfolio-tracker-with-live-alerts
@@ -1836,6 +1822,11 @@ Outline: brief explanation of using DOCUMENTDB_URI, an annotated sample mongoose
 
 - Samples: 04-natural-language-product-search
 - Suggested fix: sample_or_quickstart: Add tests/ with pytest tests for rewrite_query, rrf_fusion, _vector_search fallback using mongomock for DB operations and monkeypatching a fake embedding client. Include guidance in README how to run them (pytest).
+
+### readme clean-up instructions (1 samples, highest priority: medium)
+
+- Samples: 04-natural-language-product-search
+- Suggested fix: learn_doc: Add a 'Clean up' section to README with exact mongosh commands: use sample_retail_04; db.products.drop(); db.runCommand({dropIndexes: 'products', index: 'default-vector-index'}) or show portal steps. Mention any IAM/role cleanup for created admin users.
 
 ### explicit guidance on authentication options (scram vs entra id) (1 samples, highest priority: medium)
 
@@ -2386,11 +2377,6 @@ Priority: medium
 - Samples: 08-dynamic-segmentation-engine
 - Suggested fix: discoverability: Add a short 'Runtime and LLM notes' subsection in README explaining: recommended Python minors (3.11/3.12) if using LLM path, or exact pinned langchain/pydantic versions that are known to work. Include a sample requirements-llm.txt showing the compatible pin set.
 
-### phi logging guidance (1 samples, highest priority: high)
-
-- Samples: 08-insurance-pre-auth-multi-agent
-- Suggested fix: learn_doc: A short guidance page titled 'Handling PHI and logging with Azure DocumentDB' that: (1) states which fields are commonly considered PHI (patientId, clinician, clinicalNotes, identifiers), (2) provides example redaction helper functions (redactFields(obj, ['patientId','clinician']) ), (3) shows how to configure logging libraries to omit fields, (4) includes sample code for Node.js apps and a README snippet explaining compliance considerations.
-
 ### orchestrator resume & idempotency pattern (1 samples, highest priority: high)
 
 - Samples: 08-insurance-pre-auth-multi-agent
@@ -2812,160 +2798,190 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - Samples: 10-wealth-management-rag-portal
 - Suggested fix: mcp_tool_or_description: Add infra/ folder with a minimal Bicep file (main.bicep) that declares resource 'Microsoft.DocumentDB/mongoClusters@{stable}', parameters 'tier','region','storage', and default low-cost values, plus a README note about the run policy and when to use it.
 
-### vector index creation parameters (1 samples, highest priority: high)
+### phi & llm guidance for azure documentdb samples (1 samples, highest priority: high)
 
 - Samples: 11-care-gap-identification-pipeline
-- Suggested fix: mcp_tool_or_description: Ship a short 'Vector index creation' page in the agent-kit that: (1) states the supported index types (DiskANN/HNSW/IVF) for the target SKU, (2) provides a verified createIndex example including parameter names (algorithm, dims, metric) and an idempotent script snippet, and (3) documents how to set EMBEDDING_DIM to match an embedding model. Include a small verification script that queries server index metadata after creation.
+- Suggested fix: learn_doc: A short Microsoft Learn page: 'Handling PHI when calling external LLMs from DocumentDB samples' — include (1) a clear admonition not to send identifiers to third-party LLMs unless a HIPAA-compliant contract is in place; (2) sample code patterns for de‑identifying records; (3) an opt‑in environment variable pattern for advanced users; (4) examples of using managed/private models or running a local LLM gateway.
 
-### vector index tuning guidance (1 samples, highest priority: medium)
-
-- Samples: 11-care-gap-identification-pipeline
-- Suggested fix: learn_doc: Add a 'Vector index sizing' subsection in README: describe sample data size assumptions, give example params for small/medium/large datasets, and show how to edit seed script parameters or environment variables to tune them.
-
-### aggregation-based screening logic (1 samples, highest priority: high)
+### model & embedding defaults for samples (discoverability) (1 samples, highest priority: medium)
 
 - Samples: 11-care-gap-identification-pipeline
-- Suggested fix: sample_or_quickstart: Provide a small example aggregation pipeline in the repo that demonstrates $lookup/$sort/$group and computed fields to flag missing screenings (example: compute last_visit per patient, compute age from dob in aggregation, then $match where last_visit older than computed interval or last_visit is null). Include an idempotent script that can optionally swap to DB-side detection.
+- Suggested fix: discoverability: An agent-kit rule + short page 'Recommended LLM and embedding defaults for DocumentDB samples' listing a vendor + model pair (OpenAI text-embedding-3-small for embeddings, gpt-4o-mini or gpt-3.5-turbo for reasoning), embedding dims for each model and explicit guidance on how to override via env vars.
 
-### embedding model specification for vector search (1 samples, highest priority: high)
-
-- Samples: 11-care-gap-identification-pipeline
-- Suggested fix: learn_doc: Add EMBEDDING_MODEL and EMBEDDING_DIM variables to .env.example and README, describe recommended embedder(s) and their output dimensions, and show how to pass EMBEDDING_DIM into the vector-index creation script.
-
-### connection-options guidance (tls, timeouts, pool settings) (1 samples, highest priority: medium)
+### pin tested dependency versions (agent kit guidance) (1 samples, highest priority: high)
 
 - Samples: 11-care-gap-identification-pipeline
-- Suggested fix: learn_doc: Add a 'Connection configuration' section to README that explains safe defaults (connectTimeoutMS, socketTimeoutMS, maxPoolSize), whether TLS verification must be enabled and how to supply CA certs, and explicitly state that the sample reads DOCUMENTDB_URI verbatim and will not attempt AAD unless documented.
+- Suggested fix: agent_kit_rule: Agent-kit rule: 'Pin exact versions in sample requirements.txt. When adding tests, record the python/pip matrix used during verification. Provide a sample pinned requirements.txt template and a script that generates a deterministic lockfile.'
 
-### infra-as-code example (1 samples, highest priority: low)
-
-- Samples: 11-care-gap-identification-pipeline
-- Suggested fix: sample_or_quickstart: Add a small 'infra/' folder with a comment-rich Bicep or Terraform snippet showing the resource type to create a compatible cluster (or explicitly state 'sample does not provision resources; use DOCUMENTDB_URI from an existing cluster').
-
-### discoverability: documented environment variables for llm (1 samples, highest priority: medium)
+### unit test patterns & local test harness (1 samples, highest priority: high)
 
 - Samples: 11-care-gap-identification-pipeline
-- Suggested fix: discoverability: Add a brief 'Configuration' table in README listing every environment variable required with a one-line description and example placeholder; ensure agent-kit docs reference the same variable names.
+- Suggested fix: sample_or_quickstart: Add a 'tests/' folder template with pytest examples that use mongomock (or the DocumentDB local gateway) and mock LangChain/OpenAI responses, plus a small CI job example that runs these tests without secrets.
 
-### server-side vector index creation (1 samples, highest priority: high)
+### vector index createindexes json snippet (1 samples, highest priority: medium)
+
+- Samples: 11-care-gap-identification-pipeline
+- Suggested fix: mcp_tool_or_description: Add three minimal JSON templates in the vector-search skill: one for vector-ivf, one for vector-hnsw, and one for vector-diskann with parameter explanations and recommended defaults for small/medium/large datasets.
+
+### which azure resource to use for sample iac (1 samples, highest priority: medium)
+
+- Samples: 11-care-gap-identification-pipeline
+- Suggested fix: naming_or_disambiguation: Add a 'Which resource to use' page to agent-kit showing the Bicep/ARM/Terraform snippet for Microsoft.DocumentDB/mongoClusters (vCore) and map common older databaseAccounts examples to the new resource.
+
+### embedding model & dimensions (1 samples, highest priority: high)
 
 - Samples: 11-correspondent-banking-risk-screener
-- Suggested fix: mcp_tool_or_description: Agent kit / documentation page titled 'Create a vector index on Azure DocumentDB (MongoDB 7 style)'. Outline: short intro, exact createIndex code snippets for HNSW, IVF and DiskANN with parameters (dimensions variable), example Python pymongo call to create index, verification commands to list indexes, and a tested script that can be run against the managed cluster. Provide an opt-in env var example (ENABLE_VECTOR_INDEX=true) and a note about costs and recommended parameters for small/medium/large datasets.
+- Suggested fix: learn_doc: A short README section titled 'Choosing an embedding model' listing supported providers, default model (text-embedding-3-small -> 1536 dims), how to override EMBEDDING_MODEL and EMBEDDING_DIMS, and a verification command to ensure dimensions match before creating indexes.
 
-### index parameter guidance in readme (1 samples, highest priority: medium)
-
-- Samples: 11-correspondent-banking-risk-screener
-- Suggested fix: learn_doc: Add a 'Vector index tuning' subsection to the README explaining typical parameter defaults for small (<=10k), medium (10k-1M) and large (>1M) datasets, with example HNSW/IVF parameter sets and tradeoffs (latency vs memory vs recall).
-
-### embedding model & dimensions authoritative statement (1 samples, highest priority: high)
+### vector index creation payload example (1 samples, highest priority: high)
 
 - Samples: 11-correspondent-banking-risk-screener
-- Suggested fix: discoverability: README 'Configuration' section itemizing MODEL_NAME and EMBEDDING_DIM (e.g., MODEL_NAME=text-embedding-3-small, EMBEDDING_DIM=1536) and advising where to change these constants for other models. Recommend making EMBEDDING_DIM available as a single source of truth in code.
+- Suggested fix: mcp_tool_or_description: Add a 'Create a vector index' subsection to the README containing an exact db.command(...) JSON example: createIndexes: <coll>, indexes:[{name:..., key:{'embedding':'cosmosSearch'}, cosmosSearchOptions:{kind:'vector-hnsw', dimensions:1536, similarity:'COS', m:16, efConstruction:200}}]. Explain common errors (IndexOptionsConflict, CommandNotSupported) and how to inspect indexes via the MCP or portal.
 
-### infrastructure as code example for cluster (1 samples, highest priority: medium)
-
-- Samples: 11-correspondent-banking-risk-screener
-- Suggested fix: learn_doc: Provide a minimal Terraform and Bicep example that declares the DocumentDB resource the product supports (example resource provider and names), with defaults that keep cost low and optional parameters for tier and region. Add a short paragraph in README pointing to the IaC file.
-
-### exact client & createindex code snippet (1 samples, highest priority: high)
+### index-tuning guidance & readme instructions (1 samples, highest priority: medium)
 
 - Samples: 11-correspondent-banking-risk-screener
-- Suggested fix: mcp_tool_or_description: A short code sample file 'examples/create_vector_index.py' that sets EMBEDDING_DIM from src/embeddings.py and issues the create_index call with tested options for the product's vector index API, plus verification steps to confirm index creation.
+- Suggested fix: discoverability: README section: 'Index choices and tuning' describing DiskANN/HNSW/IVF recommendations (P30), recommended parameters for demo (e.g., HNSW M=16, efConstruction=200, efSearch tunable at query time), examples to change cosmosSearchOptions in src/db.py.
 
-### vector index creation & parameters (1 samples, highest priority: high)
+### seed data & seed tagging (1 samples, highest priority: medium)
 
-- Samples: 11-market-news-sentiment-orchestration
-- Suggested fix: learn_doc: Title: 'Creating vector indexes on Azure DocumentDB (MongoDB-compatible)'. Outline: description of supported vector index types (HNSW, IVF, DiskANN), exact createIndex command examples for Node.js driver (showing option names supported by the cluster), recommended defaults for small sample datasets, how to set dims from EMBEDDING_DIM env var, and troubleshooting steps for common errors.
+- Samples: 11-correspondent-banking-risk-screener
+- Suggested fix: learn_doc: Add a short note to README and seed scripts to tag seeded docs with seeded=true and seed_version=N and provide a cleanup script that removes seeded docs by this tag.
 
-### driver connection options and tls guidance (1 samples, highest priority: high)
+### search result projection of similarity score (1 samples, highest priority: high)
 
-- Samples: 11-market-news-sentiment-orchestration
-- Suggested fix: learn_doc: Title: 'Recommended MongoClient options for Azure DocumentDB (MongoDB-compatible)'. Outline: canonical connection string example, TLS enforcement examples, recommended pool (maxPoolSize) values for sample vs production, example Node.js code snippet showing options and explanation.
+- Samples: 11-correspondent-banking-risk-screener
+- Suggested fix: agent_kit_rule: A rule for agent-kit: 'Always include searchScore in $search results and persist it with review runs for auditability' plus a small code snippet showing the $project stage to include searchScore.
 
-### embedding model dimensionality & validation (1 samples, highest priority: high)
+### infrastructure as code for mongoclusters (1 samples, highest priority: high)
 
-- Samples: 11-market-news-sentiment-orchestration
-- Suggested fix: agent_kit_rule: Agent-kit rule: require EMBEDDING_DIM env var for any sample that stores embeddings; sample code snippet to assert embedding.length === parseInt(process.env.EMBEDDING_DIM) and to log/skip or convert if mismatch. README addition describing how to change EMBEDDING_DIM when selecting different models.
+- Samples: 11-correspondent-banking-risk-screener
+- Suggested fix: mcp_tool_or_description: Provide a small Bicep (and optionally Terraform/AzAPI) snippet that creates Microsoft.DocumentDB/mongoClusters with param defaults for 'tier' and 'storage', and a note in README showing az documentdb mongocluster CLI examples.
 
-### 429 / retry guidance (1 samples, highest priority: medium)
+### fallback documentation and marking (1 samples, highest priority: medium)
 
-- Samples: 11-market-news-sentiment-orchestration
-- Suggested fix: learn_doc: Title: 'Handling transient errors and throttling on Azure DocumentDB'. Outline: how to detect 429s, read Retry-After headers, implement exponential backoff with jitter in Node.js, and sample wrapper for MongoDB operations using a retry policy.
+- Samples: 11-correspondent-banking-risk-screener
+- Suggested fix: agent_kit_rule: Add README note and change API to include 'search_source' or 'fallback': true/false in response; include a short example of when fallbacks run and how they are flagged.
 
-### search api and similarity scoring (1 samples, highest priority: high)
-
-- Samples: 11-market-news-sentiment-orchestration
-- Suggested fix: sample_or_quickstart: A short sample 'search' endpoint (server route) that: validates the query, calls embedText(), handles embed failures, runs a vector/hybrid search (with filtering step if needed), and returns hits with similarity scores and metadata.
-
-### infrastructure-as-code example (1 samples, highest priority: medium)
+### llm provider & credentials guidance (1 samples, highest priority: high)
 
 - Samples: 11-market-news-sentiment-orchestration
-- Suggested fix: mcp_tool_or_description: Provide a minimal Bicep snippet and equivalent Terraform example that create the cluster resource (parameterized name, region, tier) and references any necessary settings for MongoDB wire compatibility; include notes about run_policy and cost.
+- Suggested fix: agent_kit_rule: Agent-kit rule + short doc: 'LLM selection for sample gallery: prefer OpenAI (OPENAI_API_KEY) for portability; for Azure OpenAI use AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_KEY, and include a code snippet for both. Provide an explicit 'test-mode' fallback implementation example and an env var naming convention. Include a short automated test (mock) pattern.)'
 
-### decision reason_source clarity (1 samples, highest priority: low)
+### webhook payload & observable delivery (1 samples, highest priority: high)
 
 - Samples: 11-market-news-sentiment-orchestration
-- Suggested fix: agent_kit_rule: Agent-kit rule: when logging decisions, set reason_source to the most specific source available (prompt, skill_md/readiness_report, operator) rather than 'model_default'; show a short checklist for mapping evidence to reason_source.
+- Suggested fix: learn_doc: A page 'Webhook schema for DocumentDB samples' with: canonical JSON payload example, required fields, recommended headers (Authorization: Bearer), examples for HMAC vs bearer, and a tiny test harness (node script) showing how to run a local webhook receiver (eg, using http.createServer) to validate delivery and payload shape.
 
-### connection options and tls recommendation (1 samples, highest priority: high)
+### concrete vector index creation examples (createsearchindexes) (1 samples, highest priority: high)
+
+- Samples: 11-market-news-sentiment-orchestration
+- Suggested fix: mcp_tool_or_description: A small page showing a minimal createSearchIndexes JSON for a vector field (embedding) for DiskANN, HNSW, and IVF, with sample engineParams and dimension placeholder (e.g., 'dimensions': 1536). Include a snippet that uses the documentdb MCP tool or driver helper to apply the index.
+
+### driver version & langchain import guidance (1 samples, highest priority: medium)
+
+- Samples: 11-market-news-sentiment-orchestration
+- Suggested fix: discoverability: Add a short 'Node.js dependencies' snippet to the agent-kit and the documentdb-driver skill: the exact npm versions tested with the sample, the working LangChain import pattern, and a pin recommendation (or a small helper file showing the correct imports).
+
+### idempotent seed + seed-as-script guidance (1 samples, highest priority: medium)
+
+- Samples: 11-market-news-sentiment-orchestration
+- Suggested fix: sample_or_quickstart: Add a small 'scripts/seed.js' that calls ensureIndexes() and performs idempotent upserts for watchlist and optionally sample signals; add npm script 'npm run seed' and document it in README.
+
+### unit-test patterns and a local gateway image for ci (1 samples, highest priority: high)
+
+- Samples: 11-market-news-sentiment-orchestration
+- Suggested fix: sample_or_quickstart: Add a tests/ folder with a simple mocha/jest test that uses mongodb-memory-server or the DocumentDB Gateway image and a short docker-compose snippet in the repo showing how to run it locally; show how to mock the OpenAI client in tests.
+
+### retry design & guidance for documentdb (retrywrites=false) (1 samples, highest priority: high)
+
+- Samples: 11-market-news-sentiment-orchestration
+- Suggested fix: discoverability: Add a short cookbook snippet demonstrating normalizeUri(...)?retryWrites=false and an application-level retry helper with exponential backoff and idempotent write example (e.g., upsert with article_id).
+
+### beanie + azure documentdb examples (1 samples, highest priority: high)
 
 - Samples: 11-preference-center-consent-store
-- Suggested fix: learn_doc: Publish a small 'Connection string and driver options' page in the DocumentDB agent kit / product docs that shows sanitized examples of DOCUMENTDB_URI (SRV and non-SRV forms), TLS/ssl parameters, recommended maxPoolSize and timeouts for a small sample app, and code snippets showing AsyncIOMotorClient creation with explicit options. Include a short note on verifying certificates vs. dev-only allow-invalid settings.
+- Suggested fix: learn_doc: A short 'Beanie on Azure DocumentDB' page that includes: 1) example async init_beanie sequence for azure DocumentDB, 2) TTL index creation examples in Beanie and a note about create_index fallback, 3) atomic append-and-update example using find_one_and_update/$push/$set with upsert and returnDocument, 4) optimistic concurrency example using consentVersion in the filter with a retry/conflict handling snippet, 5) note on Beanie index creation/Indexed usage. Put this under the DocumentDB agent-kit docs and reference it from the documentdb-driver and documentdb-data-modeling skills.
 
-### microsoft entra id (aad) authentication flow for drivers (1 samples, highest priority: high)
-
-- Samples: 11-preference-center-consent-store
-- Suggested fix: learn_doc: A product doc page 'Authentication options' that lists supported auth methods (SCRAM/username-password, X.509, AAD if supported), with a code example showing how to obtain an AAD token and present it to the driver (or explicit statement that AAD is unsupported), and recommended fallback patterns for samples.
-
-### append-only history operational guidance (1 samples, highest priority: medium)
+### driver compatibility matrix (motor / pymongo / beanie) (1 samples, highest priority: high)
 
 - Samples: 11-preference-center-consent-store
-- Suggested fix: learn_doc: A short guidance page 'Modeling audit history' with (a) recommended patterns (capped array size, shadow history collection, periodic archival), (b) sample code for each pattern (Beanie + motor), (c) TTL/retention implications if expiring audit events, and (d) when to prefer each approach.
+- Suggested fix: discoverability: Add a short compatibility matrix page to the agent kit docs (or a 'tested-versions.md' in the sample template) listing a small set of tested tuples (Beanie version X, Motor version Y, PyMongo version Z) with a short note on how to reproduce and test the async startup locally. Include a one-line reproduction test command to validate compatibility (e.g., start the app in a disposable virtualenv and confirm init_beanie completes).
 
-### retryable writes and idempotency guidance (1 samples, highest priority: medium)
-
-- Samples: 11-preference-center-consent-store
-- Suggested fix: learn_doc: A 'Retries and idempotency' guidance page with recommended driver flags for retryable writes, example client-side backoff/retry wrapper, and a short pattern for idempotent endpoints (idempotency key header handling or deterministic event ids in upserts).
-
-### provisioning / management-plane snippets (1 samples, highest priority: medium)
+### tests without live cluster — testing guidance (1 samples, highest priority: high)
 
 - Samples: 11-preference-center-consent-store
-- Suggested fix: mcp_tool_or_description: Ship a small infra snippet (ARM/Bicep and a short az CLI example) in the agent kit or sample 'infra' folder that provisions a minimal DocumentDB account and the sample database, plus a note about cost/region defaults and cleanup steps.
+- Suggested fix: agent_kit_rule: An agent-kit rule and short README section: 1) recommend starting the app lazily in samples (only connect to DB when first request or explicitly when env var RUN_WITH_DB=true), or 2) show how to patch startup/init_beanie in tests (example pytest fixture that monkeypatches init_db to a no-op and provides a fake in-memory client). Provide a concrete test fixture snippet and an example test that runs without a remote cluster.
 
-### aggregation api differences ($search vs $vectorsearch) (1 samples, highest priority: high)
+### default retention policy guidance (1 samples, highest priority: medium)
 
-- Samples: 11-visual-similarity-search-image-embeddings
-- Suggested fix: discoverability: Add a short 'Vector search query examples' doc that shows both the $search/cosmosSearch and $vectorSearch variants (with example pymongo aggregator pipeline payloads) and guidance on how to test them interactively (mongosh) and what error messages to expect.
+- Samples: 11-preference-center-consent-store
+- Suggested fix: learn_doc: Add a short 'Consent retention' sentence in guidance that recommends a sample default for demos (e.g., 365 days) and explains how to change it via CONSENT_RETENTION_DAYS; include policy caveats and mention legal/regulatory guidance as out-of-scope.
 
-### documentdb_uri canonical form & auth options (1 samples, highest priority: high)
+### naming and product disambiguation (1 samples, highest priority: high)
 
-- Samples: 11-visual-similarity-search-image-embeddings
-- Suggested fix: discoverability: Add an 'Auth & connection string' page to the agent kit with: (A) canonical DOCUMENTDB_URI examples with placeholders; (B) a note about Entra/AD options if supported and how to obtain tokens for pymongo if the product supports it; (C) example pymongo connect snippet.
+- Samples: 11-preference-center-consent-store
+- Suggested fix: naming_or_disambiguation: A short 'Naming note' at the top of the DocumentDB quickstart and sample README clarifying the lineage and difference between Azure DocumentDB (vCore), Azure Cosmos DB for MongoDB (RU), and Amazon DocumentDB, and pointing to the correct Bicep/Terraform resource type (Microsoft.DocumentDB/mongoClusters).
 
-### embedding metadata guidance (1 samples, highest priority: medium)
+### beanie + ttl index example (1 samples, highest priority: medium)
 
-- Samples: 11-visual-similarity-search-image-embeddings
-- Suggested fix: learn_doc: Add a short note to the data-model docs recommending storing embedding_dim and embedding_dtype on documents or in a dedicated schema document and include a seed script check that validates vector length before insert/upsert.
+- Samples: 11-preference-center-consent-store
+- Suggested fix: learn_doc: A minimal code snippet showing either: a) how to create TTL index via Beanie startup (call the underlying collection.create_index with expireAfterSeconds=0) or b) how to include TTL semantics in a Beanie Settings block if supported. Put this as a short subsection in the 'Beanie on Azure DocumentDB' doc.
 
-### idempotent index creation & verification (1 samples, highest priority: high)
-
-- Samples: 11-visual-similarity-search-image-embeddings
-- Suggested fix: agent_kit_rule: Add an agent-kit rule: 'When creating vector indexes: call list_indexes, if desired index absent then attempt create_index with candidate option-sets, and after create call list_indexes again to verify. Log server error and the server's accepted option keys.' Include a short code snippet implementing the rule.
-
-### retry/backoff best practices (1 samples, highest priority: medium)
+### model choice & preprocessing guidance (1 samples, highest priority: high)
 
 - Samples: 11-visual-similarity-search-image-embeddings
-- Suggested fix: learn_doc: Publish a short 'Retries & backoff' guidance page with code examples (a retry decorator with jitter, recommended pymongo options) and a note on idempotency considerations (which operations may be retried safely).
+- Suggested fix: learn_doc: Add a short 'AI model' guidance page in the sample template recommending a specific checkpoint (e.g., openai/clip-vit-base-patch32), state its output dimension (512), show minimal preprocessing code (resize, normalization), and mention that embeddingDim must match the index 'dimensions' parameter.
 
-### monitoring & index build guidance (1 samples, highest priority: low)
-
-- Samples: 11-visual-similarity-search-image-embeddings
-- Suggested fix: learn_doc: Add a short 'Monitoring & index-build' page describing what to monitor (index size, build time, query latency), example metrics to emit, and recommended scheduling/backoff for large index builds.
-
-### decisions recorded from model defaults (1 samples, highest priority: low)
+### .env.example completeness and model credentials (1 samples, highest priority: high)
 
 - Samples: 11-visual-similarity-search-image-embeddings
-- Suggested fix: discoverability: In the agent kit README, add a short 'default choices' section explaining the chosen CLIP model (openai/clip-vit-base-patch32), why placeholders were used, and where to change them. Mark these as defaults not requirements.
+- Suggested fix: discoverability: Extend .env.example with placeholders: HF_TOKEN="<hf-token-or-empty>", ENABLE_MANAGEMENT_TOOLS="false", ENABLE_WRITE_TOOLS="false" and document in the README why and when to set them (e.g., when running MCP tools in CI you may opt in).
+
+### index parameter tuning guidance in readme (1 samples, highest priority: medium)
+
+- Samples: 11-visual-similarity-search-image-embeddings
+- Suggested fix: learn_doc: Add a 'Index tuning' subsection explaining numLists ~ (#docs/1000) heuristic for IVF, how to increase nProbes/efSearch to improve recall, and point to vector-search skill docs for HNSW/DiskANN tradeoffs.
+
+### pin dependencies guidance / example requirements (1 samples, highest priority: high)
+
+- Samples: 11-visual-similarity-search-image-embeddings
+- Suggested fix: agent_kit_rule: Provide a template requirements.txt with exact pinned versions that match the verification environment (for example, include the exact PyPI versions used during test runs) and add a short note in README 'Pinned dependency versions were tested against the cluster and Python X.Y'.
+
+### explicit guidance: documentdb vector field encoding (array vs binary) (1 samples, highest priority: high)
+
+- Samples: 11-visual-similarity-search-image-embeddings
+- Suggested fix: naming_or_disambiguation: Add a prominent doc section titled 'How to store vectors' that states: 'Prefer embedding fields as arrays of numbers (float32) for cosmosSearch vector indexes, or use the documented binary encoding options — do not assume arbitrary BSON binary subtype 0x09 will work. Include code examples for storing arrays and for the one supported binary encoding if applicable.'
+
+### mcp management-tools opt-in and diagnostics (1 samples, highest priority: medium)
+
+- Samples: 11-visual-similarity-search-image-embeddings
+- Suggested fix: discoverability: Document the MCP opt-in flag and recommended CI/Dev settings in README: explain when to set ENABLE_MANAGEMENT_TOOLS and ENABLE_WRITE_TOOLS and the security tradeoffs.
+
+### abandoned-cart partial/compound index example (1 samples, highest priority: high)
+
+- Samples: 12-abandoned-cart-recovery-orchestration
+- Suggested fix: sample_or_quickstart: Short sample page titled 'Indexing for time-window queries (abandoned-cart example)'. Outline: intent, query shape, ESR rule reminder, 2 copy-paste createIndex examples (1) compound: db.carts.createIndex({ status: 1, lastUpdated: 1 }) and (2) partial: db.carts.createIndex({ lastUpdated: 1 }, { partialFilterExpression: { status: 'abandoned' } }), plus a note about awaiting index creation and verifying with explain('executionStats').
+
+### documentdb driver retrywrites guidance (agent rule) (1 samples, highest priority: high)
+
+- Samples: 12-abandoned-cart-recovery-orchestration
+- Suggested fix: agent_kit_rule: Agent-kit rule: when generating db client config for Azure DocumentDB, set retryWrites=false (or ensure connection string contains retryWrites=false) and tls=true. Provide the exact code snippet for Node.js MongoClient options and a short rationale explaining the service recommendation.
+
+### .env.example completeness & discoverability (1 samples, highest priority: medium)
+
+- Samples: 12-abandoned-cart-recovery-orchestration
+- Suggested fix: discoverability: .env-vars page in sample README or a one-line table in README listing every environment variable the sample reads (DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_MODEL, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, SENDGRID_API_KEY, DB_NAME). Mark which are required vs optional and give placeholder examples.
+
+### append-only / audit logging pattern for recovery logs (1 samples, highest priority: medium)
+
+- Samples: 12-abandoned-cart-recovery-orchestration
+- Suggested fix: learn_doc: A short 'Notification & audit logging patterns' page describing when to use append-only logs (and how to partition them), example schema for recovery_logs, example indexes (cartId + sentAt), retention strategies (TTL vs archival), and notes on idempotent write patterns for avoiding double-sends.
+
+### explain() and pre-run verification snippet (1 samples, highest priority: high)
+
+- Samples: 12-abandoned-cart-recovery-orchestration
+- Suggested fix: sample_or_quickstart: Add a small script verify_index.js that runs the abandoned-cart query with explain('executionStats') and prints key metrics (totalDocsExamined, totalKeysExamined, executionTimeMillis) and a README section explaining how to interpret numbers.
 
 ### llm output audit trail (1 samples, highest priority: high)
 
@@ -3822,6 +3838,11 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - Samples: 17-rare-disease-literature-search
 - Suggested fix: discoverability: Add a short note in README.md under 'Index creation' explaining MCP management tools may be disabled and include the env note: 'If MCP management tools are disabled, set ENABLE_MANAGEMENT_TOOLS=true in the MCP server config or use the included create_index.py which uses the driver as a fallback.'
 
+### decisions recorded as model_default (1 samples, highest priority: medium)
+
+- Samples: 17-rare-disease-literature-search
+- Suggested fix: agent_kit_rule: Add an agent-kit rule requiring explicit justification (in README or decisions.jsonl) when choosing a model_default for embedding/LLM/models or dependency pinning; require a short rationale and test notes for medical domain samples.
+
 ### driver version recommendation and tested versions (1 samples, highest priority: medium)
 
 - Samples: 17-seasonal-trend-spotter-agent
@@ -3846,6 +3867,11 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 
 - Samples: 17-seasonal-trend-spotter-agent
 - Suggested fix: agent_kit_rule: Provide a short 'HTTP contract' snippet in the sample README: example FastAPI /search handler that returns 400 on empty q, 502/503 on external-api failure with structured JSON {error:..., code:...}, and an example of the mock fallback path.
+
+### pinned dependency guidance for samples (1 samples, highest priority: high)
+
+- Samples: 17-stress-testing-multi-agent-runner
+- Suggested fix: discoverability: A short 'Supported client versions' doc that lists exact tested package versions for Python (pymongo, python-dotenv, langchain, openai, pytest) per Python minor version (3.10/3.11/3.13). Include a suggested pinned requirements.txt snippet for copy/paste.
 
 ### driver pool and timeout defaults for sample code (1 samples, highest priority: medium)
 
@@ -4177,11 +4203,6 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - Samples: 19-proactive-outreach-orchestration
 - Suggested fix: agent_kit_rule: Add a test script step that runs explain('executionStats') for key queries and fails the CI step if a COLLSCAN is observed for an important query. Add the vector index creation tool described above as an idempotent step.
 
-### tests that run without a live cluster (1 samples, highest priority: medium)
-
-- Samples: 19-proactive-outreach-orchestration
-- Suggested fix: sample_or_quickstart: A short 'Testing' page and example tests using mongodb-memory-server or a small mock wrapper around getClient(); include an npm script 'test:unit' that runs these mocked tests and document what environment variables to stub.
-
 ### sample iac for mongoclusters (1 samples, highest priority: high)
 
 - Samples: 19-proactive-outreach-orchestration
@@ -4460,8 +4481,8 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 
 ## Where public sources contradict what the model believed
 
-- Model believed (mongodb): Create indexes that support the detector's most common patterns: indexes on transaction_id, from_account, to_account, timestamp (often compound, e.g., {from_account:1, timestamp:-1} and {to_account:1, timestamp:-1}) to make chain-following and time-window queries efficient. / Source says: Create single-field indexes on transactions for fields used in traversal and filtering (from_account, to_account, timestamp) and a unique index on accounts.account_id before running queries. (1 samples)
-- Model believed (mongodb): When storing embeddings as BSON Binary, choose a single Binary subtype and explicit endianness and include metadata (e.g., dtype='float32', dims=1536) in the document so clients/indexes decode vectors correctly. / Source says: Store embeddings as BSON Binary float32 bytes without additional embedded metadata (dims/dtype) and infer dimension from byte length when reading, rather than including explicit dimension/dtype metadata in the document. (1 samples)
+- Model believed (general): Tune IVF parameters relative to dataset size: pick nlist (number of inverted lists) proportional to sqrt(N) and set search params (nprobe) to trade recall vs latency; document chosen defaults and allow configuration. / Source says: When using IVF, choose numLists relative to dataset size (use documentCount/1000 for up to ~1M documents, and consider other index types like DiskANN beyond that); tune nProbes (nProbes/nProbes) to trade recall for latency rather than using a single universal sqrt(N) rule. (1 samples)
+- Model believed (mongodb): When storing embeddings in BSON, use a deterministic binary representation (e.g., serialize float32 little-endian into BSON Binary subtype) and document the serialization format so clients and index creation use the same layout. / Source says: Store vectors as numeric arrays (number[]) so they can be indexed; embedding values stored as other types (for example raw BSON Binary) are not accepted by the vector index and will not be indexed. (1 samples)
 - Model believed (azure_cosmos_db): Provision throughput appropriately for sustained ingestion: either provision collection/database throughput or use autoscale if available; monitor RU consumption (or equivalent) and scale before throttling becomes frequent. / Source says: Do not assume Azure DocumentDB uses the Cosmos DB 'RU' provisioning model; Azure DocumentDB uses selectable compute tiers and independently sized storage (vCores/tiers), so plan capacity by picking an appropriate cluster tier, storage and sharding approach rather than only thinking in RUs. (1 samples)
 - Model believed (azure_cosmos_db): If the managed service exposes a platform-native change feed (e.g., Cosmos DB Change Feed), evaluate using that instead of MongoDB change streams if it offers better SLAs/availability or integrates better with Azure tooling. / Source says: Azure DocumentDB exposes MongoDB change streams as the recommended change feed mechanism for MongoDB-compatible workloads; there is not a separate Cosmos DB change-feed alternative to prefer for this API. (1 samples)
 - Model believed (mongodb): Use ordered=False and writeConcern w/ appropriate w and wtimeout only if you understand tradeoffs; for maximum throughput prefer lower synchronous write guarantees but ensure app-level validation/compensation for data loss. / Source says: Azure's MongoDB-compatible service ignores client-specified MongoDB writeConcern (w/wtimeout); rely on account consistency settings and the platform's replication semantics rather than setting client writeConcern to tune durability. (1 samples)
@@ -4488,12 +4509,11 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - Model believed (mongodb): Set appropriate writeConcern and readConcern for transactional work (use writeConcern: { w: 'majority' } and readConcern: 'local' or 'majority' per consistency requirements) and ensure driver options include retryWrites=true for transient server errors. / Source says: Do not assume driver-managed retryable writes are enabled; Azure DocumentDB samples set retryWrites=false and recommend designing idempotent application-level retries rather than relying on retryWrites=true for non-idempotent operations. (1 samples)
 - Model believed (mongodb): Enable server-side retryWrites and configure the driver to use sensible serverSelectionTimeoutMS and socketTimeoutMS to avoid long request hangs; handle DuplicateKey and idempotency explicitly for write retries. / Source says: Set retryWrites=false in the connection string for Azure DocumentDB and do not rely on the driver's automatic retryWrites behavior for non-idempotent operations. (1 samples)
 - Model believed (mongodb): Use writeConcern 'majority' (or the equivalent durable write setting) for portfolio upserts when the application requires read-after-write consistency, or explicitly read with majority readConcern after a critical write. / Source says: Don't assume client-specified MongoDB writeConcern will control durability; Azure DocumentDB maps/makes writes quorum/majority at the service level and client writeConcern may be ignored—use account-level consistency settings to reason about read-after-write behavior. (1 samples)
-- Model believed (mongodb): Create a single MongoClient (pymongo.MongoClient) at application startup and reuse it for all requests; close it on shutdown (do not create a new client per request). / Source says: This sample's get_client() implementation reads DOCUMENTDB_URI and returns a new pymongo.MongoClient() on each call; the app creates a client inside request handlers rather than a single global client. (1 samples)
-- Model believed (mongodb): When creating a vector index do it idempotently: check existing indexes with list_indexes/listIndexes and only call create_index/createIndexes if the desired index is absent; catch and handle server rejections (bad option names) instead of failing startup. / Source says: The sample attempts create_index without first listing existing indexes (no idempotent listIndexes check); it relies on catching create_index exceptions instead of explicitly checking or adapting index creation parameters. (1 samples)
-- Model believed (mongodb): Detect and respect the server's supported wire protocol/features (MongoDB version, vector index types such as IVF/HNSW/DiskANN) at runtime—query server buildInfo or isMaster/hello—and adapt index creation parameters to that server's accepted syntax rather than assuming a single API format. / Source says: The sample does not query server buildInfo/hello to detect supported wire protocol or vector index algorithms; instead it attempts index creation with plausible options and logs failures rather than adaptively changing parameters based on server feature detection. (1 samples)
-- Model believed (general): Protect the /visual-search upload endpoint: validate content-type, limit upload size, enforce timeouts, and reject non-image files to avoid DoS and avoid decoding extremely large images in-memory; return clear 4xx errors for invalid input. / Source says: The /visual-search endpoint validates uploads by attempting to open with PIL and returning 400 on failure, but it does not explicitly validate content-type headers, does not enforce an upload size limit, and does not set explicit request timeouts in the sample. (1 samples)
-- Model believed (mongodb): Use listIndexes/listIndexes on the collection to verify that the vector-ivf (or chosen algorithm) index actually exists and has the expected parameters after creation; if createIndex fails, capture the error and fall back or surface a clear admin message. / Source says: The sample does not call listIndexes/listIndexes to verify that a vector-ivf index exists and with expected parameters after creation; it only requests create_index and logs failures, so it does not explicitly verify index presence. (1 samples)
-- Model believed (general): Avoid transferring all embeddings to the client for search in production; if the server lacks vector search, provision a small dedicated ANN service (FAISS/Annoy/HNSWlib) or do batched approximate operations rather than naive full-table brute-force queries. / Source says: For demonstration simplicity the sample falls back to fetching all embeddings and computing cosine similarity locally when server-side vector search is unavailable, rather than delegating to a dedicated ANN service. (1 samples)
+- Model believed (mongodb): Use driver‑level options for retryable reads/writes where supported (retryReads/retryWrites) and be aware of differences in retry semantics between MongoDB drivers and Azure's MongoDB API; test retry behavior for your driver version. / Source says: Set retryWrites=false in the connection string for Azure DocumentDB because the service does not support MongoDB retryable writes; do not rely on driver-level retryable-writes semantics without verifying service support. (1 samples)
+- Model believed (mongodb): Set appropriate write concern and read concern for your risk-review workload (e.g., majority or w=1 depending on durability vs latency needs) and document this in configuration. / Source says: Azure DocumentDB maps MongoDB writeConcern/readConcern to the service consistency model and the account's consistency settings; client-specified writeConcern may be ignored, so use and document the account-level consistency configuration rather than relying on driver writeConcern to enforce durability. (1 samples)
+- Model believed (mongodb): Enable retryable writes and implement application-level retries with exponential backoff for transient network or rate-limited errors; make write operations idempotent when possible (e.g., upsert with a unique client-generated id). / Source says: Set retryWrites=false in the MongoDB connection string for Azure DocumentDB and implement application-level retries with exponential backoff and idempotent writes instead of relying on driver-managed retryWrites. (1 samples)
+- Model believed (mongodb): Store vector embeddings as a fixed-length float32 array with an explicit binary BSON subtype (use the provider-supported subtype, e.g., 0x09 if the server expects it), and record the embedding dimension in the document schema to validate clients (e.g., {embeddingDim:512}). / Source says: Store vectors as a JSON numeric array (number[]) in the document field so they can be indexed by cosmosSearch; non-number types (or unsupported encodings) may prevent a document from being indexed. (1 samples)
+- Model believed (mongodb): When packing embeddings into BSON binary ensure byte order and type match server expectations (float32 little-endian); use a consistent serializer (e.g., numpy.astype('float32').tobytes()) and validate roundtrip reads in tests. / Source says: Prefer storing vectors as arrays of numeric values (float32/float16) in fields and use the documented vector-field encodings/options (float types, half/quantization) rather than relying on an undocumented BSON binary packing; verify encoding support in the service docs before using a binary subtype. (1 samples)
 - Model believed (mongodb): Avoid multi-document transactions spanning partitions for CLV writes; prefer single-partition updates or design for per-customer partitioning—if multi-document transactions are needed, validate whether the MongoDB API on this cluster supports them before relying on them. / Source says: Azure DocumentDB supports multi-document ACID transactions across collections and shards (the platform documents multi-document transactions as supported). (1 samples)
 - Model believed (azure_cosmos_db): Monitor RU (request unit) consumption and provisioned throughput; run explain() on heavy queries and add/adjust indexes or increase throughput if you hit 429s for read/write patterns from the demo or API endpoints. / Source says: Do not assume Azure DocumentDB exposes Cosmos DB RUs; monitor node/cluster metrics (CPU, memory, IOPS) and slow-query logs rather than tracking RU consumption which is a Cosmos DB concept. (1 samples)
 - Model believed (azure_cosmos_db): Instrument and log RU consumption per operation and include request metrics (latency, status) in monitoring so you can correlate API usage patterns with RU spikes and tune throughput accordingly. / Source says: Instrument and log resource/operation metrics (latency, success/failure, background-job lag); DocumentDB docs recommend diagnostic settings and slow-query logs rather than RU-per-op metrics. (1 samples)
@@ -4541,12 +4561,14 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 
 - The driver version is pinned and is one the service supports. (4 samples)
 - If the collection is sharded, the shard key choice is explained. (2 samples)
+- .env.example lists every required setting with placeholder values. (1 samples)
 - Vector indexes use a type and parameters that suit the data size, with the embedding dimensions matching the model. (1 samples)
 - Bulk loads are batched. (1 samples)
 - Infrastructure is defined as code using the service's own resource type. (1 samples)
 - Tier, storage and region are parameters, with defaults that keep cost low. (1 samples)
 - Tests exist and pass without a live cloud resource, or README says what they need. (1 samples)
 - The driver version is pinned and is one the service supports (and dependencies are pinned). (1 samples)
+- Pin the driver version to one the service supports (commit lockfile / show exact versions). (1 samples)
 - Write tests that run without a live cluster (use mocks/fakes) or document the test requirements clearly. (1 samples)
 - Clean-up steps are provided. (1 samples)
 - Unit tests run without a live cluster (mocked or in-memory). (1 samples)
@@ -4565,6 +4587,7 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - Dependencies are pinned. (1 samples)
 - Driver version is pinned and is one the service supports. (1 samples)
 - Use the service-recommended driver/ODM versions (Beanie 2 + AsyncMongoClient recommended for Beanie quickstart). (1 samples)
+- Create and reuse a single MongoClient instance for the process (singleton), share across modules. (1 samples)
 - Infrastructure is defined as code using the service's own resource type (Microsoft.DocumentDB/mongoClusters). (1 samples)
 - Pin the driver version and use a version the service supports. (1 samples)
 - Check the Azure Cosmos DB feature-support pages for the server-version you run; aggregation-stage support varies by server version. (1 samples)
@@ -4582,7 +4605,7 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 
 - audit trail (2 samples)
 - Audit trail (2 samples)
-- The sample pins an embedding dimension constant (EMBED_DIM = 128) in seed_data.py with no logged decision about why 128 was chosen. (1 samples)
+- Audit: connection option choices (pool sizes, timeouts) made in code but not recorded as a build decision. (1 samples)
 - Seed sizes and other hard choices should be recorded as a decision in decisions.jsonl for traceability (e.g., 10k products / 20k orders). (1 samples)
 - Design your partition/shard key to colocate an account's transactions (use accountId as the leading shard key). (1 samples)
 - Audit: the code uses both axios and node-fetch for HTTP; the choice was not logged as a design decision. (1 samples)
@@ -4603,9 +4626,8 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - Choice: OpenAI model gpt-3.5-turbo used when OPENAI_API_KEY is present. (1 samples)
 - Choice: serverSelectionTimeoutMS set to 5000ms in MongoClient configuration. (1 samples)
 - Audit trail: env var names and runtime configuration choices should be recorded as decisions. (1 samples)
-- Check existing indexes with listIndexes before creating vector index (idempotent index creation). (1 samples)
-- Detect server supported wire protocol and vector index algorithms (hello/buildInfo) and adapt index parameters accordingly. (1 samples)
-- After index creation, verify that a vector-ivf index exists with expected parameters (use listIndexes). (1 samples)
+- Audit trail: storing embeddings as BSON Binary subtype 0x09 (choice logged?) (1 samples)
+- Audit trail: chosen index creation method (MCP tool vs PyMongo fallback) (1 samples)
 - Pin dependency versions used in the sample. (1 samples)
 - Test strategy: integration tests run against provided cluster vs offline tests. (1 samples)
 - Record design choices that affect behaviour (e.g., retryWrites True/False) in the decisions log so reviewers can see why they were chosen. (1 samples)
@@ -4644,27 +4666,11 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 
 ### Known to the model, no public source, not on the checklist
 
-- Reuse a single, global MongoClient across the FastAPI app (create it at startup and close at shutdown); set a sensible maxPoolSize and serverSelectionTimeoutMS. (1 samples)
-- Never store the DOCUMENTDB_URI or other credentials in source control; load the connection string from an environment variable and keep a .env.example with a placeholder instead. (1 samples)
-- Enforce row-level access by always including patientId in the DB query filter rather than relying solely on app-layer checks; add an index on patientId for these queries. (1 samples)
-- Model each chunk document with explicit fields: patientId, chunkId (unique), sourceId, position, text, embedding (vector), createdAt; create a unique index on chunkId and an index on patientId + createdAt for efficient retrieval and audit. (1 samples)
-- Keep chunk document sizes well under MongoDB's 16MB document limit (target <= 50–200 KB per chunk); choose chunk token sizes (e.g., 200–500 tokens) to balance context and storage/latency. (1 samples)
-- If the cluster lacks or you can't trust DB-side vector search, use the DB to prefilter by patientId and any metadata and then re-rank a limited candidate set in-application using cosine similarity; limit candidates (e.g., top 200). (1 samples)
-- Project only required fields in queries (e.g., { text:1, chunkId:1 }) to reduce network egress and latency. (1 samples)
-- Set retryWrites=true / retryWrites option for the driver when appropriate and ensure idempotency for multi-step operations (e.g., use upsert with unique chunkId to avoid duplicate chunks on retries). (1 samples)
-- Store embeddings in a consistent numeric type/shape (e.g., float32 arrays) and persist the embedding dimension as metadata to validate inputs before inserting or querying a vector index. (1 samples)
-- Index frequently-filtered metadata fields (e.g., patientId, sourceId, tags) and periodically review index usage to drop unused indexes and reduce write overhead. (1 samples)
-- Mock the DB for unit tests and include at least one integration test against a real/dev cluster to validate indexes and vector-search behavior; do not run integration tests that modify production DB. (1 samples)
-- Avoid transferring full embeddings for every request—either perform ANN in the DB or prefilter and fetch embeddings only for a small candidate set to re-rank in application code. (1 samples)
-- When seeding many chunks, use bulk/ordered bulk writes, throttle ingestion, monitor RU usage and apply exponential backoff on 429 instead of aggressive retries from many concurrent workers. (1 samples)
-- When re-ranking in application code, ensure the same distance metric and any normalization is used as expected by any DB-side vector index to avoid retrieval/recall mismatches. (1 samples)
-- Use the driver/Mongoose connection options and the provided connection string so driver-level TLS and SRV handling remain correct; avoid hardcoding conflicting flags in code. (1 samples)
-- Configure a connection pool sized to the workload rather than opening many short-lived connections per request; set maxPoolSize appropriate to app concurrency. (1 samples)
-- Make updates idempotent by using upsert patterns and timestamps (createdAt/updatedAt); track event deduplication at the application layer if needed. (1 samples)
-- Implement retry with exponential backoff and jitter for transient network errors and throttling (429). (1 samples)
-- Avoid unbounded document growth by keeping profile documents small or moving high-cardinality/time-series events into a separate collection. (1 samples)
-- Create indexes that match your read/query patterns and avoid broad wildcard indexes over large nested subdocuments. (1 samples)
-- Use schema validation on the DB if you need to enforce document shapes; Mongoose validation alone is not DB-level enforcement. (1 samples)
+- Use an explicit, consistent document schema for fraud/transaction data and include schemaVersion for migrations. (1 samples)
+- Do not log protected health information (PHI) or patient-identifying fields to application logs or error traces; mask/redact such fields in logs and treat clinical text as sensitive. (1 samples)
+- Keep vector index metadata (algorithm, dimensions, metric) and the client-side embedding preprocessing (normalization) in versioned config/source control so ingestion and index assumptions remain aligned. (1 samples)
+- Enforce patient-level authorization in the application layer in addition to database filters: verify the authenticated user is authorized to read a given patientId before issuing database queries. (1 samples)
+- If you rely on Cosmos DB RU-based guidance in memory, note that Azure DocumentDB uses cluster tiers and compute/storage sizing rather than the Cosmos RU billing model. (1 samples)
 - The Azure DocumentDB public docs do not prescribe a specific client-side ANN library (FAISS/hnswlib) as the official fallback; the service docs focus on server-side vector indexes instead. (1 samples)
 - Model eligibility criteria in a structured, queryable form (normalized fields and arrays) instead of opaque free text so deterministic rule engines can apply inclusion/exclusion logic. (1 samples)
 - Avoid multi-document transactions for high-throughput ingestion; prefer single-document writes and idempotent design. (1 samples)
@@ -4719,23 +4725,11 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - Detect and block dangerous repository operations (e.g., updateMany, deleteMany without tenantId) via code review or automated tests; include unit/integration tests that assert tenant isolation (queries cannot return results from other tenantIds). (1 samples)
 - Use deterministic pseudo-embeddings only for local unit tests and CI; in integration or production use a real embedding model and store a model identifier and version with each vector. (1 samples)
 - Keep embeddings in a dedicated collection (prior belief). (1 samples)
-- When connecting from Node.js, ensure driver connection options (parser/topology and TLS settings) are explicitly configured according to the platform's best practices. (1 samples)
-- Enable TLS/SSL and certificate validation for client connections and do not disable certificate validation in production. (1 samples)
-- Enable driver retryable writes and implement application-level retries with exponential backoff for transient errors and throttling. (1 samples)
-- Consider using TTL (expireAfterSeconds) on ephemeral article documents so old headlines are removed automatically instead of accumulating indefinitely. (1 samples)
-- Normalize vectors for cosine similarity and validate vector dimensionality at ingest time to avoid mismatched-dimension inserts. (1 samples)
-- Keep documents reasonably small and avoid shipping embeddings unless needed (use projection in queries to exclude embedding fields when not required). (1 samples)
-- Handle HTTP 429/RequestRateTooLarge responses by honoring Retry-After and implementing exponential backoff with jitter; monitor and log 429 spikes. (1 samples)
-- Use explain() to verify queries use indexes and avoid full-collection scans in production. (1 samples)
-- Enable driver and server metrics (connection pool, RU consumption, latency, 429s) and create alerts for throttling, high latency, or connection churn. (1 samples)
-- Protect server endpoints that trigger scrapes or runs: require authentication/authorization, rate-limit requests, validate inputs and never expose admin DB endpoints or credentials. (1 samples)
-- Create a compound index tailored to typical alert lookups (for example {ticker:1, active:1}) so watchlist queries are efficient rather than scanning the whole collection. (1 samples)
-- When ingesting at scale, use bulkWrite with reasonable batch sizes and backoff on failures rather than individual inserts to avoid RU saturation. (1 samples)
-- Prefer change streams or push-based mechanisms to trigger downstream alerting where available; if not, poll efficiently using a last-seen watermark on created_at. (1 samples)
-- Keep append-only history arrays bounded or consider moving older events to a separate history collection to avoid unbounded single-document growth. (1 samples)
-- Enable TLS/SSL in the connection string and verify certificates; set sensible pool/timeouts. (1 samples)
-- Store per-document metadata for embedding dimensionality and dtype (e.g., embedding_dim=512). (1 samples)
-- Wrap DB calls with exponential-backoff retries and make retry policy configurable. (1 samples)
+- Use a dedicated database and well‑named collections for an application rather than writing into shared or admin databases (e.g., use database sample_healthcare_11 and create separate collections for patients and visits). (1 samples)
+- For PHI and healthcare data do not send identifiable patient data to third‑party LLMs unless you have an appropriate HIPAA-compliant contract and proper de‑identification; prefer private/managed LLMs or redact PHI before external calls. (1 samples)
+- When official server-side vector search is unavailable in a deployment, implement a documented fallback and mark results as coming from the fallback. (1 samples)
+- If application requires deterministic, auditable review scoring, persist matched_ids, distances/searchScore, matched text snippets and run metadata alongside the review results. (1 samples)
+- Do not return full embedding vectors in API responses by default; return only metadata and a score unless clients explicitly need the raw embedding. (1 samples)
 - Record LLM outputs and the LLM rationale in structured fields and an append-only audit or history subdocument rather than overwriting a single source-of-truth field. (1 samples)
 - Sanitize and validate any values produced by an LLM before writing them to the database (type checking, allowed enums, ranges). (1 samples)
 - Use Mongoose schema validation (required fields, enums for stage names, types) and set strict mode to reject unexpected fields to prevent malformed or partial audit events being recorded. (1 samples)
@@ -4804,13 +4798,13 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 
 ## Best practices that could not be assessed
 
-- Reuse a single, global MongoClient across the FastAPI app (create it at startup and close at shutdown); set a sensible maxPoolSize and serverSelectionTimeoutMS. (1 samples)
-- Never store the DOCUMENTDB_URI or other credentials in source control; load the connection string from an environment variable and keep a .env.example with a placeholder instead. (1 samples)
-- Keep chunk document sizes well under MongoDB's 16MB document limit (target <= 50–200 KB per chunk); choose chunk token sizes (e.g., 200–500 tokens) to balance context and storage/latency. (1 samples)
-- Use the driver/Mongoose connection options and the provided connection string so driver-level TLS and SRV handling remain correct; avoid hardcoding conflicting flags in code. (1 samples)
-- Configure a connection pool sized to the workload rather than opening many short-lived connections per request; set maxPoolSize appropriate to app concurrency. (1 samples)
-- Avoid unbounded document growth by keeping profile documents small or moving high-cardinality/time-series events into a separate collection. (1 samples)
-- Create indexes that match your read/query patterns and avoid broad wildcard indexes over large nested subdocuments. (1 samples)
+- Tune client connection-pool and timeout options to match workload. (1 samples)
+- Tune search-time ANN parameters and keep lSearch >= k; choose conservative topK and adjust ef/probe for recall vs latency. (1 samples)
+- Provision cluster compute/tier to match expected search and ingestion load (choose an appropriate tier such as M30+ for production vector workloads). (1 samples)
+- Do not log protected health information (PHI) or patient-identifying fields to application logs or error traces; mask/redact such fields in logs and treat clinical text as sensitive. (1 samples)
+- Keep vector index metadata (algorithm, dimensions, metric) and the client-side embedding preprocessing (normalization) in versioned config/source control so ingestion and index assumptions remain aligned. (1 samples)
+- Enforce patient-level authorization in the application layer in addition to database filters: verify the authenticated user is authorized to read a given patientId before issuing database queries. (1 samples)
+- If you rely on Cosmos DB RU-based guidance in memory, note that Azure DocumentDB uses cluster tiers and compute/storage sizing rather than the Cosmos RU billing model. (1 samples)
 - For paging through large result sets, prefer range- or cursor-based (seek) pagination rather than skip/offset-heavy pagination to keep queries efficient. (1 samples)
 - The Azure DocumentDB public docs do not prescribe a specific client-side ANN library (FAISS/hnswlib) as the official fallback; the service docs focus on server-side vector indexes instead. (1 samples)
 - Model eligibility criteria in a structured, queryable form (normalized fields and arrays) instead of opaque free text so deterministic rule engines can apply inclusion/exclusion logic. (1 samples)
@@ -4883,22 +4877,12 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - Use deterministic pseudo-embeddings only for local unit tests and CI; in integration or production use a real embedding model and store a model identifier and version with each vector. (1 samples)
 - If you rely on LLM orchestration libraries (LangChain/LlamaIndex), use the provided Azure DocumentDB vector-store integrations rather than custom, non-indexed scans when possible. (1 samples)
 - Keep embeddings in a dedicated collection (prior belief). (1 samples)
-- When connecting from Node.js, ensure driver connection options (parser/topology and TLS settings) are explicitly configured according to the platform's best practices. (1 samples)
-- Enable TLS/SSL and certificate validation for client connections and do not disable certificate validation in production. (1 samples)
-- Enable driver retryable writes and implement application-level retries with exponential backoff for transient errors and throttling. (1 samples)
-- Consider using TTL (expireAfterSeconds) on ephemeral article documents so old headlines are removed automatically instead of accumulating indefinitely. (1 samples)
-- Normalize vectors for cosine similarity and validate vector dimensionality at ingest time to avoid mismatched-dimension inserts. (1 samples)
-- Keep documents reasonably small and avoid shipping embeddings unless needed (use projection in queries to exclude embedding fields when not required). (1 samples)
-- Handle HTTP 429/RequestRateTooLarge responses by honoring Retry-After and implementing exponential backoff with jitter; monitor and log 429 spikes. (1 samples)
-- Use explain() to verify queries use indexes and avoid full-collection scans in production. (1 samples)
-- Enable driver and server metrics (connection pool, RU consumption, latency, 429s) and create alerts for throttling, high latency, or connection churn. (1 samples)
-- Protect server endpoints that trigger scrapes or runs: require authentication/authorization, rate-limit requests, validate inputs and never expose admin DB endpoints or credentials. (1 samples)
-- Create a compound index tailored to typical alert lookups (for example {ticker:1, active:1}) so watchlist queries are efficient rather than scanning the whole collection. (1 samples)
-- When ingesting at scale, use bulkWrite with reasonable batch sizes and backoff on failures rather than individual inserts to avoid RU saturation. (1 samples)
-- Prefer change streams or push-based mechanisms to trigger downstream alerting where available; if not, poll efficiently using a last-seen watermark on created_at. (1 samples)
-- Keep append-only history arrays bounded or consider moving older events to a separate history collection to avoid unbounded single-document growth. (1 samples)
-- Enable TLS/SSL in the connection string and verify certificates; set sensible pool/timeouts. (1 samples)
-- Store per-document metadata for embedding dimensionality and dtype (e.g., embedding_dim=512). (1 samples)
+- For PHI and healthcare data do not send identifiable patient data to third‑party LLMs unless you have an appropriate HIPAA-compliant contract and proper de‑identification; prefer private/managed LLMs or redact PHI before external calls. (1 samples)
+- Always enforce TLS on connections to Azure DocumentDB and do not disable certificate validation in production. (1 samples)
+- Create additional single-field or compound indexes on frequently filtered metadata (e.g., bank_id, last_reviewed, risk_score) and keep a modest index budget per collection. (1 samples)
+- If application requires deterministic, auditable review scoring, persist matched_ids, distances/searchScore, matched text snippets and run metadata alongside the review results. (1 samples)
+- Sanitize scraped/third-party input before storing (truncate, strip control chars). (1 samples)
+- Enable diagnostic settings and slow-query logs and alert on resource saturation. (1 samples)
 - Always use TLS for connections to Azure DocumentDB and do not disable certificate validation in production. (1 samples)
 - Azure DocumentDB supports multi-document ACID transactions across collections and shards (the platform documents multi-document transactions as supported). (1 samples)
 - In local development, drive TLS relaxation (e.g., tlsAllowInvalidCertificates) from env vars and keep such relaxation out of production code. (1 samples)
@@ -4997,14 +4981,10 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 
 ## Decisions made with no source (`model_default`)
 
-- **01-anti-money-laundering-pattern-detector** D003: I chose PyMongo (pymongo==4.4) as the MongoDB driver - Synchronous PyMongo is simple to use for a small sample and matches recommended patterns for aggregation and $graphLookup.
-- **01-anti-money-laundering-pattern-detector** D006: I chose to provide optional OpenAI summarization (if OPENAI_API_KEY present) and a local template fallback - Avoids requiring a key to run sample while showing how to integrate with LLMs; keeps secrets out of repo.
-- **01-fraud-detection-with-vector-similarity** D003: I chose pymongo (the synchronous driver) pinned as pymongo>=4.0,<5.0 in requirements.txt. - Synchronous pymongo is simple to use for small samples and works well with FastAPI for simple endpoints; it avoids adding async complexity for this sample.
-- **01-fraud-detection-with-vector-similarity** D006: I chose FastAPI to provide a minimal HTTP API (/score) that accepts a transaction and returns risk score, explanation and matches. - An HTTP API is more demonstrable and easy to exercise with curl; FastAPI is lightweight and standard for Python samples.
-- **01-fraud-detection-with-vector-similarity** D008: I chose to require langchain>=0.0.300,<1.0 in requirements.txt as a reasonable modern version constraint. - Use a reasonably recent LangChain version while avoiding major breaking future releases; this is a model_default choice due to missing specific version guidance.
-- **01-product-catalog-with-vector-search** D004: I chose OPENAI_API_KEY as the env var to hold the embedding-provider credential. - text-embedding-ada-002 is an OpenAI model and the common env var name is OPENAI_API_KEY; using that keeps examples familiar to developers.
-- **01-product-catalog-with-vector-search** D007: I chose to attempt a server-side vector index using a 'knnVector' createIndexes command (method 'ivf') and also include a client-side fallback ranking if the server-side index call fails. - Attempt server-side index with a plausible createIndexes body matching MongoDB 7 vector index ideas; if cluster rejects it, the seed script will still insert docs and the app will use local ranking to provide sample search functionality.
-- **01-unified-customer-profile-store** D004: I chose not to provision Azure resources and to use the existing cluster referenced by DOCUMENTDB_URI. - Policy forbids provisioning; sample should run against the provided cluster and include IaC as optional files only.
+- **01-fraud-detection-with-vector-similarity** D003: I chose the Python pymongo driver (pymongo>=4.4,<5.0) for connecting to Azure DocumentDB. - pymongo is the officially supported MongoDB driver for Python and is compatible with the DocumentDB MongoDB wire protocol; the driver aligns with the chosen language.
+- **01-fraud-detection-with-vector-similarity** D004: I chose sentence-transformers/all-MiniLM-L6-v2 (local) with 384 dimensions for embeddings. - Using a local sentence-transformers model avoids requiring cloud API keys in the sample and keeps the example reproducible for developers; 384 dims are standard for that model and fit small demo indexes.
+- **01-fraud-detection-with-vector-similarity** D007: I chose deterministic, template-based explanations for the LangChain agent when an LLM key is not provided; if OPENAI_API_KEY is present the sample can optionally use OpenAI for richer explanations. - Keeps the sample runnable without cloud LLM keys and still demonstrates LangChain tooling; provides an optional LLM path for users who do have API keys.
+- **01-patient-record-summarizer-rag** D003: I chose pymongo (sync) as the Mongo-compatible Python driver, pinned to >=4.3 in requirements.txt. - Synchronous pymongo is simpler for a small sample script and aligns with documentdb-driver guidance about singleton MongoClient. Also the environment uses simple scripts and verification rather than async servers.
 - **02-ai-powered-product-recommendations** D005: I chose to persist agent session memory in a DocumentDB collection named 'sessions' in the sample_retail_02 database. - Persisting sessions in DocumentDB makes per-session personalization durable across process restarts and demonstrates using DocumentDB for session storage, which is instructive for sample readers.
 - **02-clinical-trial-matching-orchestration** D003: I chose OpenAI text-embedding-3-small with 1536 dimensions for embeddings and environment variable OPENAI_API_KEY to provide the key. - OpenAI embeddings are widely used by LangChain examples and are simple to wire in; 1536 dims is a common choice and supported by 'text-embedding-3-small'.
 - **02-clinical-trial-matching-orchestration** D004: I chose OpenAI chat model 'gpt-3.5-turbo' (via OPENAI_API_KEY) for the eligibility and consent agents. - gpt-3.5-turbo is broadly available, lower-cost for samples, and supported by LangChain; it is adequate for small summarization and rationale tasks in a sample app.
@@ -5131,25 +5111,38 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - **10-wealth-management-rag-portal** D013: I chose pymongo>=4.3,<5 as the MongoDB driver dependency. - MongoDB wire protocol 7.0 requires modern pymongo 4.x; pinning <5 avoids potential incompatible major upgrades.
 - **10-wealth-management-rag-portal** D016: I chose OpenAI text-embedding-3-small with 1536 dimensions as the default embedding model for the sample, with a fallback to synthetic random normalized vectors when OPENAI_API_KEY is not provided. - Using a well-known public model avoids vendor lock for examples; providing a fallback keeps the sample runnable without an API key while ensuring vector dimensions match the index.
 - **10-wealth-management-rag-portal** D017: I chose OpenAI gpt-4o-mini as the default chat/completion model for the RAG agent in examples and prompts, configurable via environment variables. - gpt-4o-mini is a cost-effective, capable chat model suitable for examples; making it configurable keeps the sample flexible for other providers.
-- **11-care-gap-identification-pipeline** D003: I used the PyMongo driver pinned to 'pymongo>=4.3,<5.0'. - PyMongo is the standard synchronous MongoDB driver for Python and matches the readiness guidance.
-- **11-care-gap-identification-pipeline** D005: I chose 'gpt-3.5-turbo' as the default LLM model for prioritization and talking-point generation. - gpt-3.5-turbo is broadly available in most environments and sufficient for demonstration; if a higher-capacity model is available the environment can override via OPENAI_MODEL env var.
-- **11-correspondent-banking-risk-screener** D003: I chose pymongo>=4.3,<5.0. - MongoDB 7.x compatibility is safest with pymongo 4.x; pinning <5.0 avoids breaking changes.
-- **11-correspondent-banking-risk-screener** D005: I chose OpenAI text-embedding-3-small with 1536 dimensions. - It's a compact widely used embedding model; readiness report identified embedding model & dims as a gap and recommended choosing one explicitly.
-- **11-correspondent-banking-risk-screener** D006: I chose gpt-4o-mini for generating plain-language narratives. - gpt-4o-mini balances quality and cost; it's a reasonable default for sample narratives.
-- **11-market-news-sentiment-orchestration** D004: I chose to read the Azure DocumentDB connection string from the DOCUMENTDB_URI environment variable at runtime. - DOCUMENTDB_URI is declared authoritative in the run-environment; simpler for a sample and avoids requiring Entra setup.
-- **11-market-news-sentiment-orchestration** D005: I chose OpenAI as the LLM/embedding provider and to read credentials from OPENAI_API_KEY (and OPENAI_API_BASE optionally). - OpenAI is widely available, well-supported by LangChain JS and examples; using OPENAI_API_KEY keeps the sample simple. Code will allow environment configuration so users can substitute Azure if desired.
-- **11-market-news-sentiment-orchestration** D006: I chose 'text-embedding-3-small' with embedding dimension 1536 for embeddings. - Provides reasonable quality and small size for a sample; 1536 dims are a common small model size and allow creating a vector index placeholder.
-- **11-market-news-sentiment-orchestration** D007: I chose console notifications with an optional webhook POST (WEBHOOK_URL) for demo notifications. - Console output is simple and safe for samples; optional webhook allows demonstration of external notification without shipping secrets or complex integrations.
-- **11-preference-center-consent-store** D003: I chose to use latest Beanie, Motor and Pydantic from PyPI and let pip resolve compatible versions (requirements.txt lists package names without pins). - Keeps sample simple and up-to-date; avoids mismatched pins in this environment.
-- **11-preference-center-consent-store** D008: I chose to enforce one consent document per customer by creating a unique index on customer_id and upserting documents in the endpoints. - Simplifies API for 'current preference state' — a single doc holds current preferences and history per customer.
-- **11-visual-similarity-search-image-embeddings** D004: I chose Hugging Face transformers with 'openai/clip-vit-base-patch32' as the default CLIP model. - transformers is widely used and integrates CLIP models; it is straightforward for users to swap models. 'openai/clip-vit-base-patch32' is the canonical ViT-B/32 CLIP model producing 512-d embeddings.
-- **11-visual-similarity-search-image-embeddings** D008: I chose to generate a small set of placeholder product images programmatically in sample_data/ for the seed dataset. - Generating placeholder images avoids licensing issues, keeps the sample self-contained and small, and ensures quick testing without network downloads.
+- **11-care-gap-identification-pipeline** D007: I chose OpenAI provider with a mainstream chat model (gpt-3.5-turbo) and embeddings (text-embedding-3-small). - gpt-3.5-turbo is broadly available and less likely to be blocked in this environment than specialty models; text-embedding-3-small provides stable embeddings if needed. This choice reduces friction for users running the sample.
+- **11-care-gap-identification-pipeline** D010: I chose PyMongo (pymongo >=4.0) as the MongoDB driver and will follow the documentdb-driver guidance (singleton MongoClient). - PyMongo is the standard Python MongoDB driver and matches the documentdb-driver skill guidance.
+- **11-care-gap-identification-pipeline** D012: I chose OpenAI as the default LLM provider but will implement a deterministic fallback mode when OPENAI_API_KEY is not set so the sample runs without external LLM credentials. - Many users have OPENAI_API_KEY; adding a fallback ensures the sample can be run in environments without keys for verification.
+- **11-care-gap-identification-pipeline** D013: I chose not to require vector indexes or embeddings for this sample; the agent will use aggregation pipelines and LLM reasoning (or a deterministic fallback) to prioritize and produce talking points. - Simpler to keep sample focused on aggregation tool and prompt-engineering for guidelines; avoids embedding model choice and vector index creation tangles.
+- **11-care-gap-identification-pipeline** D014: I chose a simple data model: single 'patients' collection containing patient_id, name, dob, sex, diagnosis_codes, last_visit_date, contact. Seed script will populate synthetic records in database 'sample_healthcare_11'. - Simpler for aggregation pipelines and sample seed; avoids needing to join collections for this sample.
+- **11-care-gap-identification-pipeline** D021: I chose two collections: 'patients' and 'visits' (normalized). 'visits' stores historical visit dates and types; 'patients' stores demographics and diagnosis codes. - Normalized visits makes it easier to seed multiple visits per patient and run aggregation pipelines to compute last_visit_date; it's realistic for healthcare data modeling.
+- **11-care-gap-identification-pipeline** D022: I chose to not use vector search or embeddings for this initial sample; the agent will run DocumentDB aggregations to identify gaps and then use an LLM for prioritization and talking points. Vector search is optional and documented in README. - Keeps the sample simpler and avoids needing an embedding model and vector index configuration; achieves goals (identify gaps, prioritize, generate talking points).
+- **11-care-gap-identification-pipeline** D023: I chose OpenAI as the default LLM provider and 'gpt-4o-mini' as the default reasoning model, configurable via environment variables; the app will gracefully skip live LLM calls if no API key is present. - OpenAI is a common, widely available provider. Choosing a light model reduces cost during tests; but the code will be configurable and skip calls if key absent.
+- **11-correspondent-banking-risk-screener** D005: I chose OpenAI embeddings (text-embedding-3-small) with 1536 dimensions by default, configurable via env. - OpenAI embeddings are commonly available and simple to demonstrate; 1536 is the correct dimension for text-embedding-3-small; making it configurable ensures users can change provider in real runs.
+- **11-correspondent-banking-risk-screener** D012: I chose OpenAI text-embedding-3-small (1536 dimensions) for embeddings. - OpenAI embeddings are commonly available, simple to use in samples, and 1536 dims matches many LangChain examples and the cluster's vector-index examples; keeps index dimension manageable for demos.
+- **11-correspondent-banking-risk-screener** D013: I chose OpenAI gpt-3.5-turbo for generating the plain-language narrative. - gpt-3.5-turbo is broadly available and sufficient for generating short narratives in samples; it reduces chance of requiring special access compared to newer models.
+- **11-correspondent-banking-risk-screener** D014: I chose to provide a small FastAPI app with a POST /review endpoint and a CLI demo script. - FastAPI makes the sample easy to run locally and call via curl; also provides a clear API surface for integrations.
+- **11-correspondent-banking-risk-screener** D015: I chose to inject synthetic normalized random embeddings into seed documents when OPENAI_API_KEY is not present to allow verification of vector indexes and queries. - OPENAI_API_KEY was not set in the run environment, so to verify vector-index behavior and queries we will generate deterministic random vectors for the sample documents. This keeps secrets out of files and allows the sample to run in CI or a developer machine without an API key.
+- **11-market-news-sentiment-orchestration** D004: I chose OpenAI (environment var OPENAI_API_KEY) as the LLM provider. - OpenAI is common, supported by LangChain, and simple to configure for a sample; it keeps the sample minimal and portable.
+- **11-market-news-sentiment-orchestration** D005: I chose to scrape Reuters RSS (https://www.reutersagency.com/feed/?best-topics=business-finance) and the Reuters 'Business News' RSS feed for headlines. - Public RSS feeds require no API key and are stable for small demos; Reuters business headlines are representative for finance demo.
+- **11-market-news-sentiment-orchestration** D006: I chose a simple Bearer-token secured webhook: POST JSON to WEBHOOK_URL with Authorization: Bearer <WEBHOOK_TOKEN> if provided. - Bearer token is easy to implement and safe-enough for sample apps; avoids HMAC complexity and keeps sample focused on DocumentDB and LangChain.
+- **11-market-news-sentiment-orchestration** D009: I chose to implement a lightweight heuristic fallback so the demo can run even without an OpenAI key. - A fallback ensures the sample is runnable for verification and demonstration purposes while clearly documenting the preferred OpenAI option in README and .env.example.
+- **11-preference-center-consent-store** D004: I chose a 365-day retention period and will populate retention_expires_at = now + 365 days on writes. - One year is a commonly-used retention window for consent records and is sensible for a sample; will document it in README and make it configurable via env var.
+- **11-preference-center-consent-store** D005: I chose to pin dependencies to specific, recent compatible versions in requirements.txt. - Pinned versions improve reproducibility for the sample; I'll pick recent stable releases compatible with Beanie and FastAPI and record this decision.
+- **11-preference-center-consent-store** D013: I chose a default retention period of 365 days for consent records in this sample. - One year is a sensible demo default for consent retention and easy to understand; documentable and configurable via environment variable.
+- **11-visual-similarity-search-image-embeddings** D003: I chose the Hugging Face checkpoint 'openai/clip-vit-base-patch32' to produce 512-dimensional embeddings. - ViT-B/32 is a standard CLIP that produces 512-dim vectors and is widely available in transformers; keeps compute moderate for sample.
+- **11-visual-similarity-search-image-embeddings** D005: I chose to use picsum.photos image URLs as permissive sample images for seeding. - Simpler, no API keys, reproducible images via seed URL.
 - **12-abandoned-cart-recovery-orchestration** D003: I chose the official 'mongodb' npm package, pinned to '5.7.0' for Node.js 24 compatibility and to follow the documentdb-driver guidance. - mongodb 5.x is modern and compatible with Node 24 and Azure DocumentDB MongoDB wire protocol; it aligns with the prompt review assumption and documentdb-driver guidance.
 - **12-abandoned-cart-recovery-orchestration** D007: I chose OpenAI as the hosted LLM provider (via LangChain/OpenAI integration) and expect OPENAI_API_KEY in environment. - OpenAI is widely available and supported by LangChain; keeps sample simple. Documented in README and .env.example.
 - **12-abandoned-cart-recovery-orchestration** D011: I chose the official 'mongodb' npm package, version ^5.9.0 (modern, Node-24-compatible) and will follow the singleton MongoClient pattern from the documentdb-driver skill. - Official driver offers direct MongoDB API and is recommended for samples that show low-level DocumentDB usage and indexing. Mongoose would add complexity and hide driver patterns the skills recommend.
 - **12-abandoned-cart-recovery-orchestration** D014: I chose OpenAI (openai.com API) as the LLM provider and to integrate it via LangChain's OpenAI LLM wrapper, with credentials provided by OPENAI_API_KEY in env. - OpenAI is widely supported by LangChain and simplifies sample setup; use environment-based API key to avoid embedding secrets.
 - **12-abandoned-cart-recovery-orchestration** D015: I chose to implement pluggable channel adapters with a 'simulated' (console/log) sender by default and provide connectors for Twilio (SMS) and SendGrid (email) that are used only if credentials are present in env; otherwise it falls back to simulation. - This keeps the sample runnable without paid provider credentials, while documenting how to wire real providers in .env.example and README. Tests will mock sending adapters.
 - **12-abandoned-cart-recovery-orchestration** D016: I chose a CLI/one-shot script (node src/run.js) that executes the pipeline once per invocation; README will document scheduling (cron/Azure Function). - Simpler for a sample, avoids long-running server in the runner, and matches the prompt's guidance.
+- **12-abandoned-cart-recovery-orchestration** D022: I chose the official `mongodb` npm driver version 5.8.0 (mongodb 5.x) and will follow the singleton MongoClient pattern. - mongodb 5.x is stable and compatible with Node 24 and DocumentDB wire protocols; skills recommend using a modern driver and singleton pattern (documentdb-driver).
+- **12-abandoned-cart-recovery-orchestration** D023: I chose OpenAI (OPENAI_API_KEY via env) as the hosted LLM provider and will use langchainjs with the OpenAI chat model (gpt-3.5-turbo). - OpenAI is widely used and supported by LangChain JS; environment-based key keeps secrets out of files and matches prompt assumptions.
+- **12-abandoned-cart-recovery-orchestration** D024: I chose to implement channel agents that simulate email/SMS sends but include adapter interfaces and `.env.example` placeholders for Twilio and SendGrid so users can wire real providers. - Avoids sending real messages from sample while showing how to integrate real providers; keeps the sample safe for CI and dev runs.
+- **12-abandoned-cart-recovery-orchestration** D028: I chose to use dotenv to load runtime environment variables from a .env file in development only, with a .env.example provided. - dotenv is standard and will not commit real secrets; .env.example documents required variables.
 - **12-clv-prediction-pipeline** D005: I chose OpenAI gpt-3.5-turbo as the default LLM for the LangChain Chat model. - gpt-3.5-turbo is commonly available and least likely to require elevated permissions; safer for sample. Credentials loaded from OPENAI_API_KEY environment variable.
 - **12-clv-prediction-pipeline** D006: I chose to create a multikey index on 'purchases.date' to accelerate aggregations that unwind purchases by date and compute tenure/recency. - An index on purchases.date helps aggregation that filters by date ranges or sorts by purchase date; multikey array index is supported.
 - **12-cross-border-payment-audit-trail** D008: I chose to retry documentdb_create_index without passing connection_profile (omit it) on the second attempt. - A second attempt with a slightly different parameter set may succeed; per instructions stop after second attempt if it still fails.
@@ -5296,30 +5289,22 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 
 ## Tools that were unavailable
 
-- mongosh (other): 53 samples
-- mongosh (cli): 30 samples
+- mongosh (other): 54 samples
+- mongosh (cli): 26 samples
 - azd (cli): 12 samples
 - bicep (cli): 12 samples
-- terraform (cli): 11 samples
-- azd (other): 5 samples
-- bicep (other): 5 samples
-- terraform (other): 5 samples
-- DocumentDB Agent Kit (accelerator) (skill): 4 samples
-- dotnet (other): 3 samples
-- azd, bicep, terraform (cli): 3 samples
-- DocumentDB MCP Toolkit (accelerator) (other): 2 samples
+- terraform (cli): 10 samples
+- azd, bicep, terraform (cli): 4 samples
+- azd (other): 3 samples
+- bicep (other): 3 samples
+- terraform (other): 3 samples
 - mongosh (MongoDB Shell) (other): 2 samples
+- azd / bicep / terraform / dotnet (other): 2 samples
 - azd / bicep / terraform (cli): 2 samples
-- Embedding provider credentials (e.g. OPENAI_API_KEY) (credential): 1 samples
-- DocumentDB Agent Kit (accelerator skill) (skill): 1 samples
-- Microsoft Learn MCP Server (learn) (other): 1 samples
-- pymongo (Python MongoDB driver) (other): 1 samples
-- llama-index (aka LlamaIndex) (other): 1 samples
-- Embedding / LLM provider credentials (example: OPENAI_API_KEY) (credential): 1 samples
-- DocumentDB Agent Kit (agent skill) (skill): 1 samples
-- Azure MCP / Microsoft Learn MCP servers (mcp_server): 1 samples
-- OPENAI_API_KEY (env var) or equivalent embedding-provider credential (credential): 1 samples
-- Installed agent skills / MCP servers (skill): 1 samples
+- dotnet (other): 2 samples
+- pymongo (Python package) (other): 1 samples
+- LangChain (Python package) (other): 1 samples
+- azd / bicep / terraform (IaC tools) (cli): 1 samples
 - OpenAI / embedding & LLM provider credentials (credential): 1 samples
 - OpenAI credentials (OPENAI_API_KEY) (credential): 1 samples
 - azd / bicep / terraform (other): 1 samples
@@ -5330,20 +5315,7 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - bicep / terraform (other): 1 samples
 - mongodb driver (npm) (other): 1 samples
 - LlamaIndex / embedding provider (not a local tool) (other): 1 samples
-- azd / bicep / terraform / dotnet (other): 1 samples
-- Azure DocumentDB MCP Toolkit (accelerator) (mcp_server): 1 samples
-- Microsoft Learn MCP Server (documentation search) (mcp_server): 1 samples
-- dotnet (cli): 1 samples
-- LLM & embedding credentials (e.g. OPENAI_API_KEY or AZURE_OPENAI_KEY) (credential): 1 samples
-- mongodb npm package (driver) (other): 1 samples
-- LangChain JS and provider SDKs (npm packages) (other): 1 samples
-- DocumentDB MCP Toolkit (accelerator) (mcp_server): 1 samples
-- installed_skills (skill): 1 samples
-- mcp_servers (mcp_server): 1 samples
-- pymongo (Python package) (other): 1 samples
-- CLIP model & runtime (examples: transformers / open_clip / torch) (other): 1 samples
-- FastAPI / uvicorn (HTTP framework) (other): 1 samples
-- Azure DocumentDB MCP Toolkit (accelerator) (other): 1 samples
+- azd, bicep, terraform (other): 1 samples
 - azd, bicep, terraform, dotnet (CLIs not on PATH) (cli): 1 samples
 - LLM / Embedding provider credentials (e.g. OPENAI_API_KEY) (credential): 1 samples
 - bicep / terraform / azd (cli): 1 samples
@@ -5356,35 +5328,15 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 
 ## Accelerators not installed
 
-- DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit): 7 samples
+- DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit): 8 samples
 - DocumentDB Agent Kit (not installed). Install with: npx skills add Azure/documentdb-agent-kit: 2 samples
-- DocumentDB Agent Kit (install: npx skills add Azure/documentdb-agent-kit): 2 samples
 - azd: 2 samples
 - bicep: 2 samples
 - terraform: 2 samples
 - mongosh: 2 samples
-- DocumentDB Agent Kit (install with: npx skills add Azure/documentdb-agent-kit): 2 samples
-- Azure DocumentDB MCP Toolkit (documentdb entry in mcp.json) — not installed; adds data-plane query/aggregate/index management tooling.: 1 samples
-- DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit) — not installed; provides agent skills, samples and conventions.: 1 samples
-- Microsoft Learn MCP Server (learn entry in mcp.json) — not configured; would give searchable official docs inside MCP.: 1 samples
-- Azure MCP Server (azure entry in mcp.json) — not configured; would provide Azure management-plane MCP capabilities.: 1 samples
-- Azure DocumentDB MCP Toolkit (install by adding `documentdb` to mcp.json or cloning github.com/microsoft/documentdb-mcp): 1 samples
-- DocumentDB Agent Kit (install via `npx skills add Azure/documentdb-agent-kit`): 1 samples
-- Azure MCP Server (add `azure` to mcp.json or install the Microsoft MCP server): 1 samples
-- Microsoft Learn MCP Server (add `learn` to mcp.json or configure learn.microsoft.com/api/mcp): 1 samples
-- Azure DocumentDB MCP Toolkit (mcp entry 'documentdb') — install by adding entry 'documentdb' in mcp.json for the MCP runner: 1 samples
-- DocumentDB Agent Kit (skill) — install via npx skills add Azure/documentdb-agent-kit: 1 samples
-- Azure MCP Server (mcp entry 'azure') — add the azure MCP server entry in mcp.json or run the upstream mcp server: 1 samples
-- Microsoft Learn MCP Server (mcp entry 'learn') — add the learn MCP server entry in mcp.json: 1 samples
-- Azure DocumentDB MCP Toolkit (mcp entry `documentdb`) — would give data-plane query/index tools; not installed. Add by creating an mcp.json entry and running the MCP server that includes `documentdb`.: 1 samples
-- DocumentDB Agent Kit (skill) — contains agent skills and design guidance; not installed. Install with: npx skills add Azure/documentdb-agent-kit: 1 samples
-- Azure MCP Server (mcp entry `azure`) — central Azure control-plane MCP server; not installed. Add by listing `azure` in mcp.json or starting the MCP server that supplies it.: 1 samples
-- Microsoft Learn MCP Server (mcp entry `learn`) — documentation search via MCP; not installed. Add by listing `learn` in mcp.json or starting the Learn MCP server.: 1 samples
-- Local DocumentDB / engine container image for offline testing — there is no local DocumentDB gateway running (skill.md) even though Docker is present; for local runs you would need to run the official documentdb image or a compatible MongoDB 7.0 image. Example install/run: docker pull mongo:7.0 && docker run -d -p 27017:27017 --name mongo mongo:7.0: 1 samples
-- Azure DocumentDB MCP Toolkit (mcp.json entry: documentdb) -- not installed; add by adding an entry 'documentdb' in mcp.json for the MCP runner: 1 samples
-- DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit) -- not installed; install with: npx skills add Azure/documentdb-agent-kit: 1 samples
-- Azure MCP Server (mcp.json entry: azure) -- not configured as an MCP server; add by adding 'azure' to mcp.json for the MCP runner: 1 samples
-- Microsoft Learn MCP Server (mcp.json entry: learn) -- not configured; add by adding 'learn' to mcp.json for the MCP runner: 1 samples
+- DocumentDB Agent Kit (`npx skills add Azure/documentdb-agent-kit`): 1 samples
+- DocumentDB Agent Kit (aggregated agent skill pack) — not installed as an aggregator; install with: npx skills add Azure/documentdb-agent-kit: 1 samples
+- Local DocumentDB gateway container image pre-seeded/demo composition — Docker is installed but the gateway image is not running; developer may add a docker-compose provided by the agent kit for repeatable local runs.: 1 samples
 - DocumentDB Agent Kit (accelerator that packages data-modeling, indexing, and sample templates) — install: npx skills add Azure/documentdb-agent-kit: 1 samples
 - Local DocumentDB container (Gateway image) - the host can run it with Docker to speed local dev (image: ghcr.io/documentdb/documentdb/documentdb-local:latest). Start with docker run or docker-compose described in documentdb-local-deployment skill.: 1 samples
 - documentdb-agent-kit (named accelerator 'DocumentDB Agent Kit' from known_accelerators) - not present as a single npx package/entry; many documentdb-* skills are installed but the named kit entry 'documentdb-agent-kit' is not listed in the inventory. To add: npx skills add Azure/documentdb-agent-kit: 1 samples
@@ -5400,6 +5352,7 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - DocumentDB Agent Kit (accelerator agent skills) — install: npx skills add Azure/documentdb-agent-kit: 1 samples
 - Local DocumentDB container (a running local gateway would speed iteration) — start with: docker run --detach --publish 10260:10260 --name documentdb ghcr.io/documentdb/documentdb/documentdb-local:latest --username <admin> --password <pw>: 1 samples
 - DocumentDB Agent Kit (accelerator): not installed; would speed sample generation and include more opinionated templates and scripts. Install with: npx skills add Azure/documentdb-agent-kit: 1 samples
+- DocumentDB Agent Kit (install: npx skills add Azure/documentdb-agent-kit): 1 samples
 - DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit) — the environment already has individual DocumentDB skills installed and the documentdb MCP server; installing the agent kit would centralize and speed new skill installs but is not required for this sample.: 1 samples
 - DocumentDB Agent Kit (accelerator) — useful agent skills scaffolding and templates. Install: npx skills add Azure/documentdb-agent-kit: 1 samples
 - azd (Azure Developer CLI) - not on PATH; useful for full app scaffolding and CI/CD examples. Install: follow Azure Developer CLI install docs (platform-specific) or run the azure_extension_cli_install tool for 'azd'.: 1 samples
@@ -5415,25 +5368,12 @@ Outline: short guidance that deterministic pseudo-embeddings are useful for unit
 - bicep — useful for local compile/authoring of Bicep from samples: 1 samples
 - terraform — useful if sample ships Terraform examples for infra: 1 samples
 - Local DocumentDB gateway container (image not running) — helpful for offline integration tests: 1 samples
-- Azure DocumentDB MCP Toolkit (add entry `documentdb` in mcp.json to enable): 1 samples
-- Azure MCP Server (add entry `azure` in mcp.json): 1 samples
-- Microsoft Learn MCP Server (add entry `learn` in mcp.json): 1 samples
-- Local DocumentDB container image (optional; run the open-source DocumentDB image from the repo if you want local tests): 1 samples
-- Azure DocumentDB MCP Toolkit (add 'documentdb' entry to mcp.json or install the toolkit repo): 1 samples
-- Azure MCP Server (add 'azure' entry to mcp.json or run the official mcp server): 1 samples
-- Microsoft Learn MCP Server (add 'learn' entry to mcp.json or configure access to learn.microsoft.com/api/mcp): 1 samples
-- Azure DocumentDB MCP Toolkit (add as 'documentdb' in mcp.json or clone github.com/microsoft/documentdb-mcp): 1 samples
-- Azure MCP Server (add 'azure' entry in mcp.json): 1 samples
-- Microsoft Learn MCP Server (add 'learn' entry in mcp.json): 1 samples
-- Local DocumentDB container (pull/open-source engine from github.com/documentdb/documentdb; use docker run for local tests): 1 samples
-- Azure DocumentDB MCP Toolkit (entry `documentdb` in mcp.json) - provides data-plane index and schema tools: 1 samples
-- DocumentDB Agent Kit (`npx skills add Azure/documentdb-agent-kit`) - agent skills with design guidance and code snippets: 1 samples
-- Azure MCP Server (entry `azure` in mcp.json) - helpful for control-plane queries and best-practice lookups: 1 samples
-- Microsoft Learn MCP Server (entry `learn` in mcp.json) - searchable official documentation for verification: 1 samples
-- Azure DocumentDB MCP Toolkit (add entry 'documentdb' in mcp.json per the known_accelerators guidance): 1 samples
-- Azure MCP Server (add 'azure' entry in mcp.json to enable Azure MCP server lookups): 1 samples
-- Microsoft Learn MCP Server (add 'learn' entry in mcp.json to allow documentation search): 1 samples
-- Local DocumentDB container image (pull/run the project container from github.com/documentdb/documentdb for offline testing): 1 samples
+- DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit) — not present as a packaged accelerator; installing it (npx skills add Azure/documentdb-agent-kit) would speed scaffolding and examples.: 1 samples
+- DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit) - would speed schema and sample generation even though many documentdb-* skills are already installed.: 1 samples
+- mongosh (install command: e.g., `npm install -g mongosh` or use distro package manager) - missing from PATH; useful for interactive debugging.: 1 samples
+- DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit) — not installed; would speed sample creation with templates and examples.: 1 samples
+- mongosh (installable via npm or MongoDB downloads) — useful for interactive debugging; install command: `npm i -g mongosh` or use distro packages.: 1 samples
+- Optional: bicep/terraform if the builder planned to provide IaC for cluster provisioning; not required for the sample but useful for reproducible infra.: 1 samples
 - DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit) — would speed agent-skill scaffolding and provide ready repo templates; not installed.: 1 samples
 - DocumentDB Agent Kit (npx skills add Azure/documentdb-agent-kit) — would speed code generation and include vetted templates and an installer; not installed.: 1 samples
 - Azure DocumentDB MCP Toolkit (documentdb MCP) is installed, so no action required.: 1 samples
