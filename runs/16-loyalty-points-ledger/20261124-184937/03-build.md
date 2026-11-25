@@ -1,0 +1,42 @@
+# 3. Build report: 16-loyalty-points-ledger
+
+**Status: completed**
+
+Built a small Node.js + Express + Mongoose sample loyalty ledger that records immutable earn/redeem events and maintains a running balance using multi-document transactions. The sample connects to the live Azure DocumentDB cluster via the DOCUMENTDB_URI environment variable and uses the database sample_retail_16. I implemented an idempotent seed script (creates balances and applies transactional events), read endpoints (/balance and /history) and idempotent index creation. I verified dependency install, seeding, a one-shot check that printed a balance and history, and inspected the live database and indexes via the DocumentDB MCP tools. Notable omissions: I did not demonstrate Microsoft Entra ID (OIDC) auth (the readiness report indicated a docs gap) and I did not start the long-running HTTP server during verification (run_policy guidance).
+
+## How to run
+
+1) Copy .env.example to .env and set DOCUMENTDB_URI to your cluster SRV connection string (mongodb+srv://... with TLS). DATABASE_NAME defaults to sample_retail_16 if unset. 2) npm install 3) npm run seed (idempotent) 4) To run the sample server: npm start (binds to :3000). 5) Example queries: GET /balance?accountId=acct-1 and GET /history?accountId=acct-1. There is also a POST /event for manual transactional writes: POST /event {"accountId":"acct-1","type":"earn","amount":100}. Use the seed and check scripts for one-shot verification without starting the server: npm run seed; npm run check.
+
+## Verified by running
+
+- npm install: exit code 0 (packages installed).
+- node scripts/seed.js: exit code 0 — created balances for acct-1, acct-2, acct-3 and applied transactional events (seed complete).
+- node scripts/check.js: exit code 0 — printed balance doc for acct-1 (balance: 4000, lifetimePoints: 4200) and history count (3) and first event (earn 1200).
+- documentdb_list_databases (db_name=sample_retail_16): returned collections: balances (count 3), events (count 7).
+- documentdb_list_indexes (collection=events): indexes present: _id_, accountId_1, accountId_1_timestamp_-1 (compound index).
+- documentdb_list_indexes (collection=balances): indexes present: _id_, accountId_1 (unique).
+
+## Not verified
+
+- Starting the long-running HTTP server and exercising /balance and /history via curl was not executed during automated verification because run policy forbids long-running processes in the runner. The server code is present and can be started locally with `npm start` to manually test the endpoints.
+- Microsoft Entra ID (OIDC) authentication via MONGODB-OIDC with azure-identity was intentionally not implemented or verified. The readiness report indicated no concrete Node.js + Mongoose example for OIDC; the sample uses SCRAM credentials via DOCUMENTDB_URI as a documented quickstart path.
+
+## Open issues
+
+None.
+
+## Files
+
+- `package.json`
+- `README.md`
+- `.env.example`
+- `src/db.js`
+- `src/models/event.js`
+- `src/models/balance.js`
+- `src/models/index.js`
+- `src/ledger.js`
+- `src/index.js`
+- `scripts/seed.js`
+- `scripts/check.js`
+

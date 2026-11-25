@@ -8,16 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement the app in Node.js and use Mongoose as the ODM to model data and query Azure DocumentDB (MongoDB API).
-- Define an immutable "events" Mongoose model/collection where every earn and redeem action is stored as its own document (include accountId, type (earn|redeem), amount, timestamp) and mark core event fields as immutable in the schema so events cannot be updated.
-- Maintain a separate "balances" Mongoose model/collection that stores the running balance per account; the running balance must only be changed by transactions that also append an event (no direct non-transactional updates).
-- When recording an earn or redeem, open a MongoDB session and use multi-document transactions (session.startTransaction / session.commitTransaction / session.abortTransaction) to atomically (a) insert the new event document into the events collection and (b) update the corresponding document in the balances collection so both operations commit or rollback together.
-- For redeem operations, enforce within the same multi-document transaction that the resulting running balance does not become negative (transactionally check current balance and abort if insufficient funds).
-- Expose an HTTP GET /history endpoint that returns the full event-sourced ledger for a specified accountId, ordered chronologically (oldest first) and read from the events collection (no projection that omits event immutability fields).
-- Expose an HTTP GET /balance endpoint that returns the account's current running balance (from the balances collection) and also returns tier status computed from lifetime points.
-- Implement a MongoDB aggregation pipeline (using Mongoose .aggregate()) that computes lifetime points as the sum of all "earn" event amounts for an account (ignore redeem events when computing lifetime), maps lifetime points to a tier (e.g., Bronze/Silver/Gold thresholds coded in the pipeline or a $switch), and return that tier in the API response.
-- Ensure the /balance endpoint includes the aggregation result (lifetime points and tier) alongside the running balance so the tier is derived from event history via the aggregation, not just from the balances document.
-- Demonstrate connection configuration that targets Azure DocumentDB (MongoDB API) in the code (connection usage via Mongoose) so reviewers can confirm the app is written for Azure DocumentDB and uses multi-document transactions supported there.
+- Builds the loyalty ledger in Node.js with Mongoose, storing every earn and redeem event as its own document in Azure DocumentDB.
+- Provides a way to record an earn event and a redeem event (e.g. an HTTP endpoint or a service function) that appends a new event document each time.
+- Treats event documents as immutable: the ledger changes only by appending new event documents, and an event document that has been written is never updated or deleted.
+- Keeps a stored running balance (e.g. one balance document per member) that is updated each time an event is appended.
+- Performs the event append and the running-balance update in one multi-document transaction on a Mongoose session (startSession with withTransaction, or start/commit/abort).
+- Exposes a /balance endpoint that returns the current running balance.
+- Exposes a /history endpoint that returns the recorded earn and redeem events (e.g. for one member, in chronological order).
+- Includes an aggregation pipeline (Mongoose aggregate) run in Azure DocumentDB that sums lifetime points from the event documents and derives a tier status from that total (e.g. with $switch or $cond over tier thresholds).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

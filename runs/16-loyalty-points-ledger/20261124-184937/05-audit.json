@@ -1,0 +1,541 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested Node.js + Mongoose loyalty ledger: immutable event documents, per-account balances, and multi-document transactions that atomically insert events and update balances. The /balance and /history endpoints and the lifetime-points aggregation with tier derivation are implemented and were exercised against the provided live cluster by the builder. Findings: the seed script is only partially idempotent (it will append duplicate events on repeated runs), transactional retry semantics are not implemented (no retry loop for transient transaction errors / no use of the driver's withTransaction helper), and there are no unit tests that run without a live cluster. Infrastructure-as-code for the cluster is not provided (the run-policy and prompt led the builder to use an existing cluster). Several service-level best-practices are discoverable in the installed DocumentDB skills and were followed (singleton client, TLS via connection string, indexes, unique balance index). Documentation gaps that would help agents/builders include a concise Node.js Mongoose + Microsoft Entra ID (MONGODB-OIDC) example, clarification of write-concern semantics for ledger use, and explicit CLI/Bicep naming guidance for vCore mongoClusters vs older Cosmos DB account resources. The run was able to call the MCP tools and Microsoft Learn search, so 'not found' in this report means actively not present in public guidance the agent saw.",
+  "requirement_results": [
+    {
+      "requirement": "Builds the loyalty ledger in Node.js with Mongoose, storing every earn and redeem event as its own document in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/models/event.js lines 3-9 define the Event schema with collection:'events'; app/src/ledger.js line 11 uses Event.create() to insert events.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Provides a way to record an earn event and a redeem event (e.g. an HTTP endpoint or a service function) that appends a new event document each time.",
+      "status": "met",
+      "evidence": "app/src/ledger.js lines 6-12 (appendEventTransactional); app/src/index.js lines 51-56 expose POST /event; scripts/seed.js lines 28-36 call appendEventTransactional to create sample events.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Treats event documents as immutable: the ledger changes only by appending new event documents, and an event document that has been written is never updated or deleted.",
+      "status": "met",
+      "evidence": "app/src/ledger.js inserts events (Event.create) and never updates or deletes event documents; Event schema has no update hooks (app/src/models/event.js).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Keeps a stored running balance (e.g. one balance document per member) that is updated each time an event is appended.",
+      "status": "met",
+      "evidence": "app/src/models/balance.js lines 3-8 define one balance document per accountId with unique index; app/src/ledger.js lines 14-28 read/create and then update the balance inside the transaction.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Performs the event append and the running-balance update in one multi-document transaction on a Mongoose session (startSession with withTransaction, or start/commit/abort).",
+      "status": "met",
+      "evidence": "app/src/ledger.js lines 7-11 start a session and transaction, lines 11-18 insert the event and create/read the balance, lines 28-31 commitTransaction and endSession (abort on catch).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Exposes a /balance endpoint that returns the current running balance.",
+      "status": "met",
+      "evidence": "app/src/index.js lines 11-31 implement GET /balance and return accountId, balance, lifetimePoints, and tier.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Exposes a /history endpoint that returns the recorded earn and redeem events (e.g. for one member, in chronological order).",
+      "status": "met",
+      "evidence": "app/src/index.js lines 38-44 implement GET /history and return Event.find(...).sort({ timestamp: 1 }).lean().",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Includes an aggregation pipeline (Mongoose aggregate) run in Azure DocumentDB that sums lifetime points from the event documents and derives a tier status from that total (e.g. with $switch or $cond over tier thresholds).",
+      "status": "met",
+      "evidence": "app/src/index.js lines 15-19 run Event.aggregate([ { $match: { accountId, type: 'earn' } }, { $group: { _id: '$accountId', lifetimePoints: { $sum: '$amount' } } } ]) and lines 26-31 derive tier from lifetimePoints.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.js line 5 reads process.env.DOCUMENTDB_URI; app/.env.example provides a placeholder; no credential strings are present in repo files.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lines 3-4 include DOCUMENTDB_URI and DATABASE_NAME placeholders.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create any vector indexes or call an embedding model; there is no vector-index code to inspect.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If the sample will demonstrate vectors, add a createIndexes call that defines the vector index and a comment documenting the embedding dimensionality to keep index dims aligned with the model."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index is created in the code or README; no parameters to inspect.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is added, include a short section in README describing index choice (HNSW/IVF/DiskANN), expected data size ranges, and which parameters to tune (lBuild/lSearch/maxDegree) for larger datasets."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 12-20 check mongoose.connection.readyState and call mongoose.connect(uri, ...), exporting mongoose for reuse; main() calls connect() once before listening (app/src/index.js lines 62-69).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "scripts/seed.js lines 14-21 create balance docs idempotently (findOne then create), and scripts/seed.js lines 28-36 generate events via appendEventTransactional. However, the events ops are invoked unconditionally so repeated runs will append duplicate events.",
+      "cause": "builder_error",
+      "smallest_fix": "Make the seed script idempotent for events: either (a) add a unique idempotencyKey field to events with a unique index and set it for seed events, or (b) check for an existing event marker (e.g., Event.findOne({ accountId, metadata.note: 'signup bonus' })) before appending, or (c) skip seeding if Event.count({accountId}) > 0."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample has no /search endpoint or embedding calls.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If /search is added, return 400 for empty query and catch/return a 502 or descriptive 500 when embedding/remote calls fail; include unit tests for these failure modes."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search endpoint or vector search results are implemented.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is added, include similarity/distance in the results returned by /search (e.g., score property) and document scoring interpretation in README."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "This is a Node.js project; package.json pins dependency versions explicitly (dotenv:16.1.4, express:4.18.2, mongoose:7.6.0, morgan:1.10.0) and a package-lock.json is present.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files or a test script are present in the repository; README does not describe test requirements or in-memory test strategy.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests using an in-memory MongoDB (mongodb-memory-server) or mock Mongoose (mockingoose) so tests can run offline. Add an npm test script and a tests/ folder with key tests for ledger append, balance update, and aggregation behavior."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No infra-as-code files (Bicep/ARM/Terraform) are present in the repo; builder intentionally used an existing cluster per run policy.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an infra/ folder with a minimal Bicep or ARM template that uses the Microsoft.DocumentDB/mongoClusters resource (or a Terraform/AzAPI example) with small defaults (M10/M30 as appropriate) and instructions in README about not applying the template without permission."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md lines 5-21 describe what it demonstrates, prerequisites and setup; lines 22-29 describe run and scripts; lines 35-36 mention clean-up.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README and code refer to \"Azure DocumentDB\"; .env.example uses a mongocluster.cosmos.azure.com host placeholder which is appropriate for the vCore DocumentDB cluster SRV form.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create a single, process-level MongoClient / Mongoose connection and reuse it across the app (singleton pattern); configure the connection pool (e.g., maxPoolSize) rather than opening a new connection per request.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 12-20 check mongoose.connection.readyState and call mongoose.connect(...) with maxPoolSize configured.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection settings",
+      "practice": "Connection settings (timeouts, retry options, TLS) follow the service's recommendation for the chosen driver.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.js sets maxPoolSize and serverSelectionTimeoutMS (lines 14-18) and relies on the connection string for TLS (line 19), but does not set retryWrites/retryReads or a transaction retry wrapper; withTransaction helper is not used.",
+      "source": "documentdb-connection / documentdb-security",
+      "searched": "",
+      "fix": "Add recommended connection options (e.g., retryWrites:false, maxIdleTimeMS) to mongoose.connect and document the recommended defaults; enable TLS explicitly if not present in the connection string. Also prefer withTransaction or implement a transaction retry loop for transient transaction errors.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        },
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver version pinned",
+      "practice": "The driver version is pinned and is one the service supports.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/package.json lines 14-18 list explicit dependency versions (mongoose: 7.6.0).",
+      "source": "package.json",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets from environment",
+      "practice": "Read the DocumentDB connection string only from an environment variable or secret store (DOCUMENTDB_URI); never hard-code credentials or commit them, and provide a .env.example placeholder for developers.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.js line 5 reads process.env.DOCUMENTDB_URI; app/.env.example provides a placeholder (app/.env.example lines 2-4). No real credentials are committed.",
+      "source": ".env.example / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example / README.md",
+          "url": ""
+        },
+        {
+          "title": ".env.example / README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Auth method choice",
+      "practice": "The sample uses the authentication method the prompt asked for; if Microsoft Entra ID is available for the scenario, it is used or the reason for not using it is stated.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "Decision D003 selected SCRAM-based credentials via DOCUMENTDB_URI; app/README.md line 33 documents that SCRAM is used and that Microsoft Entra ID (OIDC) is not demonstrated here.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index compound for history",
+      "practice": "Create a compound index on (accountId, timestamp) to support efficient /history queries that page by time.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/models/event.js line 11 creates EventSchema.index({ accountId: 1, timestamp: -1 }); documentdb_list_indexes (events) (events.jsonl) confirms accountId_1_timestamp_-1 index exists.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing (index-compound-esr)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-indexing (index-compound-esr)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unique balance index",
+      "practice": "Create a unique index on balances.accountId and update that document atomically inside the same transaction that inserts the event.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/models/balance.js line 4 sets accountId required and unique; BalanceSchema.index({ accountId: 1 }, { unique: true }) at line 10; ledger updates the Balance inside the transaction (app/src/ledger.js lines 14-28). documentdb_list_indexes (balances) confirms unique index.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent index creation",
+      "practice": "Make index creation idempotent in startup/seed scripts (call createIndexes and tolerate already-exists).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/index.js lines 64-66 call Event.createIndexes() and Balance.createIndexes() at startup; scripts/seed.js line 8 also calls Balance.createIndexes().",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain plans & profiler",
+      "practice": "Use explain('executionStats') and index-stats to verify /history and aggregation queries use the intended indexes.",
+      "category": "monitoring_and_debugging",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "No explain() calls or profiler use are present in the sample code or seed/check scripts. The build did invoke documentdb_list_indexes via MCP to confirm indexes (events.jsonl) but did not run explain() on queries.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Add an example explain() call (or use MCP tools) in scripts/check.js to show how to verify index usage (e.g., Event.find({accountId}).sort({timestamp:-1}).explain('executionStats')).",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotency keys on events",
+      "practice": "Use idempotency/deduplication keys and enforce them with a uniqueness constraint so retries and duplicate deliveries are safe.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/architecture/patterns/idempotent-consumer",
+      "status": "violated",
+      "evidence": "Event schema (app/src/models/event.js) has no idempotencyKey field or unique constraint and seed operations append events unconditionally (scripts/seed.js lines 28-36).",
+      "source": "Idempotent Consumer pattern (Azure Architecture Center)",
+      "searched": "",
+      "fix": "Add an idempotencyKey property to Event (unique index) and set idempotencyKey for events created by seeds and clients, or deduplicate in the seed script before appending.",
+      "sources": [
+        {
+          "title": "Idempotent Consumer pattern (Azure Architecture Center)",
+          "url": "https://learn.microsoft.com/azure/architecture/patterns/idempotent-consumer"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retryable writes & transaction retries",
+      "practice": "Enable retryable reads/writes and implement bounded application retry logic with exponential backoff; handle driver error labels for transactions.",
+      "category": "retries_and_error_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/ledger.js implements manual startTransaction/commit/abort but does not implement transaction retry logic for transient errors nor does it use the driver's withTransaction helper (ledger.js lines 7-11 and 30-36).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Implement retries for transactions: either use session.withTransaction(callback) which helps with automatic retries, or wrap commit/transaction in a retry loop that checks MongoDB error labels (TransientTransactionError and UnknownTransactionCommitResult) and uses exponential backoff.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Denormalize aggregates",
+      "practice": "Denormalize and precompute read-heavy aggregates (maintain small balances document with lifetime totals) to avoid full-collection aggregation scans per request.",
+      "category": "queries_and_aggregations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "The sample maintains a balances document (app/src/models/balance.js) and updates lifetimePoints in the transaction (app/src/ledger.js line 26), while /balance also demonstrates aggregation as an example (app/src/index.js lines 15-21).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Mongoose .lean usage",
+      "practice": "Use .lean() for read-heavy queries and project only required fields.",
+      "category": "mongoose_practices",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/index.js lines 23 and 42 use .lean() on Balance.findOne() and Event.find() respectively.",
+      "source": "prior_knowledge_only",
+      "searched": "Searches for Mongoose .lean() guidance in Azure DocumentDB returned no useful Learn pages (see discovered_practices notes).",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short sentence in the Mongoose quickstart or 'Use Mongoose with Azure DocumentDB' page recommending .lean() for read endpoints and projecting fields to reduce BSON transfer would help agents follow this practice."
+    },
+    {
+      "topic": "Monitoring & diagnostics",
+      "practice": "Enable diagnostic settings and slow-query logs, ingest them into Log Analytics, and alert on cluster saturation metrics.",
+      "category": "monitoring_and_debugging",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The sample does not change cluster diagnostic settings; monitoring is an operational topic outside the sample's code. The builder did use MCP tools to list indexes and collections (events.jsonl).",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a short README section recommending enabling diagnostics and showing az/portal steps to wire diagnostics into Log Analytics for production samples.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Write concern mapping",
+      "practice": "Do not assume driver writeConcern settings (w, j) will be honored identically; verify the service's behavior before relying on w:'majority' or j:true.",
+      "category": "durability_and_consistency",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample does not set writeConcern explicitly; guidance about write concern mapping to Azure DocumentDB was not found in the public sources searched (discovered_practices P21 is prior_knowledge_only).",
+      "source": "prior_knowledge_only",
+      "searched": "Searches: 'Azure DocumentDB write concern w majority j true' and 'writeConcern site:learn.microsoft.com azure documentdb' returned no definitive mapping.",
+      "fix": "Document the service's write concern semantics for ledger samples (a short page or section showing which writeConcern settings are supported and recommended for strong durability).",
+      "sources": [],
+      "what_would_help": "A Learn page or small doc summarizing writeConcern semantics for Azure DocumentDB (vCore) and recommended settings for ledger use."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "The decision to approve the build with readiness 'ready_with_gaps' is consistent with the run artifacts: the builder completed the sample and documented remaining gaps in the readiness/findings. The events log shows readiness checks and searches were performed prior to build (events.jsonl)."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Node.js + Express + Mongoose matches the prompt. The package.json pins Mongoose 7.x (7.6.0). The events trace shows the driver/data-modeling skills were consulted (events.jsonl entries)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choosing SCRAM via DOCUMENTDB_URI and omitting Entra ID demonstration is justified: the readiness/search step found that a concise Node.js Mongoose + MONGODB-OIDC example was missing and the builder recorded this in README (app/README.md line 33). The events trace shows searches for Entra ID guidance (events.jsonl)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "The decision to use an existing cluster and not provision resources aligns with the run policy and the environment described in the run notes; events.jsonl includes run_policy/readiness evidence and the build invoked documentdb_list_databases against sample_retail_16."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Keeping separate balances and events collections with the stated index shapes is implemented in the code (app/src/models/balance.js and app/src/models/event.js) and the indexes were created and verified via MCP (events.jsonl documentdb_list_indexes calls)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choosing multi-document transactions with Mongoose sessions is implemented (app/src/ledger.js uses mongoose.startSession and session.startTransaction). The events trace includes transaction-related skill discoveries."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "The decision to focus README/public API on the read endpoints while demonstrating writes via a seed script is consistent with the repository: README documents /balance and /history and the seed/check scripts demonstrate writes. A POST /event endpoint exists in src/index.js for manual testing but is not advertised in README; the decision text mentions the write endpoint is a debug/demo convenience and not a published API."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Node.js Mongoose + Microsoft Entra ID example",
+      "what_was_missing": "A concise, copy-paste Node.js (Mongoose) example that shows how to obtain an OIDC token (via azure-identity/DefaultAzureCredential or similar) and connect to an Azure DocumentDB cluster using authMechanism=MONGODB-OIDC was not found in the public quickstarts the agent searched.",
+      "where_searched": "Microsoft Learn Azure DocumentDB quickstarts, documentdb security/readme, and the agent-kit skill resources (documentdb-security), plus general web search recorded in readiness findings.",
+      "effect_on_this_build": "Builder chose SCRAM-based credentials for the sample rather than demonstrating Entra ID; README documents that Entra ID was not shown. Without a short example, agents and builders are likely to omit OIDC in quickstarts or attempt broken/partial implementations.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A small page or appendix titled 'Connect with Microsoft Entra ID (MONGODB-OIDC) — Node.js + Mongoose' that includes: 1) brief prerequisites (cluster auth-allowed-modes must include MicrosoftEntraID), 2) sample code showing DefaultAzureCredential/ManagedIdentityCredential to get an access token for scope (resource) and how to pass it to mongoose.connect with authMechanism=MONGODB-OIDC (or driver-specific token callback), 3) a note about required driver versions, 4) a one-line az CLI command to enable Entra ID on a cluster, and 5) a short troubleshooting checklist. Include copy-ready code with minimal dependencies (azure-identity, mongoose) and show both SRV and non-SRV forms.",
+      "priority": "high"
+    },
+    {
+      "topic": "Write-concern semantics for ledger use",
+      "what_was_missing": "Clear guidance on how MongoDB writeConcern settings (w, j) map to Azure DocumentDB durability guarantees for ledger/financial workloads was not present in the public sources the agent found (this remained a prior-knowledge-only item).",
+      "where_searched": "Searches for 'Azure DocumentDB write concern w majority j true' and related queries; agent-kit resources and Microsoft Learn compatibility pages were checked but no definitive mapping page was found.",
+      "effect_on_this_build": "The sample does not set an explicit writeConcern. For ledger scenarios, teams may need authoritative guidance about recommended writeConcern settings and their effects on durability and performance on DocumentDB vCore clusters.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short guidance note on the 'Transactions and Durability' page: 1) explain how DocumentDB maps common driver writeConcern options to service durability, 2) give recommended settings for ledger-style workloads (what to set, and tradeoffs), 3) show an example in Node.js/Mongoose of setting writeConcern on operations or on the connection, and 4) include an MCP command or explain() snippet to verify write durability behavior.",
+      "priority": "high"
+    },
+    {
+      "topic": "Mongoose .lean() guidance discoverability",
+      "what_was_missing": "The practical Mongoose optimization pattern to use .lean() for read-heavy endpoints is not present in the Azure DocumentDB quickstart pages the agent searched; it exists in general Mongoose guidance but not surfaced in DocumentDB-specific docs.",
+      "where_searched": "Search for 'Mongoose .lean() Azure DocumentDB' and Mongoose guidance pages; agent-kit skill resources did not include a short explicit mention targeted at DocumentDB quickstarts.",
+      "effect_on_this_build": "This did not break the sample (the builder used .lean()), but agents that rely only on DocumentDB quickstarts may not apply the optimization by default.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short note in the 'Quickstart: Connect Mongoose to Azure DocumentDB' page: a two-sentence recommendation to use .lean() for endpoints that return plain JSON and project only required fields, with an inline code example for Event.find(...).lean().",
+      "priority": "medium"
+    },
+    {
+      "topic": "CLI / IaC naming and resource-type clarity (mongoclusters vs databaseAccounts)",
+      "what_was_missing": "Discoverability confusion between the older Cosmos DB 'databaseAccounts' resource and the vCore DocumentDB 'Microsoft.DocumentDB/mongoClusters' resource; agents may use incorrect az CLI groups or ARM types by habit.",
+      "where_searched": "Microsoft Learn CLI and ARM docs; readiness_findings Q01-Q03 show search results and confusion evidence.",
+      "effect_on_this_build": "The builder did not attempt to provision resources in this run, but shipping example IaC or CLI snippets that use the wrong resource type would mislead builders and break deployments.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "A short 'Infra quick note' page or README section clarifying: 'For vCore Azure DocumentDB clusters, use Microsoft.DocumentDB/mongoClusters (Bicep/ARM) and az documentdb mongocluster commands. Do not use Microsoft.DocumentDB/databaseAccounts or az cosmosdb commands for vCore clusters.' Include one minimal Bicep snippet and one az documentdb mongocluster list-connection-strings example.",
+      "priority": "high"
+    },
+    {
+      "topic": "No authoritative node test pattern for offline unit tests",
+      "what_was_missing": "While there is a local gateway skill, there is no short DocumentDB-specific example in the quickstarts showing a minimal test harness using mongodb-memory-server or the DocumentDB local gateway for Node.js Mongoose tests.",
+      "where_searched": "DocumentDB local deployment skill and quickstarts; no direct test harness examples were found in the sample quickstarts consulted.",
+      "effect_on_this_build": "The sample lacks unit tests runnable without a live cluster. Having a short, documented test pattern would make it straightforward to add tests that run in CI without external resources.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A 'Testing' section in the Node.js quickstart showing two options: (1) use mongodb-memory-server with example test code (Jest/Mocha) to run ledger unit tests offline, and (2) optionally show how to start the DocumentDB gateway Docker image for integration tests (port 10260) with the exact connection string and TLS dev settings.",
+      "priority": "medium"
+    }
+  ]
+}
