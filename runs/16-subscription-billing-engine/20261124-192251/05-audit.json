@@ -1,0 +1,538 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested billing engine: Node.js + Mongoose models, an idempotent transactional charge flow, TTL entitlements, idempotency unique index, a singleton client and idempotent seed and index scripts. The builder exercised the sample against the live cluster (create-indexes, seed, test-charge) and verified indexes via the MCP tools. Findings: a few gallery-level expectations are incomplete (env example not exhaustive, driver version pinning, no offline unit tests, missing an explicit subscriptionId index creation despite a schema index and autoIndex:false), several small reliability/observability practices are not implemented (no bounded retries / backoff), and some implementation choices (autoIndex:false, retryWrites:false, pool sizing) were made without a logged decision. Several documentation gaps were found where public guidance or discoverability could be improved so agents won't misapply neighbouring-product guidance (DocumentDB vs Cosmos DB). See requirement_results, checks, decision_reviews and doc_gaps for details.",
+  "requirement_results": [
+    {
+      "requirement": "Node.js application built with the Mongoose ODM, with Mongoose schemas/models for subscription plans, customers, charge events and trial entitlement documents, stored in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/models/plan.js (lines 4-9); app/src/models/customer.js (lines 4-7); app/src/models/chargeEvent.js (lines 4-10); app/src/models/entitlement.js (lines 4-7).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Subscription plan documents describe the recurring billing a customer subscribes to (e.g. price and billing interval), and a subscription status is stored for each subscription (e.g. on the customer document).",
+      "status": "met",
+      "evidence": "app/src/models/plan.js (priceCents, interval fields) and app/src/models/subscription.js (status field, line 7).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A charge operation that records a charge by inserting a charge event document and updating the subscription status it belongs to.",
+      "status": "met",
+      "evidence": "app/src/index.js: ChargeEvent.create with {subscriptionId,...} and Subscription.findByIdAndUpdate(...). See index.js lines 40-44.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The charge event insert and the subscription-status update run atomically in one multi-document transaction on a Mongoose session (startSession with withTransaction, or startTransaction / commitTransaction / abortTransaction).",
+      "status": "met",
+      "evidence": "Transactions used in app/src/index.js (startSession(), session.startTransaction(), commitTransaction/abortTransaction) lines 36-46; same pattern in scripts/test_charge.js lines 32-38.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The charge operation takes an idempotency key and checks it before recording; when a charge with that key has already been recorded, it does not insert a second charge event (e.g. the key stored on the charge event with a unique index, or a lookup inside the transaction).",
+      "status": "met",
+      "evidence": "Pre-check findOne({ idempotencyKey }) in app/src/index.js lines 32-34 and duplicate-key handling (err.code === 11000) lines 51-55; unique index created by scripts/create_indexes.js lines 10-11 and verified in events.jsonl documentdb_list_indexes output.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Trial entitlement documents have a Date-typed expiry field, and a TTL index (expireAfterSeconds on that single date field) is created in code through Mongoose so Azure DocumentDB deletes trial entitlements automatically once they expire.",
+      "status": "met",
+      "evidence": "app/src/models/entitlement.js (expiresAt: Date, line 7) and scripts/create_indexes.js creates TTL index on expiresAt with expireAfterSeconds: 0 (create_indexes.js lines ~20-26). Index verified in events.jsonl (documentdb_list_indexes shows expireAfterSeconds: 0).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.js reads process.env.DOCUMENTDB_URI (lines 4-5) and .env.example contains only placeholders (app/.env.example lines 1-4). No secrets are committed.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI and DATABASE_NAME (app/.env.example lines 3-7) but does not list PORT (used by app, default 3000) or any optional runtime toggles such as LOG_LEVEL.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add the few runtime env names to .env.example (e.g. PORT, DATABASE_NAME, LOG_LEVEL) with placeholder values and a short comment describing each."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "No embedding usage or vector index creation in the sample. The run-environment notes a vector-capable cluster but the sample does not create vector indexes.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If vector search is later added, add a documented constant for embedding dimension and use it when creating the vector index; document the embedding model and dims in README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexes are created by the sample.",
+      "cause": "could_not_determine",
+      "smallest_fix": "N/A unless vector indexes are added."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js implements a singleton connection and reuses mongoose.connect() result (lines 12-17).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "scripts/seed.js uses findOneAndUpdate with upsert:true (seed.js lines 18-20 and lines 36-40); scripts/create_indexes.js catches existing-index errors and proceeds (create_indexes.js try/catch blocks). The builder ran these scripts successfully twice during the run (events.jsonl shows successful runs).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "The sample does not implement any /search endpoint.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding search, implement input validation that returns 400 for empty queries and wrap embedding calls with try/catch returning a clear 5xx error message on embedding failure."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search endpoint implemented.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding search, include the similarity score in the response documents (e.g. score field) and document interpretation in README."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "This is a Node sample. package.json lists semver ranges (\"mongoose\": \"^7.7.0\"), but package-lock.json is present which pins installed versions. package.json lines show ranged versions.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Either pin exact versions in package.json or add npm-shrinkwrap.json / commit package-lock.json (the repo includes package-lock.json already). For gallery samples prefer explicit pinned versions in package.json or a shrinkwrap file."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No unit tests are present in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests using a mocked Mongoose or mongodb-memory-server to avoid requiring a live DocumentDB cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep/ARM/Terraform) are present; the builder recorded a decision to not provision resources (decisions.jsonl D004) and README states the sample expects an existing cluster.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add IaC files (Bicep/Terraform/AzAPI) that target Microsoft.DocumentDB/mongoClusters and include parameters for tier/region/storage; if the run environment forbids provisioning, include IaC files without executing them."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "README.md includes 'What this sample shows', 'Prerequisites', 'Quickstart' and 'Cleanup' sections (README.md lines 3-7, 9-16, Quickstart lines).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and code refer to 'Azure DocumentDB' and 'DocumentDB' (README.md lines 9-11). No Cosmos DB or Amazon DocumentDB names appear in the sample materials.",
+      "cause": "none",
+      "smallest_fix": "none"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env var for connection",
+      "practice": "Read the DocumentDB/MongoDB connection string from an environment variable (e.g. MONGODB_URI or DOCUMENTDB_URI) and do not commit secrets to source control.",
+      "category": "authentication",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/src/db.js reads process.env.DOCUMENTDB_URI (lines 4-9); app/.env.example contains a placeholder for DOCUMENTDB_URI (app/.env.example lines 3-4).",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Require TLS and SCRAM",
+      "practice": "Require TLS for client connections (include tls=true in the URI) and use SCRAM-SHA-256 authentication for Azure DocumentDB connections.",
+      "category": "authentication",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example and README advise using the cluster connection string which (per docs) should include TLS; the DB connection code does not embed credentials. See app/.env.example lines 3-4 and README.md prerequisites.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Singleton client",
+      "practice": "Create a single shared MongoClient / Mongoose connection (singleton) and reuse it across the process rather than creating a new connection per request.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js implements a singleton connection (let connection = null; connect() returns cached connection) lines 12-17.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune connection-pool and timeout settings for your deployment (serverless vs long-running) — e.g., small pools and low minPoolSize for serverless, larger maxPoolSize and longer maxIdleTime for OLTP servers; set serverSelectionTimeoutMS/connectTimeoutMS appropriately.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js sets maxPoolSize: 10 and serverSelectionTimeoutMS: 5000 and retryWrites:false (db.js lines 17-24), reflecting small-pool sample tuning.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transactions session use",
+      "practice": "When using multi-document transactions, start a session, pass the session into every read and write that belongs to the transaction, and commit or abort explicitly (or use withTransaction when available).",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction",
+      "status": "followed",
+      "evidence": "app uses ChargeEvent.startSession(), session.startTransaction(), passes { session } to create and findByIdAndUpdate, then commitTransaction/abortTransaction in app/src/index.js lines 36-46 and scripts/test_charge.js lines 32-38.",
+      "source": "Group multiple operations in transactions in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Group multiple operations in transactions in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL for entitlements",
+      "practice": "Use a TTL index (expireAfterSeconds) on an expiration Date field (e.g., expiresAt) for ephemeral entitlement/trial documents so the database automatically removes expired documents.",
+      "category": "ttl",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#index-types",
+      "status": "followed",
+      "evidence": "Entitlement schema has expiresAt: Date (app/src/models/entitlement.js line 7). scripts/create_indexes.js creates TTL index on expiresAt with expireAfterSeconds:0 (create_indexes.js). documentdb_list_indexes shows ttl_entitlement_expiresAt with expireAfterSeconds: 0 (events.jsonl).",
+      "source": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#index-types"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotency unique index",
+      "practice": "Persist an idempotency marker using a unique index (for example on idempotencyKey) so duplicate attempts produce a duplicate-key error that the application can detect and handle instead of double-processing.",
+      "category": "idempotency",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "followed",
+      "evidence": "scripts/create_indexes.js creates unique index on idempotencyKey (create_indexes.js lines 9-12) and app handles duplicate key in catch block (app/src/index.js lines 51-55). documentdb_list_indexes output shows uniq_idempotencyKey unique:true.",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Indexes for query patterns",
+      "practice": "Create indexes to match your query patterns (equality → sort → range ordering) and verify index usage with explain('executionStats') to avoid collection scans.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "scripts/create_indexes.js created a unique idempotencyKey and an index on ChargeEvent.customerId but did not explicitly create an index on ChargeEvent.subscriptionId (schema defines subscriptionId: index: true in app/src/models/chargeEvent.js line 5, but autoIndex is disabled in app/src/db.js line 22 so the schema index will not be created automatically).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Add creation of an index on subscriptionId in scripts/create_indexes.js (e.g. await ChargeEvent.collection.createIndex({ subscriptionId: 1 }, { name: 'idx_charge_subscriptionId' })); or re-enable autoIndex during index-creation/deployment only.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Keep transaction scope small",
+      "practice": "Keep transactional scope minimal — only touch the documents that must be updated atomically to reduce conflicts and latency.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "The transactional charge touches only the chargeEvent and the subscription document (app/src/index.js lines 40-44 and scripts/test_charge.js lines 35-36).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "DocumentDB limits",
+      "practice": "Azure DocumentDB documents are limited to 16 MB and transactions have a maximum lifetime (transaction timeout documented in service limits); design transactions and document sizes accordingly.",
+      "category": "performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/limitations",
+      "status": "not_assessable",
+      "evidence": "The sample's documents are small (no large binary fields) but the repository does not contain explicit checks to assert document size or transaction duration limits; verifying transaction lifetime would require load testing against the live cluster.",
+      "source": "Azure DocumentDB service limits and quotas reference",
+      "searched": "",
+      "fix": "If this sample targets production use, add guidance in README about keeping documents small and avoiding long-running transactions; optionally add a smoke-test that runs explain() and checks that typical transactions complete within expected times.",
+      "sources": [
+        {
+          "title": "Azure DocumentDB service limits and quotas reference",
+          "url": "https://learn.microsoft.com/azure/documentdb/limitations"
+        }
+      ],
+      "what_would_help": "A short 'Service limits' note in README showing 16 MB document limit and the documented transaction timeout and a link to the service limits page."
+    },
+    {
+      "topic": "Mongoose session passing",
+      "practice": "When using Mongoose transactions, explicitly pass the session returned by startSession() into Model.create(), updateOne(), findOneAndUpdate(), etc., so those operations participate in the transaction.",
+      "category": "Mongoose",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb",
+      "status": "followed",
+      "evidence": "Create and update calls include the { session } option in app/src/index.js (ChargeEvent.create(..., { session })) and scripts/test_charge.js line 35-36.",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries and idempotency",
+      "practice": "Implement bounded retries with exponential backoff for transient errors and ensure retries are safe (idempotent) or protected by the idempotency key rather than blindly reissuing non-idempotent writes.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "The sample does not implement bounded retries or exponential backoff; error handling is present and the idempotency key protects against duplicate processing, but there's no retry/backoff wrapper for transient failures.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add a small retry wrapper with exponential backoff for transient connection/write errors (respecting idempotency keys) or use a retry library and document which errors are safe to retry.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Disable autoIndex in production",
+      "practice": "Disable automatic index creation in Mongoose in production (autoIndex: false) and create your indexes as part of a deployment/migration step rather than at runtime.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/src/db.js sets autoIndex: false (db.js line 22) and scripts/create_indexes.js creates indexes explicitly (create_indexes.js).",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring recommended",
+      "practice": "Enable diagnostic settings and collect slow-query logs and metrics (CPU, memory, IOPS, connections) into Log Analytics and alert on saturation or elevated retry/failed-transaction rates.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample is a small demo; the repository does not configure monitoring/diagnostic settings (that depends on Azure subscription and cluster admin).",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "For production examples include a short note in README describing how to enable diagnostic settings and what metrics to monitor.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Least privilege DB user",
+      "practice": "Use least-privilege credentials for the app: create a database user limited to the application database and grant only the minimal roles/permissions required rather than using an admin/root account; consider Microsoft Entra ID and role-based access control for production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/migrate-amazon-documentdb#update-your-application",
+      "status": "not_assessable",
+      "evidence": "The sample reads a connection string from DOCUMENTDB_URI but does not include instructions to create least-privilege database users; verifying the sample was run with least-privilege credentials depends on the external cluster and the credentials used at run time.",
+      "source": "Migrate from Amazon DocumentDB to Azure DocumentDB (with MongoDB compatibility)",
+      "searched": "",
+      "fix": "Add a short 'Security' subsection to README showing how to create a database user with limited permissions and how to use Microsoft Entra ID for production.",
+      "sources": [
+        {
+          "title": "Migrate from Amazon DocumentDB to Azure DocumentDB (with MongoDB compatibility)",
+          "url": "https://learn.microsoft.com/azure/documentdb/migrate-amazon-documentdb#update-your-application"
+        }
+      ],
+      "what_would_help": "A short sample az CLI or Mongo shell command that creates a dedicated database user and the minimal roles required."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "The decision to approve the build as 'ready_with_gaps' is consistent with the run artifacts and the builder_report: the sample was implemented and exercised, and several optional gallery expectations remain incomplete."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "questionable",
+      "comment": "The builder chose Mongoose 7.x (7.7.0) and recorded this decision. Microsoft quickstarts and tutorials commonly recommend/pin Mongoose 9.x (tested with driver 7.8.0). Choosing 7.x is defensible but departs from the officially tested tutorial versions; recommend either pinning a Mongoose version the docs claim is tested (e.g. 9.12.1) or documenting the chosen version and why."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Reading the connection string from DOCUMENTDB_URI is implemented and documented in app/src/db.js and .env.example; the events.jsonl contains the matching log_decision and code writes."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "The builder recorded a deliberate choice not to provision resources (decision cites run policy and the run-environment). The repo includes no IaC and README states an existing cluster is required. The events trace shows the decision was logged (D004)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Creating a unique index on ChargeEvent.idempotencyKey and an index on customerId was logged and implemented (scripts/create_indexes.js and verified via documentdb_list_indexes). The decision is supported by the code and verification traces."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Creating a TTL index on entitlement.expiresAt with expireAfterSeconds:0 was logged and implemented (scripts/create_indexes.js) and verified via the documentdb_list_indexes output in the events trace."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Env example completeness",
+      "what_was_missing": ".env.example omitted a few runtime variables used or commonly needed for a sample (PORT, LOG_LEVEL and a note about DATABASE_NAME).",
+      "where_searched": "Repository files (.env.example, src/db.js) and quickstart docs for Mongoose on DocumentDB.",
+      "effect_on_this_build": "Minor: the sample ran because defaults exist (PORT defaulted to 3000); however users/agents might not know which env vars are optional vs required.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Short README subsection and an updated .env.example listing: DOCUMENTDB_URI (placeholder), DATABASE_NAME (placeholder), PORT (placeholder, default 3000), LOG_LEVEL (optional), and notes indicating which are optional and where to get the connection string. Add a one-line example `DOCUMENTDB_URI=\"mongodb+srv://<user>:<pass>@<cluster>.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retryWrites=false\"`.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Which Mongoose version to pin",
+      "what_was_missing": "Authoritative guidance in the quickstarts about which Mongoose major version is recommended/pinned for DocumentDB + Node 24.",
+      "where_searched": "learn.microsoft.com quickstarts and tutorial pages. The quickstarts recommend Mongoose 9 in several examples, but the sample used Mongoose 7.x without explicit guidance in the agent kit.",
+      "effect_on_this_build": "Medium: the builder chose Mongoose 7.x (logged D002). Using a non-tested Mongoose major can cause subtle incompatibilities or confuse agents when choosing a runtime.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'tested versions' box in the Node/Mongoose quickstarts listing a tested Mongoose version (e.g. 9.12.1) and tested MongoDB driver bundle, plus notes on which older Mongoose majors are supported. Also add a one-line recommendation in the agent-kit templates to pin the tested version in package.json.",
+      "priority": "medium"
+    },
+    {
+      "topic": "DocumentDB vs Cosmos DB naming/disambiguation",
+      "what_was_missing": "Clear, prominent guidance distinguishing 'Azure DocumentDB (managed MongoDB-compatible vCore offering)' from 'Azure Cosmos DB for MongoDB (RU-based)' and from Amazon DocumentDB. The readiness findings show agents and builders confuse resource names, CLI groups and template resource types.",
+      "where_searched": "Learn docs and agent-kit readiness notes; several quickstarts historically show Cosmos DB 'databaseAccounts' which caused confusion with the mongoClusters resource type.",
+      "effect_on_this_build": "High risk: confusion leads to wrong IaC templates (databaseAccounts vs mongoClusters), the wrong az CLI group (az cosmosdb vs az documentdb), wrong connection strings/ports, and incorrect guidance to agents.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "A single-line prominent banner at the top of relevant quickstarts and the agent-kit README: 'Azure DocumentDB (mongoClusters) is distinct from Azure Cosmos DB for MongoDB (databaseAccounts RU) and from Amazon DocumentDB — use Microsoft.DocumentDB/mongoClusters and az documentdb mongocluster commands for DocumentDB clusters.' Include quick examples of the correct az command and a Bicep snippet showing Microsoft.DocumentDB/mongoClusters.",
+      "priority": "high"
+    },
+    {
+      "topic": "Vector index createIndexes examples",
+      "what_was_missing": "Copy/paste createIndexes runCommand examples for HNSW/IVF/DiskANN with the exact cosmosSearchOptions field names and sample parameters.",
+      "where_searched": "Vector search docs on learn.microsoft.com; readiness notes flagged that agents guess vendor-neutral syntax and can be rejected by the server.",
+      "effect_on_this_build": "Medium for vector-enabled samples; low for this sample because it doesn't use vectors. Without explicit examples agents will attempt incorrect createIndex syntax and receive errors.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A small 'indexing' snippet page showing db.runCommand({ createIndexes: '<coll>', indexes:[{ key:{'<field>':'cosmosSearch'}, name:'vec', cosmosSearchOptions:{ kind:'vector-hnsw', dimensions:1536, similarity:'COS', m:16, efConstruction:64 } }] }) for each supported kind, plus notes on dimension matching and retryWrites=false requirement.",
+      "priority": "low"
+    },
+    {
+      "topic": "Idempotency operational guidance",
+      "what_was_missing": "There is no single public page that specifies idempotency-key canonicalization (length, allowed characters) or retention/cleanup guidance for billing audit records for Azure DocumentDB.",
+      "where_searched": "Learn docs and discovered_practices search; several 'searches_with_no_useful_result' entries listed idempotency-key length and retention guidance.",
+      "effect_on_this_build": "Low: the sample uses a simple string idempotencyKey and demonstrates the technique, but agents building production systems may pick unsafe key formats or retention policies.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short 'Idempotency for billing' page: recommend idempotencyKey canonical form (UUID or application-provided stable identifier), a unique index, recommended retention for audit records, and examples of how to expire/compact old audit data.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Testing without live cluster",
+      "what_was_missing": "Guidance and an example test-suite showing how to run unit tests without a live DocumentDB cluster (example using mongodb-memory-server or Mongoose mocking).",
+      "where_searched": "Quickstarts and agent-kit docs — no dedicated test example for DocumentDB Mongoose samples.",
+      "effect_on_this_build": "Medium: the repository contains no tests; adding example tests would make the sample suitable for CI and gallery submission.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short 'Testing' page in the sample template that includes an example Jest/Mocha test that runs with mongodb-memory-server and demonstrates mocking transactions and idempotency behavior, plus a note describing what needs a live cluster (index verification).",
+      "priority": "medium"
+    },
+    {
+      "topic": "TTL verification & testing guidance",
+      "what_was_missing": "A short documented note on TTL behavior (how expireAfterSeconds works, background thread timing, and how to test it deterministically in CI or locally).",
+      "where_searched": "learn.microsoft.com TTL docs and sample scripts; TTL semantics (background job) are documented but a short testing cookbook for builders is missing.",
+      "effect_on_this_build": "Low: the index was created but automatic deletion was not observed during the run because TTL is time-based.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A one-paragraph note in the TTL docs: explain that expireAfterSeconds is applied relative to the indexed Date, deletion is performed by a background thread (may take minutes), and provide a testing recipe (set a near-future expiresAt and wait or simulate clock in local gateway) and how to verify deletions via listIndexes and count queries.",
+      "priority": "low"
+    }
+  ]
+}

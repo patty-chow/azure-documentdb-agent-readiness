@@ -8,13 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js with the Mongoose ODM to define and persist subscription plans, customer records, charge events, and entitlement documents in Azure DocumentDB.
-- Implement a charge operation that uses a Mongoose session and session.withTransaction (startSession + withTransaction) to atomically insert a charge event document and update the corresponding customer's subscription status in Azure DocumentDB.
-- Ensure the transaction spans multiple collections (at least the charge events collection and the subscriptions/customers collection) so the insert of the charge event and the subscription-status update occur together.
-- Add idempotency-key enforcement by creating a unique index in code on the charge events collection for an idempotency key (e.g., an "idempotencyKey" field) so duplicate keys are rejected by Azure DocumentDB.
-- Inside the same transaction, query for an existing charge event with the same idempotency key and, if found, do not create a new charge event but return/reuse the existing event (prevent double-billing).
-- Model trial entitlement documents with an expiry date field and programmatically create a TTL index (MongoDB-style expireAfterSeconds on that date field) so trial entitlement documents auto-expire in Azure DocumentDB.
-- Create the required indexes (the charge-events unique idempotency index and the entitlement TTL index) in code via the Mongoose/driver APIs against Azure DocumentDB (e.g., at startup or migration time).
+- Node.js application built with the Mongoose ODM, with Mongoose schemas/models for subscription plans, customers, charge events and trial entitlement documents, stored in Azure DocumentDB.
+- Subscription plan documents describe the recurring billing a customer subscribes to (e.g. price and billing interval), and a subscription status is stored for each subscription (e.g. on the customer document).
+- A charge operation that records a charge by inserting a charge event document and updating the subscription status it belongs to.
+- The charge event insert and the subscription-status update run atomically in one multi-document transaction on a Mongoose session (startSession with withTransaction, or startTransaction / commitTransaction / abortTransaction).
+- The charge operation takes an idempotency key and checks it before recording; when a charge with that key has already been recorded, it does not insert a second charge event (e.g. the key stored on the charge event with a unique index, or a lookup inside the transaction).
+- Trial entitlement documents have a Date-typed expiry field, and a TTL index (expireAfterSeconds on that single date field) is created in code through Mongoose so Azure DocumentDB deletes trial entitlements automatically once they expire.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
