@@ -1,0 +1,648 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested abandoned-cart orchestration and was exercised end-to-end against the provided cluster (seed + one run). Core flows are present and tested (LangChain copy-generation + channel adapter + recovery log writes). Most gallery hygiene items are present (README, .env.example, unit tests that mock the DB, package-lock.json). Key operational and best-practice gaps remain: the Mongo client enables retryable-writes (should be disabled for DocumentDB), the abandoned-cart query is not covered by a compound or partial index (only lastUpdated is indexed), the pipeline eagerly materialises all matches (toArray) rather than using a cursor/batching strategy, and the seed script is idempotent but does not create/await indexes. I list line-level evidence for each reference requirement, a set of practice checks reconciled with discovered guidance, decision reviews for all recorded decisions, and documentation/tooling gaps the product team should address so agents and builders can reliably produce correct samples next time.",
+  "requirement_results": [
+    {
+      "requirement": "A Node.js LangChain orchestration pipeline runs the recovery flow as one sequence per run: query abandoned carts, copy-generation agent, channel agent, outcome logging.",
+      "status": "met",
+      "evidence": "app/src/run.js lines 6-46 (define runOnce -> query carts -> copyAgent.generateMessage -> channelAgent.send -> logsColl.insertOne).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The pipeline queries Azure DocumentDB through a Node.js MongoDB driver for carts abandoned for over 2 hours, comparing each cart's abandonment time against a threshold two hours before the current time (e.g. a $lt on the cart's last-activity timestamp).",
+      "status": "met",
+      "evidence": "app/src/run.js lines 16-19 (cutoff = now - 2h; query uses lastUpdated: { $lte: cutoff }); app/src/db.js lines 1 and 9 (uses mongodb MongoClient).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Each cart the query returns is passed to a LangChain copy-generation agent that produces a personalised recovery message using that cart's contents and customer details.",
+      "status": "met",
+      "evidence": "app/src/run.js line 34 (const message = await copyAgent.generateMessage(cart, customer)); app/src/agents/copyAgent.js lines 25-29 (generateMessage builds prompt from cart items and customer.name).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The copy-generation agent hands off to a LangChain channel agent, passing the generated message together with the cart it was written for.",
+      "status": "partly_met",
+      "evidence": "app/src/run.js lines 34-35 call copyAgent.generateMessage(cart, customer) then channelAgent.send(customer, message). The channelAgent is only passed customer + message; the cart object is not passed.",
+      "cause": "builder_error",
+      "smallest_fix": "Pass the cart to channelAgent.send (e.g. channelAgent.send(customer, message, cart)) and update channelAgent signature to accept the cart."
+    },
+    {
+      "requirement": "The channel agent reads the customer's stored channel preference and sends the message by email when the preference is email and by SMS when it is SMS, through two distinct delivery paths.",
+      "status": "met",
+      "evidence": "app/src/agents/channelAgent.js lines 10-16 (send chooses sendSms or sendEmail based on preferredChannel) and lines 19-28 (separate sendSms and sendEmail implementations).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "After each send, the outcome is written back to Azure DocumentDB (e.g. a recovery-log document, or an update on the cart, recording the channel used and whether the send succeeded).",
+      "status": "met",
+      "evidence": "app/src/run.js lines 37-46 (builds log object with cartId/customerId/channel/message/result/timestamp and calls logsColl.insertOne(log)).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.js line 7 (reads process.env.DOCUMENTDB_URI); app/src/agents/copyAgent.js lines 11-16 (reads OPENAI_API_KEY / OPENAI_MODEL, with fallback when not set); .env.example lists placeholders.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example includes DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_MODEL, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, SENDGRID_API_KEY (lines 4-12).",
+      "cause": "builder_error",
+      "smallest_fix": "Add any missing placeholders referenced by code (e.g. TWILIO_FROM_NUMBER if the channel adapter will use it, and DB_NAME if you want override support); keep examples for all provider env vars the code checks."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create vector indexes or use embeddings; see app/README.md note that vector/search is out-of-scope.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add vector search, add env/model-dimension metadata and createIndexes with matching dimensions in the seed/index script."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index in repo; README explicitly says vector/search not demonstrated.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If demonstrating vector search, add index-creation example and README guidance on parameter tuning for small vs large datasets."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 5-18 implement a singleton MongoClient (client and clientPromise) and getDb awaits the clientPromise.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/src/seed.js lines 9-36 use upsert/updateOne with an idempotent marker to insert customers and carts (idempotent). However the seed script does not create/await indexes; index creation is done in run.js (app/src/run.js lines 12-14).",
+      "cause": "builder_error",
+      "smallest_fix": "Move index creation into the seed script (createIndex + await) so seed both prepares data and ensures indexes exist before verification runs."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "This sample does not expose a /search endpoint; not applicable.",
+      "cause": "prompt_silent",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search functionality in this sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "Node: package-lock.json present (app/package-lock.json) and package.json lists specific major versions (e.g. mongodb ^5.8.0) — the lockfile pins transitive deps.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/run.test.js mocks src/db and agents and passed in the build (events: 'PASS tests/run.test.js' at events.jsonl line 123).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC templates or Bicep/Terraform files in repository. The run environment explicitly provided a cluster and run policy forbade provisioning (readiness notes).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal Bicep or Terraform example using Microsoft.DocumentDB/mongoClusters (commented and gated behind a 'do not run unless you intend to provision' note)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains sections: What this sample shows, Prerequisites, Setup, How it works, Cleaning instructions (lines 1-44).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and package.json description refer to 'Azure DocumentDB' (app/README.md lines 5-12; app/package.json description).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton MongoClient",
+      "practice": "Create a single MongoClient and reuse it for the whole process (singleton client) rather than creating/closing a client per request or per item.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 5-18 implement a process-wide MongoClient (client + clientPromise) and getDb awaits clientPromise.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection options (TLS & retryWrites)",
+      "practice": "Always require TLS on connections and never disable certificate verification in production; disable retryable-writes in the connection string / client (e.g., retryWrites=false) per Azure DocumentDB guidance.",
+      "category": "security/connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02,P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.js lines 9-15 set retryWrites: true (line 13) and tls: true (line 14). TLS is enforced, but retryWrites is left true (should be disabled per P03).",
+      "source": "documentdb-security / documentdb-connection and public quickstarts",
+      "searched": "",
+      "fix": "Change MongoClient options to include retryWrites: false (or ensure the DOCUMENTDB_URI has retryWrites=false) and keep tls: true. Prefer documenting why retryWrites is false for DocumentDB.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        },
+        {
+          "title": "Deploy Azure DocumentDB — retrieve connection string (Quickstart / deployment guidance)",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-bicep"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pool tuning",
+      "practice": "Tune MongoDB driver pool options to the deployment context (maxPoolSize/minPoolSize) rather than defaults.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 10-12 set minPoolSize: 0 and maxPoolSize: 50; these are explicit choices and a comment references tuning.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver version",
+      "practice": "The driver version is pinned and is one the service supports.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/package.json lists mongodb ^5.8.0 and a package-lock.json is present (app/package-lock.json).",
+      "source": "documentdb-driver skill / compatibility docs",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        },
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets in repo",
+      "practice": "Keep connection URIs and provider credentials out of source control; read DOCUMENTDB_URI from environment.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js line 7 reads process.env.DOCUMENTDB_URI; .env.example contains placeholders; no secrets are committed.",
+      "source": "documentdb-azure-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index for abandoned query",
+      "practice": "Create a compound index on the fields used by the abandoned-cart query (e.g., { status: 1, lastUpdated: 1 } with ESR ordering).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/run.js lines 12-14 createIndex({ lastUpdated: 1 }) and logsColl.createIndex({ cartId: 1 }) but do not create a compound index on status + lastUpdated; events (documentdb_list_indexes) show lastUpdated_1 exists (events.jsonl lines ~128).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Create a compound index: carts.createIndex({ status: 1, lastUpdated: 1 }) or use a partial index (see next practice). Add this to the seed or index-setup step and await completion.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Partial / sparse index for abandoned documents",
+      "practice": "Use a partial or sparse index for the abandoned condition to save index size and RU cost (e.g., partialFilterExpression: { status: 'abandoned' }).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "No partial index is created in app/src/run.js or app/src/seed.js; only lastUpdated single-field index is created (app/src/run.js lines 12-14).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Consider createIndex({ lastUpdated: 1 }, { partialFilterExpression: { status: 'abandoned', sample: 'abandoned-cart-sample-12' } }) in the seed/index step.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Project only needed fields",
+      "practice": "Project only the fields the pipeline needs to reduce network transfer and RU consumption.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/run.js line 19 uses cartsColl.find(query).toArray() without a projection; pipeline later accesses only a few fields (cart._id, customerId, items, lastUpdated).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Use projection in the find: cartsColl.find(query, { projection: { _id: 1, customerId: 1, items: 1, lastUpdated: 1, status: 1 } }) and iterate with a cursor.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry on transient errors",
+      "practice": "Implement retries with exponential backoff for transient errors (e.g., 429, transient network errors) and make operations idempotent where possible.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "The pipeline and seed code do not implement retries/backoff around network or 429s; seed uses updateOne upserts but pipeline insertOne/log writes are not wrapped with retry/backoff logic (app/src/run.js lines ~34-46).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Wrap DB writes and external sends in a retry helper (exponential backoff) and make outcome writes idempotent (use deterministic outcome id or upsert with a unique key).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain / query plan",
+      "practice": "Run explain('executionStats') on the abandoned-cart query before scaling up the pipeline to confirm the chosen index is used and to measure RU/doc ratios.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "No explain() call in app/src/run.js or in seed/index verification steps. The build did call documentdb_list_indexes via MCP but did not capture an explain plan for the main query (events.jsonl indexes checks are present but no explain output).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Add an explain() run in a verification step (seed or a separate verify script) and log executionStats to capture RU and index usage before scaling.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Cursor & batching",
+      "practice": "Avoid scanning the entire collection each run: use an indexed filter, a cursor with pagination or batch limits, and process results in manageable chunks rather than loading all matches into memory.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/run.js line 19 uses toArray() to materialise all matching carts; pipeline loops over the resulting array. This will load all matches into memory if the result set is large.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Use a cursor and process in batches (e.g., use find().batchSize(n) and iterate with for await (const doc of cursor) or use pagination with limit/skip or range queries).",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent upserts for seed/logs",
+      "practice": "Use upsert operations for seed scripts and design outcome writes to be idempotent (use updateOne/replaceOne with upsert: true or deterministic unique keys).",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-build-nodejs-console-app#perform-common-operations",
+      "status": "followed",
+      "evidence": "app/src/seed.js lines 19-21 and 34-36 use updateOne(..., { upsert: true }) for customers and carts, and add a sample marker to avoid duplication.",
+      "source": "Azure DocumentDB quickstart",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Azure DocumentDB quickstart and how-to update examples",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-build-nodejs-console-app#perform-common-operations"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL index for cleanup",
+      "practice": "Use a TTL index to automatically remove stale carts or short-lived logs when appropriate.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample does not configure TTL; README documents manual cleanup by sample marker (app/README.md line 38-39).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "If automatic cleanup is desired, add notes in README and a createIndex call with { expireAfterSeconds } in the seed script and warn about audit retention implications.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Partition key choice",
+      "practice": "Choose a partition key with access patterns in mind (e.g., customerId for cart + logs) and explain choice if sharding is used.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "This sample uses a single-shard approach on the provided cluster and does not create a sharded collection; README documents sample scope. No shard-key decisions are present in code.",
+      "source": "documentdb-sharding",
+      "searched": "",
+      "fix": "If adding sharding examples, include explanation on shardKey choice (customerId) in README and seed/index steps.",
+      "sources": [
+        {
+          "title": "documentdb-sharding",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring & diagnostic settings",
+      "practice": "Enable diagnostic settings and slow-query logs and alert on resource saturation.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "Repo does not include ARM/monitoring configuration and the run environment is managed; no diagnostic settings were created by this sample.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Provide a short 'observability' section in README showing how to enable diagnostic settings and how to capture slow-query logs via the MCP or Azure portal.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator action; the build proceeded and left the known gaps in the report (events.jsonl shows operator logs)."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Node.js matches the prompt. Evidence: prompt and code (app/src/run.js use Node.js)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "wrong",
+      "comment": "Decision text claims mongodb pinned to '5.7.0' but package.json in the repo lists mongodb ^5.8.0 (app/package.json line 16). Reason_source is model_default and the recorded claim does not match the files."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Code reads DOCUMENTDB_URI from environment (app/src/db.js line 7). events.jsonl shows getDb/read_skill usage; decision aligns with code."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Decision not to provision resources is consistent with run policy and the README. Verified by events showing no IaC and the build used the existing cluster."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "questionable",
+      "comment": "Decision claimed a compound index (notified + lastUpdated) would be chosen. The final run.js creates only lastUpdated and recovery_logs cartId indexes (app/src/run.js lines 12-14). There is evidence in events that an index named notified_1_lastUpdated_1 appeared at one point (events.jsonl line ~83), but the committed code does not create that compound index. The claim is defensible but the implementation is inconsistent."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Choosing OpenAI is consistent with the copyAgent implementations and .env.example (OPENAI_API_KEY). Code shows LangChain/OpenAI usage with simulated fallback (app/src/agents/copyAgent.js)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "ChannelAgent simulates sends by default and README/.env.example document wiring for real providers (app/src/agents/channelAgent.js; app/.env.example)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Duplicate approval entry; same rationale as D001."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "wrong",
+      "comment": "Decision states 'Node.js (ES module)' but the primary runtime files use CommonJS (require/module.exports) e.g., app/src/run.js starts with require('dotenv'). The repository contains both CommonJS and some ES-module files, but the main path is CommonJS."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "wrong",
+      "comment": "This decision logs choice of mongodb ^5.9.0; the repository's package.json lists ^5.8.0 (app/package.json). The recorded choice does not match the actual package.json."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Reading connection string from DOCUMENTDB_URI is implemented (app/src/db.js line 7)."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Decision not to provision cluster matches policy and run; events show seed and run against existing cluster (documentdb_list_databases tool calls)."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Choice to use LangChain/OpenAI is reflected in source (app/src/agents/copyAgent.js tries to use LangChain OpenAI subpath with fallback) and README documents OPENAI_API_KEY."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Pluggable channel adapters simulated by default — implemented in app/src/agents/channelAgent.js and documented in README/.env.example."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Choosing a CLI/one-shot script is consistent with package.json scripts and run.js being invoked by npm start (app/package.json and app/src/run.js)."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Decision to tolerate existing indexes/duplicates is consistent with seed behavior and events showing index creation warnings (events.jsonl lines ~80). The seed uses upsert to avoid aborting."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "questionable",
+      "comment": "D018 states duplicate-key errors are caught and skipped. The final seed uses updateOne(..., { upsert: true }) which avoids duplicate-key insertion errors; explicit try/catch for insert duplicates is not present. The intent is covered by using upsert but the decision wording implies a different implementation."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "questionable",
+      "comment": "D019 says the copyAgent was rewritten to use the OpenAI npm client due to a LangChain import error. Events show a LangChain import error occurred (events.jsonl lines ~85), the repo was modified to add src/copyAgent.js (ES module) using the OpenAI client, but run.js still uses the agents/copyAgent CommonJS module (which contains a try/catch and simulated fallback). So the action was partially performed (an OpenAI-based module was written) but not wired into the main runtime path; this makes the decision defensible but not fully implemented."
+    },
+    {
+      "decision_id": "D020",
+      "assessment": "sound",
+      "comment": "Duplicate approval later in the logs; consistent with D001."
+    },
+    {
+      "decision_id": "D021",
+      "assessment": "sound",
+      "comment": "Choosing Node.js (LangChain) aligns with the prompt and implemented code."
+    },
+    {
+      "decision_id": "D022",
+      "assessment": "sound",
+      "comment": "D022 logs the choice of mongodb 5.8.0; package.json contains mongodb ^5.8.0 (app/package.json), so this decision is consistent with code."
+    },
+    {
+      "decision_id": "D023",
+      "assessment": "sound",
+      "comment": "Duplicate of earlier LLM selection decision; code & README align with OpenAI usage or simulated fallback."
+    },
+    {
+      "decision_id": "D024",
+      "assessment": "sound",
+      "comment": "Simulated channel agents with env placeholders are implemented and tested; matches D024."
+    },
+    {
+      "decision_id": "D025",
+      "assessment": "sound",
+      "comment": "Duplicate of D005; consistent with policies and run artifacts."
+    },
+    {
+      "decision_id": "D026",
+      "assessment": "sound",
+      "comment": "Decision to use LangChain JS is reflected in the initial copyAgent attempt; the build had to add a fallback path but LangChain use remains part of the sample (lazy-require with simulated fallback)."
+    },
+    {
+      "decision_id": "D027",
+      "assessment": "sound",
+      "comment": "Jest is used for unit tests and tests passed (events.jsonl shows PASS for tests/run.test.js)."
+    },
+    {
+      "decision_id": "D028",
+      "assessment": "sound",
+      "comment": "Using dotenv with a .env.example is implemented (app/.env.example and require('dotenv').config() in scripts)."
+    },
+    {
+      "decision_id": "D029",
+      "assessment": "sound",
+      "comment": "Decision to run the seed script is recorded and the seed succeeded (events.jsonl shows 'Seed complete'). Seed is idempotent via upsert logic."
+    },
+    {
+      "decision_id": "D030",
+      "assessment": "sound",
+      "comment": "Decision to run the pipeline once was executed; events.jsonl shows the run found abandoned carts and logged outcomes (documentdb_find_documents, run_command outputs)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Abandoned-cart partial/compound index example",
+      "what_was_missing": "A concise, copy-paste snippet in the public docs showing the recommended compound index for abandoned-cart queries (e.g., { status: 1, lastUpdated: 1 }) and an example of using a partialFilterExpression for status='abandoned'.",
+      "where_searched": "Installed documentdb-indexing skill resources and Microsoft Learn quickstarts (skill resources returned index-compound-esr.md but no small, concrete abandoned-cart snippet).",
+      "effect_on_this_build": "The builder created only a lastUpdated index (single-field) and did not add the recommended compound or partial index; this likely increased RU and left the pipeline to scan more documents than necessary. The sample still ran but did not follow the indexing best practice.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Short sample page titled 'Indexing for time-window queries (abandoned-cart example)'. Outline: intent, query shape, ESR rule reminder, 2 copy-paste createIndex examples (1) compound: db.carts.createIndex({ status: 1, lastUpdated: 1 }) and (2) partial: db.carts.createIndex({ lastUpdated: 1 }, { partialFilterExpression: { status: 'abandoned' } }), plus a note about awaiting index creation and verifying with explain('executionStats').",
+      "priority": "high"
+    },
+    {
+      "topic": "DocumentDB driver retryWrites guidance (agent rule)",
+      "what_was_missing": "An agent-kit rule or short enforcement guidance that tells sample authors and automation to set retryWrites=false (or to rely on the portal-provided connection string) for vCore DocumentDB clusters.",
+      "where_searched": "documentdb-connection skill and public quickstarts (quickstart text mentions connection strings but no automated agent rule enforced this).",
+      "effect_on_this_build": "The sample's db.js left retryWrites: true, which contradicts the service-recommended setting. This is a subtle but important behavioral difference that can cause incorrect retry behaviour in DocumentDB.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: when generating db client config for Azure DocumentDB, set retryWrites=false (or ensure connection string contains retryWrites=false) and tls=true. Provide the exact code snippet for Node.js MongoClient options and a short rationale explaining the service recommendation.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness & discoverability",
+      "what_was_missing": "The shipped .env.example did not include every env variable the code references (e.g. TWILIO_FROM_NUMBER and optional DB_NAME). There is no single small doc that lists 'env vars this sample checks'.",
+      "where_searched": "Repository .env.example and README; no separate env-vars list or table.",
+      "effect_on_this_build": "Users might run the sample and miss provider-specific placeholders (e.g. TWILIO_FROM_NUMBER), or they may not know optional overrides such as DB_NAME, leading to confusion when wiring real providers.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": ".env-vars page in sample README or a one-line table in README listing every environment variable the sample reads (DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_MODEL, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, SENDGRID_API_KEY, DB_NAME). Mark which are required vs optional and give placeholder examples.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Append-only / audit logging pattern for recovery logs",
+      "what_was_missing": "Public guidance specific to DocumentDB about append-only 'recovery_logs' vs updating carts in-place (trade-offs: auditability, cost, partitioning implications). The earlier open search did not return a DocumentDB-specific 'append-only notification logs' recommended pattern.",
+      "where_searched": "Searches recorded during discovery: 'Azure DocumentDB append-only notification logs best practice' and related terms (no useful public DocumentDB-specific guidance found).",
+      "effect_on_this_build": "The builder implemented a simple recovery_logs insertion (insertOne) — acceptable for sample purposes — but an explicit recommendation would have guided design choices (append-only vs cart update, index shape for logs, partitioning guidance).",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Notification & audit logging patterns' page describing when to use append-only logs (and how to partition them), example schema for recovery_logs, example indexes (cartId + sentAt), retention strategies (TTL vs archival), and notes on idempotent write patterns for avoiding double-sends.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Explain() and pre-run verification snippet",
+      "what_was_missing": "A short verification script/template that runs explain('executionStats') for the sample's main query and records RU/doc to help authors test before scaling.",
+      "where_searched": "documentdb-query-optimizer skill resources; skills explain the need but a one-line copy-paste verify script was not present in the sample's repo.",
+      "effect_on_this_build": "No explain() verification was performed by the sample, so index efficacy wasn't formally recorded; developer relied on manual index inspection instead.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a small script verify_index.js that runs the abandoned-cart query with explain('executionStats') and prints key metrics (totalDocsExamined, totalKeysExamined, executionTimeMillis) and a README section explaining how to interpret numbers.",
+      "priority": "high"
+    }
+  ]
+}

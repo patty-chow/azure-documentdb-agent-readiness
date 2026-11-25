@@ -1,55 +1,57 @@
-import dotenv from 'dotenv';
-dotenv.config();
-import { getDb, closeClient } from './db.js';
-import { generateRecoveryMessage } from './copyAgent.js';
-import { sendByPreference } from './channelAgent.js';
+require('dotenv').config();
+const { getDb } = require('./db');
+const CopyAgent = require('./agents/copyAgent');
+const ChannelAgent = require('./agents/channelAgent');
 
-// Pipeline: find carts abandoned > 2 hours, generate message, send, log result
 async function runOnce() {
   const db = await getDb();
-  const carts = db.collection('carts');
-  const customers = db.collection('customers');
-  const logs = db.collection('recovery_logs');
+  const cartsColl = db.collection('carts');
+  const customersColl = db.collection('customers');
+  const logsColl = db.collection('recovery_logs');
 
-  const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
-  const cursor = carts.find({ abandonedAt: { $lte: cutoff } });
+  // ensure indexes: lastUpdated index to support the abandoned query
+  await cartsColl.createIndex({ lastUpdated: 1 });
+  await logsColl.createIndex({ cartId: 1 });
 
-  let processed = 0;
-  for await (const cart of cursor) {
-    const customer = await customers.findOne({ customerId: cart.customerId });
-    if (!customer) {
-      console.warn('Missing customer for cart', cart.cartId);
-      continue;
-    }
-    // Generate message
-    let message;
+  // find carts abandoned for >2 hours and not yet processed by this sample
+  const cutoff = new Date(Date.now() - 1000 * 60 * 60 * 2);
+  const query = { status: 'abandoned', lastUpdated: { $lte: cutoff }, 'sample': 'abandoned-cart-sample-12' };
+  const carts = await cartsColl.find(query).toArray();
+
+  console.log(`Found ${carts.length} abandoned carts older than 2 hours.`);
+
+  const copyAgent = new CopyAgent();
+  const channelAgent = new ChannelAgent();
+
+  for (const cart of carts) {
     try {
-      message = await generateRecoveryMessage(cart, customer);
-    } catch (e) {
-      console.error('Copy generation failed for', cart.cartId, e);
-      await logs.insertOne({ cartId: cart.cartId, customerId: cart.customerId, status: 'copy_failed', error: String(e), timestamp: new Date() });
-      continue;
+      const customer = await customersColl.findOne({ _id: cart.customerId });
+      if (!customer) {
+        console.warn(`No customer found for cart ${cart._id}`);
+        continue;
+      }
+
+      const message = await copyAgent.generateMessage(cart, customer);
+      const sendResult = await channelAgent.send(customer, message);
+
+      const log = {
+        cartId: cart._id,
+        customerId: cart.customerId,
+        channel: customer.preferredChannel || 'email',
+        message,
+        result: sendResult,
+        timestamp: new Date(),
+      };
+      await logsColl.insertOne(log);
+      console.log(`Logged outcome for cart ${cart._id}`);
+    } catch (err) {
+      console.error('Error processing cart', cart._id, err);
     }
-    // Send
-    let sendResult;
-    try {
-      sendResult = await sendByPreference(customer, message);
-    } catch (e) {
-      console.error('Send failed for', cart.cartId, e);
-      await logs.insertOne({ cartId: cart.cartId, customerId: cart.customerId, status: 'send_failed', error: String(e), message, timestamp: new Date() });
-      continue;
-    }
-    // Log success
-    await logs.insertOne({ cartId: cart.cartId, customerId: cart.customerId, status: 'sent', channelResult: sendResult, message, timestamp: new Date() });
-    console.log('Processed cart', cart.cartId, '->', sendResult.provider || sendResult.channel || 'simulated');
-    processed++;
   }
-
-  await closeClient();
-  console.log('Run complete. Processed', processed);
 }
 
-runOnce().catch(err => {
-  console.error('Run failed', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  runOnce().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });
+}
+
+module.exports = { runOnce };

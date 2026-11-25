@@ -1,35 +1,27 @@
-import { MongoClient } from "mongodb";
-import dotenv from "dotenv";
-dotenv.config();
-
-const uri = process.env.DOCUMENTDB_URI;
-if (!uri) {
-  throw new Error('DOCUMENTDB_URI environment variable is required');
-}
-
+const { MongoClient } = require('mongodb');
 let client;
-let db;
+let clientPromise;
 
-export async function getClient() {
+function getClient() {
   if (!client) {
-    client = new MongoClient(uri, { family: 4 });
-    await client.connect();
+    const uri = process.env.DOCUMENTDB_URI;
+    if (!uri) throw new Error('DOCUMENTDB_URI is not set');
+    client = new MongoClient(uri, {
+      // sensible defaults; tune per documentdb-connection guidance
+      minPoolSize: 0,
+      maxPoolSize: 50,
+      retryWrites: true,
+      tls: true,
+    });
+    clientPromise = client.connect();
   }
-  return client;
+  return { client, clientPromise };
 }
 
-export async function getDb() {
-  if (!db) {
-    const c = await getClient();
-    db = c.db('sample_retail_12');
-  }
-  return db;
+async function getDb(dbName = 'sample_retail_12') {
+  const { client, clientPromise } = getClient();
+  await clientPromise;
+  return client.db(dbName);
 }
 
-export async function closeClient() {
-  if (client) {
-    await client.close();
-    client = undefined;
-    db = undefined;
-  }
-}
+module.exports = { getClient, getDb };

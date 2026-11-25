@@ -1,4 +1,5 @@
-export default {
+module.exports = {
   testEnvironment: 'node',
-  transform: {}
+  roots: ['<rootDir>/tests'],
+  testTimeout: 15000,
 };

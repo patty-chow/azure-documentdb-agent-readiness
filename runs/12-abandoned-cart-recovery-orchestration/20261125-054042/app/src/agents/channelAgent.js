@@ -1,16 +1,31 @@
-// Simulated channel agent. In production you would wire Twilio/SendGrid etc.
-// This module exports a send function that either simulates or (optionally)
-// calls a provider when credentials are provided. For safety, the sample
-// defaults to simulation only.
+// Simulated channel agent: choose SMS or Email and simulate sending.
+// Real provider integration points are documented in README and .env.example
 
-export async function sendNotification({ customer, channel, message }) {
-  // channel: 'email' | 'sms'
-  // If a real provider is configured (TWILIO_* or SENDGRID_API_KEY) you
-  // could implement real sends here. For the sample we simulate delivery.
-  console.log(`Simulated send to ${channel} for customer ${customer._id}: ${message}`);
-  return {
-    status: 'ok',
-    provider: 'simulator',
-    providerId: `sim-${Date.now()}`
-  };
+class ChannelAgent {
+  constructor() {
+    // Could initialize real SDKs (Twilio/SendGrid) if creds provided
+    this.simulate = true;
+  }
+
+  async send(customer, message) {
+    const channel = (customer.preferredChannel || 'email').toLowerCase();
+    if (channel === 'sms') {
+      return this.sendSms(customer, message);
+    } else {
+      return this.sendEmail(customer, message);
+    }
+  }
+
+  async sendSms(customer, message) {
+    // Simulate an SMS send; if TWILIO_ env vars provided, real SDK could be wired here
+    console.log(`[channelAgent] Sending SMS to ${customer.phone}: ${message}`);
+    return { ok: true, provider: 'simulated-sms' };
+  }
+
+  async sendEmail(customer, message) {
+    console.log(`[channelAgent] Sending Email to ${customer.email}: ${message}`);
+    return { ok: true, provider: 'simulated-email' };
+  }
 }
+
+module.exports = ChannelAgent;
