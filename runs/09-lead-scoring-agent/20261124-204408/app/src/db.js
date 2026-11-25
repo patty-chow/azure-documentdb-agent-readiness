@@ -1,30 +1,25 @@
-require('dotenv').config();
 const { MongoClient } = require('mongodb');
+require('dotenv').config();
 
 const uri = process.env.DOCUMENTDB_URI;
-if (!uri) {
-  console.error('DOCUMENTDB_URI is not set in the environment. See .env.example');
-}
+if (!uri) throw new Error('DOCUMENTDB_URI not set in environment');
 
 let client;
-
-function getClient() {
+async function getClient() {
   if (!client) {
-    // Use defaults recommended by documentdb-connection skill; keep pool default
+    // Use singleton client. Options left minimal; rely on URI settings.
     client = new MongoClient(uri, {
-      // recommended: retryReads true for transient errors
-      retryReads: true,
-      // don't set aggressive pool sizes in the sample
+      // conservative defaults for a long-running server app
+      retryWrites: false,
+      // keep default pool sizing; change with care per documentdb-connection guidance
     });
+    await client.connect();
   }
   return client;
 }
 
-async function getDb(dbName = process.env.DATABASE_NAME || 'sample_customer_360_09') {
-  const c = getClient();
-  if (!c.topology || !c.topology.isConnected()) {
-    await c.connect();
-  }
+async function getDb(dbName = process.env.DB_NAME || 'sample_customer_360_09') {
+  const c = await getClient();
   return c.db(dbName);
 }
 
