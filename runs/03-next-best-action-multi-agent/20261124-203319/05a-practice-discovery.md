@@ -1,0 +1,60 @@
+# 5a. Best practices: prior knowledge against the public record: 03-next-best-action-multi-agent
+
+A model first listed the best practices it knew from training, with no tools. An agent then searched public sources without the team's checklist, the way an agent building this app would, and checked each prior belief against what it found.
+
+**25 practices, 13 with a public address.**
+
+| Outcome | Count | What it means |
+|---|---|---|
+| The model believed otherwise; public sources contradict it | 0 | An agent working from memory builds the wrong thing here. |
+| The model knows it; no public source for this service says either way | 0 | Agents will act on it. Nothing public says whether they should. |
+| The model knew it, and public sources agree | 16 | Memory and documentation line up. |
+| Found in public sources only | 9 | Documented; the model did not list it beforehand. |
+
+## Sources that were reachable in this run
+
+| Source | Reachable | Detail |
+|---|---|---|
+| `learn` (documentation search) | yes | 3 tools |
+| Installed agent skills | 17 | 17 have a public address |
+
+## All practices
+
+| Id | Practice | Category | Basis | Source | Public address | How it was found | Applies to this app |
+|---|---|---|---|---|---|---|---|
+| P01 | Read the cluster connection string from an environment variable at runtime and provide a .env.example placeholder rather than committing credentials to source control. | connection | prior_knowledge_confirmed | Quickstart: Use Azure DocumentDB with MongoDB driver for Python (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples | Azure DocumentDB connection string environment variable DOCUMENTDB_URI | yes |
+| P02 | Create and reuse a single, long-lived MongoClient per process (module/global singleton) instead of creating a client per request. | connection | prior_knowledge_confirmed | documentdb-driver (driver-singleton-client.md) (installed_skill) | **none** | load_skill: documentdb-driver | yes |
+| P03 | Always require TLS for connections and validate server certificates; do not disable certificate validation in production. | security | prior_knowledge_confirmed | documentdb-security (security-tls-required.md) (installed_skill) | **none** | load_skill: documentdb-security | yes |
+| P04 | Store production credentials in a secret store (Azure Key Vault), rotate them, and restrict network access via firewall rules or Private Endpoints; prefer managed identity/Entra RBAC for production. | security | prior_knowledge_confirmed | documentdb-azure-deployment (Step 6a step 6b secret handling) (installed_skill) | **none** | load_skill: documentdb-azure-deployment | yes |
+| P05 | Set retryWrites=false in the Azure DocumentDB connection string and verify driver-level support and implications for write retries before enabling driver-managed retryable writes. | connection | found_in_public_source | Quickstart & how-to pages (connection string examples) (public_doc) | https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#connect-using-microsoft-entra-id-in-visual-studio-code | Azure DocumentDB retryWrites=false connection string | yes |
+| P06 | Implement retries for transient errors with exponential backoff and jitter, honor Retry-After on 429 responses, and limit retries; combine driver retry facilities with application-level bounded retries only when operations are idempotent or deduplicated. | retries | found_in_public_source | Reliability and Throttling guidance for Azure (public_doc) | https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults | Azure DocumentDB 429 throttling Retry-After exponential backoff | yes |
+| P07 | Tune connection-pool parameters according to hosting context (small pools and init outside handler for serverless; larger pools and pre-warmed minPoolSize for long-running OLTP servers). | connection | found_in_public_source | documentdb-connection (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md | load_skill: documentdb-connection | yes |
+| P08 | Create indexes on fields used in filters and sorts (customer_id, action_type, channel, timestamp) and prefer well-ordered compound indexes that match common query prefixes. | indexing | prior_knowledge_confirmed | documentdb-indexing (index-compound-esr.md) (installed_skill) | **none** | load_skill: documentdb-indexing | yes |
+| P09 | Use explain('executionStats') / query plans to validate that queries are using indexes and to diagnose COLLSCAN or in-memory sorts. | monitoring | prior_knowledge_confirmed | documentdb-query-optimizer (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md | load_skill: documentdb-query-optimizer | yes |
+| P10 | For vector search, create a cosmosSearch vector index (vector-diskann / vector-hnsw / vector-ivf) with dimensions and similarity that exactly match stored embeddings, and tune index parameters (maxDegree, lBuild and query-time lSearch) for the recall/latency tradeoff. | vector_search | prior_knowledge_confirmed | Integrated vector store in Azure DocumentDB (vector-search) (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search | Azure DocumentDB vector index DiskANN lSearch lBuild dimensions similarity | yes |
+| P11 | Normalize embeddings when using cosine similarity and store embedding metadata (model name, dimensions) alongside vectors so index/query parameters remain consistent. | vector_search | found_in_public_source | documentdb-vector-search (vector-normalize-embeddings.md) (installed_skill) | **none** | load_skill: documentdb-vector-search | yes |
+| P12 | Split very large vectors or low-compressibility binary fields into a side collection keyed by document id rather than embedding them in frequently-updated core documents. | data_modeling | prior_knowledge_confirmed | documentdb-data-modeling (model-large-field-split.md) (installed_skill) | **none** | load_skill: documentdb-data-modeling | yes |
+| P13 | Use TTL indexes (expireAfterSeconds) for ephemeral documents to let the service automatically remove old demo or temporary records. | data_lifecycle | prior_knowledge_confirmed | documentdb-indexing (index-ttl-expiry.md) (installed_skill) | **none** | load_skill: documentdb-indexing | yes |
+| P14 | Use upsert operations for idempotent writes (upsert:true) when writing recommendations to avoid duplicates and include created_at/updated_at and provenance metadata. | writes | prior_knowledge_confirmed | Quickstart and how-to examples (upsert usage) (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples | Azure DocumentDB upsert example updateOne upsert | yes |
+| P15 | Project only required fields in queries (use projection) when evaluating models or agents to reduce bandwidth and latency. | queries | prior_knowledge_confirmed | documentdb-query-optimizer (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md | load_skill: documentdb-query-optimizer | yes |
+| P16 | Page result sets using limit and a stable sort key (e.g., timestamp desc + _id) or keyset pagination rather than relying on skip for large offsets to avoid scanning skipped documents. | queries | found_in_public_source | General Azure/MongoDB pagination guidance (avoid skip; use keyset/pagination) (public_doc) | https://learn.microsoft.com/ef/core/performance/efficient-querying#limit-the-resultset-size | pagination skip performance avoid skip keyset pagination | yes |
+| P17 | Enable diagnostic settings and slow-query logs and alert on CPU/memory/IOPS/storage/connection saturation; surface slow queries to guide indexing changes. | monitoring | found_in_public_source | documentdb-monitoring (monitoring-slow-query-log.md) (installed_skill) | **none** | load_skill: documentdb-monitoring | yes |
+| P18 | Choose storage and compute appropriately: prefer Premium SSD v2 for new clusters (IOPS gated by compute tier), and size compute for throughput not disk size. | provisioning | found_in_public_source | documentdb-storage (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/storage/SKILL.md | load_skill: documentdb-storage | no |
+| P19 | Shard only when necessary and pick a shard key that evenly distributes load (high-cardinality for write-heavy; query-localizing key for read-heavy) and ensure queries include the shard/partition key when possible. | provisioning | prior_knowledge_confirmed | documentdb-sharding (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md | load_skill: documentdb-sharding | yes |
+| P20 | Avoid large multi-document cross-shard transactions when possible; if transactions are required, keep them short and prefer single-partition transactions. | transactions | prior_knowledge_confirmed | documentdb-sharding (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md | load_skill: documentdb-sharding | no |
+| P21 | When programmatically creating vector or advanced indexes, verify the cluster tier supports the requested index type (DiskANN/HNSW/IVF) and include fallback instructions or IaC that records index parameters. | indexing | prior_knowledge_confirmed | documentdb-vector-search (vector-create-diskann-index.md) (installed_skill) | **none** | load_skill: documentdb-vector-search | yes |
+| P22 | For local development, use the DocumentDB Gateway container and configure TLS relaxation only for local dev (tlsAllowInvalidCertificates) driven by env vars; never default to disabling cert validation in code. | local_development | found_in_public_source | documentdb-local-deployment (local-connection-config.md) (installed_skill) | **none** | load_skill: documentdb-local-deployment | yes |
+| P23 | Use idempotent seed scripts for demo/test data and confine test writes to the sample database (e.g., sample_customer_360_03) with the ability to run seeds repeatedly without duplication. | testing | prior_knowledge_confirmed | documentdb-local-deployment (local-sample-data-management.md) (installed_skill) | **none** | load_skill: documentdb-local-deployment | yes |
+| P24 | Instrument and monitor KPIs (latency, QPS, 4xx/5xx, 429s) and capture slow queries and metrics to guide index additions and capacity changes. | observability | prior_knowledge_confirmed | documentdb-monitoring (monitoring-metrics-alerts.md) (installed_skill) | **none** | load_skill: documentdb-monitoring | yes |
+| P25 | Persist vector index parameters (dimensions, similarity, maxDegree, lBuild) in infrastructure-as-code so index builds can be reproduced and reconstructed when embedding models change. | vector_search | found_in_public_source | Integrated vector store in Azure DocumentDB (vector-create-diskann-index guidance) (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search | Azure DocumentDB DiskANN index parameters persist in IaC | yes |
+
+## Searches that returned nothing useful
+
+None.
+
+## Notes
+
+I inspected the sample app files (db client singleton, seed script, agents, orchestrator) and then loaded relevant installed skills and Microsoft Learn pages. Most prior beliefs about connection handling, TLS, singleton client, retries/backoff, indexing, vector-index parameter matching, upserts, projection, explain(), sharding, monitoring, and Key Vault are confirmed by DocumentDB public docs or the installed domain skills. Two prior-belief style practices (application-level audit-storage of agent inputs and explicit advice about sanitizing raw pipeline inputs) did not appear as Azure DocumentDB-specific recommendations in the official docs/skills as explicit single-line rules and were left to be handled as application-level guidance (they remain in the prior-belief list and are discussed below).
+
+Prior beliefs the discovery step did not classify: K05, K06, K16, K17, K18, K20, K21, K22, K23. See 05a-prior-beliefs.json.
+
