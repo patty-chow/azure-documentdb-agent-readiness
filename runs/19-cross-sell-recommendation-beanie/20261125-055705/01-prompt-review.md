@@ -1,0 +1,64 @@
+# 1. Prompt review: 19-cross-sell-recommendation-beanie
+
+**Verdict: sufficient_with_assumptions**
+
+The starter prompt clearly states the core goal (async Python Beanie service that derives co-purchase pairs, embeds them via OpenAI, stores vectors, and exposes /cross-sell returning top-5 candidates). The run-environment notes (skill_md) supply important constraints (live, vector-capable cluster, database name). Several implementation details are left unspecified and will be decided by the builder (Python version, exact embedding model & dims, index parameters, data-seed size, error-handling, testing and repo conventions). These are not blocking, but the builder will make reasonable defaults unless the author specifies them.
+
+## Where each answer will come from
+
+| Source | Rubric items |
+|---|---|
+| In the prompt | 4: Goal and scenario, Target service and tier, App surface, Provisioning and deployment |
+| Covered by a skill | 1: Queries and indexes |
+| Ambiguous: builder will guess | 8: Workflow type, Language and runtime, Driver and version, Authentication and secrets, Data model, AI components, Run and test instructions, Definition of done |
+| Missing: builder will guess | 3: Sample data, Constraints and non-goals, Repository conventions |
+| Not applicable | 0: - |
+
+## Reference requirements at risk
+
+- The connection string and model credentials come from environment variables; none appear in the repository. -- Skill_md requires DOCUMENTDB_URI but OpenAI credential env var is not specified in the prompt or skill_md.
+- A `.env.example` lists every setting with placeholder values. -- Starter prompt does not mention .env.example; no installed skill will generate it automatically.
+- The vector index dimensions match the embedding model's output. -- Model choice/dimensions are unspecified in the prompt; builder will pick a default but this requirement is at risk if a different model is intended.
+- The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. -- Prompt doesn't require README tuning guidance; vector-search skill gives guidance but README content is not specified.
+- One database client is created and reused across requests. -- documentdb-driver skill recommends singleton client, but the prompt doesn't state it explicitly; builder may implement it, but it's not enforced by the prompt.
+- A seed script loads sample data and creates the index, and can be run twice without duplicating data. -- Prompt asks to aggregate from order-history and store pairs, but does not require an idempotent seed script; likely to be missed unless the builder adds it.
+- /search returns a clear error for an empty query and when the embedding call fails. -- Prompt does not specify error handling for empty basket or embedding failures.
+- Search results include the similarity score. -- Prompt asks for top-5 candidates ranked by affinity but doesn't explicitly require the similarity score to be returned in results.
+- Dependencies are pinned in `requirements.txt`. -- Prompt doesn't specify pinning; builder may or may not pin versions.
+- Unit tests run without a live cluster. -- Prompt doesn't require tests or mocks; likely to be missing unless the builder provides them.
+- Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. -- skill_md explicitly says a cluster is already provisioned and warns not to create another; the prompt does not ask for IaC, so this requirement (if expected) is at risk.
+- The README covers what the sample shows, prerequisites, setup, run, and clean-up. -- Prompt doesn't require a README with these sections; builder may include it but it's not mandated.
+- The sample uses the name "Azure DocumentDB" throughout, and no former or neighbouring product name. -- Prompt uses the term DocumentDB; builder must ensure consistent naming in repo. This is at risk only if the author doesn't enforce naming.
+
+## Questions for the prompt author
+
+- Which OpenAI embeddings model should the sample use (e.g., text-embedding-3-small)? This determines vector dimensions and index settings.
+- Which Python version should be targeted (3.10, 3.11)?
+- Do you want the sample to include infrastructure-as-code for the cluster (Bicep/Terraform), or must it only use the provided live cluster?
+- What size of sample data do you expect (tiny demo dataset vs realistic thousands/100k orders)? This will affect index type choice (DiskANN vs HNSW vs IVF) and index tuning that should be shown in README.
+- Do you require pinned dependency versions in requirements.txt and unit tests that run without a live cluster (mocks)?
+
+## Contradictions and missing references
+
+None.
+
+## Rubric
+
+| Item | Status | Blocking | In the prompt | Skill | Assumed if unanswered | Note |
+|---|---|---|---|---|---|---|
+| Goal and scenario | specified | no | Build an async Python service using Beanie ODM that aggregates co-purchase pairs from order history in DocumentDB, embeds product pairs using OpenAI, stores the vectors, and exposes a /cross-sell endpoint that accepts a basket of product IDs and returns the top 5 cross-sell candidates ranked by affinity score. | - | - | Clear business problem, user-facing endpoint, and what the sample demonstrates about vector search + co-purchase aggregation. |
+| Workflow type | ambiguous | no | "Using the DocumentDB skill" and "build an async Python service" | - | Builder will produce a single-agent sample (normal synchronous git repo with an async Python service launched by uvicorn), not a multi-agent orchestration. No external agent framework will be used. | Prompt asks to use a DocumentDB skill but doesn't ask for agent orchestration; most builders will implement a normal code sample. |
+| Language and runtime | ambiguous | no | async Python service using Beanie ODM | - | Use a modern supported Python 3.x — assume Python 3.11 (or 3.10) virtualenv; runtime commands use `python -m venv && pip install -r requirements.txt` and run with `uvicorn app:app --reload` for dev. | Python is specified but exact interpreter version is not; skill_md notes `python`/`pip` refer to a venv but no explicit version. |
+| Driver and version | ambiguous | no | using Beanie ODM | documentdb-driver | Use Beanie latest stable compatible release with Motor/pymongo stable (e.g., Beanie 1.x/2.x depending on current Beanie release) and Motor (async) + pymongo 4.x. Apply documentdb-driver guidance: create a singleton MongoClient (via Motor) reused across requests. | The documentdb-driver skill covers client reuse and best practices but does not fix exact package versions — builder will pick current Beanie/Motor/pymongo versions and pin them in requirements.txt. |
+| Target service and tier | specified | no | order history in DocumentDB, ... | - | Use the provided live vector-capable Azure DocumentDB cluster described in skill_md: compute tier M30, MongoDB 7.0 wire protocol, DiskANN/HNSW/IVF available. Use database name `sample_retail_19` as required by skill_md. | Run-environment (skill_md) gives the exact cluster character and the DB name to use; the sample should target that live cluster. |
+| Authentication and secrets | ambiguous | no | embeds product pairs using OpenAI | documentdb-mcp-setup | DocumentDB connection string read at runtime from DOCUMENTDB_URI (per skill_md). OpenAI credentials in OPENAI_API_KEY (common default). All secrets loaded from environment variables; .env.example used in repo with placeholders. | skill_md explicitly mandates DOCUMENTDB_URI read from env. The prompt didn't specify where to store OpenAI keys; builder will use conventional OPENAI_API_KEY and ensure secrets are not checked in. |
+| Data model | ambiguous | no | aggregates co-purchase pairs from order history ... persists one document per pair | documentdb-data-modeling | Use database `sample_retail_19`. Collections: `orders` (source), `product_pairs` (target). Product-pair document shape: { _id, product_ids: [idA, idB], count: Number, embedding: [float], embedding_model: string, dimensions: int, updated_at: ISODate }. Use canonical ordering of product IDs to avoid duplicates (e.g., sort ids in pair). | Prompt defines high-level intent but not field names or de-duplication rules; documentdb-data-modeling skill informs embedding storage and de-normalization choices. |
+| Sample data | missing | no | - | documentdb-local-deployment | Builder will include a small synthetic seed dataset (e.g., JSON with a few hundred to a few thousand synthetic orders) and an idempotent seed script to load it into `orders`. Size will be small enough to run in CI locally (e.g., 500–1,000 orders). | The starter prompt doesn't provide sample data or its provenance. A seed script is required by reference requirements but not specified here. |
+| Queries and indexes | covered_by_skill | no | stores the vectors ... returns the top 5 cross-sell candidates ranked by affinity score | documentdb-vector-search | Create a cosmosSearch vector index (vector-diskann by default for M30) on the embedding field with `dimensions` matching the embedding model (assume 1536 for text-embedding-3-small) and similarity COS (cosine). Tune lBuild/lSearch and maxDegree for sample-size; default to DiskANN defaults for small sample and documentdb-vector-search guidance. | The prompt asks only for embedding and a /cross-sell endpoint; the vector index creation, type and parameters are supplied by vector-search skill guidance and the run environment. |
+| AI components | ambiguous | no | embeds product pairs using OpenAI, embeds the basket with the same OpenAI embedding call used for the pairs | - | Use OpenAI embeddings API asynchronously with a mainstream embedding model such as text-embedding-3-small (1536 dims). Use OPENAI_API_KEY from env. Normalize vectors for cosine similarity. Store embedding_model and dimensions on each pair document. | Prompt requires OpenAI embeddings but doesn't pick a model or exact async client; builder will choose a common default and document it. |
+| App surface | specified | no | /cross-sell endpoint that accepts a basket of product IDs and returns the top 5 cross-sell candidates ranked by affinity score | - | HTTP JSON API (FastAPI or Starlette) with POST /cross-sell accepting {"basket": ["prodA","prodB", ...]} and returning top 5 candidate objects with affinity score and product ids. Use async handlers and return JSON with scores and product metadata. | Prompt clearly specifies the endpoint, input and expected top-5 output ordering and filtering of items already in basket. |
+| Provisioning and deployment | specified | no | Using the DocumentDB skill ... | - | Do not provision a new cluster. Use the existing live cluster (DOCUMENTDB_URI) described in skill_md and verify the collections and indexes against it. Deployment of the sample app is local/dev only (run on developer machine). | skill_md explicitly states the live cluster is available and that the sample should use it; do not create more clusters unless allowed. |
+| Run and test instructions | ambiguous | no | - | - | README will document common commands: pip install -r requirements.txt, export env vars / .env, python seed.py, uvicorn app:app --reload, curl POST to /cross-sell. Tests: simple unit tests that mock DB and OpenAI; integration test requires live cluster and optional. | Prompt doesn't include explicit run/test commands; skill_md gives environment constraints but not exact run steps. |
+| Definition of done | ambiguous | no | returns the top 5 cross-sell candidates ranked by affinity score | - | Accept when: aggregation computes product pairs and writes pair docs with embeddings; vector index created with correct dims; /cross-sell returns 5 candidates (not in basket) ordered by affinity score and uses async I/O throughout; README documents how to run seed, start service, and test endpoint. | Prompt gives a functional acceptance criterion but not all required artifacts (README, seed idempotency, tests). |
+| Constraints and non-goals | missing | no | - | documentdb-security | Builder will avoid provisioning cloud infra, keep dataset small, not include cost-heavy operations, and explicitly call out that production hardening (Private Endpoint, CMK, RBAC) is out-of-scope for the sample but mention best-practices in README. | No constraints (cost, data sensitivity) are provided; security skill can advise but the sample should note non-goals. |
+| Repository conventions | missing | no | - | documentdb-local-deployment | Standard layout: src/ or app/, seed.py, requirements.txt (pinned), tests/, README.md, .env.example with placeholders, no secret checkins. Use `requirements.txt` for pinned deps and optionally pyproject/poetry if chosen. | Starter prompt doesn't specify folder layout, README contents, or dependency pinning; builder will follow typical gallery conventions. |

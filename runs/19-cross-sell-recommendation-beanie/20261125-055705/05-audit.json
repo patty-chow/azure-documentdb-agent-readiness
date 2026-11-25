@@ -1,0 +1,631 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core cross-sell flow (async FastAPI + Beanie, seeding products/orders/pairs, storing normalized embeddings, a /cross-sell endpoint returning top-5 affinity-ranked candidates, pinned deps, .env.example, README, and unit tests that run without a live DB). Major gaps: the sample does not create the DocumentDB cosmosSearch vector index programmatically and it does not run a server-side $search / cosmosSearch vector query at request time (it scores candidates in-app using stored embeddings). Several checklist items that expect idempotent seed/index creation and server-side vector search are partly or not met. See requirement-by-requirement findings and practice checks below. Where the product team expects guidance but it wasn’t discoverable, I list documentation gaps and proposed fixes.",
+  "requirement_results": [
+    {
+      "requirement": "A Python aggregation step, run through Beanie ODM's aggregation support over the order-history documents in Azure DocumentDB, derives co-purchase product pairs and persists one document per pair back to Azure DocumentDB through Beanie.",
+      "status": "partly_met",
+      "evidence": "seed.py: lines 78-92 implement aggregation in Python by iterating orders from Motor and building `pair_counts`, then creating ProductPair objects and `await pp.save()` (seed.py lines ~79-92).",
+      "cause": "builder_error",
+      "smallest_fix": "Use a Beanie/Motor aggregation pipeline (collection.aggregate or Beanie's aggregation helpers) to compute pair counts server-side, then upsert each pair document. Concretely: replace the in-Python loop over orders with an aggregation that $unwinds and $group to produce pair counts, then bulk upsert results into product_pairs."
+    },
+    {
+      "requirement": "Each stored product pair is embedded by calling OpenAI's embeddings API, and the returned vector is saved on that pair's document in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "seed.py: compute_embedding() calls OpenAI when OPENAI_API_KEY is set (seed.py lines ~33-42), and product-pair documents are created with embedding=emb and saved (seed.py lines ~90-92).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A cosmosSearch vector index of kind vector-ivf, vector-hnsw or vector-diskann is created in code on the pair documents' embedding field with dimensions matching the OpenAI embedding model used and a similarity of COS, L2 or IP.",
+      "status": "not_met",
+      "evidence": "No index-creation command is present in the repo. README notes index must be created manually and the code does not call createSearchIndexes (README.md line 32).",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Add an idempotent index-creation script (e.g., index_create.py or a `--create-index` flag in seed.py) that calls the DocumentDB `createSearchIndexes` path (driver runCommand or MCP) using EMBEDDING_DIMENSIONS and chosen kind (e.g., `vector-diskann`) and documents the command in README."
+    },
+    {
+      "requirement": "The service exposes an HTTP endpoint at /cross-sell that accepts a basket of product IDs as its input.",
+      "status": "met",
+      "evidence": "app/main.py defines @app.post('/cross-sell') and BasketRequest with basket: List[str] (main.py lines 25-63 and handler at line 59).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Handling a /cross-sell request embeds the basket with the same OpenAI embedding call used for the pairs and runs a $search / cosmosSearch aggregation against the vector index, so the similarity between the basket and the stored pair vectors is computed inside Azure DocumentDB.",
+      "status": "not_met",
+      "evidence": "app/main.py builds the basket embedding by averaging stored product embeddings (main.py lines 69-80) and then finds candidate pairs with ProductPair.find({'product_ids': {'$in': basket}}) and computes cosine similarity in-app (main.py lines 82-101). No OpenAI call or $search/cosmosSearch aggregation is used in the request path.",
+      "cause": "builder_error",
+      "smallest_fix": "Modify the endpoint to call the embeddings API at request time (or explicitly document why stored product embeddings are equivalent) and run a server-side aggregation using `$search` with `cosmosSearch` vector query (use motor's aggregate/runCommand to call createSearchIndexes/$search), passing the basket vector so the DB performs nearest-neighbor retrieval."
+    },
+    {
+      "requirement": "The endpoint returns exactly the top 5 cross-sell candidates, ordered from highest to lowest affinity score, with products already in the basket not offered as candidates; the affinity score is derived from the co-purchase pair data the search returns.",
+      "status": "met",
+      "evidence": "app/main.py computes affinity = 0.7 * max(0.0, sim) + 0.3 * norm_count, excludes items already in the basket, and returns the top 5 (main.py lines 103-115).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The service is asynchronous end to end: request handling, every Beanie ODM call to Azure DocumentDB (aggregation, writes, index creation and the $search query) and every OpenAI embedding call use Python async/await.",
+      "status": "partly_met",
+      "evidence": "Most IO is async: FastAPI handler is async, seed uses async compute_embedding and `await p.save()` (seed.py and main.py show async/await). However index creation and $search vector queries are not present, and the request path does not call OpenAI embeddings async (it uses stored embeddings) (main.py lines 69-92).",
+      "cause": "builder_error",
+      "smallest_fix": "Implement async server-side index creation and $search calls (motor runCommand/aggregate) and, if performing on-demand embeddings, call OpenAI via an async client in the request path."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI and OPENAI_API_KEY; app/main.py and seed.py read DOCUMENTDB_URI, OPENAI_API_KEY and EMBEDDING_MODEL from environment (main.py lines 15-18, seed.py lines 21-26; .env.example lines 2-5). No secrets are committed.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI, OPENAI_API_KEY, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS, DATABASE_NAME (app/.env.example lines 2-6).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "The default EMBEDDING_MODEL is text-embedding-3-small and .env.example sets EMBEDDING_DIMENSIONS=1536; stored documents record dimensions=len(emb) (seed.py line 31 and product/pair creation lines). However, index creation (where dimensions must be set) is not executed programmatically and so the repo does not enforce index dimensions (README says to create index manually README.md line 32).",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Add an idempotent index-creation script that reads EMBEDDING_DIMENSIONS and sets the index `dimensions` accordingly; include a runtime check that stored vectors' length equals EMBEDDING_DIMENSIONS before creating the index."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "README recommends `vector-diskann` for M30+ and states index creation is manual (README.md line 32). The repo does not include an index JSON example file with tunable parameters or an automatic index-creation script.",
+      "cause": "builder_error",
+      "smallest_fix": "Add `index_example.json` with recommended parameters for small/medium/large seeds (IVF/HNSW/DiskANN choices and lBuild/lSearch/ef parameters) and a README subsection showing which knobs to change with dataset-scale guidance."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/main.py creates a module-scoped AsyncIOMotorClient in startup and uses a boolean `_beanie_initialized` to gate DB usage (main.py lines 21-40).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "not_met",
+      "evidence": "seed.py creates orders with non-deterministic ids (order_{i}_{random}) which will create new orders on each run (seed.py lines ~68-74). The script does not create the cluster search index programmatically (README states manual index creation), so the seed is not idempotent with respect to orders and index creation is manual (README.md line 32, seed.py lines 68-74).",
+      "cause": "builder_error",
+      "smallest_fix": "Make seed idempotent: use deterministic IDs (no random suffix) or upsert orders instead of inserting new ones, and use bulk upsert for product_pairs. Add an idempotent index-creation step separate from data load."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "partly_met",
+      "evidence": "app/main.py returns 400 for empty basket (main.py lines 61-63). It returns 500 if basket product embeddings are missing (main.py lines 75-77). However the handler does not call OpenAI at request time and therefore does not surface or handle runtime embedding-call failures originated from OpenAI (main.py lines 69-80).",
+      "cause": "builder_error",
+      "smallest_fix": "If request-time embeddings are used, add try/except around the OpenAI call and return a 502/503 with a clear message on embedding failure (with appropriate retries/timeouts)."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "app/main.py returns candidates with a `score` field derived from the affinity calculation (main.py lines 113-115).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "app/requirements.txt contains pinned/anchored versions and ranges (beanie>=1.19,<2.0, motor==3.1.1, pymongo==4.7.0, etc.)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "tests/test_cross_sell.py posts an empty basket to the FastAPI app; app startup skips DB initialization when DOCUMENTDB_URI is not set (main.py lines 28-36), and pytest passed in the run (events.jsonl shows pytest exit code 0).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/Terraform) files are present in the repository; README instructs to use an existing cluster and warns not to modify cluster (README.md lines 10,32).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an example Bicep/ARM (or Terraform/AzAPI) snippet that uses `Microsoft.DocumentDB/mongoClusters` for deployers who want to provision a cluster; mark it as optional and warn about permissions/cost."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "README.md covers what the sample shows, prerequisites and quickstart setup and run steps (README.md lines 1-23). It does not explicitly include clean-up steps to remove the created data or cluster.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a 'clean-up' section to README showing how to drop the sample database/collections or commands to delete sample resources (eg. mongo shell dropDatabase or use motor to drop collections)."
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and other files consistently refer to 'Azure DocumentDB' (README.md lines 1 and 3-6).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton client",
+      "practice": "Create one MongoDB client (MongoClient / Async client) per process and reuse it across requests rather than creating a new client per request (singleton client pattern).",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/main.py lines 21-39 create a module-scoped AsyncIOMotorClient in startup and reuse it.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS on connection",
+      "practice": "Always use TLS when connecting to Azure DocumentDB; ensure tls=true in the connection string and do not disable certificate verification in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": ".env.example includes a mongodb+srv URI with `?tls=true` (app/.env.example line 2) and code passes DOCUMENTDB_URI through to AsyncIOMotorClient without disabling TLS (app/main.py line 37).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets in env",
+      "practice": "Read the DocumentDB connection string from an environment variable at runtime and avoid committing it to source control; provide a .env.example or other placeholder for developers instead.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example present and code reads DOCUMENTDB_URI from environment (app/.env.example lines 2-5, main.py line 15).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize embeddings at ingest",
+      "practice": "When building and indexing vectors, normalize embeddings at ingestion, store the unit-length vector and record the embedding model name and dimensions alongside it (vectors must be a number[]).",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "seed.py normalizes embeddings before saving (compute_embedding returns normalized vector; seed.py lines ~33-50) and product/pair documents save embedding_model and dimensions (seed.py lines ~63-66 and 90-92).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index creation",
+      "practice": "Create appropriate indexes for the workload: index array-of-ids (multikey) and create a cosmosSearch vector index on the embedding path with the correct dimensions and similarity.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "No code calls createSearchIndexes; ProductPair collection is not given a cosmosSearch vector index in repo. README suggests manual index creation (README.md line 32).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Add an idempotent index-creation script that calls createSearchIndexes with `cosmosSearchOptions` using EMBEDDING_DIMENSIONS and chosen engine (e.g., vector-diskann) and create a compound/multikey index for `product_ids` and `count` as appropriate.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index tuning by scale",
+      "practice": "Choose the vector index algorithm and tune its build/query parameters based on scale (DiskANN for large, HNSW medium, IVF small).",
+      "category": "vector search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "not_applicable",
+      "evidence": "Sample README recommends vector-diskann but the app does not build an index; index tuning is a deployment decision (README.md line 32).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize metadata",
+      "practice": "Record embedding model name and dimensions alongside stored vectors so model drift is detectable.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "seed.py stores embedding_model and dimensions when creating Product and ProductPair (seed.py lines 63-66 and 90-92).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Batched writes/upsert for seed",
+      "practice": "Use batched writes / bulkWrite with upsert for seeding to make seed idempotent and reduce round trips.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/max-document-size",
+      "status": "violated",
+      "evidence": "seed.py iterates and calls await p.save() and await pp.save() per document (seed.py lines ~63-66 and 90-92) and inserts orders with non-deterministic ids (seed.py lines ~68-74). No bulkWrite/upsert pattern is used.",
+      "source": "Document size and batch write limits in Azure DocumentDB",
+      "searched": "",
+      "fix": "Use bulk_write with upsert operations for product_pairs (e.g., build a list of UpdateOne(upsert=True) operations) or use Beanie bulk helpers so the seed can be rerun without duplicating orders/effects.",
+      "sources": [
+        {
+          "title": "Document size and batch write limits in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/max-document-size"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Affinity rerank",
+      "practice": "Fetch more candidates than the final top-N and rerank candidates in-application using the full affinity function (vector score + co-purchase signal).",
+      "category": "vector search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/build-rag-applications#run-a-similarity-search",
+      "status": "followed",
+      "evidence": "The implementation fetches candidate pairs that include basket items, computes similarity and normalized log count in-app, and reranks by a combined affinity score (main.py lines 86-113).",
+      "source": "Use LangChain on Azure with Azure DocumentDB (MMR / fetch_k example)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use LangChain on Azure with Azure DocumentDB (MMR / fetch_k example)",
+          "url": "https://learn.microsoft.com/azure/documentdb/build-rag-applications#run-a-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Timeouts and partial-failure design",
+      "practice": "Set sensible timeouts for external services (embedding API) and DB operations and make long-running seed/batch jobs tolerant to partial failures and resumable using idempotent keys.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "seed.py does not set explicit network timeouts or retry logic for the OpenAI call or DB writes; compute_embedding calls openai.Embedding.create() without timeouts; seed writes documents in a loop without checkpointing or resumability logic (seed.py lines 33-66 & 76-92).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Wrap external calls with retry/backoff and timeouts; implement seed checkpoints (e.g., mark processed orders or use upserts and bulk writes so retries are safe).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Limit returned fields",
+      "practice": "Limit returned fields using projection to only what the endpoint needs and avoid returning large embedding vectors in API responses unless required.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "The /cross-sell endpoint does not return embeddings; it returns product_id and score only (main.py lines 113-115).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring & alerts",
+      "practice": "Instrument and monitor the cluster and application: enable diagnostic settings/slow-query logs and emit app-level metrics (latency histograms) for critical endpoints.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample is a minimal demo and does not include monitoring/alerting instrumentation; README lists production considerations out-of-scope (README.md line 39).",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add guidance and a stub for instrumenting metrics (Prometheus/OTEL) and enabling database diagnostic settings; if desired, include example log/metric collectors in README.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Local gateway use",
+      "practice": "For local dev parity, run the DocumentDB Gateway locally (Mongo protocol on port 10260) and drive connection relaxation from environment variables only.",
+      "category": "local dev",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "not_applicable",
+      "evidence": ".env.example and README assume connecting to a live cluster; no local gateway examples are included (app/.env.example, README.md).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "Add a README subsection showing how to run the DocumentDB gateway docker image (port 10260) and how to toggle DOCUMENTDB_URI for local gateway vs live cluster.",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Store vectors as number[]",
+      "practice": "Vectors must be stored as number[] (a fixed-length numeric array) to be indexed by DocumentDB's vector indexes.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "Product and ProductPair documents store embeddings as List[float] in models.py and seed.py (models.py lines 6-12, 16-23; seed.py lines 63 and 90-92).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid unbounded arrays",
+      "practice": "Documents cannot grow without bound (no unbounded arrays).",
+      "category": "data model",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample's orders store items as small arrays per order (app/models.py lines 28-32); sample usage creates small orders (seed.py uses MAX_ITEMS_PER_ORDER default 6).",
+      "source": "documentdb-data-modeling",
+      "searched": "searched for 'unbounded arrays documentdb' and checked data-modeling skill resources",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry on transient errors",
+      "practice": "Implement retries with exponential backoff and jitter for transient errors (including handling 429 TooManyRequests).",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "No retry/backoff wrapper is present for the OpenAI embedding call or DB writes in seed.py or main.py. compute_embedding calls openai.Embedding.create() directly (seed.py lines ~33-42).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add retry/backoff logic for transient responses from OpenAI and DB operations (cap retries, add jitter). Use server-side retry options where supported and application-level retries for 429s.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index lifecycle safety",
+      "practice": "Create and reindex vector and other indexes as an idempotent offline/maintenance step and verify index readiness with the cluster tools before relying on them in production queries.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "index creation is not automated; README asks user to create index manually and mentions MCP tooling (README.md line 32). No idempotent index creation CLI/script is supplied.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Provide an idempotent `create_index.py` that constructs the createSearchIndexes payload and calls the cluster via runCommand or provides JSON users can apply with MCP tools; include instructions to verify readiness.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid storing embeddings in responses",
+      "practice": "Limit returned fields and avoid returning large embedding vectors in API responses.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "/cross-sell response returns product_id and score only (main.py lines 113-115).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator approval of 'ready_with_gaps' is consistent with the builder report that the sample completed with documented gaps. The events show the build ran and recorded gaps in verification (events.jsonl includes build/verifications)."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python + FastAPI + Beanie directly follows the prompt; events show the repo uses FastAPI and Beanie (app/main.py, app/models.py)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "D003 records a requirements.txt pin set that included numpy==1.26.0 and pytest-mock==3.11.2. The events show pip failed for numpy==1.26.0 on the environment and the builder later relaxed numpy and pytest-mock (decisions D010 and D011). D003 was a reasonable initial choice but the environment forced a change; mark questionable because it was superseded by later tool-driven decisions (events.jsonl lines ~29 and 37-41)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading secrets from environment and providing .env.example is implemented (app/.env.example and env reads in main.py / seed.py)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "The decision not to provision resources is consistent with the run policy and the repo contents (no IaC created) and is recorded in events (D005)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Storing both product and pair embeddings is implemented; seed.py creates both collections with embeddings (seed.py lines ~63 and 90)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Choosing text-embedding-3-small (1536 dims) is reflected in code defaults and .env.example (main.py line 17, .env.example line 4)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Recommending vector-diskann and not changing cluster config programmatically is consistent with README and the decision log; the events show the index creation step was intentionally omitted (README.md line 32 and events documenting manual index creation guidance)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Choosing Motor as the async driver is necessary for Beanie; repository uses motor and beanie (requirements and code)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Events show pip install failure with numpy==1.26.0 and the builder relaxed the pin to numpy>=1.24.0 (events.jsonl lines ~36-42). The reason_source is tool_result and logs support it."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Events show pytest-mock pin caused install failure and the builder relaxed it; the events include pip error and subsequent requirement change (events.jsonl lines ~40-41)."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Skipping DB init when DOCUMENTDB_URI is unset is implemented (main.py lines 28-36) and allowed unit tests to run; events show test runs and code change (events.jsonl lines ~43-49)."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Modifying seed to generate placeholder embeddings when OPENAI_API_KEY is absent is implemented (seed.py compute_embedding has fallback random normalized vector) and the seed ran successfully without OPENAI_API_KEY (events.jsonl lines ~54-65)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Index creation example and idempotent script",
+      "what_was_missing": "No idempotent script or concrete JSON file in the repo that calls DocumentDB's `createSearchIndexes`/`cosmosSearch` to create a vector index (dimensions, engine, and tuning parameters were not programmatically created). README points to manual steps but does not ship the index JSON.",
+      "where_searched": "Repository files (README.md, seed.py), installed skills (documentdb-vector-search, documentdb-indexing) and Microsoft Learn vector-search docs via learn_microsoft_docs_search.",
+      "effect_on_this_build": "Builder did not create the cluster index automatically; vector retrieval was implemented in-app rather than via $search because the sample didn't apply a vector index.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Provide an `index_example.json` and a small `create_index.py` script that reads EMBEDDING_DIMENSIONS and emits the `createSearchIndexes` payload for vector-diskann/vector-hnsw/vector-ivf with recommended parameter sets for small/medium/large datasets, plus a README subsection: 'How to apply the index via DocumentDB MCP or portal and how to verify readiness.'",
+      "priority": "high"
+    },
+    {
+      "topic": "Index tuning and scale guidance discoverability",
+      "what_was_missing": "The README recommends DiskANN but does not include concrete tuning knobs (lBuild/lSearch/ef, maxDegree, nlist) or example parameter values for the sample's seed size.",
+      "where_searched": "README and repo, documentdb-vector-search skill and Microsoft Learn vector-search doc.",
+      "effect_on_this_build": "Builders and users lack ready defaults to apply to a cluster; they might choose suboptimal index parameters for their scale.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a 'Vector index tuning' subsection to README with three presets (demo/small/production) listing engine choice and explicit params and a one-line explanation when to pick each.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Idempotent seed and bulk-upsert example",
+      "what_was_missing": "No example of using bulkWrite/upsert in seed script to ensure idempotency; current script creates random order ids leading to duplicate orders on repeated runs.",
+      "where_searched": "seed.py, documentdb-bulk-write guidance in skills and Microsoft Learn bulk write docs.",
+      "effect_on_this_build": "Re-running seed.py will create new order documents and change pair counts; the claimed 'idempotent' behavior in comments is not enforced by code.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a seed pattern in the agent kit showing deterministic ids or upsert-based bulkWrite for orders and product_pairs, with a code snippet demonstrating UpdateOne(..., upsert=True) in batches and a resume checkpoint file.",
+      "priority": "high"
+    },
+    {
+      "topic": "Guidance for request-time embeddings vs stored-product-embedding basket",
+      "what_was_missing": "No explicit documentation guidance that explains tradeoffs between embedding the basket at request time with OpenAI vs computing a basket embedding from stored product embeddings (and which is preferred for this sample).",
+      "where_searched": "README, seed.py, documentdb-vector-search and documentdb-data-modeling skills.",
+      "effect_on_this_build": "Builder chose stored-product averaging; sample diverged from the prompt expectation to call OpenAI at request time and to run server-side $search. Users may be confused which approach to use.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a README section 'Basket embedding: Options and tradeoffs' explaining (a) request-time embeddings (pros/cons, additional latency, required OpenAI key), (b) precomputed product embeddings averaged at query time, and an explicit note about how to adapt the code to use $search with a request-time OpenAI vector.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Instruction to treat DOCUMENTDB_URI as opaque SRV URI",
+      "what_was_missing": "README and .env.example show a sample mongodb+srv URI but the repo does not instruct authors to avoid hardcoding host/port parsing (some docs and older examples assume port 10255).",
+      "where_searched": "README, .env.example, documentdb-azure-deployment and MCP docs.",
+      "effect_on_this_build": "Code correctly passes DOCUMENTDB_URI through to the driver, but a future builder might parse host/port and break SRV URIs.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a one-line rule in README: 'Pass DOCUMENTDB_URI unchanged to the driver (do not parse host/port); vCore clusters typically publish mongodb+srv URIs.'",
+      "priority": "low"
+    },
+    {
+      "topic": "Make explicit that OpenAI key is optional for verification",
+      "what_was_missing": "README notes placeholder embeddings, but there is no detailed note for CI/verification about how to run end-to-end with real embeddings.",
+      "where_searched": "README and seed.py.",
+      "effect_on_this_build": "The seed ran with placeholders; end-to-end semantic ranking was not validated without OPENAI_API_KEY.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a README paragraph describing how to set OPENAI_API_KEY for production/semi-production verification and the expected impact, plus a small test command to verify embeddings were created by OpenAI.",
+      "priority": "low"
+    }
+  ]
+}

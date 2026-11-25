@@ -1,0 +1,40 @@
+# 3. Build report: 19-cross-sell-recommendation-beanie
+
+**Status: completed**
+
+Created an async Python sample (FastAPI + Beanie) that ingests order history, aggregates co-purchase pairs, stores product and pair embeddings, and exposes a /cross-sell endpoint that ranks candidates by an affinity score (cosine similarity + co-purchase count). The repo includes an idempotent seed script, docs, unit test, and dependency pins. I verified dependency installation (pip), ran unit tests, and executed the seed script against the provided live cluster (used placeholder embeddings because OPENAI_API_KEY was not set).
+
+## How to run
+
+1) Copy .env.example -> .env and fill values (DOCUMENTDB_URI required; OPENAI_API_KEY optional). 2) Create venv and install: python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt 3) Seed database (will generate placeholder embeddings if OPENAI_API_KEY is not set): python seed.py 4) Run service: uvicorn app.main:app --reload 5) Query endpoint: POST /cross-sell with JSON body {"basket": ["prod_1","prod_2"]} e.g. curl -X POST localhost:8000/cross-sell -H 'Content-Type: application/json' -d '{"basket":["prod_1","prod_2"]}'
+
+## Verified by running
+
+- pip install -r requirements.txt: succeeded (packages installed)
+- pytest -q: 1 passed (unit test for input validation present and run)
+- python seed.py: executed and completed (wrote products, orders, product_pairs to provided database using DOCUMENTDB_URI; used placeholder random normalized embeddings because OPENAI_API_KEY was not set)
+
+## Not verified
+
+- Full end-to-end semantic quality with real OpenAI embeddings: not verified because OPENAI_API_KEY was not provided in the environment; seed used placeholder embeddings. Provide OPENAI_API_KEY and re-run seed.py to compute real embeddings.
+- Vector index creation (DocumentDB createSearchIndexes / vector-diskann): not created by the sample. The sample documents include embeddings and a recommended index JSON is described in README; index creation must be applied manually using DocumentDB MCP tools or the portal (no infra changes were performed automatically).
+- Live cross-sell result ranking with curated embeddings against production vector index: not verified because (a) OpenAI key missing and (b) index creation not applied programmatically.
+
+## Open issues
+
+- OPENAI_API_KEY was not present in the run environment. To generate real embeddings and validate semantic ranking, set OPENAI_API_KEY and re-run 'python seed.py' to replace placeholder embeddings.
+- The sample does not create a DocumentDB vector index automatically (vector index changes are cluster-level). I intentionally did not change cluster index configuration; follow README and use the documentdb MCP server or the portal to create a 'vector-diskann' (recommended for M30+) or other vector index suitable for your scale.
+- ProductPair.count field shadows a parent attribute warning from Beanie; this is benign for the sample but should be reviewed if the model evolves.
+- Production hardening (Private Endpoint, Entra RBAC, CMK encryption, network rules) is out-of-scope for this sample and must be added before using in production.
+
+## Files
+
+- `requirements.txt`
+- `.env.example`
+- `README.md`
+- `app/__init__.py`
+- `app/models.py`
+- `app/main.py`
+- `seed.py`
+- `tests/test_cross_sell.py`
+
