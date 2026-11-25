@@ -1,0 +1,600 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested Node.js Mongoose stale-while-revalidate cache against Azure DocumentDB and was verified against the live cluster. The core functionality (cache lookup, per-document TTL index, freshness checks, stale-while-revalidate background refresh, and a reusable client) is present and exercised by the demo. Several gallery checklist items and best-practice recommendations were only partially implemented or omitted (pinned driver version, explicit index creation in the seed flow, unit tests that run without a live cluster, dependency pinning format, and optional infra IaC). Several of those omissions stem from the starter prompt not asking for them; others are choices the builder made that differ from public quickstart guidance (Mongoose major version). The decisions recorded in decisions.jsonl are mostly supported by the build trace; a couple are either unverifiable or questionable versus public guidance (notably the Mongoose version choice). See findings below for per-requirement, per-practice, decision reviews, and recommended fixes and documentation gaps.",
+  "requirement_results": [
+    {
+      "requirement": "A Node.js caching layer wraps or intercepts outgoing open banking API calls so that every call passes through the cache lookup before any request reaches the upstream API.",
+      "status": "met",
+      "evidence": "app/src/cache.js lines 27-36 (getOrUpdate) and lines 109-116 (expressMiddleware); app/src/demo.js line 34 (app.get('/proxy', cache.expressMiddleware(...))).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The cache lookup queries Azure DocumentDB through the Mongoose ODM for a cached response document that matches the intercepted request (e.g. keyed on the request URL and parameters).",
+      "status": "met",
+      "evidence": "app/src/cache.js line 30 (ApiCache.findOne({ key }).lean()) and lines 37-46 / 67-76 / 90-98 (ApiCache.updateOne/upsert). app/src/models/ApiCache.js defines the Mongoose model.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A TTL index is created in code on a Date field of the cache documents (e.g. a Mongoose schema index with expireAfterSeconds) so Azure DocumentDB expires cached response documents automatically.",
+      "status": "met",
+      "evidence": "app/src/models/ApiCache.js lines 14-16 (ApiCacheSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })); documentdb_list_indexes call in events.jsonl confirmed an expiresAt index (events.jsonl tool output).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A cached document's freshness is decided from a date stored on the document (e.g. the TTL date field compared against the current time), so a document can be stale while it still exists in the collection.",
+      "status": "met",
+      "evidence": "app/src/cache.js lines 50-61 check doc.expiresAt and doc.staleUntil to decide fresh / stale-while-revalidate.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "When a matching cached document is fresh, the cached response is returned to the caller and the open banking API is not called.",
+      "status": "met",
+      "evidence": "app/src/cache.js lines 50-54: returns cache result when now < doc.expiresAt; no fetcher call occurs before that return.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "When no matching cached document exists, the response is fetched from the open banking API, stored in Azure DocumentDB as a new cache document through Mongoose, and returned to the caller.",
+      "status": "met",
+      "evidence": "app/src/cache.js lines 32-47: on miss it calls fetcher(options), computes expiresAt/staleUntil, and upserts via ApiCache.updateOne(..., { upsert: true }).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "When a matching cached document is stale, the stale cached response is returned to the caller immediately and a background refresh fetches the open banking API and stores the refreshed response in Azure DocumentDB without delaying that response (stale-while-revalidate).",
+      "status": "met",
+      "evidence": "app/src/cache.js lines 56-61 return stale response and call backgroundRefresh(key, options); backgroundRefresh performs fetcher and updateOne (lines 82-106).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example lines 1-3 (DOCUMENTDB_URI placeholder); app/src/demo.js lines 8-12 and app/src/seed.js line 6 read process.env.DOCUMENTDB_URI. No credentials are committed in repository files.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example shows DOCUMENTDB_URI placeholder (app only requires this env var).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use any vector index or embeddings; this requirement is not applicable to the implemented cache sample.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexes are created or documented in this sample; not applicable.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/mongo.js lines 4-9 (connected guard) and lines 16-19 (mongoose.connect only once). demo.js calls connect(uri) once at startup (app/src/demo.js line 14).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/src/seed.js deletes existing documents (ApiCache.deleteMany({})) and inserts a demo document (lines 9-16), so it is idempotent with respect to data duplication. However, the seed script does not explicitly call createIndexes()/ensureIndexes; index presence relies on the model schema registration and Mongoose's autoIndex behavior rather than an explicit index-creation step in the seed flow.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an explicit call in src/seed.js (or startup) to ensure the model's indexes are created, e.g. await ApiCache.createIndexes(); before inserting data. This ensures index creation irrespective of Mongoose autoIndex defaults."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "This sample implements a proxy caching middleware and has no /search endpoint or embedding calls.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search/vector functionality in this sample.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "not_met",
+      "evidence": "This is a Node.js project. app/package.json lists dependencies with caret ranges (e.g. \"mongoose\": \"^7.5.0\" at line 18) rather than exact pinned versions in a requirements.txt file. package-lock.json exists (events.jsonl shows npm install created it), but the gallery checklist requested pinned dependencies in a requirements.txt—no such file exists.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Either (a) add a repository file documenting exact dependency versions (e.g. lockfile or a dependencies list), or (b) replace caret ranges in package.json with exact versions (e.g. \"mongoose\": \"7.5.0\"), and commit package-lock.json. For gallery policy, add a short README line that the lockfile must be committed and list exact versions."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files were added (no test runner or test folder); events.jsonl and the builder_report say the demo used a live cluster for verification. There are no unit tests that use a local gateway or an in-memory server.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add minimal unit tests using mongodb-memory-server or by mocking Mongoose. For example, add a simple Jest test that launches an in-memory MongoDB and exercises computeKey/getOrUpdate paths with a mock fetcher."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files are in the repository (no Bicep/Terraform/ARM templates). The run environment explicitly provided an existing cluster and the builder chose not to provision resources.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an optional Bicep/Terraform example that shows Microsoft.DocumentDB/mongoClusters (or a referenced AzAPI module) to create a DocumentDB cluster. Keep it optional and documented in the README."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes 'What this sample shows', 'Prerequisites', 'Quickstart' setup/run steps, and a 'Cleanup' note (lines 3-17 and lines 32-33).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "Repository README title and text uses 'Azure DocumentDB' (app/README.md lines 1 and 4). package.json and other files also reference Azure DocumentDB in descriptions.",
+      "cause": "none",
+      "smallest_fix": "none"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env secrets",
+      "practice": "Store the Azure DocumentDB connection string in an environment variable (e.g., DOCUMENTDB_URI) and read it at runtime rather than committing credentials to source control.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose",
+      "status": "followed",
+      "evidence": "app/.env.example lines 1-3; app/src/demo.js lines 8-12; app/src/seed.js line 6.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client reuse",
+      "practice": "Open and reuse a single MongoDB/Mongoose connection (singleton MongoClient) across the app rather than creating a new connection per request; tune connection options (dbName, maxIdleTimeMS, retryWrites as appropriate) at connect time.",
+      "category": "driver",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/src/mongo.js lines 4-19 implement a connect() that returns early when already connected and calls mongoose.connect once. demo.js calls connect(uri) once (app/src/demo.js line 14).",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry policy",
+      "practice": "Set driver-level retryWrites cautiously and prefer application-level bounded retries with idempotency safeguards for non‑idempotent writes; the quickstart shows retryWrites=false and explains why blindly retrying writes is risky.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#why-keep-retrywritesfalse",
+      "status": "followed",
+      "evidence": "app/src/mongo.js lines 9-13 sets default config with retryWrites: false (commented).",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#why-keep-retrywritesfalse"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS & options",
+      "practice": "Use TLS and the mongodb+srv scheme in your connection URI and include recommended client options such as tls=true, authMechanism (SCRAM-SHA-256 or MONGODB-OIDC), retryWrites=false, and maxIdleTimeMS when connecting.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials",
+      "status": "followed",
+      "evidence": "app/src/mongo.js comments and defaults (lines 8-13) set dbName and retryWrites:false and instruct that DOCUMENTDB_URI should include tls=true.",
+      "source": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID (azure-resource-manager-bicep)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver version pinning",
+      "practice": "The driver version is pinned and is one the service supports.",
+      "category": "driver",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose",
+      "status": "violated",
+      "evidence": "app/package.json line 18 lists \"mongoose\": \"^7.5.0\" (caret range) rather than a pinned Mongoose major suggested in the quickstart. The Microsoft quickstart examples and 'tested driver version' note recommend Mongoose 9 (e.g. Mongoose 9.12.1 in Learn examples).",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB (searched and found)",
+      "searched": "Searched for 'Mongoose Azure DocumentDB recommended version' and found the quickstart that pins Mongoose 9.x and lists a tested driver version.",
+      "fix": "Use the quickstart-tested major (update package.json to a tested Mongoose 9.x version such as \"mongoose\": \"9.12.1\" and commit the lockfile), or document the compatibility rationale in README.",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose"
+        }
+      ],
+      "what_would_help": "A short sentence in the Mongoose quickstart noting the recommended Mongoose major for Node 24 and a tested exact version would let agents pick a compatible dependency automatically."
+    },
+    {
+      "topic": "Auth methods",
+      "practice": "Use Microsoft Entra ID (OIDC) and Azure RBAC or native database users as appropriate; support for Entra ID lets you avoid storing long-lived DB passwords and enables least-privilege access control.",
+      "category": "authentication",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control",
+      "status": "not_assessable",
+      "evidence": "The sample reads DOCUMENTDB_URI and accepts a connection string; the code does not explicitly show either SCRAM or OIDC flows. The run environment and quickstarts support both SCRAM and Microsoft Entra ID. The sample does not state whether DOCUMENTDB_URI represents a SCRAM credential or an OIDC-based connection string.",
+      "source": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID",
+      "searched": "",
+      "fix": "Add a short README note showing two example DOCUMENTDB_URI forms (SCRAM-style and MONGODB-OIDC) and mention how to use Microsoft Entra ID (or why it's not used in this demo).",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID (azure-portal)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control"
+        }
+      ],
+      "what_would_help": "A cookbook snippet on the quickstart page showing an example SRV string using authMechanism=MONGODB-OIDC and the environment-variable form."
+    },
+    {
+      "topic": "TTL semantics",
+      "practice": "Azure DocumentDB supports TTL functionality; you can use collection TTL (system _ts-based TTL) and per-document TTL semantics (document 'ttl' field) to expire data automatically.",
+      "category": "ttl",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/time-to-live#ttl-indexes",
+      "status": "followed",
+      "evidence": "app/src/models/ApiCache.js lines 14-16 set a TTL index on expiresAt (expireAfterSeconds: 0) to enable per-document expiration.",
+      "source": "Expire data with Azure Cosmos DB for MongoDB and per-document TTL",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Expire data with Azure Cosmos DB for MongoDB and per-document TTL",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/time-to-live#ttl-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index-build guidance",
+      "practice": "Index builds may block operations for certain index types (notably unique indexes) and some index features have limits; prefer creating needed indexes explicitly at startup and monitor index-build progress when migrating or creating indexes on large collections.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-index",
+      "status": "violated",
+      "evidence": "app/src/models/ApiCache.js declares indexes on the schema (unique key and TTL). However the seed/startup code does not explicitly call ApiCache.createIndexes() or otherwise ensure index creation; index creation relies on Mongoose autoIndex behavior. The discovered practice recommends explicit index creation at startup.",
+      "source": "Manage indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add an explicit index creation step in startup/seed: await ApiCache.createIndexes(); (or call mongoose.model(...).syncIndexes()) and log/monitor index-build status so the sample does not rely on Mongoose autoIndex defaults.",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring / diagnostics",
+      "practice": "Enable diagnostic settings and integrate Azure DocumentDB with Azure Monitor / Log Analytics for slow-query logs, resource metrics (CPU/memory/IOPS), and alerts on saturation or throttling.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#reliability-architecture-overview",
+      "status": "not_applicable",
+      "evidence": "This sample is a small demo and does not include Azure Monitor configuration or diagnostic settings. The build verification used the live cluster for low-volume checks only.",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Document in README that production deployments should enable diagnostic settings and link to the monitoring guidance; optionally include an ARM/Bicep snippet to enable diagnostic settings.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#reliability-architecture-overview"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Provisioning tier guidance",
+      "practice": "Provision the appropriate compute tier and storage for your workload (DocumentDB uses vCore/cluster tiers like M30 rather than RU/s); choose M30+ for production vector workloads and scale compute independently from storage.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/overview",
+      "status": "not_applicable",
+      "evidence": "The sample uses an existing cluster (run environment) and does not provision resources; the README notes demo-friendly defaults and that production tuning is required.",
+      "source": "What is Azure DocumentDB (with MongoDB compatibility)?",
+      "searched": "",
+      "fix": "Add a README section describing how to pick a cluster tier for production workloads and link to the pricing/tiers documentation.",
+      "sources": [
+        {
+          "title": "What is Azure DocumentDB (with MongoDB compatibility)?",
+          "url": "https://learn.microsoft.com/azure/documentdb/overview"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Network security",
+      "practice": "Use Private Link / private endpoints and firewall rules to restrict network access to clusters and avoid enabling public access; prefer Microsoft Entra ID and managed identities for service-to-service auth where possible.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/overview#enterprise-ready-on-azure",
+      "status": "not_applicable",
+      "evidence": "The sample is a developer-focused demo that connects to a provided cluster. It documents the use of DOCUMENTDB_URI but does not configure Private Link or firewall rules.",
+      "source": "What is Azure DocumentDB (with MongoDB compatibility)?",
+      "searched": "",
+      "fix": "Add a README note recommending Private Link and firewall rules for production and link to the portal/CLI instructions.",
+      "sources": [
+        {
+          "title": "What is Azure DocumentDB (with MongoDB compatibility)?",
+          "url": "https://learn.microsoft.com/azure/documentdb/overview#enterprise-ready-on-azure"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Cache-aside",
+      "practice": "Cache-aside is a recommended pattern for application-level caches: on read check cache, on miss fetch from origin, update cache, and plan TTLs and eviction policies according to access patterns.",
+      "category": "cache",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/architecture/patterns/cache-aside",
+      "status": "followed",
+      "evidence": "createCache implements cache-aside via getOrUpdate: check ApiCache.findOne, fetcher on miss, upsert cache, and stale-while-revalidate behavior (app/src/cache.js).",
+      "source": "Cache-Aside pattern",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Cache-Aside pattern",
+          "url": "https://learn.microsoft.com/azure/architecture/patterns/cache-aside"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index usage",
+      "practice": "Ensure query predicates (tenantId, key lookups, date ranges) are covered by indexes to avoid collection scans; use explain(\"executionStats\") to validate index usage.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-index",
+      "status": "followed",
+      "evidence": "The sample queries by key (unique index on 'key' at app/src/models/ApiCache.js line 5) and uses TTL index on expiresAt (line 15). The live verification used documentdb_list_indexes which showed key_1 and expiresAt_1 indexes (events.jsonl).",
+      "source": "Scenario based guide to indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Scenario based guide to indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid storing large blobs",
+      "practice": "Avoid storing large binary blobs in DocumentDB; store large objects in Azure Blob Storage and keep only metadata/references in the database to keep documents small and indexable.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/storage/blobs/storage-blobs-introduction",
+      "status": "not_applicable",
+      "evidence": "The sample caches HTTP responses as 'response: Mixed'; it does not intentionally store large binary blobs. If callers store large bodies in cache.response, this guidance should be observed.",
+      "source": "Introduction to Azure Blob Storage",
+      "searched": "",
+      "fix": "Add a README note that responses larger than X bytes should be stored in Blob Storage and that the cache should store a reference instead.",
+      "sources": [
+        {
+          "title": "Introduction to Azure Blob Storage",
+          "url": "https://learn.microsoft.com/azure/storage/blobs/storage-blobs-introduction"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring alerts",
+      "practice": "Use Azure Monitor / diagnostic settings to alert on throttling, connection pool exhaustion, and other resource saturation metrics rather than relying on client-side errors alone.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#reliability-architecture-overview",
+      "status": "not_applicable",
+      "evidence": "The sample does not configure Azure Monitor; the build used a live cluster for low-volume checks but did not create diagnostic settings.",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add a README section advising production teams to enable diagnostic settings and example alert rules to watch for throttling and connection pool exhaustion.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#reliability-architecture-overview"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Percent-encode credentials",
+      "practice": "When using Mongoose or drivers, percent-encode reserved characters in usernames/passwords before putting them in a URI and do not percent-encode the entire URI; use `.env` and avoid printing URIs or credentials.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/.env.example warns not to commit secrets; app/src/mongo.js comments instruct that the DOCUMENTDB_URI should include tls=true and not print credentials. No credentials are printed in logs.",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explicit index creation",
+      "practice": "Create indexes explicitly at startup rather than relying on automatic background creation and test index behavior (unique indexes, wildcard, text index limits) against your target cluster and tier.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose",
+      "status": "violated",
+      "evidence": "Indexes are declared on the schema in app/src/models/ApiCache.js but the seed/startup code does not call ApiCache.createIndexes() or similar to explicitly create/verify indexes. The build trace used documentdb_list_indexes which showed the TTL and key indexes present (so in practice they were created), but the practice recommends an explicit create step.",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "Call await ApiCache.createIndexes() in src/seed.js or at the application startup before inserting seed data, and log results so index creation is explicit in the sample.",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "unverifiable",
+      "comment": "The decision 'I approved the build with readiness \"ready_with_gaps\"' (D001) has reason 'operator' but there is no log_decision event for D001 in events.jsonl to verify who or what recorded this approval; the decision exists in decisions.jsonl but the build trace lacks an explicit recorded event. Marked unverifiable."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice to use Node.js + Express + Mongoose matches the prompt and is supported by events.jsonl (log_decision recorded D002) and the files created (app/src/demo.js, src/cache.js, package.json)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "D003 chose Mongoose ^7.5.0. The build trace shows the package.json was created with \"mongoose\": \"^7.5.0\" (events.jsonl). However Microsoft Learn quickstarts for Azure DocumentDB demonstrate and recommend Mongoose 9 in their examples and list a tested driver version (see quickstart). The decision conflicts with that public guidance; the event trace shows the documentdb-driver/documentdb-connection skills were loaded, so the builder had access to guidance but selected a different major. This is defensible but questionable versus the published quickstart."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Decision to read DOCUMENTDB_URI from environment is implemented (demo.js and seed.js read process.env.DOCUMENTDB_URI) and events.jsonl includes the log_decision. This matches run environment guidance and is sound."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Decision not to provision resources is consistent with the run policy and the builder used the provided cluster for verification (events.jsonl shows documentdb_list_indexes and documentdb_find_documents). The log_decision event exists."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Decision to use per-document expiresAt TTL index is implemented in app/src/models/ApiCache.js (index created) and confirmed by documentdb_list_indexes output in events.jsonl. The decision is supported by the build trace."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Decision to implement both middleware and a wrapper is recorded and implemented: cache.js exposes getOrUpdate and expressMiddleware; demo.js uses the middleware. The decision reason was 'model_default' but the implementation exists in the repo and was exercised in the demo."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision to use demo-friendly TTL defaults (5s TTL, 10s stale window) is recorded in events.jsonl and implemented in demo.js lines 18-19. The demo used those values to show miss→hit→stale flows; the choice is reasonable for a short demo. Reason source was 'model_default' but the choice is implemented and verified."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Decision to verify against the live cluster and not include mongodb-memory-server tests is recorded and matches the build actions. events.jsonl shows npm install, demo run, and documentdb_list_indexes/documentdb_find_documents calls against the live cluster, supporting the decision."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Driver version guidance discoverability",
+      "what_was_missing": "Quick, prominent guidance in the Mongoose quickstart or the agent-kit driver skill that states the recommended Mongoose major/version for Node 24 (the quickstart does have this, but an agent could miss it).",
+      "where_searched": "Searched Microsoft Learn 'Quickstart: Connect Mongoose to Azure DocumentDB' and the Mongoose compatibility notes (events.jsonl: learn_microsoft_docs_search queries).",
+      "effect_on_this_build": "The builder chose Mongoose ^7.5.0. That choice is workable but diverges from the quickstart's tested Mongoose 9.x recommendation and makes the sample less aligned with the official examples and tested driver matrix.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short boxed note to the Mongoose quickstart and the documentdb-driver skill: 'Recommended: Mongoose 9.x (tested: 9.12.1). If you must use Mongoose 7.x, verify compatibility with your chosen serverVersion.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Explicit index-creation in seed/startup",
+      "what_was_missing": "An explicit example in the quickstart/agent-kit guidance showing model.createIndexes() or syncIndexes() in a seed/startup script to guarantee index creation rather than relying on Mongoose autoIndex behavior.",
+      "where_searched": "Searched the documentdb-indexing and Mongoose quickstart (events.jsonl reading documentdb-indexing skill and the quickstart page).",
+      "effect_on_this_build": "The sample's seed script relies implicitly on schema-defined indexes and Mongoose behavior. In practice the indexes were present during verification, but relying on autoIndex can cause surprise in production (autoIndex may be disabled) and risks index-build races on large collections.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add an agent-kit rule/snippet: 'Always call await Model.createIndexes() at application startup or in seeding scripts and log the result; do not rely on autoIndex in production. Example code snippet included.'",
+      "priority": "high"
+    },
+    {
+      "topic": "Unit test strategy for local runs",
+      "what_was_missing": "Clear recommendation and example in the agent-kit or quickstart for unit/integration tests that run without a live cluster (use the DocumentDB local gateway Docker image or mongodb-memory-server for unit tests).",
+      "where_searched": "Searched documentdb-local-deployment skill and quickstart docs (events.jsonl).",
+      "effect_on_this_build": "The builder verified against the live cluster and did not add unit tests that run offline. This slows CI and may make reproducing test failures harder for contributors without access to a cluster.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A README/Test section and a small test scaffold demonstrating (a) a unit test that uses mongodb-memory-server or the DocumentDB local gateway Docker image, (b) CI guidance to skip live tests when no cluster is available, and (c) a small example Jest test that exercises getOrUpdate with a mock fetcher.",
+      "priority": "high"
+    },
+    {
+      "topic": "Pinning and lockfile policy",
+      "what_was_missing": "A short policy in the agent-kit or quickstart indicating how samples should pin dependencies for the gallery (exact versions in package.json or committing lockfile) and what format to use for different languages.",
+      "where_searched": "Searched repository for existing policy and README (app/README.md) and Microsoft docs; none govern gallery-specific pinning policy in this project.",
+      "effect_on_this_build": "The project used caret ranges in package.json. Without explicit gallery guidance a builder may assume lockfile is sufficient; reviewers may expect exact pins in package.json or a requirements.txt for Python samples.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A single-page gallery policy: 'For Node samples commit package-lock.json and prefer exact versions in package.json for gallery releases; for Python provide requirements.txt with pins.' Include a one-line example and recommended CLI to produce deterministic lockfiles.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Middleware vs wrapper choice guidance",
+      "what_was_missing": "No public guidance on whether a sample should expose middleware, an HTTP-client wrapper, or both for cache patterns.",
+      "where_searched": "Searched quickstarts and agent-kit skills; nothing prescribes the recommended sample API surface.",
+      "effect_on_this_build": "The builder implemented both middleware and wrapper. This decision was recorded with reason_source 'model_default' and implemented, but agents may make differing interface choices without central guidance.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a short guideline in the documentdb-agent-kit: 'For caching samples, offer both an Express middleware and a fetch-wrapper when feasible; include a minimal demo for each.' Provide code skeletons for both patterns.",
+      "priority": "low"
+    },
+    {
+      "topic": "Demo TTL default guidance",
+      "what_was_missing": "No authoritative guidance on demo-friendly TTL values for caching examples (how short is safe/representative).",
+      "where_searched": "Searches for 'cache TTL demo values' and quickstart pages; none prescribe demo TTLs.",
+      "effect_on_this_build": "The builder used TTL=5s and staleWindow=10s for a short one-shot demo (reasonable). A sample consumer might prefer slightly longer values or an explicit note about how to set production values.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short cookbook paragraph: 'For quick demos use TTL=5-10s and staleWindow ~2x TTL; for production choose TTL based on freshness needs, and record expected load patterns.'",
+      "priority": "low"
+    },
+    {
+      "topic": "Retry guidance for fetcher",
+      "what_was_missing": "Specific guidance on application-level bounded retries for upstream fetches (e.g., axios retry wrapper) and idempotency considerations for non-idempotent writes.",
+      "where_searched": "documentdb-driver and quickstart docs (events.jsonl); the driver skill discusses retryWrites but not an application-level fetcher retry pattern.",
+      "effect_on_this_build": "The sample fetcher (axios) does not implement bounded retries; background refresh swallows errors which is acceptable for a demo but a production sample should show bounded retries and idempotency safeguards.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short example in the driver/connection skill: 'Wrap upstream fetches with a bounded retry (exponential backoff) for transient network errors and ensure idempotency or deduplication for writes; example axios-retry wrapper with max attempts = 3 and jitter.'",
+      "priority": "medium"
+    }
+  ]
+}
