@@ -1,0 +1,784 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core requested functionality: Mongoose schemas, versioned documents with version/createdAt, an LLM classification step, and a server-side aggregation endpoint that computes the collateral coverage ratio using the latest version per asset. The builder ran unit tests (offline via mocks), seeded the live cluster for verification, and used MCP explain tools to inspect the aggregation plan. Missing items are primarily optional-production practices and documentation/operational work the starter prompt did not request (vector-index creation, production retry handling, infrastructure-as-code, and a few documentation points). None of the missing items appears to make the sample insecure or incorrect for its stated demo purpose, but several are important for production hardening and agent discoverability.\n\nNotable verification evidence (examples):\n- Model/schemas: app/src/models/collateral.js (version, createdAt, llmTags) and app/src/models/CollateralAsset.js (compound index) show schema and indexes.\n- DB connection from env: app/src/index.js reads process.env.DOCUMENTDB_URI and uses mongoose.connect(..., { dbName }) (lines 18–32).\n- LLM classification used in write path: app/src/llm/classifier.js and invoked in app/src/routes/assets.js line 28–31.\n- Coverage aggregation: app/src/routes/coverage.js builds and runs an aggregation pipeline and returns coverageRatio (lines 15–45).\n- Seed script idempotency and index sync: app/scripts/seed.js (existence checks and Collateral.syncIndexes()) (lines 26–56).\n\nWhere I predicted risk in the prompt review, that prediction largely held: the builder chose to keep embeddings optional and to omit vector-index creation (documented), omitted some production configuration (explicit retry-on-429 and KeyVault/Entra examples), and the .env.example omitted DB_NAME. The run evidence shows these choices were deliberate and executed; I flag them below as findings with the smallest fixes to make the sample gallery-ready and agent-findable.",
+  "requirement_results": [
+    {
+      "requirement": "A Node.js collateral management service defines Mongoose schemas for collateral assets and their valuations and stores them in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/models/collateral.js lines 8-13 (CollateralSchema including valuation) and app/src/index.js lines 26-32 (mongoose.connect using DOCUMENTDB_URI / dbName).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Each collateral asset and each valuation update is saved as its own document carrying a version field and a createdAt timestamp.",
+      "status": "met",
+      "evidence": "app/src/models/collateral.js lines 10-11 (version, createdAt fields) and assets route creating a new document with version (app/src/routes/assets.js lines 19-25 and 27-31).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Saving an update for an existing asset writes a new document with a higher version number, and the earlier versions remain in the collection as the asset's history.",
+      "status": "met",
+      "evidence": "app/src/routes/assets.js lines 14-23 (compute nextVersion) and 31 (await doc.save()); seed script also inserts successive versions (app/scripts/seed.js lines 26-46).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "An LLM classification step tags each stored asset with an asset type and an eligibility tier.",
+      "status": "met",
+      "evidence": "app/src/llm/classifier.js defines classifyAsset returning assetType and eligibilityTier (lines 13-46); assets route calls classifyAsset and sets doc.llmTags (app/src/routes/assets.js lines 27-31).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "An HTTP endpoint returns the total collateral coverage ratio, computed with a Mongoose aggregation pipeline that runs in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/routes/coverage.js builds a pipeline and calls Collateral.aggregate(...) (lines 15-41) and returns coverageRatio (lines 42-45).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The coverage calculation uses only the most recent version of each asset's valuation (e.g. the highest version or latest createdAt per asset).",
+      "status": "met",
+      "evidence": "app/src/routes/coverage.js pipeline sorts by { assetId:1, version:-1, createdAt:-1 } then groups and takes $first (lines 17-26) to choose latest per asset.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/index.js reads process.env.DOCUMENTDB_URI (lines 18-23); app/src/llm/classifier.js reads process.env.OPENAI_API_KEY (lines 6-11). .env.example contains placeholders (app/.env.example lines 2-5).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI, OPENAI_API_KEY, MODEL_NAME, DISABLE_LLM, PORT and EMBEDDING_DIM (app/.env.example lines 2-11). Code also accepts DB_NAME (app/src/index.js line 19 and app/scripts/seed.js line 8) but DB_NAME is not present in .env.example.",
+      "cause": "builder_error",
+      "smallest_fix": "Add DB_NAME to .env.example (e.g. DB_NAME=sample_banking_06) and optionally document that the default is 'sample_banking_06'."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_met",
+      "evidence": "The sample makes embeddings optional (schema has embedding field) and does not create any vector index; .env.example includes EMBEDDING_DIM but no vector index is created (app/src/models/collateral.js line 19; app/.env.example line 11).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If supporting vectors, add an index-creation script or instructions and require EMBEDDING_DIM in .env.example; create the vector index with dims = process.env.EMBEDDING_DIM when embeddings are enabled."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "No vector index is created and README contains no vector-index tuning guidance (app/README.md does not reference vector-index params).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a README section and an optional script that shows recommended index kind (IVF/HNSW/DiskANN), lBuild/lSearch/M settings for small vs large datasets, and how to update EMBEDDING_DIM before creating the index."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/index.js calls mongoose.connect() once at startup and routes reuse the mongoose model (app/src/index.js lines 25-32 and app/src/routes/*.js require the model).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.js checks existing assetId/version before insert (lines 26-34) and calls Collateral.syncIndexes() (lines 50-56).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "The sample does not implement any /search endpoint (no search route in app/src/routes).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search endpoint that validates query presence and returns 400 for empty queries; when embedding calls fail, return a 503 or 500 with a clear error and consider returning a fallback lexical-search result if available."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search endpoint implemented; embedding similarity scores are not produced or returned.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding /search, include similarity scores from the vector search (e.g., cosine similarity or platform-provided score) in each result object."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "This is a Node.js sample: package-lock.json is present and locks resolved dependency versions (app/package-lock.json exists). package.json lists versions and package-lock pins them (app/package.json lines 14-20 and app/package-lock.json).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "Tests mock Mongoose model methods (app/tests/assets.test.js lines 11-36 and 28-46), run via jest and do not require a live cluster; test suite passes per builder verification.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository contains no Bicep/Terraform/ARM templates or azure CLI provisioning scripts; decisions log explicitly avoided provisioning (decisions.jsonl D014) and README states sample does not create cloud resources (app/README.md line 49).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add IaC examples (Bicep or Terraform) that use Microsoft.DocumentDB/mongoClusters (or the appropriate Terraform resource) with tunable parameters (tier/region/storage) as a separate sample or an optional directory (e.g., infra/)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes description, quickstart steps (lines 16-20), API examples, and a cleanup section (lines 42-44).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and code refer to Azure DocumentDB (README line 1 and 3); no references to Amazon DocumentDB or Cosmos DB API for MongoDB are present.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env secrets & .env.example",
+      "practice": "Read the MongoDB connection string from an environment variable (do not commit credentials) and supply a .env.example with placeholders instead of real secrets.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples",
+      "status": "followed",
+      "evidence": "app/src/index.js lines 18-23 (reads DOCUMENTDB_URI) and app/.env.example lines 2-7 show placeholders.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Singleton client reuse",
+      "practice": "Create a single (singleton) MongoClient/Mongoose connection for the process and tune pool and timeout settings for the deployment type.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/index.js connects once (good) but does not configure maxPoolSize or explicit pool tuning; serverSelectionTimeoutMS and socketTimeoutMS are set (lines 26-31) but no pool tuning is provided.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Create the client once (already done) and add pool tuning options to mongoose.connect(), e.g. { maxPoolSize: 50, minPoolSize: 0, serverSelectionTimeoutMS: 5000, maxIdleTimeMS: 60000 } with comments about production vs serverless.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Enforce TLS for all client connections and do not disable certificate validation in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/security#transport-security",
+      "status": "followed",
+      "evidence": ".env.example recommends an SRV-style URI with tls=true (app/.env.example line 2) and README instructs use of SRV/TLS (app/README.md line 14).",
+      "source": "Secure your Azure DocumentDB cluster",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Secure your Azure DocumentDB cluster",
+          "url": "https://learn.microsoft.com/azure/documentdb/security#transport-security"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Private endpoint",
+      "practice": "Use Private Endpoint (Private Link) and cluster firewall rules to restrict network access; disable public access in production where possible.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-private-link#get-connection-string-to-connect",
+      "status": "not_applicable",
+      "evidence": "The sample targets an existing cluster and does not attempt to configure network controls; README notes 'cluster already provisioned' and instructs using environment-provided connection strings (app/README.md lines 12-16).",
+      "source": "Enable private access in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Enable private access in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-private-link#get-connection-string-to-connect"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefer Entra ID",
+      "practice": "Prefer Microsoft Entra ID / RBAC and per-application, least-privilege database accounts rather than long-lived master keys.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials",
+      "status": "violated",
+      "evidence": "The sample uses a connection string in DOCUMENTDB_URI and README shows no example or guidance for Microsoft Entra ID / OIDC authentication flows (app/README.md and app/.env.example).",
+      "source": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID",
+      "searched": "",
+      "fix": "Document Entra ID OIDC and SCRAM examples in README and show a placeholder OIDC connection string example or steps to create a least-privilege DB user; consider adding a note when to prefer Entra ID in production.",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID (azure-terraform)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index ESR",
+      "practice": "Create a compound index that follows ESR (Equality → Sort → Range) so latest-version lookups use assetId then version.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/models/CollateralAsset.js defines a compound index { assetId: 1, version: -1 } (line 25) and a separate createdAt index (line 26) but not the exact {assetId:1, version:-1, createdAt:-1} compound suggested.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Add a compound index { assetId:1, version:-1, createdAt:-1 } (or ensure the existing indexes are sufficient for the pipeline) to avoid sorts; create it via schema.index or via the seed script's syncIndexes step.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Sparse index for LLM fields",
+      "practice": "Use sparse or partial indexes for optional LLM-derived fields (e.g., llmTags.eligibilityTier) to reduce index size and RU costs.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "No partial/sparse index exists for llmTags fields in the model files; only asset/version/createdAt indexes are present (app/src/models/CollateralAsset.js lines 24-30).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Add a partial index such as CollateralAssetSchema.index({ 'llmTags.eligibilityTier': 1 }, { partialFilterExpression: { 'llmTags.eligibilityTier': { $exists: true } } }) to reduce index footprint.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid B-tree for vectors",
+      "practice": "Do not index high-dimensional vectors with standard B-tree indexes; use the platform's vector index and keep dimensions consistent.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "The sample does not create a standard B-tree index on the embedding field (no index in model for embedding). Embeddings are optional (app/src/models/collateral.js line 19).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Aggregation pipeline design",
+      "practice": "Run server-side aggregation pipelines for summaries and push selective $match/$project stages early (ideally scoped to the partition key).",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples",
+      "status": "violated",
+      "evidence": "app/src/routes/coverage.js builds a pipeline that $sort then $group then $replaceRoot and only after that applies $match for eligibility (lines 17-31). The practice recommends applying $match earlier to reduce scanned docs.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "If eligibilityOnly is requested, add a $match stage on llmTags.eligibilityTier BEFORE the $group so the engine can drop non-eligible documents early (or use a two-stage pipeline that materializes latest versions first then filters, depending on index availability).",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain plan",
+      "practice": "Use explain('executionStats') to verify index usage and compare keysExamined/docsExamined to nReturned when optimizing aggregation or queries.",
+      "category": "query_optimization",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md",
+      "status": "followed",
+      "evidence": "Builder ran the documentdb_explain_operation MCP tool against the pipeline for /coverage (events.jsonl includes a documentdb_explain_operation call and the build report notes the explain returned execution plan and stats).",
+      "source": "documentdb-query-optimization",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimization",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries on throttling",
+      "practice": "Implement retries with exponential backoff for throttling (429 / RequestRateTooLarge) and honor service retry headers.",
+      "category": "retries_and_backoff",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "No application-level retry logic is implemented for database operations; mongoose.connect sets timeouts but writes/aggregations do not implement backoff or honor Retry-After headers (no code in app/src/*).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add a small retry wrapper for operations that can receive 429 or transient network errors; implement exponential backoff, cap retries, and honor x-ms-retry-after-ms / Retry-After headers when returned by the server.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotency",
+      "practice": "Make seed scripts idempotent by using upsert keyed on a natural unique key (e.g., assetId + version) or by checking existence before insert.",
+      "category": "seeding_and_deployment",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/update#examples",
+      "status": "followed",
+      "evidence": "app/scripts/seed.js checks for existing assetId+version before inserting (lines 31-34) and the schema has a unique index on assetId+version to enforce uniqueness (app/src/models/CollateralAsset.js line 30).",
+      "source": "update (DocumentDB query & write examples)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "update (DocumentDB query & write examples)",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/update#examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL for history",
+      "practice": "Use TTL indexes to automatically expire history documents with awareness of background deletion timing.",
+      "category": "data_retention",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample does not create TTL indexes and does not claim to manage retention automatically; TTL is an optional production feature.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index budget",
+      "practice": "Keep the per-collection index budget modest; avoid indexing large text or vector fields with general-purpose B-tree indexes.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "The schema defines targeted indexes on assetId/version/createdAt and does not create a B-tree index on the embedding field (app/src/models/CollateralAsset.js lines 24-30 and app/src/models/collateral.js line 25).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embedding metadata",
+      "practice": "Normalize embeddings when using cosine similarity and store the embedding model name and dimensions alongside vectors.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "violated",
+      "evidence": "The schema has an optional embedding array and .env.example lists EMBEDDING_DIM, but the code does not normalize embeddings or record embedding model name/dimensions on documents (no code in app/src for normalization or storing model metadata).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "If embeddings are used, normalize vectors on write, store { embeddingModel: <name>, embeddingDim: <n> } in the document, and ensure EMBEDDING_DIM in .env.example is documented and used by any index creation script.",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Graceful shutdown & pool sizing",
+      "practice": "Tune connection pool sizes and concurrent query counts to the cluster limits and close Mongoose connection gracefully on process exit.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "The start() function calls mongoose.connect() but the server lacks a process.on('SIGINT'/'SIGTERM') handler to disconnect gracefully; pool options such as maxPoolSize are not set (app/src/index.js lines 25-32).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add process signal handlers (SIGINT/SIGTERM) to call mongoose.disconnect() and add configurable pool options to mongoose.connect (maxPoolSize, minPoolSize, maxIdleTimeMS).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Aggregation push filters early",
+      "practice": "When building coverage or aggregate pipelines, push filters and projections early (match → project → group) and scope by partition key to reduce scanned docs.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "Coverage pipeline applies $group/$replaceRoot before applying eligibility $match, which means ineligible docs are processed by grouping/sorting rather than being filtered earlier (app/src/routes/coverage.js lines 17-31).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Reorder the pipeline to $match eligibilityTier (if eligibleOnly) before grouping, or consider a two-stage approach that first finds latest versions and then filters by eligibility with an indexed predicate.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "LLM keys protection",
+      "practice": "Protect LLM API keys and secrets by calling LLMs from a backend service, storing keys in Key Vault, and avoiding persisting raw API keys or prompts.",
+      "category": "llm_integration",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/key-vault/general/apps-api-keys-secrets",
+      "status": "followed",
+      "evidence": "Classifier reads OPENAI_API_KEY from environment and DISABLE_LLM allows skipping calls; the code does not persist API keys or log prompts (app/src/llm/classifier.js lines 6-11 and 13-24).",
+      "source": "Azure security baseline for Azure OpenAI / Azure Key Vault guidance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Azure security baseline for Azure OpenAI / Azure Key Vault guidance",
+          "url": "https://learn.microsoft.com/azure/key-vault/general/apps-api-keys-secrets"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "SRV connection string guidance",
+      "practice": "When obtaining the connection string for an app, prefer the mongodb+srv form with tls=true and recommended driver options.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials",
+      "status": "followed",
+      "evidence": ".env.example default is mongodb+srv... with tls=true and README directs users to set DOCUMENTDB_URI SRV-style (app/.env.example line 2; app/README.md line 16).",
+      "source": "Connect to Azure DocumentDB using role-based access control",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID (azure-terraform)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Read preference",
+      "practice": "Choose read preference for your distribution; use primaryPreferred for read-after-write consistency in a single primary region.",
+      "category": "consistency",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-global-distribution#connecting-to-a-preferred-region",
+      "status": "violated",
+      "evidence": "The sample does not set readPreference in mongoose.connect; it relies on the client's default. There is no README guidance about read preference choices (app/src/index.js lines 26-32).",
+      "source": "How to globally distribute reads using Azure Cosmos DB's API for MongoDB",
+      "searched": "",
+      "fix": "Add an optional READ_PREFERENCE or set readPreference: 'primaryPreferred' in mongoose.connect options and document trade-offs in README.",
+      "sources": [
+        {
+          "title": "How to globally distribute reads using Azure Cosmos DB's API for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-global-distribution#connecting-to-a-preferred-region"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "RetryWrites caution",
+      "practice": "Avoid enabling retryWrites in connection strings for this managed service where the docs show it as false in examples.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P28",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-bicep",
+      "status": "followed",
+      "evidence": ".env.example includes retryWrites=false in the example SRV connection string (app/.env.example line 2) and README notes the environment-provided URI controls retryWrites.",
+      "source": "Deploy Azure DocumentDB (Bicep / CLI) — connection string guidance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Deploy Azure DocumentDB (Bicep / CLI) — connection string guidance",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-bicep"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Key Vault for secrets",
+      "practice": "Use Key Vault to store runtime secrets (DB connection strings, OpenAI keys) and reference them via managed identity.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "https://learn.microsoft.com/azure/key-vault/general/apps-api-keys-secrets",
+      "status": "violated",
+      "evidence": "The sample uses environment variables for secrets and does not document Key Vault usage or managed identity-based secret references (app/.env.example and app/README.md).",
+      "source": "Apps, API Keys, and Azure Key Vault secrets",
+      "searched": "",
+      "fix": "Add a README section describing how to use Azure Key Vault and managed identity to supply DOCUMENTDB_URI / OPENAI_API_KEY in production and provide example steps or links.",
+      "sources": [
+        {
+          "title": "Apps, API Keys, and Azure Key Vault secrets",
+          "url": "https://learn.microsoft.com/azure/key-vault/general/apps-api-keys-secrets"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Testing with mocks",
+      "practice": "Write unit tests that mock the database and LLM services, and run a small, idempotent integration/seed step only behind an environment flag for live-cluster verification.",
+      "category": "testing_and_ci",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P30",
+      "source_url": "https://learn.microsoft.com/azure/well-architected/design-guides/testing#use-mocks-strategically",
+      "status": "followed",
+      "evidence": "app/tests/assets.test.js mocks Collateral.find, Collateral.prototype.save and Collateral.aggregate (lines 11-46) and seed runs are run separately (scripts/seed.js). The builder ran tests offline and ran seed against live cluster separately.",
+      "source": "How to build confidence in Azure workloads with effective testing / Unit testing best practices",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "How to build confidence in Azure workloads with effective testing / Unit testing best practices",
+          "url": "https://learn.microsoft.com/azure/well-architected/design-guides/testing#use-mocks-strategically"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Sync indexes during seed",
+      "practice": "When seeding or migrating data, verify and sync indexes (e.g., Collateral.syncIndexes()) so schema/index creation completes before heavy writes or queries.",
+      "category": "seeding_and_deployment",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P32",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.js calls Collateral.syncIndexes() after inserts (lines 50-56).",
+      "source": "scripts/seed.js (local file)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Administrative approval. The operator reason is self-evident; nothing to contradict it in the logs."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Node.js/Express/Mongoose matches the starter prompt and is reflected in package.json and the code."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choosing Mongoose as the ODM is implemented and visible in model files and package.json (mongoose dependency)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "The code reads DOCUMENTDB_URI from the environment (app/src/index.js lines 18-23), consistent with the decision."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "OpenAI chosen as default provider; classifier uses the openai npm client and MODEL_NAME default (app/src/llm/classifier.js lines 6-11 and 24)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Single collection collateral_assets is present and used (model collection setting and schema)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Indexes are created in the Mongoose schema (compound asset/version index and createdAt index) per the decision."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Coverage formula and eligibility semantics (exclude 'ineligible') are implemented in app/src/routes/coverage.js and described in README (app/README.md line 36)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The code leaves embeddings optional and does not create a vector index; that choice is reflected in the models and seed script and documented in the README."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Duplicate approval entry; consistent with D001."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Duplicate of D002; matches the code."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "OpenAI configuration and DISABLE_LLM fallback are implemented (app/src/llm/classifier.js)."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Reiterates environment-driven connection string usage; code reads DOCUMENTDB_URI (app/src/index.js)."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Decision not to provision Azure resources is consistent with the run policy and the repository (no IaC present)."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Explicit database name use is implemented: DB_NAME default is read and passed to mongoose.connect (app/src/index.js line 19 and seed.js line 8)."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Coverage formula choice implemented and described in README (app/README.md lines 33-37)."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Embeddings left optional and documented in .env.example; code has optional embedding field (schema)."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "sound",
+      "comment": "Initial choice to use mongodb-memory-server for tests is documented in package.json and devDependencies; events show the attempt to run it (events.jsonl entries and package.json devDependencies)."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "Switching tests to Jest/mocks after mongodb-memory-server failed is validated by events.jsonl (run_command for npm test showing failure then later success) and by the test sources which mock mongoose."
+    },
+    {
+      "decision_id": "D020",
+      "assessment": "sound",
+      "comment": "Seed was executed against the live cluster as recorded in the events (npm run seed run_command outcomes) and builder verification notes that documents were inserted into sample_banking_06."
+    },
+    {
+      "decision_id": "D021",
+      "assessment": "sound",
+      "comment": "Explicit use of DB_NAME defaulted to 'sample_banking_06' is implemented in app/src/index.js and app/scripts/seed.js (lines cited earlier)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Optimistic concurrency / versioning guidance",
+      "what_was_missing": "Public guidance on whether to prefer an application-level version field (incrementing version) vs using database transactions / provided concurrency controls for versioned documents in Azure DocumentDB was not found. The earlier search for 'version optimistic concurrency' returned no useful public docs.",
+      "where_searched": "Searches for 'Azure DocumentDB optimistic concurrency version', 'version field optimistic concurrency Azure DocumentDB', and the DocumentDB compatibility docs; agent-kit skills and Microsoft Learn were consulted.",
+      "effect_on_this_build": "The builder implemented application-level versions (version field) by choice; an agent working from prior knowledge could choose either approach. Lack of clear public guidance risks inconsistent patterns across samples (some using transactions or 'findAndModify' with optimistic checks and others using version documents).",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short learn.microsoft.com page titled 'Versioned documents and concurrency for Azure DocumentDB (Mongo-compatible)' that: 1) states the official recommendation (e.g., use application-level version field for append-only history, show examples for optimistic concurrency and when to prefer transactions), 2) gives code examples in Node.js (find highest version then insert vs findOneAndUpdate with upsert and safe dedup), 3) shows explain() traces for both approaches, and 4) notes any compatibility or performance tradeoffs. Include a sample Mongoose code snippet demonstrating a safe upsert or a versioned insert and how to verify uniqueness with a unique index.",
+      "priority": "high"
+    },
+    {
+      "topic": "Vector-index setup & embedding-dimension configuration",
+      "what_was_missing": "A concise example in the agent-kit or docs showing how to create a cosmosSearch vector index with explicit dims and algorithm options (IVF/HNSW/DiskANN), and guidance that the sample must set EMBEDDING_DIM to match the chosen embedding model before index creation.",
+      "where_searched": "documentdb-vector-search skill and the readme; no sample-level index creation script or instructions were present in the repository.",
+      "effect_on_this_build": "The builder sensibly left embeddings optional. However, without a short 'how to create a vector index for this sample' doc and a matching EMBEDDING_DIM placeholder, an agent might create an index with the wrong dimension or algorithm, causing index creation to fail or produce unusable results.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Add a short doc or tool in the agent kit: 'Sample: Create a vector index for collateral_assets' that lists the minimal createIndex/createSearchIndexes command, shows where to set dims (ENV variable EMBEDDING_DIM) and suggests default algorithms for small sample size (IVF for <10k, HNSW <50k). Include an example command and a script that reads EMBEDDING_DIM and issues the index create via MCP or the driver.",
+      "priority": "high"
+    },
+    {
+      "topic": "Entra ID / OIDC connection examples",
+      "what_was_missing": "A discoverable example showing how to connect with Microsoft Entra ID (OIDC/MONGODB-OIDC or managed identity flows) in Node.js Mongoose for the vCore-managed DocumentDB offering.",
+      "where_searched": "Microsoft Learn connect docs and the documentdb-azure-deployment skill; agent-kit contains some references but a short, copy-paste example was not in the sample repo.",
+      "effect_on_this_build": "The sample defaults to a password-style DOCUMENTDB_URI. Users deploying to production might prefer Entra/Manged Identity; missing examples reduce discoverability for secure production patterns.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a README subsection 'Auth options' with two copy-paste examples: (1) SCRAM connection string example for local dev and (2) OIDC / Entra example with a reference to how to obtain credentials or to configure a managed identity. Link to Microsoft Learn's Entra docs.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Sample naming and resource-type disambiguation",
+      "what_was_missing": "Clear, prominent note distinguishing 'Azure DocumentDB (managed Mongo vCore, resource type Microsoft.DocumentDB/mongoClusters)' from older Cosmos DB 'databaseAccounts' and from Amazon DocumentDB. The agent kit had bits of this but a single prominent banner or short paragraph is missing in samples.",
+      "where_searched": "Agent kit readiness notes and documentdb-azure-deployment skill; community docs.",
+      "effect_on_this_build": "Agents and builders may accidentally craft IaC or CLI commands targeting the wrong resource type (databaseAccounts) which will fail or produce a different service model. This is a high-risk area for automated agentic builds.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a short 'Which DocumentDB is this?' banner to sample README and agent kit guidance clarifying 'This sample uses Azure DocumentDB (managed Mongo vCore / mongoClusters). It is NOT Amazon DocumentDB nor Cosmos DB SQL/Core API. For IaC use Microsoft.DocumentDB/mongoClusters and the mongocluster CLI group.'",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness (DB_NAME)",
+      "what_was_missing": "DB_NAME is used by code (DB_NAME env var as fallback to sample_banking_06) but is not listed in .env.example.",
+      "where_searched": "app/.env.example and app/src/index.js and app/scripts/seed.js.",
+      "effect_on_this_build": "If a user copies .env.example without adding DB_NAME the seed may have previously connected to a different database if the connection string provided a different default DB; this caused an earlier open_issues note from the builder.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Update .env.example to include DB_NAME=sample_banking_06 with a comment: '# name of the database the sample uses; default sample_banking_06'. Agent-kit rule: require DB_NAME be present in .env.example for all DocumentDB samples.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests README mismatch",
+      "what_was_missing": "README claims unit tests use mongodb-memory-server but the test suite in this environment uses Jest mocks because mongodb-memory-server failed to start; the README lacks fallbacks or CI notes.",
+      "where_searched": "app/README.md and app/tests/*; events.jsonl shows the memory-server failure and switch to mocks.",
+      "effect_on_this_build": "A developer reading README might expect to run mongodb-memory-server locally and be confused when the tests have been implemented to use mocks in CI. This is a minor but actionable documentation mismatch.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Update README testing section to say: 'Unit tests run offline; tests prefer mongodb-memory-server where the platform supports spawning mongod, but the repo uses mocks for CI-friendly behavior. To run integration tests with an embedded server, set TEST_USE_REAL_MONGODB=true and ensure dependencies and native binaries are available.'",
+      "priority": "low"
+    }
+  ]
+}
