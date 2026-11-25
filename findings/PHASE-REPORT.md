@@ -1,45 +1,45 @@
 # Phase report
 
-100 samples with a run. 100 finished with exit 0; 0 failed; 0 unfinished. Regenerate with `python loop/phase_report.py`.
+110 samples with a run. 110 finished with exit 0; 0 failed; 0 unfinished. Regenerate with `python loop/phase_report.py`.
 
 ## Readiness confidence
 
-100 scored. Min 57, median 73, mean 71.7, max 81. Bands: High 80 and above, Medium 60 to 79, Low below 60.
+110 scored. Min 29, median 71, mean 68.7, max 81. Bands: High 80 and above, Medium 60 to 79, Low below 60.
 
 | Vertical | Samples | Mean | Min | Max | High | Medium | Low |
 |---|---|---|---|---|---|---|---|
-| banking | 20 | 70.5 | 62 | 80 | 2 | 18 | 0 |
-| customer-360 | 20 | 70.8 | 57 | 80 | 2 | 17 | 1 |
-| fintech | 20 | 70.8 | 58 | 78 | 0 | 19 | 1 |
-| healthcare | 20 | 73.4 | 60 | 80 | 2 | 18 | 0 |
-| retail | 20 | 73.1 | 66 | 81 | 2 | 18 | 0 |
+| banking | 22 | 67.8 | 32 | 80 | 2 | 18 | 2 |
+| customer-360 | 22 | 68.7 | 38 | 80 | 2 | 17 | 3 |
+| fintech | 22 | 67.4 | 29 | 78 | 0 | 19 | 3 |
+| healthcare | 22 | 70.1 | 34 | 80 | 2 | 18 | 2 |
+| retail | 22 | 69.4 | 36 | 81 | 2 | 18 | 2 |
 
 ## What the model got wrong before reading anything
 
-Cold-quiz questions whose answer from memory was wrong, partly wrong or outdated, across 100 readiness reports.
+Cold-quiz questions whose answer from memory was wrong, partly wrong or outdated, across 110 readiness reports.
 
 | Question | Wrong in | Share |
 |---|---|---|
-| Q02 Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension? | 100/100 | 100% |
-| Q03 Which Bicep and Terraform resource types deploy a cluster? | 100/100 | 100% |
-| Q04 What does a connection string look like: scheme, host suffix, port, and the options it must carry? | 100/100 | 100% |
-| Q06 Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID? | 98/100 | 98% |
-| Q09 How are full-text search and hybrid search done? | 98/100 | 98% |
-| Q11 How do you run the database locally for development and tests: which image or emulator, and which port? | 98/100 | 98% |
-| Q01 What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster? | 97/100 | 97% |
-| Q08 Which vector index types are supported, and what does the command that creates one look like? | 97/100 | 97% |
-| Q10 Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not | 91/100 | 91% |
-| Q05 How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something els | 87/100 | 87% |
-| Q12 Are change streams supported, and does anything have to be enabled first? | 82/100 | 82% |
-| Q15 What engine is underneath, and does that change anything in application code? | 82/100 | 82% |
-| Q14 What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source Document | 81/100 | 81% |
-| S05 (sample-specific question in this slot) | 40/100 | 40% |
-| S03 (sample-specific question in this slot) | 39/100 | 39% |
-| S04 (sample-specific question in this slot) | 37/100 | 37% |
-| S02 (sample-specific question in this slot) | 36/100 | 36% |
-| S01 (sample-specific question in this slot) | 20/100 | 20% |
-| Q13 Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it? | 5/100 | 5% |
-| Q07 Which client library should an application use? Is there a service-specific SDK? | 3/100 | 3% |
+| Q02 Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension? | 110/110 | 100% |
+| Q04 What does a connection string look like: scheme, host suffix, port, and the options it must carry? | 110/110 | 100% |
+| Q03 Which Bicep and Terraform resource types deploy a cluster? | 109/110 | 99% |
+| Q06 Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID? | 108/110 | 98% |
+| Q11 How do you run the database locally for development and tests: which image or emulator, and which port? | 108/110 | 98% |
+| Q01 What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster? | 107/110 | 97% |
+| Q09 How are full-text search and hybrid search done? | 107/110 | 97% |
+| Q08 Which vector index types are supported, and what does the command that creates one look like? | 106/110 | 96% |
+| Q10 Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not | 100/110 | 90% |
+| Q05 How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something els | 94/110 | 85% |
+| Q12 Are change streams supported, and does anything have to be enabled first? | 90/110 | 81% |
+| Q15 What engine is underneath, and does that change anything in application code? | 89/110 | 80% |
+| Q14 What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source Document | 88/110 | 80% |
+| S03 (sample-specific question in this slot) | 45/110 | 40% |
+| S05 (sample-specific question in this slot) | 44/110 | 40% |
+| S04 (sample-specific question in this slot) | 43/110 | 39% |
+| S02 (sample-specific question in this slot) | 39/110 | 35% |
+| S01 (sample-specific question in this slot) | 22/110 | 20% |
+| Q13 Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it? | 15/110 | 13% |
+| Q07 Which client library should an application use? Is there a service-specific SDK? | 6/110 | 5% |
 
 ## Blocked samples
 
@@ -52,127 +52,139 @@ Readiness said the sample cannot be built as written.
 
 ## Build and audit
 
-Build status: {'partial': 1, 'completed': 1}. Audit verdict: {'pass_with_findings': 2}.
+Build status: {'completed': 80, 'partial': 30}. Audit verdict: {'pass_with_findings': 107, 'fail': 3}.
 
 Most violated practices across audits:
 
 | Practice | Builds |
 |---|---|
-| IVF numLists sizing | 1 |
-| Embedding storage type | 1 |
-| Prefer Entra ID for auth | 1 |
-| Retries & 429 handling | 1 |
-| Verify index availability | 1 |
-| Binary artifacts & indexing | 1 |
-| Connection tuning | 1 |
-| DiskANN tuning | 1 |
-| Unique indexes / idempotent seed | 1 |
-| Embed metadata | 1 |
-| Validate vector dims | 1 |
-| Retry semantics | 1 |
-| Audit trail: seed counts | 1 |
+| Retries and backoff | 9 |
+| Connection tuning | 8 |
+| Connection pool tuning | 7 |
+| Retry/backoff | 5 |
+| TLS enforcement | 5 |
+| Retries and idempotency | 4 |
+| Optimistic concurrency | 4 |
+| Schema validation | 4 |
+| Retries & backoff | 4 |
+| Retries for transient errors | 4 |
+| Retry on transient errors | 4 |
+| Retries | 3 |
+| Connection timeouts | 3 |
+| Explain plans | 3 |
+| Retries/backoff | 3 |
 
 ## Per sample
 
 | Sample | Arm | Title | Reached | Exit | Review | Readiness | Score | Build | Audit | Min |
 |---|---|---|---|---|---|---|---|---|---|---|
-| banking-01 | default | Anti-money laundering pattern detector | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 80 |  |  | 4.4 |
-| banking-02 | default | SWIFT message parser & store | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 77 |  |  | 4.3 |
-| banking-03 | default | Core banking transaction ledger | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 66 |  |  | 4.4 |
-| banking-04 | default | Regulatory reporting orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 68 |  |  | 4.6 |
-| banking-05 | default | Branch performance analytics | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 73 |  |  | 4.3 |
-| banking-06 | default | Collateral management store | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 64 |  |  | 3.9 |
-| banking-07 | default | Mortgage application multi-agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 73 |  |  | 4.3 |
-| banking-08 | default | Interest rate scenario modeler | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 62 |  |  | 4.4 |
-| banking-09 | default | Trade settlement tracker | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 69 |  |  | 4.3 |
-| banking-10 | default | Wealth management RAG portal | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 70 |  |  | 4.6 |
-| banking-11 | default | Correspondent banking risk screener | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 74 |  |  | 3.7 |
-| banking-12 | default | Cross-border payment audit trail | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 71 |  |  | 4.4 |
-| banking-13 | default | Basel III capital ratio calculator | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 67 |  |  | 4.5 |
-| banking-14 | default | Customer complaint classifier | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 68 |  |  | 4.5 |
-| banking-15 | default | Digital onboarding orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.5 |
-| banking-16 | default | ATM network status monitor | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 73 |  |  | 4.1 |
-| banking-17 | default | Stress testing multi-agent runner | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 73 |  |  | 4.2 |
-| banking-18 | default | Sanctions list screening agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 65 |  |  | 4.5 |
-| banking-19 | default | Insider threat detection pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 63 |  |  | 4.2 |
-| banking-20 | default | Interest accrual batch processor | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 80 |  |  | 4.8 |
-| customer-360-01 | default | Unified customer profile store | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 4.5 |
-| customer-360-02 | default | Real-time event stream ingestion | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 78 |  |  | 5.2 |
-| customer-360-03 | default | Next-best-action multi-agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 67 |  |  | 7.4 |
-| customer-360-04 | default | Customer journey mapper | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 4.1 |
-| customer-360-05 | default | Churn prediction pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 71 |  |  | 4.4 |
-| customer-360-06 | default | Omnichannel interaction history | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 71 |  |  | 3.9 |
-| customer-360-07 | default | Voice-of-customer sentiment hub | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 65 |  |  | 4.6 |
-| customer-360-08 | default | Dynamic segmentation engine | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 3.8 |
-| customer-360-09 | default | Lead scoring agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 68 |  |  | 4.5 |
-| customer-360-10 | default | Support ticket RAG assistant | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 80 |  |  | 4.2 |
-| customer-360-11 | default | Preference center & consent store | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 72 |  |  | 4.4 |
-| customer-360-12 | default | CLV prediction pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 64 |  |  | 4.8 |
-| customer-360-13 | default | Household grouping & linkage | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 77 |  |  | 3.8 |
-| customer-360-14 | default | Hyper-personalized content engine | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 70 |  |  | 4.5 |
-| customer-360-15 | default | Cohort analysis backend | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 61 |  |  | 4.7 |
+| banking-01 | control | Anti-money laundering pattern detector | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 49 | completed | pass_with_findings | 9.2 |
+| banking-01 | default | Anti-money laundering pattern detector | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 80 | completed | pass_with_findings | 15.3 |
+| banking-02 | default | SWIFT message parser & store | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 77 | completed | pass_with_findings | 8.6 |
+| banking-03 | default | Core banking transaction ledger | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 66 | completed | pass_with_findings | 14.3 |
+| banking-04 | default | Regulatory reporting orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 68 | completed | pass_with_findings | 15.8 |
+| banking-05 | default | Branch performance analytics | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | completed | pass_with_findings | 9.7 |
+| banking-06 | default | Collateral management store | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 64 | completed | pass_with_findings | 36.0 |
+| banking-07 | default | Mortgage application multi-agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | completed | pass_with_findings | 17.5 |
+| banking-08 | default | Interest rate scenario modeler | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 62 | partial | pass_with_findings | 8.7 |
+| banking-09 | default | Trade settlement tracker | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 69 | partial | pass_with_findings | 7.9 |
+| banking-10 | default | Wealth management RAG portal | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 70 | completed | pass_with_findings | 5.2 |
+| banking-11 | control | Correspondent banking risk screener | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 32 | completed | pass_with_findings | 11.2 |
+| banking-11 | default | Correspondent banking risk screener | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 74 | completed | pass_with_findings | 15.6 |
+| banking-12 | default | Cross-border payment audit trail | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 71 | completed | pass_with_findings | 11.2 |
+| banking-13 | default | Basel III capital ratio calculator | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 67 | completed | pass_with_findings | 29.1 |
+| banking-14 | default | Customer complaint classifier | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 68 | partial | pass_with_findings | 14.3 |
+| banking-15 | default | Digital onboarding orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | completed | pass_with_findings | 16.1 |
+| banking-16 | default | ATM network status monitor | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | partial | pass_with_findings | 11.2 |
+| banking-17 | default | Stress testing multi-agent runner | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | partial | pass_with_findings | 13.0 |
+| banking-18 | default | Sanctions list screening agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 65 | completed | pass_with_findings | 31.3 |
+| banking-19 | default | Insider threat detection pipeline | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 63 | partial | pass_with_findings | 16.5 |
+| banking-20 | default | Interest accrual batch processor | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 80 | completed | pass_with_findings | 8.3 |
+| customer-360-01 | control | Unified customer profile store | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 58 | completed | pass_with_findings | 9.3 |
+| customer-360-01 | default | Unified customer profile store | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | partial | pass_with_findings | 8.9 |
+| customer-360-02 | default | Real-time event stream ingestion | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 78 | partial | pass_with_findings | 8.2 |
+| customer-360-03 | default | Next-best-action multi-agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 67 | completed | pass_with_findings | 13.0 |
+| customer-360-04 | default | Customer journey mapper | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 17.7 |
+| customer-360-05 | default | Churn prediction pipeline | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 71 | partial | pass_with_findings | 9.6 |
+| customer-360-06 | default | Omnichannel interaction history | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 71 | completed | pass_with_findings | 7.9 |
+| customer-360-07 | default | Voice-of-customer sentiment hub | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 65 | completed | pass_with_findings | 18.7 |
+| customer-360-08 | default | Dynamic segmentation engine | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 11.6 |
+| customer-360-09 | default | Lead scoring agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 68 | completed | pass_with_findings | 11.7 |
+| customer-360-10 | default | Support ticket RAG assistant | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 80 | completed | pass_with_findings | 19.5 |
+| customer-360-11 | control | Preference center & consent store | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 38 | completed | pass_with_findings | 9.6 |
+| customer-360-11 | default | Preference center & consent store | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 72 | completed | pass_with_findings | 14.2 |
+| customer-360-12 | default | CLV prediction pipeline | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 64 | completed | pass_with_findings | 10.2 |
+| customer-360-13 | default | Household grouping & linkage | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 77 | completed | pass_with_findings | 17.3 |
+| customer-360-14 | default | Hyper-personalized content engine | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 70 | partial | pass_with_findings | 12.7 |
+| customer-360-15 | default | Cohort analysis backend | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 61 | completed | pass_with_findings | 9.3 |
 | customer-360-16 | default | Multi-touch attribution model | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 70 |  |  | 4.9 |
-| customer-360-17 | default | AI survey response analyzer | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 57 |  |  | 4.6 |
-| customer-360-18 | default | 360 data platform (CDP) orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 67 |  |  | 4.8 |
-| customer-360-19 | default | Proactive outreach orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 80 |  |  | 4.1 |
-| customer-360-20 | default | Identity resolution multi-agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 69 |  |  | 3.9 |
-| fintech-01 | default | Fraud detection with vector similarity | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 77 |  |  | 4.4 |
-| fintech-02 | default | Transaction categorization agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 66 |  |  | 4.4 |
-| fintech-03 | default | Portfolio tracker with live alerts | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 78 |  |  | 5.8 |
-| fintech-04 | default | Earnings call RAG assistant | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 64 |  |  | 3.4 |
-| fintech-05 | default | KYC document ingestion pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 5.0 |
-| fintech-06 | default | Credit risk multi-agent scorer | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 69 |  |  | 4.0 |
+| customer-360-17 | default | AI survey response analyzer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 57 | completed | pass_with_findings | 13.3 |
+| customer-360-18 | default | 360 data platform (CDP) orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 67 | partial | pass_with_findings | 9.5 |
+| customer-360-19 | default | Proactive outreach orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 80 | completed | pass_with_findings | 11.5 |
+| customer-360-20 | default | Identity resolution multi-agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 69 | completed | pass_with_findings | 15.3 |
+| fintech-01 | control | Fraud detection with vector similarity | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 29 | completed | pass_with_findings | 9.2 |
+| fintech-01 | default | Fraud detection with vector similarity | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 77 | partial | pass_with_findings | 8.7 |
+| fintech-02 | default | Transaction categorization agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 66 | partial | pass_with_findings | 11.1 |
+| fintech-03 | default | Portfolio tracker with live alerts | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 78 | completed | pass_with_findings | 13.3 |
+| fintech-04 | default | Earnings call RAG assistant | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 64 | partial | pass_with_findings | 10.7 |
+| fintech-05 | default | KYC document ingestion pipeline | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | partial | pass_with_findings | 8.0 |
+| fintech-06 | default | Credit risk multi-agent scorer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 69 | completed | pass_with_findings | 9.4 |
 | fintech-07 | default | Multi-currency ledger | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 70 |  |  | 4.6 |
-| fintech-08 | default | Regulatory compliance RAG checker | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 67 |  |  | 4.5 |
-| fintech-09 | default | Crypto wallet activity analyzer | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 5.9 |
-| fintech-10 | default | Expense report auto-categorizer | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 69 |  |  | 5.6 |
-| fintech-11 | default | Market news sentiment orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 69 |  |  | 4.1 |
-| fintech-12 | default | Invoice matching & reconciliation | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.2 |
-| fintech-13 | default | Algorithmic trade journal | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.3 |
-| fintech-14 | default | Loan origination workflow orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 70 |  |  | 4.1 |
-| fintech-15 | default | Financial advisor chatbot (RAG) | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 64 |  |  | 4.6 |
-| fintech-16 | default | Subscription billing engine | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 78 |  |  | 4.6 |
-| fintech-17 | default | ESG scoring pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 78 |  |  | 4.1 |
-| fintech-18 | default | Chargeback dispute multi-agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 4.2 |
-| fintech-19 | default | Option chain data store | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 63 |  |  | 4.8 |
-| fintech-20 | default | Open banking API cache layer | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 58 |  |  | 6.1 |
-| healthcare-01 | default | Patient record summarizer (RAG) | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 74 |  |  | 5.4 |
-| healthcare-02 | default | Clinical trial matching orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 71 |  |  | 6.5 |
-| healthcare-03 | default | Medication interaction checker | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 3.1 |
-| healthcare-04 | default | Medical imaging metadata store | readiness | 0 | sufficient_with_assumptions | blocked | 73 |  |  | 5.4 |
-| healthcare-05 | default | Appointment scheduling assistant | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.6 |
-| healthcare-06 | default | Symptom triage chatbot (RAG) | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 71 |  |  | 5.0 |
-| healthcare-07 | default | Lab results aggregator | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.3 |
-| healthcare-08 | default | Insurance pre-auth multi-agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 66 |  |  | 4.4 |
-| healthcare-09 | default | Clinical notes de-identification | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 80 |  |  | 4.7 |
-| healthcare-10 | default | Drug formulary semantic search | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 79 |  |  | 4.5 |
+| fintech-08 | default | Regulatory compliance RAG checker | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 67 | partial | pass_with_findings | 10.3 |
+| fintech-09 | default | Crypto wallet activity analyzer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | completed | pass_with_findings | 11.7 |
+| fintech-10 | default | Expense report auto-categorizer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 69 | completed | pass_with_findings | 13.3 |
+| fintech-11 | control | Market news sentiment orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 38 | completed | pass_with_findings | 10.1 |
+| fintech-11 | default | Market news sentiment orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 69 | completed | pass_with_findings | 9.8 |
+| fintech-12 | default | Invoice matching & reconciliation | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | completed | pass_with_findings | 12.6 |
+| fintech-13 | default | Algorithmic trade journal | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | completed | pass_with_findings | 16.5 |
+| fintech-14 | default | Loan origination workflow orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 70 | partial | pass_with_findings | 12.3 |
+| fintech-15 | default | Financial advisor chatbot (RAG) | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 64 | partial | pass_with_findings | 26.4 |
+| fintech-16 | default | Subscription billing engine | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 78 | completed | pass_with_findings | 7.6 |
+| fintech-17 | default | ESG scoring pipeline | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 78 | completed | pass_with_findings | 10.3 |
+| fintech-18 | default | Chargeback dispute multi-agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 50.0 |
+| fintech-19 | default | Option chain data store | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 63 | completed | pass_with_findings | 14.0 |
+| fintech-20 | default | Open banking API cache layer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 58 | completed | pass_with_findings | 7.2 |
+| healthcare-01 | control | Patient record summarizer (RAG) | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 40 | completed | pass_with_findings | 10.8 |
+| healthcare-01 | default | Patient record summarizer (RAG) | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 74 | partial | pass_with_findings | 24.5 |
+| healthcare-02 | default | Clinical trial matching orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 71 | completed | pass_with_findings | 8.7 |
+| healthcare-03 | default | Medication interaction checker | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 9.9 |
+| healthcare-04 | default | Medical imaging metadata store | audit | 0 | sufficient_with_assumptions | blocked | 73 | completed | pass_with_findings | 8.6 |
+| healthcare-05 | default | Appointment scheduling assistant | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | completed | pass_with_findings | 4.4 |
+| healthcare-06 | default | Symptom triage chatbot (RAG) | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 71 | completed | pass_with_findings | 12.1 |
+| healthcare-07 | default | Lab results aggregator | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | completed | pass_with_findings | 11.7 |
+| healthcare-08 | default | Insurance pre-auth multi-agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 66 | completed | pass_with_findings | 9.5 |
+| healthcare-09 | default | Clinical notes de-identification | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 80 | completed | pass_with_findings | 9.1 |
+| healthcare-10 | default | Drug formulary semantic search | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 79 | partial | pass_with_findings | 9.1 |
+| healthcare-11 | control | Care gap identification pipeline | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 34 | completed | pass_with_findings | 9.3 |
 | healthcare-11 | default | Care gap identification pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 74 |  |  | 4.8 |
-| healthcare-12 | default | Hospital bed occupancy tracker | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 4.2 |
-| healthcare-13 | default | Chronic disease risk predictor | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 60 |  |  | 4.4 |
-| healthcare-14 | default | Telehealth session summarizer | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 73 |  |  | 4.8 |
-| healthcare-15 | default | Prescription refill agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 67 |  |  | 4.5 |
-| healthcare-16 | default | Population health dashboard backend | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 74 |  |  | 3.5 |
-| healthcare-17 | default | Rare disease literature search | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 4.6 |
-| healthcare-18 | default | Adverse event reporting pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 72 |  |  | 4.9 |
-| healthcare-19 | default | Care coordination multi-agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 80 |  |  | 3.0 |
-| healthcare-20 | default | Provider directory semantic search | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 4.6 |
+| healthcare-12 | default | Hospital bed occupancy tracker | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 9.5 |
+| healthcare-13 | default | Chronic disease risk predictor | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 60 | partial | pass_with_findings | 6.5 |
+| healthcare-14 | default | Telehealth session summarizer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | completed | pass_with_findings | 9.4 |
+| healthcare-15 | default | Prescription refill agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 67 | completed | pass_with_findings | 16.4 |
+| healthcare-16 | default | Population health dashboard backend | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 74 | completed | pass_with_findings | 6.2 |
+| healthcare-17 | default | Rare disease literature search | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 16.0 |
+| healthcare-18 | default | Adverse event reporting pipeline | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 72 | completed | pass_with_findings | 7.4 |
+| healthcare-19 | default | Care coordination multi-agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 80 | partial | pass_with_findings | 10.3 |
+| healthcare-20 | default | Provider directory semantic search | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 10.7 |
+| retail-01 | control | Product catalog with vector search | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 36 | completed | pass_with_findings | 11.3 |
 | retail-01 | default | Product catalog with vector search | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 68 | partial | pass_with_findings | 11.1 |
 | retail-02 | default | AI-powered product recommendations | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | completed | pass_with_findings | 12.7 |
-| retail-03 | default | Substitute product finder | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 81 |  |  | 2.9 |
-| retail-04 | default | Natural language product search | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 80 |  |  | 4.3 |
-| retail-05 | default | Shopping cart with real-time inventory | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 78 |  |  | 4.7 |
-| retail-06 | default | Order history & timeline agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 66 |  |  | 5.1 |
-| retail-07 | default | Customer review sentiment pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 66 |  |  | 5.4 |
-| retail-08 | default | Personalized email campaign builder | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 2.9 |
-| retail-09 | default | Inventory reorder multi-agent system | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.7 |
-| retail-10 | default | Multi-tenant storefront SaaS | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.0 |
-| retail-11 | default | Visual similarity search (image embeddin | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 67 |  |  | 3.9 |
-| retail-12 | default | Abandoned cart recovery orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 74 |  |  | 4.4 |
-| retail-13 | default | Product Q&A chatbot (RAG) | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 67 |  |  | 3.9 |
-| retail-14 | default | Dynamic pricing engine | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 4.8 |
-| retail-15 | default | Supplier & PO management | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 73 |  |  | 4.7 |
-| retail-16 | default | Loyalty points ledger | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 5.8 |
-| retail-17 | default | Seasonal trend spotter agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 73 |  |  | 6.1 |
-| retail-18 | default | Returns & refund workflow orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 68 |  |  | 3.9 |
-| retail-19 | default | Cross-sell recommendation (Beanie) | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 77 |  |  | 4.8 |
-| retail-20 | default | Store locator with geospatial search | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 73 |  |  | 4.7 |
+| retail-03 | default | Substitute product finder | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 81 | partial | pass_with_findings | 9.1 |
+| retail-04 | default | Natural language product search | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 80 | completed | pass_with_findings | 15.2 |
+| retail-05 | default | Shopping cart with real-time inventory | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 78 | completed | pass_with_findings | 10.7 |
+| retail-06 | default | Order history & timeline agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 66 | completed | pass_with_findings | 13.6 |
+| retail-07 | default | Customer review sentiment pipeline | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 69 | completed | pass_with_findings | 25.9 |
+| retail-08 | default | Personalized email campaign builder | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | partial | pass_with_findings | 5.2 |
+| retail-09 | default | Inventory reorder multi-agent system | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 68 | completed | pass_with_findings | 13.5 |
+| retail-10 | default | Multi-tenant storefront SaaS | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | completed | pass_with_findings | 7.5 |
+| retail-11 | control | Visual similarity search (image embeddin | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 42 | partial | pass_with_findings | 30.0 |
+| retail-11 | default | Visual similarity search (image embeddin | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 67 | partial | pass_with_findings | 12.3 |
+| retail-12 | default | Abandoned cart recovery orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 74 | completed | pass_with_findings | 8.3 |
+| retail-13 | default | Product Q&A chatbot (RAG) | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 70 | partial | pass_with_findings | 22.3 |
+| retail-14 | default | Dynamic pricing engine | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 18.0 |
+| retail-15 | default | Supplier & PO management | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | partial | pass_with_findings | 13.5 |
+| retail-16 | default | Loyalty points ledger | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 8.7 |
+| retail-17 | default | Seasonal trend spotter agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | completed | pass_with_findings | 18.3 |
+| retail-18 | default | Returns & refund workflow orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 68 | completed | pass_with_findings | 12.6 |
+| retail-19 | default | Cross-sell recommendation (Beanie) | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 65 | completed | pass_with_findings | 20.8 |
+| retail-20 | default | Store locator with geospatial search | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | completed | pass_with_findings | 10.3 |
