@@ -1,86 +1,68 @@
-Azure DocumentDB Care Coordination Multi-Agent Sample
+Azure DocumentDB — Care Coordination Multi-Agent Sample
 
-Overview
+This sample demonstrates a Python + LangChain multi-agent system that reads patient records from an Azure DocumentDB (MongoDB-compatible) cluster, retrieves referrals and medication lists, then synthesises a unified care plan and writes it back to the database.
 
-This sample demonstrates a small multi-agent care coordination system that reads data from an Azure DocumentDB (MongoDB-compatible) cluster and synthesizes a unified care plan document back into the database.
-
-It is intentionally small and designed for learning. The orchestrator coordinates three worker agents:
-- Primary Care Agent: reads the patient's primary care record from the patients collection
-- Specialist Agent: retrieves referral notes from referrals collection
-- Pharmacy Agent: checks current medications from medications collection
-
-The orchestrator synthesises a unified care plan (using an LLM when configured) and writes it to the care_plans collection.
+What this sample shows
+- A minimal multi-agent pattern: GP agent (primary care), Specialist agent (referrals), Pharmacy agent (meds).
+- An orchestrator that calls each agent, synthesises a care plan with an LLM, and stores the result in the `care_plans` collection.
+- A CLI and a minimal FastAPI endpoint for manual testing.
+- Idempotent seed script to create sample data and single-field indexes on `patient_id`.
 
 Important constraints
-- This sample uses an existing live Azure DocumentDB cluster reachable from this machine. The connection string must be provided in the DOCUMENTDB_URI environment variable at runtime.
-- The sample will NOT provision Azure resources.
-- Do not commit secrets. Keep DOCUMENTDB_URI and any LLM keys out of source control.
-
-What the sample shows
-- How to connect to Azure DocumentDB using the official PyMongo driver with a singleton MongoClient
-- A small, idempotent seed script to insert sample patients, referrals and medications
-- A simple multi-agent orchestrator pattern (LangChain-compatible if you supply OPENAI_API_KEY and install the optional LangChain dependency)
-- A CLI entrypoint and a minimal FastAPI endpoint for manual testing
-- How to run unit tests that mock the DB and LLM clients
+- Do NOT commit secrets. The app reads the DocumentDB connection string from DOCUMENTDB_URI at runtime.
+- This sample does NOT provision Azure resources. Use the existing cluster pointed at by DOCUMENTDB_URI.
+- Vector indexes are NOT created by default. If you希望 to enable vector retrieval, see the "Vector search and embeddings" section below.
 
 Prerequisites
-- Python 3.10+ (this environment has Python 3.13 available)
-- A reachable Azure DocumentDB connection string set in DOCUMENTDB_URI
-- (Optional) An OpenAI-compatible API key set in OPENAI_API_KEY to enable real LLM synthesis
+- Python 3.10+ (the run environment provides Python)
+- A reachable Azure DocumentDB cluster. Put the connection string (mongodb+srv://... or non-SRV connection string) into DOCUMENTDB_URI.
+- (Optional) OpenAI-compatible API key in OPENAI_API_KEY if you want real LLM/embedding calls.
 
-Files
-- README.md (this file)
-- .env.example — example env file with placeholders
-- requirements.txt — Python dependencies
-- seed_data.py — idempotent script to load sample data into sample_healthcare_19
-- run_orchestrator.py — simple CLI to run the orchestrator for a patient
-- app/ — application code (DB client, agents, orchestrator, FastAPI app)
-- tests/ — unit tests that run without a live cluster by mocking dependencies
-
-Quickstart
-
-1. Create a virtual environment and activate it (optional but recommended)
-
+Setup
+1. Create and activate a virtualenv (the run environment already has one available):
    python -m venv .venv
-   source .venv/bin/activate  # Linux/macOS
-   .\.venv\Scripts\activate  # Windows PowerShell
+   source .venv/bin/activate
 
-2. Install dependencies
-
+2. Install dependencies:
    pip install -r requirements.txt
 
-3. Copy .env.example to .env and fill DOCUMENTDB_URI and optionally OPENAI_API_KEY
-
+3. Copy the example env and edit:
    cp .env.example .env
-   # edit .env and set DOCUMENTDB_URI to the cluster connection string
+   # Edit .env and set DOCUMENTDB_URI and (optionally) OPENAI_API_KEY
 
-4. Seed the sample data
-
+4. Seed sample data & indexes (idempotent):
    python seed_data.py
 
-5. Run the orchestrator for a sample patient (CLI)
+Run the orchestrator (CLI)
+   python run_orchestrator.py --patient-id patient-001
 
-   python run_orchestrator.py --patient-id patient-1
+Run the API (FastAPI) locally
+   uvicorn app.api:app --reload
+   # then POST http://127.0.0.1:8000/orchestrate with JSON {"patient_id": "patient-001"}
 
-   The script will call each agent, synthesise a care plan (mocked if OPENAI_API_KEY is missing), and insert the care plan into the care_plans collection.
+What the sample writes
+- Database: sample_healthcare_19
+- Collections created/used: patients, referrals, medications, care_plans
+- Indexes: single-field index on patient_id for patients/referrals/medications
+- The orchestrator inserts a document into care_plans with fields: patient_id, created_at, plan_text, sources
 
-6. Run the FastAPI server for HTTP testing
+Vector search and embeddings
+- This demo does not create vector indexes by default because embedding/LLM credentials may not be available. If you have OPENAI_API_KEY and want to enable vector retrieval:
+  - Set EMBEDDING_MODEL (default text-embedding-3-small) and ensure you know the embedding dimension (1536 for text-embedding-3-small).
+  - Follow the notes in app/db.py and the documentdb vector-search docs to create a vector index with the proper "dimensions".
 
-   uvicorn app.api:app --reload --port 8000
-
-   POST http://localhost:8000/orchestrate with JSON body: {"patient_id": "patient-1"}
-
-7. Run unit tests
-
+Testing
+- Unit tests are included under tests/ and mock the database + LLM, so they run without a live cluster or API keys:
    pytest -q
 
-Notes & Next steps
-- The sample includes single-field indexes on patient_id for quick lookups. For production or retrieval-heavy workloads, follow the documentdb-indexing and documentdb-vector-search guidance to add text / vector indexes. When adding vector indexes, set the dimensions to the embedding model output (the sample documents mention text-embedding-3-small with 1536 dims).
-- The orchestrator uses a simple mocking fallback if OPENAI_API_KEY is not set; provide an API key to test the LLM-backed synthesis path. See .env.example for variable names.
+Cleanup
+- The sample creates data in the database sample_healthcare_19. Remove it manually with your preferred MongoDB tooling if desired (do not commit credentials into code).
 
-Security
-- Never commit your DOCUMENTDB_URI or OPENAI_API_KEY. Use environment variables or a secrets manager.
+Files
+- app/: application code
+- seed_data.py: seed script to upsert sample data and ensure indexes
+- run_orchestrator.py: CLI entrypoint
+- .env.example: placeholder environment variables
+- tests/: unit tests with mocks
 
-License
-
-MIT
+License: MIT

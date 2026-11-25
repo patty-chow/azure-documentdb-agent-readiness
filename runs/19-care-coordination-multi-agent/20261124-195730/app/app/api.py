@@ -1,14 +1,17 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from .orchestrator import orchestrate_patient
+from .orchestrator import Orchestrator
 
-app = FastAPI()
+app = FastAPI(title="Care Coordination Orchestrator")
+orch = Orchestrator()
 
 class OrchestrateRequest(BaseModel):
     patient_id: str
 
-@app.post('/orchestrate')
+@app.post("/orchestrate")
 async def orchestrate(req: OrchestrateRequest):
-    doc = orchestrate_patient(req.patient_id)
-    # return a lightweight summary
-    return {"patient_id": doc["patient_id"], "care_plan_id": str(doc["_id"])}
+    try:
+        res = orch.orchestrate(req.patient_id)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

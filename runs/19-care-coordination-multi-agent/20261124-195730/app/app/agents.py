@@ -1,32 +1,28 @@
-from typing import List, Dict, Any
-from .db import get_db
-from datetime import datetime
+from typing import Any, Dict, List
+from .db import get_collection
 
+class GPAgent:
+    """Primary care agent: reads primary care notes for a patient."""
+    def fetch(self, patient_id: str) -> Dict[str, Any]:
+        col = get_collection("patients")
+        docs = list(col.find({"patient_id": patient_id}).sort("timestamp", -1))
+        # Return combined text and metadata
+        notes = "\n\n".join(d.get("note", "") for d in docs)
+        return {"patient_id": patient_id, "notes": notes, "records": docs}
 
-def get_patient_record(patient_id: str) -> Dict[str, Any]:
-    db = get_db()
-    doc = db.patients.find_one({"patient_id": patient_id})
-    return doc or {}
+class SpecialistAgent:
+    """Referral agent: retrieves referral notes for a patient."""
+    def fetch(self, patient_id: str) -> Dict[str, Any]:
+        col = get_collection("referrals")
+        docs = list(col.find({"patient_id": patient_id}).sort("timestamp", -1))
+        notes = "\n\n".join(d.get("note", "") for d in docs)
+        return {"patient_id": patient_id, "referrals": notes, "records": docs}
 
-
-def get_referrals(patient_id: str) -> List[Dict[str, Any]]:
-    db = get_db()
-    cursor = db.referrals.find({"patient_id": patient_id}).sort("created_at", -1)
-    return list(cursor)
-
-
-def get_medications(patient_id: str) -> List[Dict[str, Any]]:
-    db = get_db()
-    cursor = db.medications.find({"patient_id": patient_id}).sort("updated_at", -1)
-    return list(cursor)
-
-
-def write_care_plan(patient_id: str, care_plan: Dict[str, Any]) -> str:
-    db = get_db()
-    doc = {
-        "patient_id": patient_id,
-        "care_plan": care_plan,
-        "created_at": datetime.utcnow()
-    }
-    res = db.care_plans.insert_one(doc)
-    return str(res.inserted_id)
+class PharmacyAgent:
+    """Pharmacy agent: checks active medications for a patient."""
+    def fetch(self, patient_id: str) -> Dict[str, Any]:
+        col = get_collection("medications")
+        docs = list(col.find({"patient_id": patient_id}).sort("effective_date", -1))
+        # Simplify: medications is a list of med names
+        meds = [d.get("medication") for d in docs]
+        return {"patient_id": patient_id, "medications": meds, "records": docs}

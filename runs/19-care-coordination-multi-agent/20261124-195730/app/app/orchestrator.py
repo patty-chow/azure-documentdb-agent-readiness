@@ -1,69 +1,52 @@
 import os
-from typing import Dict, Any
-from .agents import get_patient_record, get_referrals, get_medications, write_care_plan
+from typing import Any
+from dotenv import load_dotenv
+from langchain import OpenAI
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
 
-# Use OpenAI for synthesis if available
-try:
-    import openai
-except Exception:
-    openai = None
+from .agents import GPAgent, SpecialistAgent, PharmacyAgent
+from .db import make_care_plan_doc, insert_care_plan
 
+load_dotenv()
 
-def synthesize_care_plan_with_llm(context: Dict[str, Any]) -> Dict[str, Any]:
-    """Call the LLM (OpenAI) to synthesise a care plan. Falls back to a simple template if no API key."""
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key or not openai:
-        # Fallback simple synthesiser
-        return {
-            "summary": f"Care plan (fallback) for {context.get('patient', {}).get('patient_id')}",
-            "recommendations": [
-                "Follow up with primary care in 2 weeks",
-                "Review medications with pharmacy",
-            ],
-            "sections": {
-                "primary_care_notes": context.get("patient", {}).get("notes", ""),
-                "referrals": [r.get("note") for r in context.get("referrals", [])],
-                "medications": [m.get("medication") for m in context.get("medications", [])]
-            }
-        }
+LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
-    openai.api_key = api_key
-    if os.environ.get("OPENAI_API_BASE"):
-        openai.api_base = os.environ.get("OPENAI_API_BASE")
+# Simple orchestrator that queries three agents and synthesises a care plan via an LLM
+class Orchestrator:
+    def __init__(self):
+        self.gp = GPAgent()
+        self.spec = SpecialistAgent()
+        self.pharm = PharmacyAgent()
+        # LangChain LLM wrapper — configure with OPENAI_API_KEY via env at init time
+        openai_api_key = os.environ.get("OPENAI_API_KEY")
+        # If OPENAI_API_KEY is missing, LangChain will raise; tests can set the env var or mock LLMChain
+        self.llm = OpenAI(model_name=LLM_MODEL, openai_api_key=openai_api_key)
 
-    messages = [
-        {"role": "system", "content": "You are a clinical summarisation assistant. Produce a clear, concise care plan."},
-        {"role": "user", "content": f"Patient record:\n{context.get('patient')}\n\nReferrals:\n{context.get('referrals')}\n\nMedications:\n{context.get('medications')}\n\nPlease synthesise a care plan as JSON with summary, recommendations (list), and sections."}
-    ]
+    def synthesize_plan(self, gp_notes: str, referrals: str, meds: list) -> str:
+        prompt = PromptTemplate(
+            input_variables=["gp_notes", "referrals", "meds"],
+            template=(
+                "You are a clinical care-planning assistant. Given the patient's primary care notes, referral notes, "
+                "and current medication list, synthesise a clear, concise unified care plan with tasks, responsible parties, "
+                "and follow-up timeline.\n\nPRIMARY CARE NOTES:\n{gp_notes}\n\nREFERRALS:\n{referrals}\n\nMEDICATIONS:\n{meds}\n\nOUTPUT: Produce a care plan in plain text."
+            ),
+        )
+        chain = LLMChain(llm=self.llm, prompt=prompt)
+        result = chain.run({"gp_notes": gp_notes, "referrals": referrals, "meds": ", ".join(meds)})
+        return result
 
-    resp = openai.ChatCompletion.create(
-        model=os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
-        messages=messages,
-        max_tokens=800,
-        temperature=0.2,
-    )
+    def orchestrate(self, patient_id: str) -> Any:
+        gp = self.gp.fetch(patient_id)
+        spec = self.spec.fetch(patient_id)
+        pharm = self.pharm.fetch(patient_id)
 
-    # Try to parse JSON out of the assistant's reply; if not possible, return text in summary
-    content = resp.choices[0].message.get("content", "")
-    try:
-        import json
-        parsed = json.loads(content)
-        return parsed
-    except Exception:
-        return {"summary": content}
+        plan_text = self.synthesize_plan(gp.get("notes", ""), spec.get("referrals", ""), pharm.get("medications", []))
 
-
-def orchestrate_and_write(patient_id: str) -> Dict[str, Any]:
-    patient = get_patient_record(patient_id)
-    referrals = get_referrals(patient_id)
-    medications = get_medications(patient_id)
-
-    context = {
-        "patient": patient,
-        "referrals": referrals,
-        "medications": medications,
-    }
-
-    plan = synthesize_care_plan_with_llm(context)
-    inserted_id = write_care_plan(patient_id, plan)
-    return {"care_plan_id": inserted_id, "care_plan": plan}
+        doc = make_care_plan_doc(patient_id, plan_text, sources=[
+            {"agent": "gp", "count": len(gp.get("records", []))},
+            {"agent": "specialist", "count": len(spec.get("records", []))},
+            {"agent": "pharmacy", "count": len(pharm.get("records", []))},
+        ])
+        inserted_id = insert_care_plan(doc)
+        return {"inserted_id": str(inserted_id), "plan_text": plan_text}
