@@ -1,0 +1,668 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested end-to-end returns orchestration, runs the three agents in sequence, reads/writes Azure DocumentDB via Mongoose, includes an idempotent seed and demo, and defaults to deterministic mock LLM outputs so demos run without external LLMs. Key gallery hygiene items (search endpoint, offline unit tests, explicit retry/backoff, idempotent return creation, explicit projection usage, infra-as-code) are missing or partial. Several of these gaps are because the short starter prompt did not require them; a few arise from a runtime incompatibility with the langchain package which the builder worked around. See requirement-by-requirement results, practice checks, decision reviews, and suggested doc fixes below.",
+  "requirement_results": [
+    {
+      "requirement": "Provide a Node.js entry point that accepts a return request and starts the orchestration flow for it (e.g. an exported function or HTTP handler that takes a return request identifying the order).",
+      "status": "met",
+      "evidence": "app/src/server.js:9-15 (POST /returns handler calling processReturn)",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Fetch the order document for the return request from Azure DocumentDB via Mongoose and pass the fetched order document object into the orchestration.",
+      "status": "met",
+      "evidence": "app/src/orchestration.js:7-9 (await connect(); const order = await Order.findOne({ orderId }).lean())",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Implement the orchestration flow with LangChain in Node.js so that it runs three agents in sequence, a policy agent, then a refund-calculation agent, then a comms agent, with each step receiving the output of the one before it.",
+      "status": "partly_met",
+      "evidence": "app/src/orchestration.js:22-40 (policyAgent -> refundAgent -> commsAgent sequence implemented); builder attempted LangChain but replaced with direct OpenAI client calls (events.jsonl shows langchain import error).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "If LangChain use is required: either adjust package.json / project to an ESM layout and correct langchain subpath imports, or pin a langchain release compatible with CommonJS/Esm in the environment. Otherwise change the prompt/README to state the sample uses direct OpenAI client for orchestration."
+    },
+    {
+      "requirement": "Implement the policy agent as a LangChain agent that receives the order document and determines whether the return is eligible.",
+      "status": "partly_met",
+      "evidence": "app/src/llm.js:39-45 (policyAgent exists, returns {eligible, reasons}); not implemented using LangChain classes due to langchain package ESM subpath error (events.jsonl: ERR_PACKAGE_PATH_NOT_EXPORTED).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Either switch project to ESM and use LangChain types, or document why LangChain was not used and provide equivalent agent wrapper using the OpenAI client."
+    },
+    {
+      "requirement": "Implement the refund-calculation agent as a LangChain agent that receives the order document and the policy agent's eligibility result and calculates the refund amount.",
+      "status": "partly_met",
+      "evidence": "app/src/llm.js:47-53 (refundAgent implemented and used in orchestration at src/orchestration.js:34-36). Not a LangChain Agent due to package error.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Same as previous: either restore LangChain use or explicitly document the OpenAI-client based replacement."
+    },
+    {
+      "requirement": "Implement the comms agent as a LangChain agent that receives the order document, the eligibility result and the refund amount and generates the customer notification text.",
+      "status": "partly_met",
+      "evidence": "app/src/llm.js:55-61 (commsAgent implemented); used at src/orchestration.js:31 and 38; not implemented via LangChain classes.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Either rework imports to use LangChain or accept the direct-OpenAI implementation and update README/prompt to reflect it."
+    },
+    {
+      "requirement": "Write the final return document, holding the outcome of the flow (e.g. eligibility result, refund amount and notification), back to Azure DocumentDB via Mongoose.",
+      "status": "met",
+      "evidence": "app/src/orchestration.js:46-47 (const saved = await Return.create(returnDoc); return saved.toObject()) and app/src/models/return.js schema present",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example (DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_MODEL) and app/src/db.js:5-8 reading process.env.DOCUMENTDB_URI; app/src/llm.js uses process.env.OPENAI_API_KEY",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_MODEL, PORT",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not store embeddings or create vector indexes; vector features are not exercised by the app.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If you add embeddings, include an explicit vector-index creation step and document required dimension matching."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index code or parameters in repository.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If vector search is added, include a seed script and README guidance on tuning index type and parameters."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js:12-20 uses a 'connected' flag and reuses mongoose.connection; comment notes Mongoose singleton.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/scripts/seed.js:27-31 uses updateOne(..., { upsert: true }) so seeding is idempotent; indexes are defined in Mongoose schemas (unique orderId) but seed.js does not explicitly create indexes.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Have the seed script explicitly call Model.createIndexes() or ensure indexes are created (or log that Mongoose autoIndex is used) so index creation is explicit in setup."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint present in app/",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search route that validates input, returns a 400 for empty queries and a clear 5xx/422 when embedding calls fail, and include unit tests for both failure cases."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search implementation; no similarity scores returned anywhere.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding vector search, include similarity score in the returned result documents and document the field name."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "not_met",
+      "evidence": "This is a Node.js repo: package.json has semver ranges and package-lock.json exists, but there is no requirements.txt (Python).",
+      "cause": "prompt_silent",
+      "smallest_fix": "For Node.js, ensure package-lock.json is checked in (it is) and optionally document exact dependency pins in README; if the checklist insists on requirements.txt, clarify for Node versus Python samples."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No tests in the repository. Demo runs use the live cluster per run instructions; no mocked-unit tests present.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock Mongoose (e.g., using sinon or mockgoose) to exercise orchestration logic without a live cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/Terraform/ARM templates in repo. builder explicitly chose not to provision resources (decisions.jsonl D007).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an example Bicep/Terraform snippet that targets Microsoft.DocumentDB/mongoClusters (API 2025-09-01) or link to documentdb-azure-deployment guidance."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md covers what it shows, prerequisites, setup, run (seed/demo) but does not include explicit clean-up steps for the cluster or the seeded data.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Clean-up section describing how to remove seeded documents (e.g., a script or mongo command) and, if provided, how to tear down any provisioned infra."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md title and text use 'Azure DocumentDB' and code comments/reference mention DocumentDB (no Cosmos or Amazon DocumentDB references).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env secrets (DOCUMENTDB_URI)",
+      "practice": "Do not store the DocumentDB connection string in source control; read DOCUMENTDB_URI from environment or a secrets store and provide only a .env.example placeholder.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/.env.example:2 and app/src/db.js:5-8",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection singleton",
+      "practice": "Create and reuse a single shared MongoClient / Mongoose connection (singleton) across the process rather than creating a client per request.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js:12-20 (connected flag; reuse mongoose.connection)",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection options",
+      "practice": "Provide explicit connection options (e.g., serverSelectionTimeoutMS, socketTimeoutMS, maxPoolSize) appropriate to your environment to fail fast and control pooling.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.js:15-18 sets serverSelectionTimeoutMS: 5000 but does not set maxPoolSize or socketTimeoutMS.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add sensible defaults: e.g. mongoose.connect(uri, { serverSelectionTimeoutMS: 5000, socketTimeoutMS: 30000, maxPoolSize: 50 })",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always connect with TLS and verify certificates in production; do not disable TLS verification (tls=true and tlsAllowInvalidCertificates=false).",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example:2 includes tls=true and app/src/db.js comment references TLS; code does not disable TLS verification.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "LLM keys and mock fallback",
+      "practice": "Do not commit LLM API keys or other secrets; default samples to mock mode when keys are absent and read production keys from environment variables or a secrets store (Azure Key Vault).",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/developer/azure-developer-cli/manage-environment-variables#secrets-and-sensitive-data-considerations",
+      "status": "followed",
+      "evidence": "app/src/llm.js:23-25 (useMock), app/.env.example:3 (OPENAI_API_KEY placeholder)",
+      "source": "Work with environment variables / Key Vault guidance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Work with environment variables / Key Vault guidance",
+          "url": "https://learn.microsoft.com/azure/developer/azure-developer-cli/manage-environment-variables#secrets-and-sensitive-data-considerations"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Mongoose schemas & lean()",
+      "practice": "Define explicit Mongoose schemas with validation and typed fields for orders/returns and use lean() for read-only queries to avoid Mongoose document overhead.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb",
+      "status": "followed",
+      "evidence": "app/src/models/order.js and app/src/models/return.js (typed Schema definitions); app/src/orchestration.js:8 uses .lean()",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Concrete indexes",
+      "practice": "Create concrete indexes that match your query patterns (for example index { orderId: 1 } and compound indexes like { customerId: 1, createdAt: -1 }) to avoid collection scans.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/models/order.js:11-13 (orderId unique), app/src/models/return.js:19 (ReturnSchema.index({ orderId:1, createdAt:-1 })); scripts/list-indexes.js printed indexes (events.jsonl).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use projections",
+      "practice": "Use projections (field selection) to fetch only the fields each agent needs rather than returning whole documents.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/find#projections",
+      "status": "violated",
+      "evidence": "app/src/orchestration.js:8 (Order.findOne({ orderId }).lean() with no projection)",
+      "source": "find (projections) - Azure DocumentDB docs",
+      "searched": "",
+      "fix": "Supply a projection to findOne, e.g. Order.findOne({ orderId }, { orderId:1, items:1, total:1, currency:1, purchaseDate:1 }).lean() to limit data returned to agents.",
+      "sources": [
+        {
+          "title": "find (projections) - Azure DocumentDB docs",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/find#projections"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent writes",
+      "practice": "Make writes idempotent or include an idempotency key (and unique index) so retries cannot create duplicate returns; enforce uniqueness at the DB level (unique index on returnId or (orderId, returnAttemptId)).",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "violated",
+      "evidence": "app/src/orchestration.js:46 (Return.create(returnDoc)) and app/src/models/return.js lacks a unique returnId or unique compound key; repeated POSTs could create duplicates.",
+      "source": "Reliability in Azure DocumentDB / Idempotent Consumer pattern",
+      "searched": "",
+      "fix": "Add an idempotency key: include returnId or returnAttemptId in the API, add a unique index, and use upsert or findOneAndUpdate with upsert to create-or-return existing.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB / Idempotent Consumer pattern",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry/backoff",
+      "practice": "Implement exponential backoff with jitter for transient errors (network/server selection, 50x, 429) and fail fast on unrecoverable errors, recording retry attempts in logs/metrics.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "No retry/backoff wrapper is present around DB calls or agent calls; app uses straight awaits (e.g., Order.updateOne, Return.create).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Wrap transient DB calls in a retry policy with exponential backoff and jitter (use a library or implement simple retry logic) and log retry attempts.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "LLM timeouts & fallback",
+      "practice": "When calling external LLM services, wrap calls with timeouts and circuit-breaker logic and fall back to a safe deterministic or mock mode to avoid blocking the orchestration.",
+      "category": "external_services",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/architecture/patterns/circuit-breaker",
+      "status": "followed",
+      "evidence": "app/src/llm.js:23-25 implements a mock fallback when OPENAI_API_KEY is absent; however callOpenAI has no timeout/circuit-breaker.",
+      "source": "Circuit Breaker pattern and transient-fault handling (Azure Architecture)",
+      "searched": "",
+      "fix": "Add a timeout and circuit-breaker (e.g., axios/timeouts or opossum pattern) around callOpenAI and fall back to mock responses on repeated failures.",
+      "sources": [
+        {
+          "title": "Circuit Breaker pattern and transient-fault handling (Azure Architecture)",
+          "url": "https://learn.microsoft.com/azure/architecture/patterns/circuit-breaker"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Verify indexes",
+      "practice": "Verify indexes and query plans against the live cluster using listIndexes() and explain('executionStats') and include scripts to list indexes in your repo.",
+      "category": "tooling_and_verification",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output",
+      "status": "followed",
+      "evidence": "app/scripts/list-indexes.js exists and was executed in build (events.jsonl: run_command listing indexes printed orderId_1 and returns indexes).",
+      "source": "Read query explain output in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Read query explain output in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Large LLM content storage",
+      "practice": "Keep large LLM-generated content out of hot documents; store long notifications or transcripts in blob storage or a separate collection/document with its own lifecycle and indexing policy.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/orchestration.js:32 and app/src/models/return.js:11-13 store commsResult (subject/body) inside the hot return document.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "If messages can be large, store the full body in blob storage or a separate 'messages' collection and put only a short summary or pointer in the return document.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit fields",
+      "practice": "Include audit fields (createdAt, createdBy, updatedAt, updatedBy, changeReason) on return documents and index createdAt for retention/cleanup; consider TTL indexes for ephemeral data.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/models/return.js:15-16 has createdAt and updatedAt; an index on createdAt is included in ReturnSchema.index({ orderId: 1, createdAt: -1 })",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Add createdBy/updatedBy/changeReason if required by auditing policies.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Input validation",
+      "practice": "Sanitize and validate user-provided query parameters to avoid NoSQL injection; never interpolate user input into query operators, $where, or pipeline stages without validation.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/security/develop/threat-modeling-tool-input-validation#perform-input-validation-and-filtering-on-all-string-type-model-properties",
+      "status": "violated",
+      "evidence": "app/src/server.js:9-15 accepts orderId directly from req.body and app/src/orchestration.js:8 inserts it into findOne({ orderId }) without validating format.",
+      "source": "Input validation and threat modeling guidance (Azure)",
+      "searched": "",
+      "fix": "Validate request.orderId is a well-formed ID (regex/length) and explicitly coerce to string. Reject or sanitize unexpected inputs before calling DB.",
+      "sources": [
+        {
+          "title": "Input validation and threat modeling guidance (Azure)",
+          "url": "https://learn.microsoft.com/azure/security/develop/threat-modeling-tool-input-validation#perform-input-validation-and-filtering-on-all-string-type-model-properties"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed safety",
+      "practice": "When running seed/demo scripts, ensure they operate only on the sample_retail_18 database and include an explicit confirmation/environment check to avoid accidental destructive operations on other DBs.",
+      "category": "seeding_and_testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#define-the-product-model",
+      "status": "violated",
+      "evidence": "app/scripts/seed.js:5-6 connects via mongoose connect and upserts into orders without an explicit check that the db is sample_retail_18 or an environment confirmation.",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (tutorial notes)",
+      "searched": "",
+      "fix": "Have seed script verify the DB name (via parse of connection string or require SAMPLE_DB_NAME env var) and require an explicit opt-in flag (e.g., --confirm) before performing writes.",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (tutorial notes)",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#define-the-product-model"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "retryWrites=false guidance",
+      "practice": "If the MongoDB wire protocol/feature set is uncertain for your cluster, set retryWrites=false and explicitly test features (transactions, change streams, collations, vector functions) against the live cluster before relying on them.",
+      "category": "compatibility",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/migrate-amazon-documentdb#update-your-application",
+      "status": "followed",
+      "evidence": "app/.env.example:2 includes retryWrites=false and app/src/db.js comment references retryWrites=false.",
+      "source": "Migrate from Amazon DocumentDB to Azure DocumentDB (with MongoDB compatibility)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Migrate from Amazon DocumentDB to Azure DocumentDB (with MongoDB compatibility)",
+          "url": "https://learn.microsoft.com/azure/documentdb/migrate-amazon-documentdb#update-your-application"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver version alignment",
+      "practice": "Keep Mongoose and MongoDB driver versions aligned with the cluster wire protocol and test driver-level features (schema validation, index creation syntax, vector index commands) on the target environment.",
+      "category": "maintenance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "package.json dependencies show mongoose ^7.6.0; decision D003 recorded choice of Mongoose 7.x compatible with MongoDB 7.0",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (compatibility notes)",
+      "searched": "",
+      "fix": "Pin exact dependency versions in package-lock.json and record tested driver/cluster compatibility in README.",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (compatibility notes)",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: serverSelectionTimeoutMS",
+      "practice": "Audit trail",
+      "category": "audit_trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.js:15 sets serverSelectionTimeoutMS: 5000 but no matching decision logged in decisions.jsonl about the chosen timeout value.",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "Log the reason for selected timeouts and pool sizes in a build decision or README.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: default LLM model",
+      "practice": "Audit trail",
+      "category": "audit_trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/llm.js:29 uses OPENAI_MODEL default 'gpt-4o-mini' but there is no decision recorded explaining the choice of this model in decisions.jsonl.",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "Record model-selection decision or document the default and rationale in README.",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator-approved readiness 'ready_with_gaps' is plausible; events.jsonl need not record operator acknowledgement. The build proceeded with documented gaps."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Decision to use Node.js + Express + Mongoose matches the starter prompt; events.jsonl shows the decision was logged and code implements it (server.js, models)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choice of Mongoose 7.x is reasonable and is reflected in package.json; events.jsonl includes the logged decision and package.json entry."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "Choosing LangChain + OpenAI-compatible provider with a mock fallback was a reasonable default (decision logged). However events.jsonl show the builder later hit a langchain package ESM subpath error and replaced LangChain usage with direct OpenAI calls. The initial decision is defensible but the implementation diverged for practical reasons."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Mock fallback behavior is implemented in app/src/llm.js (useMock) and demo ran with deterministic mock outputs; events.jsonl confirms the demo executed using mocks."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Reading secrets from environment and providing .env.example is implemented (.env.example and process.env in code). Decision is supported by events.jsonl artifacts."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Decision not to provision Azure resources is consistent with run policy and is reflected in the repo (no IaC). events.jsonl records this decision."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision to create the simple unique index on orders.orderId and returns indexes is implemented: schemas include unique/index and scripts/list-indexes.js printed the indexes. events.jsonl shows index listing output."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Replacing LangChain imports with direct OpenAI calls is documented in events.jsonl and justified by a concrete runtime error (ERR_PACKAGE_PATH_NOT_EXPORTED). The decision and its reason are visible in the trace."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "LangChain import compatibility & examples",
+      "what_was_missing": "No public guidance in the sample or README about how to set up a Node project so the 'langchain' package subpaths resolve (ESM vs CommonJS import guidance) and a tested example showing LangChain agent wiring in CommonJS or ESM for Node 24.",
+      "where_searched": "events.jsonl (langchain import error), package.json in repo, installed skill docs; Microsoft docs search not applicable.",
+      "effect_on_this_build": "The builder attempted to import LangChain subpaths and hit ERR_PACKAGE_PATH_NOT_EXPORTED, so they replaced LangChain usage with direct OpenAI client calls. As a result the sample fulfills orchestration semantics but does not demonstrate LangChain classes; this could confuse gallery reviewers expecting LangChain code.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short README section and a troubleshooting note: (1) which langchain versions are compatible with CommonJS/Node 24, (2) example package.json + \"type\": \"module\" ESM conversion steps, and (3) a minimal ESM LangChain agent example that the sample maintainers can opt into.",
+      "priority": "high"
+    },
+    {
+      "topic": "Which Azure resource to deploy (mongoClusters)",
+      "what_was_missing": "Clear, discoverable guidance that the correct resource type for provisioning Azure DocumentDB clusters is Microsoft.DocumentDB/mongoClusters (API 2025-09-01) and that az cosmosdb create is not the correct shortcut for this resource.",
+      "where_searched": "documentdb-azure-deployment skill, Microsoft Learn; readiness_findings (Q01–Q03) show confusion between databaseAccounts and mongoClusters.",
+      "effect_on_this_build": "If the sample included IaC, an incorrect resource type would produce broken templates and confuse users. The builder avoided provisioning due to policy, but consumers may copy incorrect patterns if not corrected.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Deploying the cluster' doc explaining the correct resource types (Microsoft.DocumentDB/mongoClusters), example Bicep snippet, and an az deployment/az resource create example. Also note the difference to older databaseAccounts examples.",
+      "priority": "high"
+    },
+    {
+      "topic": "Connection-string example and retryWrites guidance",
+      "what_was_missing": "A canonical example connection string shape for Azure DocumentDB (mongodb+srv host form) and explicit note in .env.example/README explaining retryWrites=false and why it should be set.",
+      "where_searched": "learn.microsoft.com quickstarts and documentdb-azure-deployment skill; readiness_findings Q04 shows prior confusion.",
+      "effect_on_this_build": "The sample .env.example already includes a legacy-style host:port example on 10260 and retryWrites=false, but readers could still be confused between legacy Cosmos host/port examples and the newer mongodb+srv form.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Update .env.example and README to show both the typical mongodb+srv example returned by the portal and the legacy port form (with a note to prefer the portal-provided string). Explain why retryWrites=false is recommended here.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Agent output schemas",
+      "what_was_missing": "There was no canonical, public schema for the three agents' outputs (policyAgent, refundAgent, commsAgent) that an agent or another builder could rely on.",
+      "where_searched": "no installed skill provided exact agent output schema; readiness_findings noted this as a gap.",
+      "effect_on_this_build": "The builder defined ad-hoc shapes (policyResult.eligible + reasons, refundResult.amount + breakdown, commsResult.subject/body). Because the starter prompt did not require specific JSON schemas, these were chosen by the builder — different builders might choose incompatible shapes.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Ship a short 'Returns orchestration' agent-kit rule that defines canonical JSON schemas for the three agents (policy: { eligible:boolean, eligibilityReason?:string, reasons?:string[] }, refund: { amount:number, breakdown?:[{reason:string,amount:number}] }, comms: { customerId?:string, eligibility:boolean, refundAmount?:number, eligibilityReason?:string, messageBody:string, notificationChannel?:string }). Include example prompts and expected JSON output in skill docs.",
+      "priority": "high"
+    },
+    {
+      "topic": "Seed script safety and database target",
+      "what_was_missing": "Seed script does not explicitly verify it's operating on the sample_retail_18 database or require confirmation before destructive actions.",
+      "where_searched": "app/scripts/seed.js and README; documentdb tutorial guidance (P23).",
+      "effect_on_this_build": "If a user runs the seed against the wrong connection string, it may modify unintended databases. The builder relied on the supplied run environment and did not add a safety check.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short note and a code snippet to seed.js that checks the connected DB name against process.env.SAMPLE_DB_NAME (default 'sample_retail_18') and requires a --confirm flag to proceed. Include this safety pattern in seeding quickstarts.",
+      "priority": "high"
+    },
+    {
+      "topic": "Tests that run offline (mocked DocumentDB)",
+      "what_was_missing": "No unit tests that run without a live cluster; the README documents demo and live verification but not how to run automated tests offline.",
+      "where_searched": "repo, README, scripts; no test files found.",
+      "effect_on_this_build": "CI and contributors cannot validate logic (especially orchestration branching and error handling) without a live cluster, which reduces confidence and slows review.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a test directory with a couple Jest tests that stub Mongoose models (or use an in-memory mock) to exercise approved and rejected return paths. Document how to run tests locally/CI without DOCUMENTDB_URI.",
+      "priority": "high"
+    },
+    {
+      "topic": "Retry/backoff & circuit-breaker guidance for agent calls",
+      "what_was_missing": "Guidance or a small helper that shows how to wrap LLM calls with timeouts, retries with exponential backoff and a circuit-breaker, and how to fall back to mock mode on repeated failures.",
+      "where_searched": "documentdb-connection & documentdb-monitoring skills; no small code sample for wrapping LLM calls.",
+      "effect_on_this_build": "callOpenAI currently has no timeout or circuit-breaker; a long-running LLM call could block orchestration or cause flaky demos.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Provide a small helper module (e.g., tools/llm-wrapper.js) implementing timeout + retry + circuit-breaker with a documented interface and an example for the sample.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Decision provenance for model-default choices",
+      "what_was_missing": "Some decisions (e.g., selecting LangChain by default) have reason_source 'model_default'. These should reference a public guidance page or note so future builders know the rationale and risks.",
+      "where_searched": "decisions.jsonl and readiness_findings.",
+      "effect_on_this_build": "Model-default choices were acceptable, but the team should prefer explicit, discoverable guidance for gallery samples so agent-built samples are consistent.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'default patterns' page in the agent kit that lists preferred defaults (LLM provider fallback policy, mocking strategy, example models) and links to the skills that justify them.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Projection / query best-practice example",
+      "what_was_missing": "An explicit sample snippet for using projections (select only fields needed by agents) in an orchestration scenario.",
+      "where_searched": "documentdb-indexing skill and docs; no small snippet tailored to switching from full document to projected document for agents.",
+      "effect_on_this_build": "The builder fetched full order documents; agents received full payloads rather than minimal projected data.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a one-paragraph note and code snippet to the driver skill or sample README showing Order.findOne({orderId}, {items:1,total:1}) usage and explain security/perf reasons.",
+      "priority": "medium"
+    }
+  ]
+}
