@@ -8,15 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the pipeline in Node.js using LangChain as an orchestration pipeline: code must instantiate an orchestrator agent that coordinates three agents named trigger agent, copy agent, and send agent.
-- The trigger agent must use DocumentDB change streams (the DocumentDB change streams feature) against Azure DocumentDB via the MongoDB Node.js driver to subscribe to changes on the relevant collections.
-- The trigger agent must detect and emit specifically the three qualifying customer events (cart abandon, contract renewal, birthday) with explicit, checkable detection logic for each event type (e.g., cart inactivity or abandoned cart conditions; renewal date within X days; customer DOB matching today's date).
-- When a trigger event is detected the code must pass the full event document to the copy agent through the LangChain orchestration flow (i.e., the orchestrator invokes the copy agent with the event payload).
-- The copy agent must retrieve additional context from Azure DocumentDB (customer profile, order/cart contents, contract details, recent interactions) and use context engineering: assemble a templated prompt that injects those context fields and call an LLM through LangChain in Node.js to generate the personalised outreach copy.
-- The send agent must read the customer's preferred channel from the customer profile stored in Azure DocumentDB and invoke the appropriate channel adapter implementation (email, SMS, push, etc.) in Node.js; the code must include channel-specific send functions or adapters and clear selection logic.
-- All outcomes must be logged back to Azure DocumentDB: the pipeline must write a log document to a dedicated collection (for example "outreach_logs") containing the original event, generated copy, selected channel, send result (success/failure and any provider message IDs or errors), and timestamps using the MongoDB Node.js driver.
-- The orchestration must be end-to-end observable: running the sample must demonstrate that a simulated or real change-stream event flows trigger -> copy -> send -> log, and the code must include a runnable entrypoint or script that starts the orchestrator and demonstrates one end-to-end event.
-- Provide example configuration/fixtures in the sample that allow a reviewer to exercise the three event types (sample change-stream event documents or a script that writes test events to Azure DocumentDB), so the reviewer can verify detection, personalized copy generation, channel dispatch, and logging.
+- A trigger agent, written in Node.js, opens a change stream against Azure DocumentDB (e.g. `watch()` through the MongoDB Node.js driver) and keeps listening so customer events are handled as they arrive.
+- The trigger agent passes on only qualifying customer events, recognising the three kinds the prompt names: cart abandon, contract renewal and birthday.
+- An orchestrator built with LangChain in Node.js coordinates the three agents, handing each qualifying event from the trigger agent to the copy agent and the copy agent's output to the send agent, in that order.
+- A copy agent generates personalised outreach copy for the event with a LangChain LLM call.
+- The copy agent practises context engineering: its prompt is assembled from the triggering event's details and the customer's data (e.g. profile fields read from Azure DocumentDB), so the copy is personalised to the customer and the event type.
+- A send agent determines the customer's preferred channel from their data and dispatches the generated copy through that channel (e.g. email, SMS or push).
+- The outcome of each outreach (e.g. the event, the channel used and whether the dispatch succeeded) is written to an Azure DocumentDB collection.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

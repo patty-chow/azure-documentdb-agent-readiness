@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the application in Node.js and build the conversational agent using the LangChain agent framework.
-- Expose LangChain Tools that query Azure DocumentDB in real time for provider availability slots (i.e., a tool that queries the slots collection filtering by providerId, time range, and status 'available'); the tools must perform fresh DB reads on each invocation (no stale cached slot lists in memory).
-- Provide a booking tool that creates an appointment document in Azure DocumentDB (appointments collection) with explicit fields patientId, providerId, slotId, start, end, status ('booked'), and created/updated timestamps.
-- Ensure booking is atomic: the booking tool must mark the chosen slot document’s status to 'booked' and create the appointment document inside a single MongoDB multi-document transaction (startSession/startTransaction + commitTransaction) against Azure DocumentDB so both changes succeed or both are rolled back.
-- Implement rescheduling that updates the appointment and swaps slot statuses atomically: in the reschedule flow update the old slot to 'available', update or create the appointment for the new slot, and mark the new slot 'booked' inside a single transaction against Azure DocumentDB.
-- Implement cancellation that sets appointment.status to 'cancelled' and sets the associated slot.status to 'available' atomically in one transaction against Azure DocumentDB.
-- Use LangChain agent memory to persist conversational context (at minimum: last appointment id, patient identity, selected provider, and last referenced slot/time) and have the agent consult that memory so user utterances like "move it an hour later" resolve to the correct appointment without the user restating details.
-- Wire the LangChain agent to call the DB tools via the LangChain tool invocation mechanism (i.e., agent decides to call the availability/booking/reschedule/cancel tools rather than performing DB calls inline in agent code).
-- Detect and handle concurrent booking conflicts: booking/rescheduling code must verify transaction/update results (e.g., matched/modified counts or transaction commit status) and return a clear user-facing message when a slot became unavailable, offering next available slot alternatives queried from Azure DocumentDB.
-- Include an end-to-end example or test script that demonstrates: a user books a slot, then says "move it an hour later", and the agent uses agent memory + the LangChain tools to perform the reschedule with the required atomic slot/appointment updates in Azure DocumentDB so a reviewer can reproduce and verify the full flow.
+- A single Node.js agent built with LangChain lets a patient book and reschedule appointments through conversation, choosing which of its tools to call for each request.
+- The agent has agent memory that carries the conversation context across turns, so a follow-up such as "move it an hour later" is resolved against the appointment discussed earlier without the patient restating the provider, date or time.
+- A LangChain tool queries provider availability slots from Azure DocumentDB each time the agent needs availability, reading the current slot documents through a MongoDB-compatible Node.js driver (e.g. the `mongodb` package).
+- Provider availability is modelled as slot documents in Azure DocumentDB, each carrying a status that the booking and rescheduling tools change (e.g. available to booked).
+- A tool books an appointment by creating an appointment document in Azure DocumentDB for the chosen slot and updating that slot's status.
+- A tool reschedules an existing appointment by updating slot status atomically (e.g. a single conditional update that claims the new slot only while it is still available, or a session `withTransaction` when the old slot, the new slot and the appointment document change together) and pointing the appointment document at the new slot.
+- When a patient gives a relative time such as "an hour later", the agent computes the target time from the remembered appointment time and uses the availability tool to find a matching slot in Azure DocumentDB before rescheduling.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

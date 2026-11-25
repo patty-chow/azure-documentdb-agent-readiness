@@ -8,16 +8,11 @@
 
 ## What the starter prompt asks for
 
-- Implement the sample in Python and include a requirements file listing packages used (must include pymongo and langchain).
-- Build a single LangChain agent (one agent instance) that is constructed using LangChain’s agent framework and exposed as the app’s main executable agent.
-- Implement a tool named/implemented as the DocumentDB aggregation pipeline tool that connects to Azure DocumentDB using the pymongo MongoDB driver and programmatically executes an aggregation pipeline.
-- The DocumentDB aggregation pipeline must group sales by product category and by season, compute a sales_velocity metric (e.g., sales per day) for each category/season, and calculate percent_change in velocity between seasons; the pipeline must return structured JSON/dict records containing category, season, sales_count, sales_velocity, and percent_change.
-- Implement a web search tool that performs live web searches (calls an external search API at runtime), returns structured trend signals per category (including a relevance/confidence score), and includes source URLs and timestamps for each result.
-- Expose both tools as LangChain Tool objects (or equivalent LangChain tool wrappers) and register them with the LangChain agent so the agent can invoke each tool during reasoning.
-- Use context engineering by providing an explicit LangChain prompt template that injects the DocumentDB aggregation results and the web search signals into the prompt and gives explicit instructions (e.g., weighting rules or heuristics) for how to combine those signals to compute a final score.
-- The agent must produce a ranked list of rising categories and a ranked list of declining categories, sorted by the combined score, and each list item must include the combined score plus supporting evidence: the DB metrics (sales_velocity/percent_change) and at least one web source URL and its timestamp.
-- Include code that programmatically computes or validates the combined score (either via the prompt’s explicit rules or by a clear combining function invoked by the agent) so reviewers can verify numeric merging of DB and web signals.
-- Provide an end-to-end example run (script or notebook cell) that connects to Azure DocumentDB (accepting connection URI/credentials and database/collection names), runs the DocumentDB aggregation pipeline, performs live web searches, runs the LangChain agent, and prints or returns the final ranked rising/declining category lists.
+- A Python agent built with LangChain, where one agent owns the reasoning loop and is given exactly two tools it can call: an aggregation tool and a web search tool.
+- The aggregation tool runs an aggregation pipeline against Azure DocumentDB through a MongoDB driver (e.g. PyMongo's `aggregate()`), and the pipeline's stages themselves compute sales velocity per season for each product category and compare it across seasons (e.g. a `$group` by season and category followed by a stage that derives the season-to-season change).
+- The web search tool calls a live web search service at run time and returns current trend signals for the agent to use.
+- A context-engineering step shapes the two tool outputs into the prompt sent to the model, combining the sales-velocity comparison and the web trend signals into one prompt context (e.g. labelled sections of a prompt template) so the model reasons over both signals together.
+- The agent's final answer is a ranked list of product categories that identifies which are rising and which are declining (e.g. ranked by the magnitude of the season-to-season change in sales velocity).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

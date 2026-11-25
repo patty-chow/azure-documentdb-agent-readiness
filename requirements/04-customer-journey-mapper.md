@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the agent in Node.js and use LlamaIndex as the agent framework (code entrypoint and orchestration must be Node.js and LlamaIndex).
-- Add a "DocumentDB aggregation tool" module that executes a MongoDB aggregation pipeline against Azure DocumentDB (MongoDB-compatible API) and is callable by the LlamaIndex agent.
-- The aggregation pipeline must accept a customer identifier (customer_id) and optional time-range parameters, and use $match to filter event documents for that customer and range.
-- The aggregation pipeline must sort events by their timestamp (ascending) and group events by channel, returning a structure that preserves chronological order across channels (e.g., using $sort plus $group/$push or equivalent pipeline stages).
-- The aggregation result returned by the DocumentDB aggregation tool must include, for each touchpoint event, at minimum: timestamp, channel, event_type, and a metadata/object field for additional attributes.
-- Use context engineering to format the reconstructed journey as a structured timeline (a machine-readable structure such as JSON or a clearly delimited nested list) and embed that structured timeline in the prompt/context sent to LlamaIndex.
-- The LlamaIndex agent must consume the structured timeline from the prompt and generate a plain-language journey summary that explicitly highlights key inflection points.
-- The generated plain-language summary must identify and highlight demonstrable inflection points such as channel switches, conversion events (e.g., purchase or signup), and significant inactivity or sudden changes in engagement.
-- Produce a visual timeline view (for example an HTML timeline endpoint or file) that renders the reconstructed journey grouped by channel and annotated with timestamps and event labels, derived directly from the aggregation results.
-- Provide a runnable example or script that performs an end-to-end run: query a sample customer_id, call the DocumentDB aggregation tool, feed the structured timeline to the LlamaIndex agent, and output both the visual timeline and the plain-language summary; the example must assert that the timeline is chronologically ordered and that the summary contains at least one highlighted inflection point.
+- Build the application in Node.js as a single LlamaIndex agent that owns the whole flow: it invokes the aggregation tool, formats the result into its prompt and produces the final summary.
+- The agent takes the customer whose journey is to be mapped as its input (e.g. a customer identifier) and passes it to the aggregation tool.
+- Register a DocumentDB aggregation tool with the LlamaIndex agent that runs an aggregation pipeline (e.g. with the `mongodb` Node.js driver) over the touchpoint event documents stored in Azure DocumentDB for that customer.
+- The pipeline itself reconstructs the journey: it sorts the customer's events by timestamp and groups them by channel (e.g. a `$match` on the customer, a `$sort` on the timestamp and a `$group` by channel).
+- Apply context engineering to the tool's output: format the reconstructed journey as a structured timeline (e.g. events in chronological order, each labelled with its channel and timestamp) and place that formatted timeline in the prompt sent to the model.
+- The agent generates a plain-language summary of the customer's journey from the timeline in its prompt.
+- The summary highlights key inflection points in the journey (e.g. a first purchase, a long gap in activity or a switch between channels), marked so they stand out from the rest of the narrative.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

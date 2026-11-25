@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the app in Node.js and build the conversational logic as a LangChain agent (exact phrasing "Node.js LangChain agent") that drives tool invocation and responses.
-- Define persistent document models using Beanie ODM (exact phrasing "Beanie ODM") for at least two collections: prescriptions and refill requests, with prescription fields including medicationName, patientId, daysSupplyRemaining, refillCount, lastFilledDate, and status, and refill request fields including patientId, medicationName, requestedDate, createdBy, eligible (boolean) and status.
-- Connect to Azure DocumentDB (the MongoDB-compatible service) and implement a LangChain tool that queries Azure DocumentDB to return a patient's active prescriptions (filter by patientId and status='active') and returns full prescription records to the agent.
-- Implement a LangChain tool that checks refill eligibility for a given prescription by evaluating daysSupplyRemaining and refillCount and returns a deterministic result object {eligible: boolean, reason: string, daysSupplyRemaining, refillCount}.
-- Implement a LangChain tool that creates and persists a refill request document into Azure DocumentDB using the Beanie ODM model, setting requestedDate, createdBy='agent', eligible per the eligibility tool, and initial status='pending'.
-- Ensure the LangChain agent orchestrates the flow: when asked to refill, it calls the prescription lookup tool, then the eligibility checker tool, and—only if eligible—calls the refill request creation tool; the code path must be visible and testable in the agent’s tool call sequence.
-- Implement agent memory (exact phrasing "agent memory") scoped per patient/session that stores the most recently referenced medicationName(s) and allows the agent to resolve user utterances like "refill my blood pressure medication" to a concrete prescription without the user re-specifying the drug name.
-- If the user utterance is ambiguous (multiple active prescriptions match the remembered or queried description), the agent must ask a clarifying question listing the matched medicationName values and wait for the user to choose before creating a refill request.
-- If the eligibility tool returns eligible=false, the agent must not create a refill request document and must return a clear message to the user explaining the reason (e.g., no refills remaining or daysSupplyRemaining too high); this behavior must be implemented in the agent flow.
-- On successful creation of a refill request, the agent must return a confirmation message to the user including the created refill request ID (DocumentDB document _id), medicationName, requestedDate, and current status; the created document must be queryable directly from Azure DocumentDB to verify persistence.
+- A single Node.js LangChain agent, built with Beanie ODM for its data access, handles the patient's refill request conversationally and decides which of its tools to call as the conversation proceeds.
+- A tool looks up the patient's active prescriptions in Azure DocumentDB through Beanie ODM (e.g. by the patient's identifier and whether the prescription is active) and returns them to the agent.
+- A tool checks a prescription's refill eligibility from its days supply remaining and its refill count and returns the result to the agent.
+- A tool creates a refill request document in Azure DocumentDB through Beanie ODM for the prescription being refilled.
+- Agent memory keeps context across turns so that a follow-up such as "refill my blood pressure medication" resolves to the patient's prescription without the patient naming the drug again.
+- The agent completes a refill by using these tools together: it looks up the prescription, checks its eligibility, and creates the refill request document when the prescription is eligible.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

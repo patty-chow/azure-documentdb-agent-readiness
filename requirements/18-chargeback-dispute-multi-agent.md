@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the system in Node.js using LangChain to build a Node.js LangChain multi-agent system with four distinct agents: an orchestrator, an evidence-gathering agent, a policy-reasoning agent, and a decision agent.
-- Expose an HTTP endpoint (for example via Express) that the orchestrator uses to receive a chargeback claim (includes claim id) and that triggers the agent workflow end-to-end.
-- The evidence-gathering agent must query Azure DocumentDB to fetch the related transaction documents and communication documents for the incoming claim id and return them as structured JSON; the code must demonstrate actual reads from Azure DocumentDB.
-- When fetching evidence, the implementation must record and include the Azure DocumentDB collection names and document _id values in the evidence payload that is passed to downstream agents.
-- The policy-reasoning agent must load dispute rules (from a JSON file or an Azure DocumentDB rules collection) and produce a human-readable rationale that maps which rules fired and why given the evidence; the agent’s output must include the rule ids and the specific evidence fields that triggered each rule.
-- The decision agent must write an accept or reject outcome back to Azure DocumentDB by updating the original claim document or inserting a decision document; the written record must contain at minimum: claim id, decision (“accept” or “reject”), UTC timestamp, decisioning agent identifier, the rationale text, and references to the evidence document IDs.
-- The orchestrator must perform explicit, sequential handoffs: invoke the evidence-gathering agent, wait for its structured response, pass that response to the policy-reasoning agent, wait for reasoning output, then pass the reasoning to the decision agent; each handoff must be implemented in code and observable in logs.
-- All inter-agent messages and handoff payloads must be represented and logged as structured JSON so a reviewer can trace inputs and outputs between orchestrator → evidence → policy → decision.
-- Provide a script or instructions (and sample JSON) to seed Azure DocumentDB with example transaction and communication documents plus a sample claim so the reviewer can exercise the full workflow against Azure DocumentDB.
-- Include automated tests (unit or integration) that submit a sample chargeback claim to the orchestrator endpoint and assert that Azure DocumentDB contains the expected final decision document with the correct accept/reject value, timestamp, rationale, and evidence references.
+- Build the system in Node.js with LangChain as a multi-agent system with four distinct roles: an orchestrator, an evidence-gathering agent, a policy-reasoning agent and a decision agent.
+- The orchestrator receives a chargeback claim as its input and drives the flow in order: it delegates to the evidence-gathering agent first, hands that agent's output to the policy-reasoning agent, then hands the policy-reasoning output to the decision agent.
+- The evidence-gathering agent fetches the transaction documents and the communication documents related to the claim from Azure DocumentDB using a MongoDB-compatible Node.js driver (e.g. `mongodb`) and returns them as the evidence.
+- The policy-reasoning agent receives the gathered evidence and interprets the dispute rules against it, producing a reasoning output that is passed on to the decision agent.
+- The decision agent reaches an accept or reject outcome from the policy-reasoning output.
+- The decision agent writes the accept/reject outcome back to Azure DocumentDB, associated with the original claim.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

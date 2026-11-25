@@ -8,15 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the sample as a Node.js application that constructs and runs a LangChain agent to perform the categorization workflow.
-- Connect to Azure DocumentDB and read only uncategorised transaction documents (e.g., where "category" is missing, null, or empty) before sending them to the agent.
-- When invoking the LLM from the LangChain agent, include the transaction merchant name and amount in the prompt for each transaction and use explicit prompt engineering (for example: fixed taxonomy, few-shot examples, and an instruction to return a single category label) to instruct the model to choose one category from a fixed, in-code taxonomy.
-- Define the fixed taxonomy (a concrete list of category strings) in the application code and refuse or map any LLM responses that are not one of those taxonomy values.
-- Have the LangChain agent write the chosen category back to the same Azure DocumentDB document (update the document’s "category" field) and mark only the processed transaction as updated.
-- Use Azure DocumentDB’s aggregation capability (MongoDB aggregation pipeline) to compute monthly spend totals grouped by category (e.g., group by year-month derived from the transaction date and by category, summing the amount field).
-- Expose an HTTP aggregation endpoint in the Node.js app (GET /monthly-spend or similar) that runs the DocumentDB aggregation and returns JSON showing per-month, per-category spend breakdown.
-- Ensure the aggregation output uses calendar months (year-month) as the time key and includes category, total amount, and month in the JSON response so a reviewer can verify the grouping and sums.
-- Ensure the agent’s categorization step only relies on merchant name and amount (and, if present, date) as input features and the code demonstrates those fields being passed into the LangChain prompt.
+- A Node.js LangChain agent reads transactions that have not yet been categorised from Azure DocumentDB through a MongoDB-compatible Node.js driver (e.g. the `mongodb` package), selecting documents that carry no category.
+- The agent reaches Azure DocumentDB through LangChain tools (e.g. one tool that fetches uncategorised transactions and one that writes a category back), and the agent decides when to invoke them.
+- The prompt is engineered to instruct the LLM to assign exactly one category from a fixed taxonomy: the taxonomy is defined in the application, listed in the prompt, and the LLM is told to choose only from it.
+- The prompt includes each transaction's details (e.g. merchant name and amount) so the LLM reasons over them when choosing the category.
+- The category the LLM assigns is written back to the same transaction document in Azure DocumentDB (e.g. an update that sets a category field on that document).
+- An HTTP endpoint returns the monthly spend breakdown by category.
+- That breakdown is computed by an aggregation pipeline run in Azure DocumentDB that groups transactions by month and by category and sums their amounts (e.g. `$group` on a month derived from the transaction date plus the category, with `$sum` of the amount).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

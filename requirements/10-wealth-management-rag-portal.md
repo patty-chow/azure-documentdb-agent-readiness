@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the app in Python and include a runnable entrypoint that starts the LlamaIndex RAG agent for interactive queries.
-- Use LlamaIndex as the agent framework to build a retrieval-augmented generation (RAG) agent and show the code that constructs the LlamaIndex index and query pipeline.
-- Index a corpus of wealth management research documents into a DocumentDB vector store: ingestion code must create embeddings and persist the index/vectors into Azure DocumentDB (the "DocumentDB vector store") with per-document metadata (e.g., title, date, tags).
-- Provide code that performs vector search against the Azure DocumentDB vector store and returns the top-K retrieved research documents for a free-text relationship manager query (top_k configurable in code).
-- Implement "agent memory" in the LlamaIndex agent: persist conversation history / memory and demonstrate that the agent reuses prior interaction context when answering follow-up questions.
-- Implement a tool used by the agent that, given a client identifier, fetches that client's portfolio document from Azure DocumentDB and returns structured portfolio fields (positions, allocations, risk profile) to the agent.
-- Combine portfolio context with retrieved research via explicit context engineering: the agent must construct a combined context (portfolio fields + retrieved research snippets) before generation and use that combined context to produce answers about client positioning.
-- The agent’s response routine must include explicit citations or references showing which retrieved research documents and which portfolio fields were used to form the answer (e.g., document IDs or metadata included in the response).
-- Persist the LlamaIndex index and agent memory state back to Azure DocumentDB so that both the vector index and memory survive agent restarts and can be reloaded from Azure DocumentDB.
-- Provide an example end-to-end scenario (test or script) that submits a relationship manager question plus a client id, triggers fetching the portfolio tool, performs vector retrieval from the Azure DocumentDB vector store, applies the context-engineered combine step, and returns a final answer about the client's positioning.
+- A Python application built with LlamaIndex that runs a single RAG agent answering relationship managers' questions about a client's positioning.
+- Wealth management research documents are indexed into an Azure DocumentDB collection used as the LlamaIndex vector store, with each stored document carrying its embedding vector on the document itself.
+- A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field, with dimensions matching the embedding model in use.
+- Retrieval of research for a question runs a $search / cosmosSearch query against Azure DocumentDB so the similarity computation (COS, L2 or IP) happens in the database.
+- The agent has a tool that fetches the client's portfolio document from Azure DocumentDB (e.g. looked up by a client identifier) and returns it to the agent as context.
+- The agent assembles its model context by combining the fetched portfolio context with the retrieved research passages before generating the answer.
+- The agent keeps agent memory of the conversation so that follow-up questions are answered with the earlier turns available to it.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

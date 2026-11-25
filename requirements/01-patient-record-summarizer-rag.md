@@ -8,17 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement a Single-agent LlamaIndex RAG agent in Python that performs retrieval-augmented generation for clinical questions.
-- Chunk lengthy patient records into configurable-size text chunks (with configurable overlap) and index each chunk as a separate vector document in Azure DocumentDB.
-- Store vector embeddings for each chunk in an Azure DocumentDB vector index (i.e., create/configure and write to a DocumentDB vector index so vectors are queryable).
-- Model and persist metadata on each indexed chunk that links it to the original record: include a patientId field, original document id, chunk id (or section id), and character/line offsets or section boundaries.
-- During retrieval, query Azure DocumentDB by vector similarity to return the most relevant chunks (top-k) and apply a filter by patientId so only chunks belonging to the requested patient are considered (enforces access control).
-- Construct a context-engineered prompt template that the agent uses for clinical summaries: it must combine retrieved sections, available clinical metadata (when present), the clinician’s question, and explicit instructions to produce a concise clinical summary suitable for clinicians.
-- Ensure the LlamaIndex generation call receives the structured prompt and retrieved chunks, and that the agent returns a grounded answer that cites source chunks.
-- Include explicit, machine-checkable citations in the agent response mapping statements to source chunks (e.g., document id + chunk id or offsets) so each claim can be traced back to the original Azure DocumentDB document.
-- Provide a callable function or endpoint (e.g., answer_clinical_question(patient_id, question, top_k)) that wires: patientId-based access control, vector retrieval from Azure DocumentDB, prompt construction (context engineering), LlamaIndex generation, and returning the grounded summary plus references.
-- Implement HIPAA-aware handling in code: avoid emitting full patient PHI to console or persistent logs during indexing/querying (e.g., redact or omit identifiable fields in debug logs) and show this behavior in the codebase.
-- Include a runnable example or automated test that indexes a sample patient record, then issues a clinical question for that patient and verifies the returned summary uses only that patient’s chunks and includes document citations.
+- A Python RAG agent built with LlamaIndex answers a clinical question about a patient: one agent retrieves relevant record sections from Azure DocumentDB and produces the summary from them.
+- Patient records are split into chunks and each chunk is stored as a document in Azure DocumentDB with its embedding on the document, written through LlamaIndex's vector store integration or a MongoDB-compatible Python driver (e.g. pymongo).
+- Every stored patient-record document carries a `patientId` field.
+- A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field, with `dimensions` matching the embedding model the app uses.
+- Retrieval embeds the clinical question and runs the similarity search in Azure DocumentDB with `$search` / `cosmosSearch` (similarity COS, L2 or IP), returning the most relevant chunks.
+- Retrieval is limited to the requested patient's records by `patientId`, so sections of other patients are never retrieved (e.g. a `filter` on `patientId` inside `cosmosSearch`).
+- The summarization prompt is assembled deliberately (context engineering): instructions for a clinical summary, the retrieved sections as context and the clinical question are placed in a structured layout.
+- The answer is grounded in the retrieved sections and returned together with references to the source documents it drew on.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

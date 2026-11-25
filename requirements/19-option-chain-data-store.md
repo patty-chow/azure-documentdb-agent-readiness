@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the service in Python.
-- Expose an HTTP ingestion endpoint (for example POST /ingest) that accepts options chain snapshots as JSON and triggers storage of the snapshot documents.
-- In the ingestion handler, perform bulk writes to Azure DocumentDB using ordered=False bulk writes (the bulk write call must include ordered=False).
-- Chunk very large snapshots into bounded batches and send multiple unordered bulk write calls so the service can handle high-volume document ingestion without exceeding single-call limits.
-- Create compound indexes on (underlying, expiry, strike) on the Azure DocumentDB collection at startup or via a migration script (index key order must be underlying, then expiry, then strike).
-- Persist each option document with explicit underlying, expiry, and strike fields; expiry must be stored in a queryable date format (ISO 8601 string or native date type).
-- Expose an HTTP query endpoint (for example GET /chains) that accepts underlying and expiry parameters and returns the full options chain as a JSON array.
-- Implement the query to filter by equality on underlying and expiry and to sort results by strike (so the query uses the (underlying, expiry, strike) compound index to avoid full collection scans).
-- Do not abort an entire ingestion batch on single-document failures: capture per-document errors returned from unordered bulk writes, log them, and return a summary indicating partial successes/failures.
-- All read and write operations must target Azure DocumentDB (the managed MongoDB-compatible service) and include the connection/configuration code in the repository that points to an Azure DocumentDB collection/cluster.
+- The ingestion service is written in Python and accepts options chain snapshots (e.g. through an HTTP endpoint that receives a snapshot payload), storing each snapshot's option records as documents in an Azure DocumentDB collection.
+- Each received snapshot is persisted with a bulk write through the Python MongoDB driver (e.g. pymongo's `bulk_write` given a list of write operations).
+- The bulk write is issued with `ordered=False`.
+- The code creates a compound index on the option documents collection with keys in the order underlying, expiry, strike (e.g. `create_index([("underlying", 1), ("expiry", 1), ("strike", 1)])`).
+- The option documents carry the underlying, expiry and strike fields that the compound index is built on.
+- The service exposes an endpoint that takes an underlying and an expiry date as inputs (e.g. path or query parameters).
+- That endpoint queries Azure DocumentDB with equality filters on underlying and expiry, the leading prefix of the compound index, and returns the full set of matching option documents for that chain.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

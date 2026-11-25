@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the chatbot in Python and use LangChain for the RAG architecture (repository contains Python code that imports and uses LangChain constructs).
-- Store the clinical triage guideline texts and their metadata in Azure DocumentDB and index them using a DocumentDB vector index (documents persisted to Azure DocumentDB include the original text, metadata, and vector field used by the vector index).
-- Build the embedding-and-indexing pipeline that generates embeddings for each guideline section and writes those embeddings into the DocumentDB vector index alongside section IDs and metadata (code shows embeddings created and saved with each DocumentDB document).
-- Implement a LangChain retriever that queries the DocumentDB vector index to return the most relevant guideline sections for a given symptom description (retriever component configured to run nearest-neighbor searches against the DocumentDB vector index).
-- Compose a retrieval-augmented generation chain in LangChain that supplies retrieved guideline sections as context to the LLM to produce triage advice (code uses LangChain RetrievalQA or a custom chain that passes retrieved docs to the LLM).
-- Use prompt engineering in the chain’s prompt templates to enforce safety guardrails by explicitly instructing the model to always recommend professional consultation and to never diagnose (prompt templates contain explicit clauses: “always recommend professional consultation” and “never diagnose”).
-- Ensure the chatbot returns structured triage advice on each request, including at minimum an urgency level field, recommended next steps, and references to source guideline sections (responses are emitted as JSON or a structured dict with fields such as urgency_level, recommended_actions, and sources).
-- Include provenance in responses by listing DocumentDB document identifiers, snippets, or links to the specific guideline sections retrieved (responses include guideline IDs or DocumentDB references and optionally retrieval scores).
-- Expose a single-agent runtime that accepts a patient symptom description, performs retrieval from the DocumentDB vector index, and returns the structured triage advice in one end-to-end flow (there is one agent/process that handles retrieval + generation for a request).
-- Verify outputs conform to the safety guardrails at runtime: responses must contain a professional-consultation recommendation and must not state definitive diagnoses; if a generated response fails this check the system returns a guarded fallback recommending professional consultation (tests or runtime assertions demonstrate that diagnostic statements are removed/sanitized and the consultation recommendation appears).
+- Implement the chatbot in Python with LangChain as a RAG pipeline that accepts a free-text symptom description and returns triage advice.
+- Store the clinical triage guideline sections as documents in Azure DocumentDB with an embedding on each document (written with a Python MongoDB driver, e.g. PyMongo), and create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field whose dimensions match the embedding model's output.
+- For each symptom description, embed the description with the same embedding model and retrieve the most relevant guideline sections with a $search / cosmosSearch query (similarity COS, L2 or IP) so the similarity runs in Azure DocumentDB.
+- Pass the retrieved guideline sections into the LangChain prompt as the context the generated answer is grounded in.
+- Enforce the safety guardrails through prompt engineering in the LangChain prompt template: every response recommends professional consultation and never gives a diagnosis.
+- Return the triage advice as a structured output (e.g. a Pydantic model or JSON object) that includes an urgency level alongside the advice.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

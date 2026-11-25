@@ -8,17 +8,16 @@
 
 ## What the starter prompt asks for
 
-- Project implements a Node.js LlamaIndex agent (Node.js codebase with LlamaIndex usage evident in package.json and source files).
-- Agent code reads co-purchase order history from Azure DocumentDB (contains a query module that fetches order/transaction documents from Azure DocumentDB and uses them as the data source for embeddings and co-purchase analysis).
-- The repository includes an ingest script that inserts 20,000 product purchase transactions into Azure DocumentDB and the script validates that 20,000 transactions were written (e.g., insertion counter or post-insert count check).
-- Code generates product embeddings from the co-purchase / product data (there is a dedicated embedding step/function that computes and returns embeddings for each product).
-- Generated embeddings are persisted into a DiskANN index (the project builds/writes a DiskANN index and stores the index files; source shows DiskANN index creation or update from the embeddings).
-- The agent performs LlamaIndex vector search against the DiskANN index to find similar or co-purchased items (the search path uses LlamaIndex vector search APIs and queries DiskANN as the vector index backend).
-- Agent uses agent memory to personalise recommendations per session (there is a session-scoped agent memory store and recommendation logic uses that memory to alter or re-rank results for the same session).
-- The agent accepts a product ID input and returns the top 5 recommended items with human-readable reasoning for each recommendation (an API endpoint or UI action that, given a product ID, returns exactly 5 recommended product IDs/records plus explanatory text for why each was recommended).
-- Web UI styled as an artistic online retailer is included and exposes product browsing and a recommendation widget where users can input a product ID and see the top 5 recommendations with reasoning (UI assets and CSS/HTML show retail-like layout and the recommendation output).
-- Configuration for the Azure DocumentDB connection string is read from a config file (explicit config file present and used by the app); if the connection string is missing or invalid the app displays a clear, user-facing error message explaining the problem.
-- Every method/function in the codebase is preceded by a detailed comment describing its purpose, inputs, outputs, and high-level approach (check source files to confirm a comment block exists immediately before each method/function).
+- The application is written in Node.js and its single agent is built with LlamaIndex.
+- The agent reads co-purchase order history from Azure DocumentDB through a MongoDB driver (e.g. the `mongodb` Node.js package) whose Azure DocumentDB connection string is read from a config file, displaying a clear error when that connection string is missing or invalid.
+- The agent generates product embeddings from the co-purchase patterns it read and persists each embedding as a field on the corresponding product document in Azure DocumentDB.
+- A `cosmosSearch` vector index of kind `vector-diskann` is created in code on the embedding field, with `dimensions` matching the output size of the embedding model in use and a `similarity` (COS, L2 or IP) that the queries also use.
+- Similar products are retrieved with an aggregation that uses the `$search` stage and `cosmosSearch` operator against that index, with the similarity ranking performed by Azure DocumentDB.
+- The agent accepts a product ID and returns the top 5 recommended items, each accompanied by reasoning for why it was recommended.
+- The agent keeps memory scoped to a shopper session and uses it to personalise the recommendations returned on later requests within the same session.
+- A script ingests 20,000 product purchase transactions into Azure DocumentDB.
+- An artistic UI styled like an online retailer's website lets a shopper choose a product and shows the agent's recommended items with their reasoning.
+- Every method is preceded by a detailed comment explaining what it does, and the code is kept simple and readable.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

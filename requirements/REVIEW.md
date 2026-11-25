@@ -1,5 +1,12 @@
 # Review of the drafted requirements (first draft)
 
+> **Outcome.** The drafter instructions in `loop/draft_requirements.py` were extended with the critic's nine rules and all 100 files were
+> regenerated with gpt-5-mini. That removed most of the invented schemas but left many rule violations, so a second 292-agent workflow
+> rewrote the prompt section of every file to the rules (one agent per file), had an independent checker verify each, and repaired the
+> 46 that failed the first check. 94 files then passed; the six remaining single-bullet leftovers (retail-05, banking-05, banking-06,
+> banking-13, banking-17, customer-360-12) were fixed by hand. The shared gallery section is byte-identical in every file.
+> The per-file issue list below describes the first draft and is kept as the record of what was wrong.
+
 A 126-agent review of all 100 files in `requirements/`: 25 reviewers read four files each against the starter prompt and the installed Agent Kit skills; every flagged file then got an independent skeptic who tried to refute each issue; a critic looked for systematic patterns. 418 issues were upheld. Verdicts: 82 files minor edits, 18 need rework.
 
 ## Upheld issues by kind

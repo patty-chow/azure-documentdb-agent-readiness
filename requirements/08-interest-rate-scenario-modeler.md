@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement a Python LangChain agent (code must clearly instantiate and run a LangChain agent in Python).
-- Implement a DocumentDB aggregation tool and register it as a LangChain Tool that issues an aggregation pipeline query against Azure DocumentDB.
-- Ensure the grouping by rate type (explicitly "fixed" and "floating") and by maturity bucket is performed inside the DocumentDB aggregation pipeline (Mongo-style aggregation stages) returned by the DocumentDB aggregation tool, not only post-processed in Python.
-- Define explicit maturity bucket boundaries in code or config (e.g., 0-1y, 1-3y, 3-5y, 5y+) and use those exact definitions in the aggregation pipeline so each position is assigned to a bucket by the DocumentDB query.
-- Have the aggregation pipeline return numeric aggregates needed for NII calculations for each (rate type, maturity bucket) group: total balance, weighted-average interest rate, and count of positions.
-- Include a small set of sample position documents and a script or instructions to insert them into Azure DocumentDB so the demo aggregation returns both fixed and floating positions across the defined maturity buckets.
-- The LangChain agent must call the DocumentDB aggregation tool during its run and pass the tool output into the LLM context (i.e., tool outputs are consumed by the agent to drive the analysis).
-- Use prompt engineering in the code: construct and pass a prompt that explicitly instructs the LLM to reason through Net Interest Income (NII) impact for the three scenarios—parallel shift, steepening, and inversion—and to base calculations on the aggregated data supplied by the DocumentDB aggregation tool.
-- Require the agent to return a machine-readable structured scenario analysis report (JSON) containing, for each scenario and maturity bucket: scenario name, bucket name, rate type, baseline NII, shocked NII, absolute delta, percent delta, and a concise rationale sentence.
-- Provide a runnable end-to-end demo (main entry point or script) that executes the LangChain agent, runs the DocumentDB aggregation tool against Azure DocumentDB, invokes the LLM with the engineered prompt, and outputs/saves the JSON scenario analysis report.
+- Build a Python LangChain single agent that exposes an Azure DocumentDB aggregation tool as a LangChain tool the agent can call.
+- The aggregation tool runs an aggregation pipeline in Azure DocumentDB (through a MongoDB driver, e.g. PyMongo) over the stored position documents.
+- The pipeline groups the positions by maturity bucket and separates fixed-rate from floating-rate positions within each bucket (e.g. a `$group` on a derived bucket key and the rate type), and the tool returns the grouped results to the agent.
+- The agent's prompt instructs the LLM to reason through the net interest income (NII) impact of three interest rate scenarios: a parallel shift, a steepening and an inversion.
+- At runtime the agent calls the aggregation tool and passes the grouped fixed/floating positions into the LLM prompt as the input for the scenario analysis.
+- The agent returns a structured scenario analysis report that covers each of the three scenarios.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

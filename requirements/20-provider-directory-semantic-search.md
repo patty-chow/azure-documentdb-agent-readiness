@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Use Python and LlamaIndex to generate embeddings for provider profiles and for incoming queries (imports and calls to LlamaIndex must be present in the code).
-- Store provider profiles as Azure DocumentDB documents with explicit fields: specialty (string), languages (array), accepted_insurance (array), and bio (string), and include an embedded vector field named "embedding" containing the numeric vector.
-- Include code that persists provider documents into an Azure DocumentDB collection (connection and document insert/update operations targeting Azure DocumentDB must be present and exercised).
-- Create or configure a vector-ivf index on the DocumentDB collection’s embedding field (index creation or ARM/infra configuration that defines a vector-ivf index on the embedding field must be included).
-- Expose an HTTP endpoint at /find-provider that accepts a plain-language patient request (e.g., a POST or GET with a single plain-text parameter/body containing the query).
-- Use LlamaIndex at request time to convert the plain-language patient request into an embedding, then execute a vector search against Azure DocumentDB’s embedding field using the configured vector-ivf index.
-- Return results from /find-provider as a JSON array of provider matches ranked by similarity score, and include for each match: specialty, languages, accepted_insurance, bio, and the similarity score.
-- Provide a seed or import script that inserts multiple example provider documents into the Azure DocumentDB collection with embeddings generated via LlamaIndex so reviewers can reproduce queries like "Spanish-speaking cardiologist accepting Medicare."
-- Support a top-k limit on returned results (default to 5) configurable via a query parameter to /find-provider and applied to the vector search call.
-- When no vector matches are found, return an empty results array with a successful HTTP response (e.g., 200) rather than an internal error.
+- Build the service in Python with LlamaIndex, and use LlamaIndex to produce the embedding vectors stored with the provider profiles.
+- Model each provider profile as one Azure DocumentDB document that carries the provider's specialty, languages, accepted insurance and bio together with its embedding vector stored on the same document, written through the Python driver (e.g. PyMongo).
+- Create in code a cosmosSearch vector index of kind vector-ivf, vector-hnsw or vector-diskann (e.g. vector-ivf) on the embedding field, with dimensions matching the embedding model used and a similarity of COS, L2 or IP.
+- Expose an HTTP endpoint at /find-provider that accepts a plain-language patient request (e.g. 'Spanish-speaking cardiologist accepting Medicare').
+- Embed the incoming request with LlamaIndex and run the similarity search inside Azure DocumentDB with a $search / cosmosSearch query against that index using the request embedding.
+- Return the matching providers as a ranked list ordered by vector similarity.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

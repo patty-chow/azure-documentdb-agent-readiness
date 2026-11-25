@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and Mongoose to connect to Azure DocumentDB via a MongoDB-compatible connection string taken from configuration/environment variables and establish the Mongoose connection at service startup.
-- Define a Mongoose model for bed status documents that includes at minimum: bedId, wardId, status (enum: "occupied" | "available" | "cleaning"), lastUpdated (Date), and a date field used for TTL expiration (e.g., cleaningExpiresAt).
-- Define a Mongoose model/collection for a single occupancy summary document per ward (unique by wardId) that stores integer counts for occupied, available, cleaning, a configured capacity value, an alert flag (or threshold state), and a lastUpdated timestamp.
-- On startup create a TTL index (using Mongoose/collection.createIndex) on the cleaningExpiresAt field with expireAfterSeconds set from a configurable TTL timeout; create the index as a partial index that only applies to documents where status == "cleaning" so only cleaning-state documents expire.
-- When a bed status is set to "cleaning", set its cleaningExpiresAt timestamp to now + configured timeout so the TTL index will expire it automatically.
-- Open a DocumentDB change streams watch on the bed status collection using Mongoose (model.watch or underlying collection.watch) configured to provide the needed document images (e.g., fullDocument and pre-image/fullDocumentBeforeChange as supported) so the handler can determine status transitions.
-- In the change stream handler detect status transitions (inserts, updates/replaces where status changed, and deletes from TTL expiration) and compute the previous and new status for each event so you know which counters to decrement and increment.
-- Update the per-ward occupancy summary using a single atomic update (e.g., updateOne with $inc, $set and upsert: true) so the counters for occupied, available and cleaning are adjusted in one atomic operation for each transition.
-- When updating the occupancy summary, set or clear the ward-level capacity alert atomically (e.g., based on occupied >= capacity) and update lastUpdated; ensure this logic runs on every transition including deletions caused by TTL expiry.
-- Ensure deletion events originating from TTL index expiration are handled by the change stream handler and cause the occupancy summary cleaning count to decrement so the live summary stays correct.
+- A Node.js service uses Mongoose to store bed status documents in Azure DocumentDB; each bed document belongs to a ward and carries a status that is one of occupied, available or cleaning.
+- The service opens a change stream on the bed status collection and keeps consuming its events while running, so that bed status changes are picked up as they are written.
+- From the change stream events the service detects status transitions between occupied, available and cleaning (e.g. by comparing the bed's previous status with the new one) and acts only on events where the status changed.
+- A live occupancy summary document is maintained per ward (e.g. holding counts of beds per status), and it is updated from the change stream handler on every detected transition.
+- Each summary update is a single atomic update operation (e.g. one updateOne with $inc adjusting the affected counts).
+- A TTL index is created in code on a Date field of the bed status documents, with its expireAfterSeconds (or the Date value it expires on) derived from a configurable cleaning timeout.
+- Cleaning-state documents, and only those, are expired by the TTL index once the timeout has passed (e.g. the indexed Date field is set when a bed enters cleaning and unset when it leaves, or the index carries a partial filter on the cleaning status).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

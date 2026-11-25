@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and Mongoose to connect to Azure DocumentDB (the MongoDB-compatible endpoint) and perform all cache reads/writes through Mongoose models.
-- Define a Mongoose schema/model for cached open banking responses that includes: a deterministic cache key, the response payload, a fetchedAt timestamp, and a Date field used for expiry; create a TTL index (TTL index) on the expiry Date field via the schema (e.g., schema.index(..., { expireAfterSeconds: 0 })).
-- Implement deterministic cache key derivation from the incoming open banking API request (including HTTP method, URL/path, and relevant headers/body) and use that key to look up documents in Azure DocumentDB.
-- On an incoming API request, check Azure DocumentDB (via Mongoose) for a cached document for the cache key and, if the document is within the configured freshness window, return the cached result immediately.
-- If a cached document exists but is stale (outside the freshness window), immediately return the stale cached response to the client and trigger an asynchronous background refresh (stale-while-revalidate) that fetches a fresh response from the third-party open banking API.
-- If no cached document exists for the key, synchronously fetch the response from the open banking API, store it in Azure DocumentDB (upsert via Mongoose), and return the live response to the client.
-- Perform the background refresh as a non-blocking asynchronous task so the client response is not delayed; the background task must fetch the live API result and atomically upsert the cache document in Azure DocumentDB, updating fetchedAt and the expiry Date field.
-- Prevent duplicate concurrent background refreshes for the same cache key (for example by using an atomic findOneAndUpdate flag or an in-memory/per-key lock) so only one refresh is in-flight per key.
-- Ensure failed background refreshes do not overwrite existing cached data with error responses; on refresh failure keep the previous cached document unchanged and retry on a subsequent stale-while-revalidate trigger.
-- Include observable indicators in logs or responses that let a reviewer verify whether each response was served as a cache hit (fresh), cache hit (stale-while-revalidate served), or cache miss (live fetch), so the stale-while-revalidate behavior can be validated.
+- A Node.js caching layer wraps or intercepts outgoing open banking API calls so that every call passes through the cache lookup before any request reaches the upstream API.
+- The cache lookup queries Azure DocumentDB through the Mongoose ODM for a cached response document that matches the intercepted request (e.g. keyed on the request URL and parameters).
+- A TTL index is created in code on a Date field of the cache documents (e.g. a Mongoose schema index with expireAfterSeconds) so Azure DocumentDB expires cached response documents automatically.
+- A cached document's freshness is decided from a date stored on the document (e.g. the TTL date field compared against the current time), so a document can be stale while it still exists in the collection.
+- When a matching cached document is fresh, the cached response is returned to the caller and the open banking API is not called.
+- When no matching cached document exists, the response is fetched from the open banking API, stored in Azure DocumentDB as a new cache document through Mongoose, and returned to the caller.
+- When a matching cached document is stale, the stale cached response is returned to the caller immediately and a background refresh fetches the open banking API and stores the refreshed response in Azure DocumentDB without delaying that response (stale-while-revalidate).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

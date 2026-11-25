@@ -8,15 +8,11 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and Mongoose to connect to Azure DocumentDB: the code must call mongoose.connect(...) using a MongoDB URI read from an environment variable that clearly indicates Azure DocumentDB (e.g., AZURE_DOCUMENTDB_URI).
-- Define a Mongoose audit document schema and model named for the audit collection that includes at minimum: paymentReference (string), stage (enum containing exactly initiated, routed, FX converted, settled), timestamp or createdAt (Date with default Date.now), and a payload/object field for stage details.
-- Create an index on paymentReference and a TTL index on the createdAt/timestamp field (using schema.index(..., { expireAfterSeconds: <env-configured value> })) so the TTL value is configurable via environment (e.g., AUDIT_TTL_SECONDS).
-- Implement write-only behavior for lifecycle events: the service must insert a new audit document for each stage (initiated, routed, FX converted, settled) — either via dedicated endpoints or a single POST endpoint — and must not update existing audit documents when advancing stages.
-- Implement application-layer guards that block any update or delete operations against audit documents: include Mongoose middleware or explicit checks that reject calls to updateOne, updateMany, findOneAndUpdate, findByIdAndUpdate, deleteOne, deleteMany, or remove with an error.
-- Do not expose HTTP endpoints that perform updates or deletes of audit documents; API surface should only allow inserting new audit documents and reading aggregations (no PUT/PATCH/DELETE routes for audit records).
-- Expose an HTTP aggregation endpoint that accepts a paymentReference and returns the full timeline reconstructed using a Mongoose aggregation pipeline (match by paymentReference, sort by timestamp ascending, and project stage, timestamp and payload); the endpoint must return the ordered array of stage entries in JSON.
-- Validate stage values at the API and model level so that attempts to insert a document with a stage outside the enum (initiated, routed, FX converted, settled) are rejected with a 4xx error.
-- Include a demonstrable sample or script in the repo that writes the four-stage lifecycle for a sample paymentReference to Azure DocumentDB and shows the aggregation endpoint returning the ordered timeline for that paymentReference.
+- A Node.js audit trail service built on the Mongoose ODM, with a Mongoose model for the audit documents it stores in Azure DocumentDB.
+- Each stage of the cross-border payment lifecycle (initiated, routed, FX converted, settled) is recorded by inserting a new audit document, so a payment accumulates one document per stage.
+- Each audit document carries the payment reference and the lifecycle stage it records, plus a field the timeline can be ordered by (e.g. a recorded-at timestamp).
+- Application-layer guards reject attempts to update or replace an existing audit document (e.g. Mongoose pre-hooks on update and replace operations, or immutable schema fields).
+- An aggregation endpoint accepts a payment reference and reconstructs that payment's full timeline with a Mongoose aggregation pipeline (e.g. a $match on the payment reference followed by a $sort on the ordering field), returning the stage documents in chronological order.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

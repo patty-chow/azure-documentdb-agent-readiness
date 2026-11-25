@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the solution in Python and instantiate a LangChain agent named or clearly labeled as a "LangChain agent" that orchestrates the workflow from data retrieval to LLM invocation.
-- Include a DocumentDB aggregation tool component, named or documented exactly as "DocumentDB aggregation tool", that connects to Azure DocumentDB and executes server-side aggregation pipelines (i.e., uses collection.aggregate) rather than performing client-side summation.
-- The DocumentDB aggregation tool must read from the position documents and RWA documents (configurable collection names) in Azure DocumentDB and return aggregated totals in a single aggregation pipeline result.
-- The aggregation pipelines must explicitly compute and return: total risk-weighted assets (RWA), total CET1 capital elements (sum of CET1 components from position documents), and total regulatory capital (sum of total capital elements), with the aggregation pipeline logic visible in the code (e.g., $group / $sum stages).
-- The agent must compute CET1 ratio and total capital ratio using the aggregated sums with the formulas CET1 ratio = total CET1 / total RWA and total capital ratio = total capital / total RWA, and present both ratios as percentages (at least two decimal places) in the structured output.
-- The LangChain agent must build an LLM prompt using explicit prompt engineering that (a) embeds Basel III thresholds (configurable values labelled as Basel III thresholds), (b) instructs the LLM to compare the computed CET1 and total capital ratios to those thresholds, and (c) asks for a board-ready capital adequacy commentary.
-- The LLM invocation (labelled "LLM" in code/comments) must return a narrative commentary that includes: the computed ratios and raw aggregated totals, an interpretation of each ratio vs. the provided Basel III thresholds, and a concise board-ready executive summary/recommendation section.
-- The LLM-generated commentary must include the LLM's reasoning or rationale (a short explanation of how the interpretation was reached, e.g., which thresholds were breached or met and by what margin) as part of the output.
-- The agent must return a machine-readable result (e.g., JSON or dict) containing at minimum: aggregated totals (RWA, CET1, total capital), computed ratios (CET1 ratio, total capital ratio), the Basel III threshold values used, and the full LLM commentary.
-- The code must detect and handle missing or zero total RWA in the aggregation result: if RWA is zero or absent, the agent must not perform division and must include an explicit warning or caveat in both the structured output and the LLM prompt/context so the commentary reflects the data limitation.
+- Implement the sample in Python as a single LangChain agent: one LLM-backed agent handles the whole request from question to commentary.
+- Give the agent a DocumentDB aggregation tool: a LangChain tool whose implementation runs an aggregation pipeline against Azure DocumentDB through a MongoDB-compatible Python driver (e.g. pymongo) and returns the aggregated results to the agent.
+- The aggregation pipeline itself produces the totals: it sums risk-weighted assets and the capital elements (e.g. CET1 capital, total capital) across the stored position documents (e.g. a `$group` stage with `$sum` accumulators).
+- Compute the capital ratios from those aggregated totals (e.g. CET1 capital divided by risk-weighted assets, total capital divided by risk-weighted assets).
+- Use prompt engineering for the LLM call: the prompt carries the computed ratios and instructs the LLM to interpret them against Basel III thresholds (e.g. the 4.5% CET1 and 8% total capital minimums).
+- The agent's final output is an LLM-generated, board-ready capital adequacy commentary that states how each ratio stands against the Basel III thresholds, written for a board audience.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

@@ -8,17 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and Mongoose ODM to model and persist Cart and Inventory documents in Azure DocumentDB (connections and models must target Azure DocumentDB).
-- Define an Inventory schema that includes a numeric stock field and a numeric version field used for optimistic locking.
-- Define a Cart schema that can store userId and an items array (productId and quantity) in Azure DocumentDB.
-- Implement an add-to-cart function that starts a Mongoose session (startSession()) and begins a DocumentDB multi-document transaction (session.startTransaction()) before making any updates.
-- Within the same session, perform the inventory decrement and the cart insert/update so both operations execute inside the DocumentDB multi-document transaction and pass the session to all Mongoose operations.
-- Decrement inventory using a conditional update that enforces both available stock and the current version (e.g., filter includes version and stock >= qty) and atomically increments the version in the same update so optimistic locking is enforced by the version field.
-- Apply the cart change (insert or update item quantities) within the same transaction session so the inventory change and cart change are committed or aborted together.
-- Commit the transaction on success (session.commitTransaction()) and abort/rollback on any failure (session.abortTransaction()), and properly end the session.
-- Detect and handle optimistic-lock conflicts (zero documents matched due to version mismatch) by retrying a configurable number of times or returning a specific conflict error if retries are exhausted.
-- When requested quantity exceeds available stock, return a clear, programmatic out-of-stock error (distinct message or error code) and ensure no decrement or cart add is committed.
-- Include an automated integration test or concurrency simulation that issues parallel add-to-cart requests and asserts that no overselling occurs (inventory never drops below zero and total reserved items do not exceed initial stock).
+- Build the cart service in Node.js using the Mongoose ODM, with Mongoose schemas and models for cart documents and inventory documents stored in Azure DocumentDB.
+- Provide a cart-service operation that adds an item to a cart and decrements that item's stock in the inventory document.
+- Run the stock decrement and the cart addition inside one Azure DocumentDB multi-document transaction on a session (e.g. `session.withTransaction`, or `startTransaction` / `commitTransaction` / `abortTransaction`), passing the session to every Mongoose read and write that takes part in the operation.
+- Check stock inside the transaction, so the decrement only applies when the inventory document holds at least the requested quantity (e.g. a conditional update that filters on the current stock value).
+- Keep a version field on the documents the operation updates, at minimum the inventory document, for optimistic locking (e.g. Mongoose's `versionKey` / `__v` or a custom field): an update filters on the version it read and increments the version when it succeeds.
+- When the version check fails because the document changed since it was read, the operation reports a conflict to the caller or retries the update instead of overwriting the newer document.
+- When stock is exhausted, abort the transaction and surface a clear error to the caller that identifies the out-of-stock condition (e.g. a dedicated error type or message), distinct from other failures.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

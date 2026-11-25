@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement a single-agent Python LangChain agent (single-agent) that orchestrates the end-to-end churn prediction pipeline.
-- Provide one or more agent tools that execute Azure DocumentDB aggregations (MongoDB aggregation pipelines) to compute per-customer recency, frequency, and monetary (RFM) metrics from the transactions/events collections.
-- Retrieve existing behavioural embeddings stored in Azure DocumentDB for each customer and combine those behavioural embeddings with the computed RFM metrics to form a single feature vector per customer (e.g., concatenation or clearly documented normalization + concatenation).
-- Compute embeddings of the combined feature vectors (the code must call an embedding function/model and produce numeric vectors for each customer feature vector).
-- Create or upsert those resulting embeddings into a DocumentDB vector index in Azure DocumentDB (code must show index target and insert/upsert operations).
-- Provide a tool in the agent that performs vector similarity search against the DocumentDB vector index to retrieve the most similar customer profiles, limiting or filtering results to profiles labeled as churned.
-- Use the retrieved similar churned customer profiles as contextual examples / retrieval context when generating outputs (the retrieval results must be passed into the prompt used for generation).
-- Use LangChain prompt engineering: include a prompt template or prompt construction code that instructs the agent to generate a churn risk narrative and a recommended retention action for the target customer using the combined features and retrieved similar churned profiles.
-- The agent must, for a given customer id or list of customer ids, run the full flow (DocumentDB aggregations -> combine with behavioural embeddings -> embed feature vector -> store in DocumentDB vector index -> retrieve similar churned profiles -> generate churn risk narrative + recommended retention action) and return the narrative and action.
-- Include an executable example or test script that demonstrates the pipeline end-to-end for at least one customer id and prints the churn risk narrative and recommended retention action produced by the Python LangChain agent.
+- Implement the sample as a single Python LangChain agent that is given tools and calls them to carry the pipeline through for a customer: compute RFM scores, embed the feature vector, retrieve similar churned profiles, then generate the narrative and retention action.
+- Provide a LangChain tool that runs an Azure DocumentDB aggregation pipeline through the Python MongoDB driver (e.g. PyMongo) to compute recency, frequency and monetary scores per customer.
+- Embed each customer's resulting RFM feature vector with an embedding model, producing one embedding per customer.
+- Store each customer's embedding as a field on its document in Azure DocumentDB and create, in code, a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on that field whose dimensions match the embedding model's output.
+- Retrieve the most similar churned customer profiles by running a $search / cosmosSearch vector similarity query against that index in Azure DocumentDB, restricted to churned customers.
+- Expose the similar-churned-profile retrieval to the agent as a LangChain tool alongside the aggregation tool.
+- Use an engineered prompt (e.g. a LangChain prompt template) that is given the customer's RFM scores and the retrieved similar churned profiles and produces, per customer, a churn risk narrative and a recommended retention action.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

@@ -8,17 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the solution in Node.js and instantiate a LangChain agent named exactly "LangChain agent" to coordinate LLM calls, database queries, tools and memory.
-- Use Mongoose as the ODM for all database operations; include explicit Mongoose models/schemas for invoices and purchase orders and use those models for reads and writes.
-- Connect to Azure DocumentDB (the managed MongoDB‑compatible service) via Mongoose using a MongoDB connection URI so all reads/writes go to Azure DocumentDB.
-- Read only unmatched invoices from Azure DocumentDB by querying the invoices collection for an "unmatched" state (e.g., a field such as status == "unmatched") and iterate those documents for reconciliation.
-- Extract structured invoice fields by invoking an LLM extraction tool (the prompt’s "LLM extraction tool") from within the LangChain agent; the extraction must produce at minimum: invoiceNumber, vendorName, totalAmount, invoiceDate, lineItems, and any referencedPoNumber.
-- Search the Azure DocumentDB purchase orders collection for candidate PO matches by amount and vendor: query POs whose amount is within a configurable tolerance of the extracted totalAmount and that match vendor criteria.
-- Implement fuzzy document/vendor comparison (e.g., a fuzzy string similarity algorithm) to compute a vendor similarity score for each candidate PO and include fuzzy comparison for relevant invoice text where appropriate.
-- Compute a combined numeric match score for each candidate PO that combines vendor similarity and amount difference (and whether an explicit PO number was present); include a score breakdown (vendorScore, amountDelta, combinedScore) for reviewer inspection.
-- Sort candidate POs by combined score and select or rank top candidates; include enough candidate metadata so a human can inspect why a match was chosen.
-- Write reconciliation results back to Azure DocumentDB: update the invoice document (or create a reconciliation record) with matchedPoId (if any), matchScore, matchDetails (vendorScore, amountDelta, score breakdown), matchedAt timestamp, and set the invoice status to "matched" upon successful reconciliation.
-- Support manual corrections during a session by exposing a callable/manual-correction path that the LangChain agent records into its agent memory (exactly "agent memory"), and require that subsequent matching decisions in the same session consult that in‑memory correction so the agent “learns” and prefers corrected mappings; memory updates must be session-scoped (not automatically persisted across sessions unless explicitly implemented).
+- Implement a single LangChain agent in Node.js that carries each invoice through the whole flow: read the invoice, extract its fields, search for candidate purchase orders, score them and write the result back.
+- Read unmatched invoices from Azure DocumentDB through Mongoose models (e.g. invoices that have no reconciliation result yet).
+- Expose field extraction as an LLM-backed tool the agent calls, returning structured fields from the invoice (e.g. vendor, total amount, invoice number) that the later steps use.
+- Query Azure DocumentDB through Mongoose for candidate purchase orders using the extracted amount and vendor.
+- Score each candidate purchase order against the invoice (e.g. by vendor-name similarity and amount closeness) and choose the match from those scores.
+- Write the reconciliation result for the invoice back to Azure DocumentDB through Mongoose.
+- Keep agent memory for the session that records manual corrections (e.g. a user overriding the chosen PO) and consult it when matching later invoices in the same session.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

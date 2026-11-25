@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the orchestrator in Python using a Python LangChain orchestration pipeline that sequences and coordinates the agents.
-- Include a data-extraction agent named "data-extraction agent" that queries multiple DocumentDB collections for a provided reporting period parameter and returns the combined dataset.
-- In the data-extraction agent, connect to Azure DocumentDB and execute filtered queries against at least two distinct DocumentDB collections (show the query strings and the reporting-period date filter in code).
-- The orchestrator must invoke agents in order: data-extraction agent -> validation agent -> filing agent, and only proceed to the next agent when the previous agent reports success.
-- Implement a validation agent named "validation agent" that programmatically checks completeness (e.g., required fields present) and applies business rules (at least one rule implemented, e.g., totals reconciliation or cross-collection referential integrity), returning a validation summary with pass/fail counts and detailed failure records.
-- If the validation agent reports failures, the orchestrator must record the failure and halt the filing step; the workflow document must include the validation failure details.
-- Implement a filing agent named "filing agent" that transforms the validated data into the required regulatory schema (produce a final payload that matches the target schema in code) and returns the formatted output.
-- The filing agent must persist the formatted regulatory output (the final payload) into Azure DocumentDB (store into a DocumentDB collection or return it alongside a persisted record).
-- The orchestrator must log each step's status as a workflow document in DocumentDB: for each agent run include agent name, step start and end timestamps, status (success/failure), error messages if any, and pointers to the input and output documents/collections.
-- Provide code examples or test scripts that demonstrate the full run: supplying a reporting period parameter, executing data extraction across multiple DocumentDB collections, running validation rules, producing the regulatory-formatted output, and verifying that a workflow document was created in DocumentDB reflecting each step's status.
+- The pipeline is written in Python and built with LangChain, with an orchestrator and three distinct agent roles: data extraction, validation and filing.
+- The data-extraction agent queries more than one Azure DocumentDB collection through a MongoDB-compatible Python driver (e.g. PyMongo), filtering each query to the reporting period, and returns the extracted data to the orchestrator.
+- The validation agent takes the extracted data, checks it for completeness and applies business rules, and returns the outcome of those checks.
+- The filing agent formats the validated data into the required regulatory schema and returns the formatted output.
+- The orchestrator runs the data-extraction, validation and filing agents in sequence, passing each agent's output to the next agent as its input.
+- The orchestrator records each step's status as a workflow document in an Azure DocumentDB collection (e.g. one document per run that is updated with the step name and its status as each step completes).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

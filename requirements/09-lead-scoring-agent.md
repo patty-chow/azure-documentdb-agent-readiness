@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the app in Node.js and use the LangChain agent framework for the reasoning agent.
-- Configure and attach agent memory (use the phrase "agent memory" in the code/config) so the agent persists recent interaction context and reuses it during scoring calls.
-- Implement three LangChain tools that each accept a lead identifier and query Azure DocumentDB: (1) fetch the lead's activity history, (2) fetch the company firmographic document, and (3) fetch engagement signals; each tool must perform a DocumentDB lookup filtered by the lead id.
-- The code must explicitly establish a connection to Azure DocumentDB and use that connection inside the three tools to read documents (i.e., show Azure DocumentDB connection/config and queries in the repository).
-- The LangChain agent must invoke the tools via the framework's tools mechanism (i.e., register and call tools through LangChain rather than ad-hoc database calls from the prompt).
-- Build and use an explicit prompt template (prompt engineering) that stitches together the fetched activity history, firmographics, and engagement signals and instructs the agent to reason over them to produce a score and rationale.
-- The agent must generate a numeric score in the inclusive range 0–100; the code must validate the output is numeric and within that range before persisting.
-- The agent must generate a one-paragraph rationale for the score; the code must validate the rationale is a single paragraph (no blank-line separators/newline-only paragraphs) prior to persisting.
-- After validation, update the lead document in Azure DocumentDB by writing both the numeric score and the one-paragraph rationale back into the lead's document record.
-- If any required DocumentDB document (activity history, firmographics, or engagement signals) is missing or incomplete, the agent must return/ log a clear error/handled response and must not write an invalid score back to the lead document.
+- A Node.js LangChain agent scores one inbound lead per run: a single agent decides which tools to call, reasons over what they return and produces the result.
+- The agent has a tool that fetches the lead's activity history from Azure DocumentDB (e.g. using the MongoDB Node.js driver).
+- The agent has a tool that fetches the lead's company firmographic document from Azure DocumentDB.
+- The agent has a tool that fetches the lead's engagement signals from Azure DocumentDB.
+- The agent is given agent memory that retains context across its steps (e.g. the documents its tools returned earlier in the scoring run) so later reasoning can use it.
+- The agent reasons over the fetched signals through an engineered prompt (e.g. a system prompt or prompt template that describes the scoring criteria) and assigns a score from 0 to 100 together with a one-paragraph rationale.
+- The agent writes the score and the rationale back onto the lead's existing document in Azure DocumentDB (an update of that document, e.g. `updateOne` with `$set`).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

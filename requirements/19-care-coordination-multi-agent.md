@@ -8,17 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the system in Python and use LangChain Python as the agent framework.
-- Define four distinct components named "GP agent", "specialist agent", "pharmacy agent", and "orchestrator" implemented with LangChain Python constructs (e.g., agents, tools, or AgentExecutors) so a reviewer can find those exact names in the code.
-- Implement the "GP agent" to connect to Azure DocumentDB and read a patient's primary care record by a supplied patient id, returning structured data (e.g., JSON/dict) representing the primary care record.
-- Implement the "specialist agent" to connect to Azure DocumentDB and retrieve the patient's referral notes by the same patient id, returning structured referral-note data.
-- Implement the "pharmacy agent" to connect to Azure DocumentDB and retrieve the patient's current medications by patient id, returning a structured medication list including drug names, dosages, and frequencies.
-- The "orchestrator" must invoke the GP agent, specialist agent, and pharmacy agent, collect their outputs, and synthesise them into a single unified care plan document that integrates diagnoses, referrals, and medication plan.
-- The synthesized unified care plan must include provenance metadata linking to the source Azure DocumentDB document ids and timestamps for each contributing input.
-- The orchestrator must write the unified care plan document back to Azure DocumentDB (the managed MongoDB-compatible service named Azure DocumentDB) and the write operation must return or log the new DocumentDB document id.
-- All DocumentDB interactions must operate against Azure DocumentDB (not Cosmos DB or other services) and accept a parameterized patient id input rather than using hard-coded patient data.
-- Include a runnable demonstration (script or test) that executes the orchestrator for a sample patient id, shows the agents' intermediate outputs, and shows the final unified care plan being written to Azure DocumentDB.
-- Ensure the orchestrator returns or logs the stored care plan content and the DocumentDB write result so a reviewer can verify that the synthesized plan was persisted.
+- The system is written in Python with LangChain and has four distinct agent roles: an orchestrator and three worker agents (GP, specialist, pharmacy), each a separate LangChain agent or runnable with its own instructions and tools.
+- The GP agent reads the patient's primary care record from Azure DocumentDB using a MongoDB-compatible Python driver (e.g. PyMongo) and returns it to the orchestrator.
+- The specialist agent retrieves the patient's referral notes from Azure DocumentDB and returns them to the orchestrator.
+- The pharmacy agent reads the patient's current medications from Azure DocumentDB and returns them to the orchestrator.
+- The orchestrator invokes all three worker agents for a given patient and collects their results.
+- The orchestrator synthesises a single unified care plan document from the three agents' results through a LangChain LLM call.
+- The orchestrator writes the unified care plan document back to Azure DocumentDB (e.g. an insert into a care-plans collection).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the application in Python and use LangChain as the agent framework in a single-agent configuration (i.e., one LangChain Agent instance orchestrating tools).
-- Provide a LangChain-accessible tool named "DocumentDB aggregation tool" that executes aggregation pipelines against event data stored in Azure DocumentDB.
-- The "DocumentDB aggregation tool" must run server-side aggregation pipelines (aggregation pipelines) against an events collection in Azure DocumentDB (not only client-side aggregation) and return the aggregation results to the agent.
-- The aggregation pipelines must compute, per customer id on demand, the behavioural metrics recency (time since last event), frequency (event count per configurable lookback window), and category affinity (per-category proportions or top category scores).
-- Expose an on-demand invocation path (function, CLI command, or HTTP endpoint) that accepts a customer id, triggers the agent to run the aggregation pipelines for that customer, and returns the computed metrics.
-- Use context engineering to inject segmentation rules at runtime into the agent prompt (e.g., load rules from a config file or database and insert them into the system/user prompt before LLM calls); the injected rules must be visible in the code path that constructs the prompt.
-- The agent must apply those injected segmentation rules (via the LLM prompt) to the computed metrics and choose a single segment label for the customer; the LLM response and chosen label must be captured by the application.
-- After the agent assigns a segment label, the application must write that segment label back into the customer's profile document in Azure DocumentDB (update the profile document with the label and a timestamp) using an update operation against the profile collection.
-- The code must log or return the aggregation pipeline outputs and the metric values used for segmentation so a reviewer can verify the agent's decision (e.g., structured JSON containing recency, frequency, category affinity, applied rules, chosen label).
-- Include at least one end-to-end demonstration or automated integration test in the repository that inserts sample event data into Azure DocumentDB, invokes the agent for a sample customer id, and verifies that the customer's profile document in Azure DocumentDB is updated with the expected segment label and timestamp.
+- The application is a Python LangChain agent, and one agent carries a customer through the whole flow: calling the aggregation tool, applying the segmentation rules, assigning the label and writing it back.
+- The agent has a DocumentDB aggregation tool, registered as a LangChain tool, that runs an aggregation pipeline through the Python MongoDB driver (e.g. PyMongo) against the event data in Azure DocumentDB for the customer the agent is working on, when the agent calls it.
+- The aggregation pipeline computes the behavioural metrics per customer on demand, at the time the tool is called: recency, frequency and category affinity, which the tool returns to the agent.
+- The segmentation rules are injected into the agent's prompt through context engineering (e.g. as a rules section assembled into the system prompt), so the rules the agent applies are present in its prompt context.
+- The agent assigns a segment label to the customer from the computed metrics and the injected segmentation rules.
+- The agent writes the assigned segment label back to that customer's profile document in Azure DocumentDB (e.g. an update that sets a segment field on the profile).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

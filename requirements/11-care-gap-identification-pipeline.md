@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the sample in Python and expose a LangChain single-agent (i.e., a single Agent instance) that orchestrates the pipeline and is the entrypoint for the workflow.
-- Provide a LangChain Tool named or documented as a "DocumentDB aggregation tool" that connects to Azure DocumentDB and executes aggregation pipelines (not just find queries).
-- The aggregation tool must construct and run an Azure DocumentDB aggregation pipeline that joins/inspects patient documents (age, diagnosis, last-visit) and emits candidate patients who are missing recommended screenings; the pipeline must use aggregation stages (e.g., $match/$project/$lookup/$sort) in the code.
-- The aggregation pipeline must compute and return for each candidate patient at minimum: patient id, age, diagnoses list, lastVisitDate (ISO), and a list of identified care gap types (e.g., "mammogram overdue", "colonoscopy missing").
-- Use explicit, coded criteria in the aggregation pipeline (or a pre-processing step called by the pipeline) that determine missing screenings based on age ranges, diagnosis codes, and last-visit date comparisons (e.g., lastVisitDate older than guideline intervals); those criteria must be visible in the source code.
-- Use context engineering to inject care gap guidelines into the agent's prompt context: the code must build a prompt or system message that includes guideline text (screening ages, intervals, diagnosis-specific rules) and pass that text into the LangChain prompt template used by the agent.
-- After aggregation, call an LLM via LangChain to prioritise the returned patient list; the code must call the LLM with the patient records plus the injected guideline context and produce a priority score or rank for each patient (i.e., LLM-driven prioritisation is evident in code).
-- For each distinct care gap type, generate outreach talking points tailored to that gap using the LangChain LLM (the code must produce per-patient or per-gap talking points, not a single generic message).
-- The DocumentDB aggregation tool must return structured JSON objects (or Python dicts) that include the computed prioritisation score and the generated outreach talking points so the agent's final output is a prioritized list with talking points attached.
-- Provide an example or demo script in the repo that runs the full pipeline end-to-end (connects to Azure DocumentDB, runs the aggregation tool, runs the LangChain agent with injected guidelines, and prints/returns the prioritized patient list with outreach talking points).
+- A single Python agent built with LangChain runs the whole pipeline: it calls the aggregation tool, then prioritises the resulting patient list and generates outreach talking points.
+- The agent has a LangChain tool that runs an aggregation pipeline against Azure DocumentDB through the Python MongoDB driver (e.g. PyMongo) and returns the patients missing recommended screenings.
+- The aggregation pipeline works out who is missing a screening inside Azure DocumentDB from the patients' age, diagnosis and last-visit documents (e.g. a $match on age and diagnosis criteria and a comparison of the last-visit date against the screening interval).
+- Care gap guidelines (which screenings are recommended for whom, and how often) are injected into the agent's prompt context before it prioritises patients or writes talking points.
+- The agent prioritises the patient list returned by the tool using the LLM and the injected guidelines, producing an ordered list (e.g. with a priority level per patient).
+- The agent generates outreach talking points for each gap type found.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the system in Node.js and use LangChain for Node.js to build a multi-agent architecture with an orchestrator component and two agents named exactly "medical-review agent" and "insurer-comms agent".
-- The orchestrator must read a pre-auth request from Azure DocumentDB (a configurable collection/namespace) by connecting to Azure DocumentDB and querying for a queued or new pre-auth request document.
-- The "medical-review agent" must retrieve clinical criteria stored in Azure DocumentDB (from a configurable collection) and run a deterministic clinical-necessity check that compares the pre-auth request data against those stored criteria.
-- The "medical-review agent" must return a structured review object containing at minimum: a decision (e.g., pass/fail), the IDs of matched criteria, and a short rationale string explaining the decision.
-- The orchestrator must pass the original pre-auth request and the structured review object from the "medical-review agent" to the "insurer-comms agent" via LangChain agent invocation/message passing (i.e., orchestrator calls the insurer-comms agent through LangChain APIs rather than by manual file edits).
-- The "insurer-comms agent" must produce a submission document (single text or structured object) that includes the original request identifier, key request details, the clinical-review decision and cited criteria, and a human-readable submission/cover letter body.
-- The orchestrator must store the final submission document and an explicit status field (for example, "submitted" plus timestamp and the review metadata) back into Azure DocumentDB, either by updating the original pre-auth request document or by creating a linked submission document that references the request ID.
-- All Azure DocumentDB operations (reads and writes) must use a single configurable connection URI/connection string or environment-variable configuration and demonstrate authentication and connection setup before performing queries/updates.
-- The medical-review check must be auditable in code: the implementation must expose the exact criteria matching logic (e.g., function or module) so a reviewer can inspect how criteria IDs map to decision outcomes.
-- Include at least one end-to-end example or test script that inserts or uses a sample pre-auth request in Azure DocumentDB, runs the orchestrator, and verifies that the submission document and updated status are written back to Azure DocumentDB.
+- Build the system in Node.js with LangChain Node.js as a multi-agent setup: an orchestrator that coordinates two LangChain agents, a medical-review agent and an insurer-comms agent, each backed by a language model.
+- The orchestrator reads a pre-auth request document from Azure DocumentDB using a MongoDB driver (e.g. the MongoDB Node.js driver) and starts the workflow from that request.
+- The orchestrator runs the agents in sequence: it hands the pre-auth request to the medical-review agent first, then hands the request together with the medical-review outcome to the insurer-comms agent.
+- The medical-review agent reads clinical-necessity criteria stored in Azure DocumentDB and checks the pre-auth request against those criteria, returning the result of that check to the orchestrator.
+- The insurer-comms agent drafts the submission letter to the insurer from the pre-auth request and the medical-review outcome, returning it as the final submission document.
+- The orchestrator stores the final submission document and a status for the pre-auth request back in Azure DocumentDB.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

@@ -8,16 +8,11 @@
 
 ## What the starter prompt asks for
 
-- Implement the solution in Python and instantiate a Single-agent LangChain agent (imports and agent construction must show Python and LangChain).
-- Register and expose a DocumentDB aggregation tool as a LangChain tool that the agent can call (tool implementation must be named or documented as the "DocumentDB aggregation tool").
-- The DocumentDB aggregation tool must execute aggregation pipelines against Azure DocumentDB and use aggregation stages to compute, per customer, historical purchase frequency, average order value, and tenure (e.g., $match + $group + $avg/$sum and date min/max or equivalent aggregation operators).
-- The aggregation pipeline implementation must accept a customer identifier input and return the computed metrics in machine-readable form (JSON/dict) for that customer.
-- The LangChain agent must assemble a prompt template (prompt engineering) that injects the aggregated metrics and explicitly instructs the LLM to estimate a CLV tier using the categories "low, medium, high, VIP".
-- The prompt template must also instruct the LLM to produce a numeric CLV score and a concise textual rationale for the score; the agent code must pass the rationale through in the LLM response.
-- The agent must call the DocumentDB aggregation tool during its run and feed the returned aggregation results into the LLM prompt (demonstrable in the agent-tool invocation code).
-- The agent must parse the LLM output to extract a numeric CLV score and the selected tier (exactly one of "low", "medium", "high", "VIP") and include the rationale in the parsed result.
-- The application must update the customer profile document in Azure DocumentDB by writing the CLV score and CLV tier back to that document using an update operation filtered by the same customer identifier (code must show the update query).
-- Include a runnable end-to-end example (script or main function) that, for a sample customer ID, runs the aggregation tool, invokes the LangChain agent prompt flow, logs the rationale and outputs, and persists the CLV score and tier to Azure DocumentDB.
+- Implement the sample in Python with a LangChain agent that acts as the single agent of the pipeline, with the DocumentDB aggregation tool registered as a LangChain tool the agent can invoke during a run.
+- The DocumentDB aggregation tool runs an aggregation pipeline in Azure DocumentDB through a MongoDB driver (e.g. PyMongo) and returns, per customer, historical purchase frequency, average order value and tenure.
+- The agent includes the purchase frequency, average order value and tenure returned by the aggregation tool in the prompt it sends to the LLM.
+- The prompt engineering instructs the LLM to estimate a CLV tier chosen from low, medium, high and VIP, to produce a CLV score, and to generate a rationale for the estimate.
+- The agent writes the CLV score and tier back to that customer's profile document in Azure DocumentDB by updating the existing document.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

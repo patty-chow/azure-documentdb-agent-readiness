@@ -8,16 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement the pipeline in Python: repository contains Python modules/scripts that perform aggregation, embedding, storage, comparison, and nightly orchestration of the insider‑threat pipeline.
-- Connect to Azure DocumentDB to read raw employee activity logs: code contains a DocumentDB query that fetches logs by employee and time window (historical and recent) and can be exercised by a reviewer.
-- Aggregate raw activity logs into numerical behavioural feature vectors per employee and time window: code implements and documents the feature construction (e.g., counts, durations, event-type frequencies) and produces fixed-dimension vectors for embedding.
-- Call OpenAI to obtain embeddings for the behavioural feature vectors: code makes OpenAI embeddings API calls (with inputs from the feature vectors) and uses the returned embedding arrays in subsequent steps.
-- Create and persist embedding documents into Azure DocumentDB using a collection configured with a DocumentDB vector-ivf index: code inserts/upserts documents that include the embedding vector field and demonstrates the collection/index being used for vector storage.
-- Compute and persist a historical centroid per employee in Azure DocumentDB: code computes the mean of an employee’s historical embeddings, stores that centroid document keyed by employee id and history window, and updates it as history grows.
-- Store known anomaly profile embeddings in Azure DocumentDB: repository includes code or seed data that stores one or more anomaly profile embedding documents in the database for later comparison.
-- Implement a nightly scheduled job that, for each employee, builds a recent activity embedding, then compares that embedding to the employee’s historical centroid and to the stored anomaly profile embeddings using a distance/similarity metric (e.g., cosine or Euclidean) implemented in the code.
-- Flag and persist alerts when deviations exceed configurable thresholds: on significant deviation, code writes an alert record into Azure DocumentDB including employee id, timestamp, similarity/distance scores, which profile(s) matched, and the threshold values used.
-- Expose comparison parameters as configurable settings (distance metric and threshold values) so a reviewer can change thresholds and reproduce different flagging outcomes.
+- A Python pipeline reads employee activity logs from Azure DocumentDB and aggregates them into one behavioural feature vector per employee (e.g. counts of actions by type over a time window) using an Azure DocumentDB aggregation pipeline.
+- Each behavioural feature vector is embedded by calling OpenAI, and the returned embedding is stored on a document in Azure DocumentDB.
+- A cosmosSearch index of kind vector-ivf is created in code on the embedding field, with dimensions matching the OpenAI embedding model's output and a similarity of COS, L2 or IP.
+- Known anomaly profiles are held as documents in Azure DocumentDB that carry an embedding, so the pipeline can compare employee embeddings against them.
+- A nightly job runs on a schedule (e.g. a cron entry or a scheduler loop) and processes every employee on each run.
+- For each employee, the job computes a historical centroid from that employee's stored past embeddings and compares the employee's recent activity embedding against that centroid.
+- The job compares each employee's recent activity embedding against the known anomaly profiles with a $search / cosmosSearch query against the vector-ivf index.
+- Employees whose recent embedding deviates significantly (e.g. beyond a chosen distance from their centroid, or within a chosen similarity of an anomaly profile) are flagged by the job (e.g. written as alert records or reported in the run output).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

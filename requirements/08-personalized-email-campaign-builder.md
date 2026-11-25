@@ -8,15 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement a single Node.js LlamaIndex agent (instantiate one LlamaIndex agent) that orchestrates fetch → generate → write for a requested customer segment.
-- Register a tool on the LlamaIndex agent that fetches customer segment profiles from Azure DocumentDB (the tool should be callable by the agent).
-- The fetch tool must connect to Azure DocumentDB and query a collection containing customer segment profiles (queryable by segment id or segment name) and return the profile document(s) to the agent.
-- The fetched profile object must include and expose purchase history and preferences fields; the code must extract those fields from the profile document returned by Azure DocumentDB.
-- Use explicit context engineering: construct the LLM prompt sent from the agent so it injects the segment's purchase history and preferences into the prompt context (the prompt text in code must contain those injected fields).
-- Invoke LlamaIndex to generate personalised email subject lines and body copy using the injected context; the agent must request both a subject line and full body copy in the LLM call.
-- Parse the LLM response into discrete fields (at minimum subject and body) in the Node.js code before persisting.
-- Write the generated drafts back to Azure DocumentDB by inserting a document into a campaigns collection named "campaigns" (each saved document must include the segment id/name, subject, body, raw LLM output, and a creation timestamp).
-- Provide a sample invocation (e.g., a script or handler) that runs the agent for a specific segment id and demonstrates that a new document with subject and body appears in the campaigns collection.
+- Implement a single LlamaIndex agent in Node.js that registers a tool which fetches customer segment profiles from Azure DocumentDB through a MongoDB-compatible driver (e.g. the `mongodb` Node.js driver).
+- The fetch tool reads the requested segment's profile, including its purchase history and preferences, from Azure DocumentDB and returns it to the agent.
+- The agent calls the fetch tool to obtain the segment profile before generating any copy.
+- The agent injects the fetched purchase history and preferences into the prompt sent to the LLM (context engineering) so the generation is grounded in that segment's data.
+- From that prompt the agent generates personalised email subject lines and body copy for the segment.
+- The generated drafts are written back to a `campaigns` collection in Azure DocumentDB.
+- Each stored draft contains the generated subject line and body copy and identifies the segment it was generated for (e.g. the segment's id).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

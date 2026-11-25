@@ -8,15 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement the service as a Python FastAPI application that exposes at least one HTTP endpoint (e.g., /cohorts) returning cohort analysis JSON.
-- Connect to Azure DocumentDB using the DocumentDB Atlas-compat API from Python (for example, configuring pymongo to the Azure DocumentDB Atlas-compat endpoint) and perform all reads/writes against Azure DocumentDB.
-- Build and execute DocumentDB aggregation pipelines (via the driver’s aggregate API) to produce cohort data; the pipeline code must be visible in the repository.
-- Use a $bucket stage in the aggregation pipeline to group customers by acquisition month (cohort key = acquisition month).
-- Compute cohort retention rates at 30, 60, and 90 days from the aggregation results and include those numeric retention rates in the API response for each cohort.
-- Use a $facet stage in the aggregation pipeline to produce simultaneous breakdowns by channel and by product; include both facet results in the returned cohort snapshot.
-- Materialise/cache cohort snapshots as documents stored in Azure DocumentDB (a dedicated collection), including cohort month key and snapshot timestamp fields.
-- Implement a scheduled weekly refresh job that runs the aggregation pipelines and upserts the materialised cohort snapshot documents in Azure DocumentDB (the scheduler code must be part of the service).
-- Serve cohort API requests from the cached materialised documents in Azure DocumentDB rather than recomputing the aggregation on every request; the endpoint should read the snapshot documents and return them.
+- A Python FastAPI service exposes HTTP endpoints that return cohort analysis results.
+- The cohort computation is an aggregation pipeline that Azure DocumentDB executes, sent through a MongoDB driver (e.g. PyMongo).
+- The pipeline uses a `$bucket` stage to group customers by acquisition month.
+- The pipeline computes retention rates at 30, 60 and 90 days for each cohort.
+- The pipeline uses a `$facet` stage to break the cohorts down by channel and by product.
+- Cohort snapshots are cached as materialised documents stored in Azure DocumentDB (e.g. a snapshots collection), produced by running the pipeline.
+- A weekly refresh re-runs the pipeline and replaces the materialised snapshot documents.
+- The cohort endpoints serve their results from the cached snapshot documents.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

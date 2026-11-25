@@ -8,16 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement the sample in Python and use LlamaIndex as the agent framework (code imports and constructs a LlamaIndex agent).
-- Create and persist an agent memory that stores high-risk patient profile embeddings in an Azure DocumentDB DocumentDB vector index (code shows upsert/insert of embeddings into the vector index).
-- Connect to an Azure DocumentDB instance (resource type Microsoft.DocumentDB/mongoClusters) and target its vector index APIs/collection for storing and querying embeddings.
-- Compute embeddings for stored high-risk cohort profiles and for each new patient’s structured clinical features using the same embedding procedure; the embedding step for both cohort profiles and new patients must be present in code.
-- Execute a vector similarity search (vector search) against the DocumentDB vector index to retrieve the most similar high-risk profiles for a given new patient; the code must return the top-K matches and their similarity scores.
-- Feed the retrieved high-risk profiles (and their similarity metadata) into the LlamaIndex agent so the agent can reason over the similarities when generating output.
-- The LlamaIndex agent must generate a personalized risk narrative for the new patient that explicitly references retrieved similarities and provides recommended clinical interventions (output contains rationale tied to retrieved profiles).
-- Persist agent memory in Azure DocumentDB so that stored high-risk profile embeddings are recoverable across runs (code demonstrates loading memory from and saving memory to the DocumentDB vector index).
-- Provide an executable entry point (function, CLI command, or small API handler) that accepts structured clinical features for a new patient, runs embedding → retrieval → agent reasoning, and returns the personalized risk narrative and interventions.
-- Include a small sample high-risk patient cohort preloaded into the DocumentDB vector index and at least one documented example new patient input that demonstrates the full embedding, retrieval, and narrative-generation flow.
+- Implement the sample in Python as a single LlamaIndex agent that takes a new patient's clinical features as input and carries out the embed, retrieve, reason and generate flow end to end.
+- Store high-risk patient profiles as documents in an Azure DocumentDB collection (e.g. via PyMongo), with each profile's embedding vector held in a field on its document.
+- Create, in code, a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on that embedding field, with dimensions matching the embedding model's output and a similarity of COS, L2 or IP.
+- Embed the new patient's clinical features with the same embedding model used for the stored high-risk profiles.
+- Retrieve the most similar high-risk profiles by running a $search / cosmosSearch aggregation against the Azure DocumentDB vector index with the new patient's embedding (e.g. the top-k nearest neighbours).
+- Wire the Azure DocumentDB vector store of high-risk profiles into the LlamaIndex agent as its agent memory (e.g. as a retriever, tool or memory component the agent calls), and have the agent recall the stored profiles from it when handling a new patient.
+- Have the agent reason over the similarities between the new patient's features and the retrieved high-risk profiles (e.g. which features they share) and generate a personalised risk narrative for that patient.
+- Include recommended interventions for the patient in the generated output, derived from that reasoning.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

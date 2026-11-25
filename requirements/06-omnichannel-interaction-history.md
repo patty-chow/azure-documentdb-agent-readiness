@@ -8,15 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and Mongoose to connect to Azure DocumentDB (MongoDB-compatible endpoint) and open a single database connection for the service.
-- Define one Mongoose model (single collection) for all channels (e.g., "interactions") with required fields channel (String), customerId (String), timestamp (Date) and a flexible field for channel-specific payload (Mixed/Map); ensure all documents for web, mobile, email and call centre are stored in this collection.
-- Create compound indexes on the schema using schema.index(...) for { customerId: 1, timestamp: -1 } and { channel: 1, timestamp: -1 } so the compound indexes exist in Azure DocumentDB.
-- Implement an HTTP ingestion endpoint that validates and writes interaction documents into the single collection, enforcing presence and types of channel, customerId and timestamp and storing timestamp as a Date/ISODate.
-- Expose a paginated history HTTP endpoint that returns interactions filtered by either customerId or channel (one required), accepts pagination params (page & pageSize or limit & skip), optional startTimestamp and endTimestamp query params, and sorts results by timestamp.
-- Ensure the paginated history query builds a Mongo query that includes the customerId (when provided) or channel (when provided) plus a timestamp range filter so the query can use the appropriate compound index, and implement pagination via limit/skip (or cursor) and sort on timestamp.
-- Expose a channel-breakdown aggregation HTTP endpoint that accepts customerId and optional time range and returns counts grouped by channel using a MongoDB aggregation pipeline ($match by customerId and timestamp range, then $group by channel, $count or $sum).
-- Ensure aggregation pipelines include the $match stage(s) on customerId and timestamp range (and channel when supplied) so the pipeline can leverage the (customerId, timestamp) or (channel, timestamp) compound indexes as appropriate.
-- Parse timestamp query parameters into Date objects before querying and store/query timestamps as Date types so range queries behave correctly against the timestamp field.
+- The service is written in Node.js and uses the Mongoose ODM: one Mongoose schema and model describes a customer interaction document, and that model is backed by a single Azure DocumentDB collection that holds interactions from every channel (web, mobile, email, call centre).
+- The interaction schema has channel, customerId and timestamp fields, with channel identifying the source of the interaction; other interaction content may be carried alongside them.
+- Interactions from any channel are stored through that same model (e.g. a create endpoint or model method that saves an interaction document).
+- A compound index on (customerId, timestamp) is declared in application code on the Mongoose schema (e.g. schema.index({ customerId: 1, timestamp: -1 })) and created on the Azure DocumentDB collection by the application (e.g. via Mongoose autoIndex when the model initialises, or syncIndexes()/createIndexes() at startup).
+- A compound index on (channel, timestamp) is declared in application code on the same Mongoose schema and created on the same Azure DocumentDB collection by the application.
+- The history endpoint returns a customer's interactions filtered by customerId and sorted by timestamp, and is paginated: each call returns one page (e.g. limit with skip, or a cursor on timestamp) and the caller can request the next page.
+- The channel-breakdown endpoint runs a Mongoose aggregation pipeline (Model.aggregate) in Azure DocumentDB that groups interactions by channel and returns a per-channel summary (e.g. a count for each channel, optionally scoped to one customerId).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

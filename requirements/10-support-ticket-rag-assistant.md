@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the assistant in Python (repository contains runnable Python code that implements the agent and exposes a callable entrypoint/function).
-- Use LlamaIndex to build the retrieval and generation pipeline (create a LlamaIndex index from documents and use LlamaIndex query APIs to retrieve context and invoke the LLM).
-- Persist and query vectors using an Azure DocumentDB vector store (code writes embeddings/vectors into Azure DocumentDB and performs vector similarity searches against that store).
-- Load past ticket resolutions and knowledge base articles from Azure DocumentDB collections and convert them into LlamaIndex documents for indexing.
-- Store and preserve document metadata (e.g., source id, title, timestamp, collection name) alongside each indexed document so retrieved items are inspectable and traceable.
-- On ingest of a new ticket, perform a vector search that retrieves the top 5 most similar past resolutions (retrieval configured with k=5).
-- Inject those top 5 retrieved documents as context into the prompt sent to the generator (the retrieved documents must be concatenated or passed via LlamaIndex context mechanisms before generation).
-- Use a prompt template implementing context engineering that explicitly instructs the generator to be concise and focus on the current issue, and that limits or prioritizes included context to keep the prompt focused.
-- Provide a single-agent RAG flow (Single-agent) function such as generate_suggested_resolution(ticket_text) that runs retrieval then generation in one process and returns the suggested resolution.
-- Return both the generated suggested resolution and the 5 retrieved documents (or their IDs/metadata) in the agent response so reviewers can verify which contexts were used.
+- A single Python agent built with LlamaIndex handles an incoming support ticket end to end: retrieval from Azure DocumentDB, context injection and generation of a suggested resolution.
+- Past ticket resolutions and knowledge base articles are indexed into an Azure DocumentDB collection used as the LlamaIndex vector store, each stored as a document carrying its own embedding.
+- A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field, with dimensions matching the embedding model that produced the embeddings.
+- When a new ticket arrives, it is embedded and a vector search runs in Azure DocumentDB via $search / cosmosSearch (similarity COS, L2 or IP), returning the top 5 most similar past resolutions.
+- The retrieved resolutions are injected as context into the prompt the agent sends to the language model.
+- Context engineering keeps that prompt concise and focused on the current issue (e.g. only the ticket text plus the top 5 retrieved resolutions, trimmed to the relevant passages).
+- The agent generates a suggested resolution for the ticket from the injected context and returns it to the support agent.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

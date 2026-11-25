@@ -8,16 +8,11 @@
 
 ## What the starter prompt asks for
 
-- Implement the service in Node.js and connect to Azure DocumentDB using the MongoDB Node.js driver.
-- Expose an HTTP endpoint (e.g., POST /events) that accepts customer behavioural events containing at minimum customerId, eventId, type (pageView|click|purchase), and timestamp, and returns an immediate 2xx on receipt.
-- Buffer incoming events into batches and flush them with unordered bulk operations using collection.bulkWrite(operations, { ordered: false }) to maximize throughput; batch size and flush interval must be configurable.
-- Create a composite unique index on (customerId, eventId) with unique: true on the Azure DocumentDB collection at service startup (createIndex or equivalent) to provide deduplication.
-- Handle duplicate-key errors (E11000) returned from bulkWrite by ignoring/recording them and not failing the overall ingestion flow; successfully inserted documents must still be persisted.
-- Open a change stream on the same collection (collection.watch()) and listen for insert events.
-- On each insert change event, invoke an asynchronous profile update job handler (e.g., call a profileUpdateHandler function or enqueue a job) passing the event's customerId and payload; do not perform long synchronous work inside the change stream handler.
-- Provide a simple simulation or load-test script that emits high-throughput events (including duplicates) to the ingestion endpoint and verifies that unordered bulkWrite is used and duplicates are deduplicated by the composite unique index.
-- Ensure the service creates the target collection (or verifies it exists) before performing bulk writes or opening the change stream.
-- Expose configuration for the Azure DocumentDB connection string, collection name, batch size and flush interval in code or config constants so reviewers can run the service against an Azure DocumentDB instance.
+- The service is implemented in Node.js and exposes an entry point that receives customer behavioural events (page views, clicks, purchases) for ingestion.
+- Received events are grouped into batches and written to Azure DocumentDB through a MongoDB-compatible Node.js driver (e.g. the mongodb package) as unordered bulk operations (e.g. bulkWrite or insertMany with ordered: false).
+- A composite unique index on (customerId, eventId) is created in code on the collection that holds the events (e.g. createIndex({ customerId: 1, eventId: 1 }, { unique: true })) and is the mechanism used for deduplication.
+- A change stream is opened in code against Azure DocumentDB (e.g. with the driver's watch() on the events collection or its database).
+- Each change reported by the change stream triggers a downstream profile update job (e.g. invoking or enqueuing a profile-update function with the customer identified in the change event).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

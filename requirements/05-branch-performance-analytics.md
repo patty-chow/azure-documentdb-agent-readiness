@@ -8,16 +8,11 @@
 
 ## What the starter prompt asks for
 
-- Implement the service in Python using FastAPI and expose at least one GET HTTP endpoint that returns branch-level aggregates suitable for a dashboard (e.g., /branches/aggregates or /branches/{branch_id}/aggregate).
-- Build the aggregation query against Azure DocumentDB (MongoDB API) using a MongoDB aggregation pipeline that includes a $facet stage to compute multiple metrics in one pipeline.
-- In the $facet stage include a facet that computes transaction volume per branch (count of transaction documents, grouped by branch_id) and return that count in the endpoint response.
-- In the $facet stage include a facet that computes average ticket size per branch (average of an amount field, grouped by branch_id) and return that value in the endpoint response.
-- In the $facet stage include a facet that computes product mix per branch (counts grouped by product_id or product_category, with counts or percentages) and return that product mix array in the endpoint response.
-- Provide code that caches the rolled-up summary documents in Azure DocumentDB by writing/upserting documents into a dedicated collection (e.g., branch_summaries) keyed by branch_id and containing transaction_volume, average_ticket_size, product_mix, and a last_updated timestamp.
-- Provide a programmatic mechanism that populates/refreshes the cached summaries by executing the $facet aggregation and upserting the results into the branch_summaries collection (either a POST endpoint like /refresh-summaries or a background task callable in the code).
-- Expose at least one endpoint that returns the cached summary document from the branch_summaries collection for a given branch_id (and clearly falls back to live aggregation only if implemented; the cached-read endpoint must be present).
-- Add a LangChain tool (a callable Tool object or equivalent in the codebase) named and registered in the LangChain code such that analysts can pass natural language questions and the tool answers by querying the cached branch_summaries in Azure DocumentDB and returning a human-readable response.
-- Ensure the LangChain tool queries the branch_summaries collection (not raw transaction documents) when answering questions and that its implementation demonstrates retrieval of the cached fields (transaction_volume, average_ticket_size, product_mix) and composes a concise natural-language reply.
+- A Python FastAPI service exposes HTTP endpoints for a branch performance dashboard, and the dashboard metrics it serves are computed by aggregation pipelines run in Azure DocumentDB through a MongoDB driver (e.g. PyMongo).
+- The aggregation pipeline contains a $facet stage whose sub-pipelines compute transaction volume, average ticket size and product mix, each broken down per branch.
+- The per-branch roll-ups produced by the $facet aggregation are written to Azure DocumentDB as cached summary documents (e.g. one document per branch in a summaries collection).
+- A LangChain tool (Python LangChain) takes an analyst's natural-language question and queries the cached summary documents in Azure DocumentDB to answer it.
+- The tool is attached to a LangChain agent or chain so that an analyst can submit a natural-language question (e.g. through a FastAPI endpoint) and receive a natural-language answer derived from the cached summaries.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

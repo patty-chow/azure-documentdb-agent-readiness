@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement a Single-agent in Python using a LangChain agent: the repository must contain a Python LangChain agent implementation that handles screening requests end-to-end.
-- Ingestion code must embed sanctions list entries and upsert them into an Azure DocumentDB vector index: the sample must create or write vectors and associated metadata into the DocumentDB vector index.
-- On a screening request, the agent must compute an embedding for the incoming customer or transaction record and perform a vector similarity search against the Azure DocumentDB vector index, returning top-N candidates with their similarity scores.
-- The agent must also perform $regex-based fuzzy matching queries against Azure DocumentDB (using the MongoDB-compatible $regex operator) on relevant text fields (e.g., names, addresses, identifiers) and return matching candidates with regex match details.
-- The code must consolidate results from the vector similarity search and the $regex-based fuzzy matching: merge candidate lists, deduplicate by DocumentDB document id, and record which method(s) produced each candidate.
-- The agent must compute a numeric match confidence for each consolidated candidate by combining vector similarity scores and regex match signals using an explicitly implemented scoring algorithm in the code.
-- For each candidate the agent must produce a recommended action derived from the computed confidence (e.g., thresholds that map to "clear", "review", "block") and include the rationale used to decide that action.
-- The screening endpoint/agent response must return a structured screening report (machine-readable, e.g., JSON/dict) that, for each candidate, includes DocumentDB id, matched fields, matching method(s), raw similarity and regex details, consolidated match confidence, recommended action, and source sanctions entry text.
-- The agent must accept customer and transaction records as inputs and demonstrate how input fields are mapped to both the embedding input and the $regex queries used in the DocumentDB searches.
-- Provide an example or test that exercises the complete pipeline (ingest sanctions list into Azure DocumentDB vector index, submit a screening request, run both vector search and $regex-based fuzzy matching, consolidate and score results, and emit the structured screening report).
+- Implement the screening agent in Python with LangChain as a single agent that takes a screening request (a customer or transaction record) and carries it through searching, consolidation, scoring and the report.
+- Store sanctions list entries as documents in Azure DocumentDB with each entry's embedding held on the document, and create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field in code through a MongoDB driver (e.g. PyMongo), with dimensions matching the embedding model used.
+- On each screening request, embed the request with the same embedding model and run a vector similarity search in Azure DocumentDB with $search / cosmosSearch, returning the top candidate entries and their similarity scores.
+- On each screening request, also run $regex-based fuzzy matching queries against the sanctions entries' text fields (e.g. name) in Azure DocumentDB and return the matching entries as candidates.
+- Consolidate the vector search results and the $regex results into a single set of candidate matches for the request.
+- Score each candidate match, producing a match confidence that draws on the vector similarity result and the $regex match evidence.
+- Return a structured screening report (e.g. a typed object or JSON) listing each candidate match with its match confidence and a recommended action.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

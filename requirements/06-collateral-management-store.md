@@ -8,15 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the service in Node.js using the Mongoose ODM to persist documents to Azure DocumentDB (MongoDB-compatible endpoint) and include the connection/config code in the repository.
-- Define a Mongoose schema for collateral documents that includes a stable logical assetId, a numeric version field, a createdAt timestamp, and a schemaVersion field; every persisted document must include all four fields.
-- On every asset creation or valuation update, persist a new document (do not overwrite prior documents) in Azure DocumentDB with an incremented version value and a createdAt timestamp so prior versions are retained for full audit history.
-- Ensure each versioned document stores valuation and pledge-related fields (e.g., currentValuation, pledgedAmount) necessary to compute coverage, and keep the logical assetId constant across versions to link them.
-- Add an LLM classification step that runs on create and on every valuation update and writes classification results into the document fields type and eligibilityTier before persisting the new version.
-- Provide an HTTP endpoint that returns the full audit history (all versions) for a given assetId by querying Azure DocumentDB and ordering by version or createdAt.
-- Provide an HTTP aggregation endpoint that computes and returns the total collateral coverage ratio by running a MongoDB aggregation (via Mongoose) over Azure DocumentDB: sum of currentValuation across relevant documents divided by sum of pledgedAmount; clearly return totalCollateralValue, totalPledgedAmount, and coverageRatio and handle division-by-zero (e.g., return null or Infinity as documented).
-- The aggregation endpoint must use stored versioned documents to compute totals (e.g., use the latest version per asset or clearly document which versions are aggregated) and the code must show the aggregation pipeline used to produce the ratio.
-- Include tests or example requests demonstrating: creating an asset, performing a valuation update that creates a new version and receives type and eligibilityTier tags, retrieving that asset’s audit history, and calling the aggregation endpoint to obtain the total collateral coverage ratio.
+- A Node.js collateral management service defines Mongoose schemas for collateral assets and their valuations and stores them in Azure DocumentDB.
+- Each collateral asset and each valuation update is saved as its own document carrying a version field and a createdAt timestamp.
+- Saving an update for an existing asset writes a new document with a higher version number, and the earlier versions remain in the collection as the asset's history.
+- An LLM classification step tags each stored asset with an asset type and an eligibility tier.
+- An HTTP endpoint returns the total collateral coverage ratio, computed with a Mongoose aggregation pipeline that runs in Azure DocumentDB.
+- The coverage calculation uses only the most recent version of each asset's valuation (e.g. the highest version or latest createdAt per asset).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

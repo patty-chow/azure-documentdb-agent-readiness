@@ -8,15 +8,11 @@
 
 ## What the starter prompt asks for
 
-- Implement the service in Node.js using the Mongoose ODM and connect to Azure DocumentDB’s MongoDB-compatible endpoint (connection string configurable).
-- Define a Mongoose Customer schema containing at minimum: address, phone, surname, lifetime_value (numeric), and products (array), and ensure Customer documents are stored in Azure DocumentDB.
-- Define a Mongoose Household schema that stores household group documents with a members array of DocumentDB document references (Mongoose ObjectId refs) to Customer documents.
-- Provide an endpoint (e.g., POST /households/resolve) that builds an identity graph from Customer documents: create nodes for customers and add edges when customers share a matching address OR phone OR surname to identify connected components as households.
-- Normalize matching fields before comparing (e.g., trim/case-normalize address and surname, canonicalize phone digits) so matches are deterministic and verifiable in code.
-- For each connected component discovered, create and persist a Household document in Azure DocumentDB that contains DocumentDB document references to all member Customer ObjectIds; the created Household documents must be queryable in the DB.
-- Expose an aggregation endpoint that computes household-level CLV (e.g., GET /households/:id/clv) by aggregating/summing the lifetime_value of all Customer members referenced by the Household document using the MongoDB aggregation pipeline via Mongoose.
-- Expose an aggregation endpoint that computes household-level product holdings (e.g., GET /households/:id/products) by aggregating products across all referenced members—returning the union of products and optional counts—using Mongoose/MongoDB aggregation.
-- Implement the aggregation queries so they operate by following the Household.members references (not by re-scanning customers independently), demonstrating use of DocumentDB document references and aggregation pipelines to compute household metrics.
+- The service is a Node.js application using Mongoose, with Mongoose models for customer documents and household group documents stored in Azure DocumentDB.
+- The service provides an operation that identifies household members by matching customer documents on shared address, phone and surname fields (e.g. an aggregation that groups customers by those field values).
+- For each identified household the service creates a household group document that holds references to its member customer documents (e.g. an array of member customer ObjectIds declared with a Mongoose `ref`).
+- An HTTP endpoint computes household-level CLV for a given household by running a Mongoose aggregation pipeline on Azure DocumentDB that combines the CLV of all of that household's members (e.g. summing each member's CLV value).
+- An HTTP endpoint computes household-level product holdings for a given household by running an aggregation pipeline that combines the products held across all of that household's members (e.g. the distinct set of products with counts).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

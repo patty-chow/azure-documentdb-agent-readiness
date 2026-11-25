@@ -8,15 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js with the Mongoose ODM to implement the service (code must import and use Mongoose).
-- Connect Mongoose to Azure DocumentDB using a MongoDB-compatible connection string so the canonical documents are stored in Azure DocumentDB.
-- Define a Mongoose schema for the canonical customer profile that includes a top-level stable customerId field and create a unique index on customerId to drive identity resolution.
-- Model nested sub-documents for each source system under distinct fields in the schema (at minimum fields named for CRM, e-commerce, and support) so each source’s attributes are stored under its own sub-document.
-- Expose a handler that receives customer events from multiple source systems; events must include the source identifier (CRM, e-commerce, or support) and the stable customerId.
-- For each incoming event, perform an upsert into Azure DocumentDB (e.g., using findOneAndUpdate or updateOne with upsert: true) targeting the document whose customerId matches the event’s stable customerId.
-- When applying the update, merge the event’s attributes into the appropriate nested sub-document using the $set operator on the source-specific path (e.g., $set: { "crm.<field>": value } or "e-commerce.<field>": value) so unrelated fields are not overwritten.
-- Only set the fields provided by the event (no document replacement); ensure existing data in other nested sub-documents and top-level fields is preserved after the upsert.
-- Use atomic MongoDB update semantics (upsert + $set) to handle concurrent updates safely rather than replacing whole documents.
+- The service is written in Node.js and uses the Mongoose ODM, with a Mongoose schema and model for the canonical customer profile document stored in Azure DocumentDB.
+- The canonical profile schema carries a stable `customerId` field and one nested sub-document per source system (CRM, e-commerce and support) holding that system's attributes (e.g. top-level fields `crm`, `ecommerce`, `support`).
+- The service exposes an entry point that receives a customer event carrying its originating source system, the customer's `customerId` and that system's attributes (e.g. an HTTP endpoint or an exported handler function).
+- Identity resolution matches an incoming event to its profile on the stable `customerId` alone: the update's filter selects the document by `customerId`.
+- Each event is applied through a Mongoose upsert (e.g. `findOneAndUpdate` or `updateOne` with `upsert: true`), creating the canonical profile document when none exists for that `customerId` and updating the existing one otherwise.
+- The update merges the event's attributes with the `$set` operator on dotted paths inside the originating source system's sub-document (e.g. `crm.email`), writing only the fields present in the event.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

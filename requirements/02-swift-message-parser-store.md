@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the service in Python using async functions and define persistence models using Beanie ODM (Beanie ODM must be used to model documents).
-- Initialize Beanie against an Azure DocumentDB MongoDB-compatible endpoint (async Motor client + Beanie init), with connection configuration clearly visible in the code.
-- Provide an async parser that accepts raw SWIFT MT messages and recognizes MT103 and MT202 message types (must detect message_type = "MT103" or "MT202").
-- From MT103 and MT202 messages extract and map standard fields into the document model at minimum: transaction reference (field 20), value date/currency/amount (field 32A), ordering customer (field 50A/50K), beneficiary/customer (field 59), and instructing/receiving agents where present (e.g., 52/53/54); include the raw message and received_at metadata in each document.
-- Define Beanie Document schemas with typed Pydantic fields for all parsed fields and enforce validation rules so that required fields (message_type, transaction reference (20), amount, currency, value date) are rejected if missing or invalid.
-- Implement async batch collection and bulk-writes batches for throughput: accumulate parsed documents into configurable batches and perform async bulk insert operations (via Beanie insert_many or by calling the underlying Motor collection bulk/insert API) when batch size or flush interval is reached.
-- Ensure bulk write operations target Azure DocumentDB collections and are performed as efficient bulk/unordered inserts (i.e., use insert_many/unordered bulk write options) so throughput behavior is testable.
-- Surface parsing and validation failures and bulk-write errors: the code must return or log validation errors for individual messages and report which documents failed in bulk-write responses or logs.
-- Expose an async aggregation endpoint that, when invoked, runs a MongoDB aggregation pipeline (via Beanie or the underlying Motor collection) and returns daily message volume and total value grouped by message type (grouped by ISO day and message_type, summing the numeric amount field).
-- The aggregation result must include counts and summed amounts; if multiple currencies exist, the endpoint must return totals broken down by currency (i.e., group by date + message_type + currency) so totals are unambiguous.
+- The service is written in async Python and uses Beanie ODM to define Document models that store parsed MT103 and MT202 messages as structured documents in Azure DocumentDB, with each parsed SWIFT field held as its own typed document field (e.g. sender, receiver, amount, currency, value date).
+- The service exposes an async ingestion entry point that accepts incoming SWIFT MT messages and runs them through the parse, validate and bulk-write flow (e.g. an HTTP endpoint or an async function that takes a batch of raw message text).
+- A parser extracts the fields of MT103 and MT202 messages from the raw SWIFT MT text and maps each message type's fields onto the corresponding Beanie document, handling both message types.
+- Each parsed message is checked for its required fields before it is stored, and a message missing a required field is not written (e.g. a missing amount, currency or value date).
+- Parsed documents are collected into batches and each batch is written to Azure DocumentDB in a single asynchronous bulk-write call (e.g. Beanie's `insert_many`).
+- An async aggregation endpoint runs an aggregation pipeline in Azure DocumentDB (e.g. a `$group` stage via Beanie's `aggregate` or the underlying async driver) that groups the stored messages by day and by message type.
+- The aggregation result reports, for each day and message type, the number of messages and the total of their transaction values.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

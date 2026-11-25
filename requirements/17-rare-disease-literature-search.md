@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the ingestion pipeline in Python using LlamaIndex to fetch PubMed abstracts for rare diseases (the code must show PubMed as the source and perform queries or use an identifier list to select rare-disease abstracts).
-- During ingestion, extract and store PubMed ID and the abstract publication year as explicit metadata fields associated with each document/chunk.
-- Use LlamaIndex to chunk each abstract into smaller passages; each chunk must retain a pointer to its parent abstract (original PubMed ID) and a chunk identifier so reviewers can map chunks back to the original abstract.
-- Use LlamaIndex’s embedding interface in Python to compute vector embeddings for every chunk and attach those embeddings to the chunk records prior to storage.
-- Persist every chunk as a vector document in Azure DocumentDB (the MongoDB-compatible service) so that each stored record contains: the embedding vector, PubMed ID, abstract year, chunk id, and the chunk text.
-- Implement retrieval that computes semantic similarity (e.g., cosine similarity) between a question embedding and stored chunk embeddings and returns results sorted by relevance score (highest relevance first); the code must expose or return the relevance score for each retrieved item.
-- Expose a RAG agent implemented in Python that uses LlamaIndex retrieval over the Azure DocumentDB-stored vectors to synthesize answers grounded in retrieved chunks (the code must identify this component as a RAG agent).
-- Make the RAG agent include grounded citations for every claim it uses from retrieved chunks; each citation in the agent response must include the PubMed ID and the abstract year and must be linkable to the stored chunk (e.g., by chunk id or returned snippet).
-- Ensure the agent’s final answer ranks and presents supporting documents by semantic relevance and returns a structured list of citations (PubMed ID, abstract year, relevance score, and a short excerpt or snippet from the cited abstract) so a reviewer can verify grounding.
-- Provide code paths or examples that demonstrate end-to-end behavior: ingest PubMed abstracts, build/store embeddings in Azure DocumentDB, run a researcher question through the RAG agent, and produce a ranked, citation-rich answer containing PubMed IDs and years.
+- Implement the pipeline in Python with LlamaIndex, including an ingestion step that fetches PubMed abstracts for rare diseases (e.g. through the PubMed E-utilities API) and keeps each abstract's text, PubMed ID and publication year.
+- Split each ingested abstract into text chunks with LlamaIndex and carry the source abstract's PubMed ID and year on every chunk as metadata.
+- Generate an embedding for each chunk with LlamaIndex's embedding integration and store the chunks with their embedding vectors as fields on documents in Azure DocumentDB (through LlamaIndex's Azure DocumentDB vector store integration or a MongoDB-compatible Python driver such as PyMongo).
+- Create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field in code, with dimensions matching the embedding model's output and a similarity of COS, L2 or IP.
+- Answer a researcher question by embedding it and running the vector similarity search inside Azure DocumentDB with $search / cosmosSearch, ordering the retrieved chunks by the database's similarity score (semantic relevance).
+- Expose a RAG agent built with LlamaIndex in Python that takes a researcher question, retrieves the semantically ranked chunks from Azure DocumentDB and generates an answer conditioned on those chunks.
+- Include a citation for each retrieved abstract the answer draws on, and give the PubMed ID and abstract year in every citation.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

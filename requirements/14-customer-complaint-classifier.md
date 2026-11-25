@@ -8,16 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement the solution in Python and use LangChain as the agent framework to orchestrate the classification and embedding pipeline (single-agent implementation).
-- Define complaint documents as Beanie ODM Document models (using Beanie) including at minimum: raw complaint text, product_category, root_cause, urgency_tier, embedding (vector), and a unique identifier.
-- Connect Beanie to Azure DocumentDB (MongoDB-compatible endpoint) and use that connection to read and write complaint documents.
-- Query Azure DocumentDB for unclassified complaints by selecting documents where product_category, root_cause, or urgency_tier are null/unset and load them for processing.
-- Use prompt engineering via LangChain (prompt templates / formatted prompts) to call an LLM and produce structured outputs for product_category, root_cause, and urgency_tier, then parse and map those outputs into the Beanie document fields.
-- Generate an embedding for each complaint's text using a LangChain embedding call and store the resulting embedding vector in the Beanie document's embedding field in Azure DocumentDB.
-- Implement a similarity search over stored embeddings that, given a complaint, returns the top-N most similar complaints (use cosine similarity or equivalent), relying on the stored embedding vectors (either via an application-side similarity computation or a MongoDB-based approach).
-- After classification and embedding, update/write the enriched complaint document back to Azure DocumentDB through Beanie (persisting the new classification fields and embedding).
-- Support processing multiple unclassified complaints in a run (batch processing) so the agent can classify and store several documents per execution.
-- Provide a MongoDB/Azure DocumentDB aggregation pipeline (run via the same Beanie/MongoDB connection) that groups complaints by product_category, counts occurrences, sorts descending, and returns the complaint hotspots by category.
+- A Python LangChain single agent drives the whole pipeline: read unclassified complaints, classify them, embed the complaint text, and write the enriched documents back.
+- The agent reads complaint documents that have not yet been classified from Azure DocumentDB through Beanie ODM (e.g. documents whose classification fields are absent).
+- Prompt engineering: a LangChain prompt sent to the LLM assigns each complaint a product category, a root cause and an urgency tier.
+- The complaint text is embedded with an embedding model and the resulting vector is stored as a field on the complaint document.
+- A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field, with dimensions matching the embedding model used.
+- Similarity search over complaints runs in Azure DocumentDB with a $search / cosmosSearch query against that index, returning the complaints nearest to a given embedding.
+- The enriched complaint document (classification labels plus embedding) is written back to Azure DocumentDB through Beanie.
+- An aggregation pipeline run against Azure DocumentDB groups complaints by category and returns per-category counts so that complaint hotspots stand out.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the pipeline in Node.js using the LangChain framework as a multi-agent application with a distinct orchestrator plus underwriting, compliance, and comms agents (i.e., a "Node.js LangChain multi-agent" setup).
-- The orchestrator must read the mortgage application document from Azure DocumentDB (by document id or a query) at the start of processing and load its full application fields into the pipeline.
-- The orchestrator must pass the same application data sequentially to the underwriting agent, then to the compliance agent, and finally to the comms agent, enforcing that execution order in code.
-- The underwriting agent must perform an affordability assessment and return a structured result containing at minimum: an affordability decision (approve/decline/conditional), numeric metrics (e.g., income, monthly debt, calculated DTI or equivalent), and a human-readable rationale explaining the assessment.
-- The compliance agent must evaluate regulatory requirements against the application fields and return a structured compliance report that includes a pass/fail outcome plus a list of any flagged compliance issues or required remediation steps.
-- The comms agent must generate a decision letter text (string) that incorporates the final decision, the key reasons from underwriting and compliance, and clear next steps for the applicant; the letter must be returned as part of the structured agent output.
-- The orchestrator must combine the original application id, underwriting assessment, compliance report, comms decision letter, a final pipeline decision/status, agent identifiers, and timestamps into a single outcome object.
-- The orchestrator must write (create or update) that outcome object back to Azure DocumentDB and persist the final status and decision fields on the same application document (or a clearly linked outcome document) so the result can be retrieved later.
-- If any agent produces an error or a failing outcome, the orchestrator must set and persist an appropriate final decision/status (e.g., declined, needs-follow-up) and include error or failure details in the stored outcome.
-- Each agent implementation and the orchestrator must expose or record the agent inputs and outputs (structured data) so a reviewer can inspect the prompt/response exchange in the Node.js LangChain multi-agent logs or the saved outcome object.
+- The pipeline is written in Node.js and built with LangChain: an orchestrator coordinates three LangChain agents, one each for underwriting, compliance and customer communications.
+- The orchestrator reads a mortgage application document from Azure DocumentDB with the MongoDB Node.js driver (e.g. `mongodb`) and hands it to the underwriting agent.
+- The underwriting agent assesses the applicant's affordability from the application document and returns its assessment to the orchestrator.
+- The compliance agent receives the application together with the underwriting assessment, checks regulatory requirements, and returns its result to the orchestrator.
+- The comms agent receives the application plus the underwriting and compliance results and drafts the decision letter.
+- The orchestrator runs the agents in sequence, underwriting then compliance then comms, with each agent receiving the previous agent's output.
+- After the comms agent finishes, the orchestrator writes the outcome (e.g. the affordability assessment, compliance result and decision letter) back to Azure DocumentDB.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

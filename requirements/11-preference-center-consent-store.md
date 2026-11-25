@@ -8,15 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Use Python and FastAPI and persist data with Beanie ODM to Azure DocumentDB (MongoDB-compatible) — the codebase must include a Beanie Document model and show it being used with FastAPI route handlers.
-- Define a Beanie Document model for customer consent/preference documents that includes a top-level consentVersion field and a channel preferences structure (e.g., per-channel booleans or enum states) stored as fields on the Document.
-- Include an append-only consent history sub-array on the same Beanie Document model; each history entry must include at minimum a timestamp, consentVersion, channel states, and an event type (e.g., "grant" or "withdraw").
-- The record-consent endpoint must append a new entry to the consent history sub-array and update the top-level current preference snapshot and consentVersion in a single atomic operation (e.g., a single $push plus $set-style update via Beanie/Mongo update APIs).
-- The withdraw-consent endpoint must append a withdrawal event to the consent history sub-array (do not modify or delete prior history entries) and update the top-level current preference snapshot and consentVersion to reflect withdrawn status in the same atomic update.
-- The retrieve-current-preferences endpoint must return the current preference state and consentVersion (a snapshot stored on the document or derived deterministically from the latest history entry) without exposing or modifying prior history entries.
-- Create and register a TTL index (DocumentDB TTL index) on a document-level retention timestamp field (e.g., expiresAt or retentionExpiresAt) and ensure code sets that field when writing records so Azure DocumentDB will automatically expire documents according to the retention policy.
-- Ensure the API and data model enforce append-only audit behavior: there must be no route or code path that mutates or removes existing entries inside the consent history sub-array (history entries are only added).
-- Include example request/response shapes or FastAPI route implementations for the three required endpoints (record consent, withdraw consent, retrieve current preference state) so a reviewer can exercise them against an Azure DocumentDB instance.
+- A Python FastAPI service exposes HTTP endpoints to record consent, withdraw consent, and retrieve a customer's current preference state (e.g. POST to record, POST to withdraw, GET to retrieve).
+- Customer consent records and channel preferences are modelled as Beanie ODM Document classes and stored as documents in Azure DocumentDB.
+- Each consent document carries a consentVersion field and a consent history sub-array that holds past consent events for audit.
+- Recording consent appends a new entry to the consent history sub-array (e.g. with a push update that leaves earlier entries in place) and updates the document's current channel preferences and consentVersion.
+- Withdrawing consent appends a new entry to the consent history sub-array (e.g. with a push update that leaves earlier entries in place) and updates the document's current channel preferences.
+- The retrieve endpoint reads the customer's document from Azure DocumentDB through Beanie and returns its current preference state.
+- A TTL index with expireAfterSeconds is created in code (e.g. in the Beanie Document's index settings) on a Date-typed retention field of the consent documents, for data retention enforcement.
+- Consent documents written by the record and withdraw endpoints set that Date-typed retention field.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

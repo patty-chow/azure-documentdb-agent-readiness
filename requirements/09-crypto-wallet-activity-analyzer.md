@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the project in Python and expose a runnable Single-agent LangChain agent (use the term "LangChain agent") as the entrypoint that accepts a wallet address string input.
-- Register and use a LangChain Tool named exactly "DocumentDB aggregation tool" that the agent calls to perform the database analysis.
-- The "DocumentDB aggregation tool" must connect to Azure DocumentDB and execute a MongoDB-style aggregation pipeline against the transactions time-series collection for the provided wallet address.
-- The aggregation pipeline executed by the tool must include a $match stage filtering on the provided wallet address and a grouping-by-day stage (e.g., $dateTrunc or equivalent) that computes per-day volume (sum of amount) and frequency (count of transactions).
-- The aggregation pipeline must perform the volume and frequency metric computations server-side (in the pipeline) and return daily documents containing at minimum: date, daily_volume, daily_count.
-- The tool must return the raw aggregation results to the agent (not only a formatted summary) so the agent can perform statistical analysis client-side.
-- The LangChain agent must compute and flag statistical outliers from the returned daily metrics using a documented, reproducible method (for example, z-score thresholding or IQR) and mark which days are anomalous in the results.
-- The agent must produce and return a plain-language text summary that describes activity patterns (overall trend, average daily volume and frequency, notable changes) and enumerates any anomalies with date, which metric is anomalous, and why it was flagged.
-- The agent code must invoke the "DocumentDB aggregation tool" programmatically when given a wallet address (e.g., provide a function analyze_wallet(address: str) -> str or an agent.run(...) call) and return the plain-language summary as its output.
-- The code must explicitly target Azure DocumentDB in its connection/configuration and use MongoDB aggregation pipeline semantics when calling the database aggregate operation.
+- A Python LangChain agent (a single agent) that accepts a wallet address as its input and returns a plain-language summary as its output.
+- A DocumentDB aggregation tool exposed to the LangChain agent as a tool; it runs an Azure DocumentDB aggregation pipeline over the wallet transaction documents through a MongoDB driver (e.g. PyMongo).
+- The aggregation pipeline selects the given wallet's transactions and groups them by day, treating each transaction as a time-series document (e.g. a $match stage on the wallet followed by a $group stage keyed on the transaction's date).
+- For each day, the pipeline computes volume and frequency metrics (e.g. summed amount and transaction count per day).
+- The tool flags statistical outliers among the daily metrics (e.g. days whose volume or frequency deviates from the wallet's own norm by a z-score or similar threshold) and returns the flagged days alongside the per-day metrics.
+- When given a wallet address, the agent invokes the aggregation tool through LangChain tool use and builds its answer from the tool's returned results.
+- The agent's response is a plain-language summary that describes the wallet's activity patterns over time and names any anomalies the analysis detected.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

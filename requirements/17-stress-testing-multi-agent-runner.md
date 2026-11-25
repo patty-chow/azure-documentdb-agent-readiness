@@ -8,14 +8,11 @@
 
 ## What the starter prompt asks for
 
-- Implemented in Python using LangChain multi-agent architecture: repository contains an orchestrator component that invokes a scenario agent, an impact agent, and a reporting agent in sequence.
-- The scenario agent produces structured macroeconomic shock parameters (e.g., interest_rate_shift, fx_rate_changes, credit_spread_shift) as a JSON/dict containing a unique scenario_id and timestamp.
-- The impact agent accepts the scenario parameters and runs MongoDB-style aggregation pipelines against Azure DocumentDB position data (using collection.aggregate(...) or equivalent) to compute per-position and aggregate P&L impacts.
-- Aggregation pipelines used by the impact agent include pipeline stages that perform filtering and arithmetic computations (e.g., $match, $project with $multiply/$subtract, $group and $sum) to derive stressed valuations and P&L deltas.
-- The impact agent returns both per-position impact documents and aggregated statistics (total P&L, counts by asset class) that the reporting agent can consume.
-- The reporting agent synthesises a structured stress test report (JSON/dict) that includes scenario metadata, aggregate P&L (total, mean, percentiles), per-asset-class breakdown, and a list of top-N worst positions, and returns that report programmatically.
-- All scenario runs — including the scenario parameters, raw impact results, aggregated statistics, and the final report — are persisted as Azure DocumentDB documents in an audit collection (each stored document contains scenario_id, timestamp, agent outputs, and references/counts of affected positions).
-- The codebase includes an executable example or test that runs the orchestrator end-to-end for at least one scenario, demonstrates the aggregation query against a positions collection, shows the generated report, and verifies that the corresponding audit document was inserted into Azure DocumentDB.
+- The system is written in Python with LangChain and is organised as a multi-agent runner: an orchestrator coordinates three distinct agent roles (a scenario agent, an impact agent and a reporting agent) and runs them as one stress test, handing each agent's output to the next.
+- The scenario agent uses the LLM to generate macroeconomic shock parameters for a stress scenario and returns them in a structured form (e.g. a dict of shock magnitudes per risk factor) that the impact agent can consume.
+- The impact agent computes P&L impacts by running aggregation pipelines in Azure DocumentDB (e.g. PyMongo's `collection.aggregate` with `$match` and `$group` stages) over the stored position data to apply the scenario's shock parameters (e.g. inside the pipeline stages, or to the aggregated figures).
+- The reporting agent synthesises the scenario parameters and the impact results into a structured stress test report (e.g. a dict or Pydantic model with scenario, aggregate P&L and breakdown sections), and the orchestrator returns that report as the result of the run.
+- Every scenario run is stored as a document in Azure DocumentDB for audit (e.g. a document recording the generated shock parameters, the impact figures and the report).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

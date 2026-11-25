@@ -8,15 +8,11 @@
 
 ## What the starter prompt asks for
 
-- Implement the pipeline in Python and expose a callable entry point that accepts a telehealth session transcript (string) and a patientId, and returns the generated structured summary.
-- Build the pipeline using LlamaIndex components so LlamaIndex is used to assemble/drive the summarisation workflow.
-- Use context engineering to construct the summarisation prompt template that explicitly requests separate sections for "chief complaint", "assessment", "plan", and "follow-up".
-- Invoke OpenAI as the LLM (via LlamaIndex or direct call) to generate the clinical summary from the context-engineered prompt.
-- Parse and validate the OpenAI output into a structured Python object (dict) containing distinct fields for chief complaint, assessment, plan, and follow-up, and include metadata fields patientId and a timestamp.
-- Persist the parsed summary as a structured document in Azure DocumentDB (MongoDB-compatible) so the document stores separate fields (not a single free-text blob) for chief complaint, assessment, plan, follow-up, patientId, and timestamp.
-- Connect to Azure DocumentDB from Python using the MongoDB-compatible API and insert the summary into a clinical_summaries (or similarly named) collection; confirm the insertion returns a document id.
-- Ensure the pipeline links the summary to the patient record by verifying the provided patientId exists in a patients collection (or otherwise validating referential integrity) and failing or logging if it does not.
-- Provide an end-to-end runnable example or test script that submits a sample telehealth transcript and patientId, shows the OpenAI-generated structured summary, and demonstrates that the document was written to Azure DocumentDB (e.g., by retrieving the inserted document by patientId).
+- Provide a Python LlamaIndex pipeline whose entry point accepts a telehealth session transcript together with the patientId of the patient it belongs to.
+- Apply context engineering when building the summarisation prompt: the prompt is assembled so that it structures the requested summary around the four sections chief complaint, assessment, plan and follow-up.
+- Generate the clinical summary by sending the engineered prompt to OpenAI as the LLM inside the LlamaIndex pipeline.
+- Turn the OpenAI response into a structured clinical summary with one field per section (e.g. chief complaint, assessment, plan and follow-up as separate keys).
+- Store the structured summary as a document in Azure DocumentDB with PyMongo (e.g. an insert into a clinical summaries collection), the document carrying the patientId field that links it to the patient record.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

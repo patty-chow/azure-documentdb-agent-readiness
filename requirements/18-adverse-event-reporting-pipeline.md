@@ -8,15 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implementation is in Python and exposes a callable ingestion function or endpoint that accepts a free-text adverse event report string as input.
-- Define a Beanie ODM document model (a class inheriting from beanie.Document) representing an adverse event with at least the fields drug, event, severity, and onset_date, using Pydantic types for each field.
-- Include a Pydantic schema (the model used by Beanie or a separate Pydantic model) that enforces types and constraints (e.g., onset_date parsed to a date/datetime type; severity restricted to a clear set or enum) and raise/return validation errors when data does not conform.
-- Use prompt engineering: include a prompt template in the code and call an LLM to extract the structured fields drug, event, severity, and onset date from the free-text input; the code must parse the LLM response (preferably JSON) and map it to the schema fields.
-- Only write documents to Azure DocumentDB after the extracted data has been validated by the Pydantic schema; if validation fails the code must not insert the document and must surface the validation errors.
-- Connect Beanie ODM to Azure DocumentDB (MongoDB-compatible endpoint) and persist validated adverse event documents to an Azure DocumentDB collection via Beanie insert/save operations.
-- Store the onset_date as a date/datetime value in the saved Azure DocumentDB document (not as an unparsed string).
-- Provide a server-side aggregation implementation (using an aggregation pipeline against Azure DocumentDB via Beanie or the underlying driver) that groups by drug and event, counts occurrences, sorts by count descending, and returns the most frequently reported events by drug.
-- Include example usage or a short integration test that demonstrates: ingesting a sample free-text report, running the LLM extraction + Pydantic validation, writing the validated document to Azure DocumentDB, and executing the aggregation to show the expected top events per drug.
+- A Python pipeline that accepts a free-text adverse event report and runs it through extraction, schema validation and storage in sequence.
+- An LLM call driven by an engineered prompt (e.g. instructions, definitions of the wanted fields and a required output format in the prompt text) that extracts the structured fields drug, event, severity and onset date from the free text.
+- A Pydantic schema for the extracted report with the fields drug, event, severity and onset date, and validation of the LLM output against that schema before the report is stored.
+- A Beanie ODM Document model representing the structured adverse event report with those four fields.
+- The validated report written to Azure DocumentDB through that Beanie Document model.
+- An aggregation pipeline, run through Beanie ODM against the stored reports, that groups them by drug and event, counts the reports in each group and orders the result so the most frequently reported events for each drug come first.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

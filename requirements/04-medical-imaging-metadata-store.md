@@ -8,15 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the service in Python.
-- Persist medical imaging metadata as DocumentDB documents in Azure DocumentDB, including at minimum the fields modality, body_part and findings (and an image identifier).
-- Provide an ingestion pathway (API endpoint or function) that accepts modality, body_part, findings and image identifier and writes a DocumentDB document.
-- Use OpenAI to compute an embedding for the findings text at ingestion and when processing a search query (i.e., call OpenAI embeddings for findings and for query strings).
-- Store each embedding in the DocumentDB document as BSON binary vectors.
-- Programmatically create a vector-ivf index on the embedding field in Azure DocumentDB, where the index dimension matches the embedding length returned by OpenAI and the index is created before running vector searches.
-- Expose a search endpoint that accepts a clinical query string, computes its OpenAI embedding, performs an approximate nearest-neighbor search using the vector-ivf index over the BSON binary vectors, and returns matching image identifiers and their DocumentDB metadata.
-- Return similarity scores or distances with search results and sort results by similarity.
-- Use the Azure DocumentDB (MongoDB‑compatible) cluster API to create the index and run the vector search operations (i.e., index creation and vector query calls are visible in the code).
+- The app is a Python service that stores medical imaging metadata documents (modality, body part, findings) in Azure DocumentDB through a Python MongoDB-compatible driver (e.g. pymongo).
+- For each imaging record, the findings text is embedded with OpenAI and the resulting vector is stored on the same document as a BSON binary vector.
+- A cosmosSearch index of kind vector-ivf is created in code on the embedding field, with dimensions matching the OpenAI embedding model's output.
+- The service exposes a search endpoint that accepts a clinical query string (e.g. as a query parameter or JSON body field).
+- The search endpoint embeds the clinical query string with OpenAI and runs the similarity search in Azure DocumentDB with a $search / cosmosSearch query over the vector-ivf index using that query vector (similarity e.g. COS).
+- The search endpoint returns the imaging metadata documents matched by that vector search, ordered by semantic similarity to the query.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

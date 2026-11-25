@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the sample in Node.js and orchestrate the flow using a LangChain orchestration flow.
-- Create three distinct LangChain agents named "policy agent", "refund agent", and "comms agent", and wire them into a single multi-step orchestration that runs policy agent -> refund agent -> comms agent in sequence.
-- Fetch the order document from Azure DocumentDB (Microsoft.DocumentDB/mongoClusters) before starting the orchestration and pass that fetched order document as the input to the policy agent.
-- Have the "policy agent" return a structured result that includes at minimum: eligibility (boolean) and eligibilityReason (string); if eligibility is false the orchestration must not perform refund calculations and must forward the policy result to the comms agent.
-- Have the "refund agent" compute and return a structured numeric refundAmount (and optionally a breakdown such as itemRefunds and shippingRefund) based on the order document and the policy result; refund calculations must be skipped when policy agent marks ineligible.
-- Have the "comms agent" generate a structured customer notification that includes customer contact/identifier from the order, eligibility status, refundAmount (if any), eligibilityReason, and a messageBody suitable for notifying the customer; include notificationChannel in the output.
-- After orchestration completes, persist a final return document to Azure DocumentDB using Mongoose; the saved document must include orderId, status ("approved", "rejected", or "error"), refundAmount (number, zero if rejected), timestamps, and the raw agent outputs (policyResult, refundResult, commsResult).
-- Ensure the flow accepts a return request input (e.g., orderId and return reason), triggers the order fetch + orchestration, and returns the final persisted return document as the API response.
-- Implement error handling so that if the order is not found or any agent throws an error, the code writes a return document with status "error" and an error field to Azure DocumentDB via Mongoose, and the API responds with that error-state document.
-- Provide runnable tests or a demo script that exercises both an approved return path and a rejected return path, verifying that agent outputs are produced and that final documents are written to Azure DocumentDB via Mongoose with the expected fields.
+- Provide a Node.js entry point that accepts a return request and starts the orchestration flow for it (e.g. an exported function or HTTP handler that takes a return request identifying the order).
+- Fetch the order document for the return request from Azure DocumentDB via Mongoose and pass the fetched order document object into the orchestration.
+- Implement the orchestration flow with LangChain in Node.js so that it runs three agents in sequence, a policy agent, then a refund-calculation agent, then a comms agent, with each step receiving the output of the one before it.
+- Implement the policy agent as a LangChain agent that receives the order document and determines whether the return is eligible.
+- Implement the refund-calculation agent as a LangChain agent that receives the order document and the policy agent's eligibility result and calculates the refund amount.
+- Implement the comms agent as a LangChain agent that receives the order document, the eligibility result and the refund amount and generates the customer notification text.
+- Write the final return document, holding the outcome of the flow (e.g. eligibility result, refund amount and notification), back to Azure DocumentDB via Mongoose.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

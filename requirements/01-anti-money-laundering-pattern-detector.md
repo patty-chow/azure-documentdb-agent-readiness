@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the agent in Python and use LangChain as the agent framework (single-agent) to orchestrate queries and narrative generation.
-- Implement and register a DocumentDB aggregation tool that the LangChain agent calls to execute aggregation pipelines against Azure DocumentDB; the tool must accept a target database/collection and an aggregation pipeline and return pipeline results.
-- Connect the DocumentDB aggregation tool to Azure DocumentDB (transactions collection) via configurable connection parameters so the tool can run live aggregations against the cluster.
-- Build counterparty chains by following transaction document references (transaction reference fields) using graph-like aggregation (e.g., a $graphLookup-style stage) with a configurable max traversal depth, returning full chains of transaction documents and the reference paths between them.
-- Ensure the aggregation pipeline preserves key transaction fields needed for analysis (at minimum: transactionId, from/to party IDs, amount, timestamp, and reference fields) in the returned chain documents so the agent can cite source documents.
-- Implement multiple known AML typology rules applied via aggregation logic (at least two), for example: circular-flow/cycle detection and rapid value movement across consecutive transactions; each typology must be codified as aggregation stages or post-aggregation filters that mark matched chains.
-- Flag chains as suspicious when typology criteria are met and include metadata in the flagged result indicating which typology rule(s) matched and the evidence (e.g., matched transaction IDs, counts, summed amounts, time windows).
-- For every flagged chain, have the LangChain agent generate a structured suspicious activity narrative (JSON/dict) that includes: chain summary, involved counterparties and roles, timestamps and amounts overview, typology(s) matched, why the chain was flagged (evidence), and references to the source Azure DocumentDB document IDs used as evidence.
-- Expose a programmatic agent interface (method/command) to run detection for a given anchor (transaction ID or account ID) and return the list of flagged chains with their structured suspicious activity narratives.
-- Provide an example script or notebook that demonstrates end-to-end usage: seeding or querying sample transactions, invoking the LangChain agent which calls the DocumentDB aggregation tool, and printing the aggregation results plus the generated structured narratives.
+- Implement the agent in Python with LangChain as a single agent that is given a DocumentDB aggregation tool and invokes that tool to analyse transactions.
+- The DocumentDB aggregation tool runs aggregation pipelines against the transaction documents in Azure DocumentDB through a MongoDB driver (e.g. PyMongo's `aggregate`).
+- Transactions are modelled as documents that reference other documents (e.g. a counterparty account or a linked transaction), and the aggregation tool follows those references to assemble counterparty chains (e.g. with `$graphLookup` or chained `$lookup` stages).
+- Known AML typology rules are expressed as stages of the aggregation pipeline, so the typology matching runs in Azure DocumentDB (e.g. circular transfers, structuring just below a threshold, rapid pass-through of funds).
+- Chains that match a typology rule are flagged as suspicious, and the flagged chains are what the tool returns to the agent.
+- For each flagged chain the agent generates a structured suspicious activity narrative: an object with defined fields (e.g. a Pydantic model or JSON) that describes the chain and the suspicious pattern it matched.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

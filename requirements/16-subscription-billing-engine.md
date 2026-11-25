@@ -8,17 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and Mongoose to connect to Azure DocumentDB (code calls mongoose.connect with an Azure DocumentDB/MongoDB URI and package.json lists mongoose).
-- Define Mongoose schemas/models for subscription plans, customers, charge events, and entitlement documents (e.g., SubscriptionPlan, Customer, ChargeEvent, Entitlement) and export them for use by the billing engine.
-- Implement and export an async processCharge function (or API route handler) that accepts at minimum customerId, planId, amount, and idempotencyKey parameters.
-- Use a MongoDB session and DocumentDB transactions (multi-document transactions) inside processCharge: start a session, run the transactional logic with session/withTransaction, and commit/abort the session so the charge creation and subscription update are atomic.
-- Inside the same DocumentDB transaction, create a ChargeEvent document and update the corresponding customer/subscription document (e.g., update billing status, lastChargedAt, billingCycle) so both changes are applied or rolled back together.
-- Implement idempotency key checks: processCharge checks for an existing ChargeEvent with the same idempotencyKey and customerId and returns the existing event without creating a duplicate if found.
-- Enforce idempotency at the database level by creating a unique (compound) index on the ChargeEvent collection for (customerId, idempotencyKey) to prevent race-condition double-billing.
-- Define TTL indexes for entitlement documents (e.g., a Date field and schema.index(..., { expireAfterSeconds: 0 })) so trial entitlement documents inserted with an expiry timestamp are auto-expired by Azure DocumentDB.
-- When creating a trial entitlement, set the expiry timestamp field used by the TTL index and associate the entitlement with the correct customer so it is auto-removed after the TTL.
-- Ensure transactional error handling: on any error during the DocumentDB transaction the code aborts the transaction and does not persist a partial ChargeEvent or subscription update.
-- Provide an automated check or example (script or test) that simulates concurrent/process calls using the same idempotencyKey and verifies only one ChargeEvent is persisted and the subscription update is applied once.
+- Node.js application built with the Mongoose ODM, with Mongoose schemas/models for subscription plans, customers, charge events and trial entitlement documents, stored in Azure DocumentDB.
+- Subscription plan documents describe the recurring billing a customer subscribes to (e.g. price and billing interval), and a subscription status is stored for each subscription (e.g. on the customer document).
+- A charge operation that records a charge by inserting a charge event document and updating the subscription status it belongs to.
+- The charge event insert and the subscription-status update run atomically in one multi-document transaction on a Mongoose session (startSession with withTransaction, or startTransaction / commitTransaction / abortTransaction).
+- The charge operation takes an idempotency key and checks it before recording; when a charge with that key has already been recorded, it does not insert a second charge event (e.g. the key stored on the charge event with a unique index, or a lookup inside the transaction).
+- Trial entitlement documents have a Date-typed expiry field, and a TTL index (expireAfterSeconds on that single date field) is created in code through Mongoose so Azure DocumentDB deletes trial entitlements automatically once they expire.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

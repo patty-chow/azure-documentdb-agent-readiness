@@ -8,17 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Uses Node.js and the Mongoose ODM in the codebase (e.g., package.json and require/imports show "mongoose").
-- Connects to Azure DocumentDB (MongoDB API) via mongoose.connect (connection string or config in code points to an Azure DocumentDB cluster).
-- Defines a transaction/event document schema that includes a transactionRef field and the debit/credit details (amount, account identifier, timestamp, type) and models transactions as append-only event-sourced documents.
-- Creates a unique index on transactionRef (schema.index or DB index) so the Azure DocumentDB server enforces uniqueness to prevent double-posting.
-- Marks transaction/event fields as immutable at the schema level or otherwise prevents updates to existing transaction documents (so transaction documents are not modified after insert).
-- Implements posting logic that starts a Mongoose session and uses multi-document transactions (startSession + session.startTransaction / commitTransaction / abortTransaction) for the operation.
-- Within the same multi-document transaction the code inserts the new transaction document and updates the account balance snapshot document so the append and balance change are atomic.
-- Stores account balance as a separate snapshot document and updates that snapshot within the transaction to reflect the new balance after applying the inserted transaction.
-- Handles duplicate-key (transactionRef) errors from Azure DocumentDB by treating the operation idempotently (e.g., returning the existing transaction or a clear idempotent response and not applying the balance update again).
-- Supports both debit and credit operations in the posting logic and applies the correct sign/operation when computing the resulting account snapshot balance.
-- Includes a demonstrable example or script in the sample showing a successful transaction commit and a retry with the same transactionRef that does not double-post (verifiable by inspecting the transaction and account snapshot documents).
+- The ledger is a Node.js application that uses Mongoose as its ODM: accounts and transactions are defined as Mongoose schemas and models, and every read and write of ledger data goes through them.
+- Every debit and every credit is recorded as its own transaction document in Azure DocumentDB, inserted once and left unchanged afterwards (no code path updates or deletes a posted transaction document).
+- Each account has a balance snapshot document that holds its current balance (e.g. an Account model with a balance field).
+- Posting a transaction runs inside an Azure DocumentDB multi-document transaction: a Mongoose session (withTransaction, or start/commit/abort) wraps both the insert of the transaction document and the update of the account balance snapshot, so both are committed together or neither is.
+- The balance snapshot is adjusted by the posted amount in the direction of the entry (a credit raises it, a debit lowers it).
+- Every transaction document carries a transactionRef field supplied with the posting request.
+- The transactionRef field has a unique index, declared in the Mongoose schema or created in code, so Azure DocumentDB enforces uniqueness.
+- A second posting with an already-used transactionRef is rejected: the unique index makes the insert fail and the enclosing transaction aborts, so the balance snapshot is not changed by the duplicate.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

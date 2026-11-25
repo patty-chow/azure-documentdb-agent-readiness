@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the pipeline in Python using async/await (async def handlers and await for I/O) to ensure the ingestion, LLM call, validation, and DB operations are non-blocking.
-- Use the Beanie ODM for all Document model definitions and database operations (models inherit from beanie.Document and beanie.init_beanie is used for startup).
-- Connect asynchronously to Azure DocumentDB (the MongoDB-compatible service) using Beanie’s async initialization and a MongoDB connection string that targets the Azure DocumentDB cluster.
-- Provide an async upload handler or function that accepts KYC document uploads (e.g., file-like object or bytes) and passes the document onward in the pipeline.
-- Call OpenAI asynchronously to perform structured entity extraction and request the exact fields name, date of birth, address, and ID numbers in the response; the code must parse the OpenAI response into a structured form.
-- Define a Pydantic schema (BaseModel) that models the extracted entities with typed fields for name (string), date of birth (date or ISO date string), address (object or string), and ID numbers (string or list of strings), and use Pydantic validation to validate the LLM output.
-- Map and validate the OpenAI-extracted fields against the Pydantic schema; if validation succeeds, transform the validated model into a Beanie document for persistence.
-- Perform an upsert (insert or update) of the validated customer record into Azure DocumentDB using Beanie, using a stable unique key (e.g., government ID number or explicitly provided customer_id) as the filter for the upsert operation.
-- For records that are incomplete or fail Pydantic validation (missing required fields or invalid types), mark or persist them as flagged for manual review (e.g., a field like needs_manual_review=True or a separate manual_review collection) instead of treating them as a successful upsert.
-- Return or log a clear status for each processed document indicating whether it was upserted, updated, or flagged for manual review so a reviewer can verify the pipeline outcome.
+- The pipeline accepts uploaded KYC documents as its input (e.g. a file upload or document bytes handed to an ingestion entry point).
+- The pipeline is written in async Python, with the OpenAI calls and the Beanie ODM database operations awaited.
+- Each uploaded document is sent to OpenAI with a request for structured entity extraction covering name, DOB, address and ID numbers.
+- A Pydantic schema declares the extracted entities (name, DOB, address, ID numbers), and the OpenAI output is validated against that schema before it is stored.
+- The customer record is modelled as a Beanie ODM Document, and a validated record is upserted into Azure DocumentDB through Beanie (updated when a matching customer already exists, inserted otherwise; matched on e.g. an ID number).
+- A record whose extraction fails schema validation or lacks required entities is stored as incomplete and flagged for manual review (e.g. a review flag on the stored document).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

@@ -8,17 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement a single-agent application in Python using LangChain that orchestrates ingestion, enrichment (LLM extraction + embeddings), and storage of feedback records.
-- Define a persistent document model using Beanie ODM (e.g., FeedbackDocument) and include at minimum these fields: channel (string), original_text (string), sentiment_label (string), sentiment_score (numeric), topics (list[string]), verbatim_quote (string), embedding (list[float]), timestamp (datetime), and metadata (object).
-- Initialize Beanie to connect to an Azure DocumentDB instance (Mongo-compatible connection) and demonstrate the Motor/Beanie client pointed at the Azure DocumentDB database used by the sample.
-- Provide explicit LangChain prompt templates (prompt engineering) and code that calls them to extract sentiment, key topics, and a verbatim quote from an input feedback text; show parsing/normalization of the LLM output into the Beanie document fields.
-- Produce both a categorical sentiment_label and a numeric sentiment_score per feedback item (the numeric score must be stored and used for aggregation).
-- Use LangChain's embeddings interface to embed the enriched feedback text (or selected fields) and store the resulting embedding vector in the Beanie document's embedding field.
-- After enrichment and embedding, persist the enriched document to Azure DocumentDB via Beanie ODM save/insert operations.
-- Implement MongoDB aggregation pipelines (invoked from Python) that compute net sentiment trends by channel, by topic, and by time period (supporting at least daily and weekly buckets); each pipeline must return net sentiment metric (e.g., average sentiment_score) and document counts.
-- Expose Python functions or callable routines that run the aggregation pipelines with parameters for channel(s), topic(s), time range, and time-bucket granularity and return results formatted for reporting/visualization.
-- Include ingestion handlers and examples for feedback from multiple channels (at least two distinct channels such as "email" and "chat" or "twitter"), ensuring the channel value is recorded on stored documents.
-- Provide runnable example scripts or tests that ingest sample feedback items, run the enrichment (prompt + embedding), persist them to Azure DocumentDB, and execute the aggregation pipelines to demonstrate expected trend outputs.
+- Use Python with LangChain to build a single agent that takes each incoming feedback item through the whole flow: ingest, extract, embed and store.
+- Accept customer feedback from more than one channel (e.g. email, chat, survey) and carry each item's source channel through to the stored document.
+- Use prompt engineering (LangChain prompts sent to an LLM) to extract from each feedback text its sentiment, its key topics and a verbatim quote taken from the original text.
+- Compute an embedding of the feedback text (e.g. with a LangChain embeddings integration) and store the resulting vector on the document.
+- Define the enriched feedback document as a Beanie ODM model and persist it to Azure DocumentDB through Beanie, holding the original text, the source channel, when the feedback was received, the extracted sentiment, key topics and verbatim quote, and the embedding.
+- Build an aggregation pipeline, run in Azure DocumentDB through Beanie's aggregation API, that surfaces a net sentiment measure per channel (e.g. positive minus negative share, or an average sentiment score).
+- Build an aggregation pipeline, run in Azure DocumentDB, that surfaces net sentiment per key topic.
+- Build an aggregation pipeline, run in Azure DocumentDB, that surfaces net sentiment over time by bucketing feedback into time periods (e.g. per day, week or month) so trends can be reported.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

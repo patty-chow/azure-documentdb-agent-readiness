@@ -8,15 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the agent in Node.js and use LlamaIndex as the agent framework with a configured agent memory component.
-- Accept a customer identifier input and use it to fetch that customer's profile, segment, and recent interaction documents from Azure DocumentDB.
-- Wire agent memory to load (and on subsequent calls, retrieve from) the fetched profile, segment, and recent interaction documents so the LlamaIndex agent can consult them as memory.
-- Construct a vector query derived from the customer's profile and recent interactions (e.g., concatenated context or weighted prompt) and execute Azure DocumentDB vector search to retrieve semantically relevant content pieces.
-- Use LlamaIndex to orchestrate retrieval: pass the Azure DocumentDB vector search results into the LlamaIndex retrieval pipeline so retrieved content pieces are available to the agent.
-- Apply explicit context engineering in the prompt assembly: include the customer profile, segment, recent interactions, and the retrieved content pieces as distinct sections when calling the language model via LlamaIndex.
-- Produce a personalised content selection rationale that explicitly cites facts from the customer's profile, segment, or recent interactions used to justify recommendations.
-- Return a ranked list of recommended content items (ordered by relevance), where each item includes at least: content id, title (or short text), and a numeric relevance score; the code must build this structured output.
-- Ensure the generated rationale links each ranked item to the specific retrieved content piece(s) and DocumentDB source documents used in ranking (e.g., by referencing document ids or snippets).
+- A Node.js application built with LlamaIndex in which a single agent carries out the whole flow for one customer: fetching that customer's documents, retrieving content pieces via vector search and generating the final output.
+- Fetch the customer's profile, segment and recent interaction documents from Azure DocumentDB (e.g. with the MongoDB Node.js driver, looked up by a customer identifier) and supply them to the agent as context.
+- Content pieces are stored in Azure DocumentDB with an embedding on each document, and a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field with dimensions matching the embedding model.
+- Retrieve the content pieces semantically relevant to the customer with a $search / cosmosSearch query against that index (similarity COS, L2 or IP).
+- The LlamaIndex agent is given agent memory that retains earlier turns of the interaction and is drawn on when generating the current recommendation.
+- Context engineering: the fetched profile, segment and recent interactions and the retrieved content pieces are assembled into a deliberately structured context for the model (e.g. clearly delimited sections per source) before generation.
+- The agent's output for a customer contains a personalised content-selection rationale explaining why the content suits that customer and a ranked list of the retrieved content pieces.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

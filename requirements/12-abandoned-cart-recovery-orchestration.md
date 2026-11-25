@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the orchestration pipeline in Node.js using a LangChain orchestrator as the central coordinator (entry point file that constructs and runs the LangChain orchestrator).
-- Query Azure DocumentDB for carts abandoned for over 2 hours (e.g., lastActivity or updatedAt older than now minus 2 hours) and only return carts not already marked processed; the query must run against Azure DocumentDB.
-- Iterate over all qualifying carts (pipeline must process multiple carts in a single run, not only the first result).
-- For each cart, invoke a copy-generation agent (named or implemented as a "copy-generation agent" in the LangChain flow) that produces a single personalised recovery message string using customer data (e.g., customer name) and cart contents (item names or summaries).
-- Ensure the copy-generation agent’s output (the personalised message) is passed programmatically to the next step in the LangChain orchestrator rather than re-querying the cart.
-- Hand off the personalised message and customer record to a channel agent (implemented as a "channel agent" in the LangChain flow) that selects between email or SMS based on the customer's stored preference field (e.g., contactPreference).
-- The channel agent must call checkable send functions named sendEmail and sendSMS (or clear provider integration functions) and pass the personalised message plus necessary recipient info; the code must show the channel selection logic invoking sendEmail for email preference and sendSMS for SMS preference.
-- Log the outcome of each cart’s attempt back to Azure DocumentDB by inserting or updating a record with at minimum: cartId, personalisedMessage, channelUsed (email or SMS), deliveryResult/status, and timestamp.
-- Mark processed carts to avoid duplicate recovery attempts (e.g., set processedAt timestamp or status flag in Azure DocumentDB) as part of the same run after a successful or failed send attempt.
-- Capture and persist errors from the copy-generation agent or the channel agent to Azure DocumentDB (error message and stack or provider response), so each cart record reflects success or failure.
+- A Node.js LangChain orchestration pipeline runs the recovery flow as one sequence per run: query abandoned carts, copy-generation agent, channel agent, outcome logging.
+- The pipeline queries Azure DocumentDB through a Node.js MongoDB driver (e.g. the `mongodb` package) for carts abandoned for over 2 hours, comparing each cart's abandonment time against a threshold two hours before the current time (e.g. a `$lt` on the cart's last-activity timestamp).
+- Each cart the query returns is passed to a LangChain copy-generation agent that produces a personalised recovery message using that cart's contents and customer details.
+- The copy-generation agent hands off to a LangChain channel agent, passing the generated message together with the cart it was written for.
+- The channel agent reads the customer's stored channel preference and sends the message by email when the preference is email and by SMS when it is SMS, through two distinct delivery paths.
+- After each send, the outcome is written back to Azure DocumentDB (e.g. a recovery-log document, or an update on the cart, recording the channel used and whether the send succeeded).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the orchestration pipeline in Python using the LangChain framework and label the pipeline as an Orchestration implementation.
-- Use Beanie ODM for all document modeling and database interactions against Azure DocumentDB.
-- Define a Beanie document model that represents an onboarding application as a state machine document stored in Azure DocumentDB; the model must include a current_state field and an explicit set of states covering at least initiated → id_verified → risk_assessed → account_opened.
-- Include a transition history/log array on the state machine document; each logged transition must contain the agent name, outcome/status, timestamp, and optional detail payload.
-- Implement an orchestrator that delegates, in sequence, to an "ID-verification agent", then a "risk-assessment agent", then an "account-opening agent", waiting for each agent to complete before proceeding.
-- After each agent completes, perform an atomic update to the onboarding document in Azure DocumentDB to set the new state and append the transition record; implement atomicity using a MongoDB-compatible single-document atomic update (e.g., find_one_and_update with $set/$push) or a Beanie/Motor session transaction.
-- Persist a new onboarding state machine document to Azure DocumentDB when starting a new flow and retrieve/upsert that document for each subsequent orchestration step.
-- If an agent returns a failure/non-success result, the orchestrator must update the state machine document to a failure/rejected state and append a failure transition record before halting or following a defined error path.
-- Initialize Beanie with a Motor/Mongo client connected to Azure DocumentDB via a configurable MongoDB connection URI (i.e., repository contains connection configuration and Beanie.init usage).
-- Ensure every state change and transition log entry is written to Azure DocumentDB (using Beanie methods or explicit atomic update operations) so the DocumentDB-hosted state machine is the single source of truth for the onboarding flow.
+- A Python Beanie ODM `Document` model represents an onboarding application as a state machine stored in Azure DocumentDB: the document holds the application's current state, and the model defines the states the onboarding journey moves through (e.g. one state per completed step).
+- A Python LangChain orchestration pipeline acts as the orchestrator: it loads an onboarding application document through Beanie and drives that application through the journey.
+- Three separate agents exist for the roles of ID verification, risk assessment and account opening, and the orchestrator delegates each step to the matching agent.
+- The orchestrator invokes the agents in sequence, ID verification first, then risk assessment, then account opening, with each agent's run completing before the next one starts.
+- After each agent step, the orchestrator updates the application document's state in Azure DocumentDB atomically: a single update to the one document, or, where more than one document is written, a session transaction (withTransaction, or start/commit/abort).
+- Each state transition is logged (e.g. an entry naming the previous state, the new state and the agent that ran).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

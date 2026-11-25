@@ -8,15 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and Mongoose to connect to Azure DocumentDB (code calls mongoose.connect with a configurable Azure DocumentDB connection string).
-- Implement a daily schedule that invokes the batch processor once per day (e.g., cron or timer) and is configurable for the run time.
-- Query only active interest-bearing account documents from Azure DocumentDB and iterate them with a Mongoose cursor (cursor-based pagination) so documents are retrieved in cursor-paginated batches rather than loaded all at once.
-- Process accounts in configurable batches (batch size parameter) so the processor works on bounded groups of documents per iteration.
-- For each account compute one-day accrued interest using the account's rate and balance fields (explicit arithmetic using account.rate and account.balance) and produce a numeric accrual amount.
-- For each computed accrual create a new immutable journal document in a separate journal collection/model (fields include accountId, amount, timestamp/accruedDate) and ensure journal entries are inserted only (no updates/overwrites of existing journal documents).
-- Buffer journal documents and perform inserts using unordered bulk writes (Mongoose bulkWrite with ordered: false) to maximize throughput.
-- Chunk bulkWrite operations into configurable maximum bulk sizes and include a configurable pause/backoff between bulk chunks to provide controlled throughput to Azure DocumentDB.
-- Ensure the implementation uses streaming/pagination semantics so memory usage remains bounded (no accumulation of all account documents in memory before writing).
+- The batch processor is a Node.js application that uses Mongoose as the ODM for every read and write against Azure DocumentDB, with the account and journal documents defined as Mongoose models.
+- The processor runs as a scheduled job that executes once per day (e.g. a cron-style daily schedule).
+- The processor queries all account documents that are active and interest-bearing, iterating them through a Mongoose query cursor and grouping the streamed documents into fixed-size batches.
+- For each account document, the processor computes the accrued interest for the run from that account's rate and balance.
+- Each computed accrual is written as a new, immutable journal document: one journal document per account per run, created by insert only (e.g. referencing the account and carrying the interest amount).
+- Each batch's journal inserts are sent to Azure DocumentDB as exactly one unordered bulk write (bulkWrite with ordered: false on the Mongoose model), containing only that batch's operations.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

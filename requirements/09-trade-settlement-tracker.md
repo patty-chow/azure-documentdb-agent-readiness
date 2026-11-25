@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Define a Mongoose model in Node.js (stored in Azure DocumentDB) named e.g. "Trade" whose documents include: tradeId, assetClass, counterparty, state (enum containing at least "matched", "settled", "failed"), and an eventLog array to record transition events.
-- Ensure new trades are created with initial state "matched" (i.e., creation code sets state: "matched").
-- Implement a state-transition function in Node.js using Mongoose that opens a MongoDB session (startSession) and uses a transaction (session.withTransaction or equivalent) to atomically update the trade's state and perform other writes within the same transaction.
-- Within that transaction, atomically push a transition event into eventLog and update the trade's state in the same transaction so the state change and its event are committed together.
-- Each transition event appended to eventLog must include at least: fromState, toState, timestamp, and a reason/actor field so reviewers can verify transitions are logged with those attributes.
-- Enforce state-machine rules in the transition function (e.g., only allow valid transitions such as matched -> settled or matched -> failed); reject or throw when an invalid transition is attempted.
-- Open a change stream on the Trade collection (using the MongoDB change stream API via Mongoose/driver) and detect updates where the trade's state becomes "failed" (inspect updateDescription or fullDocument state change).
-- When the change stream detects a state change to "failed", trigger an exception workflow implemented in the app; the workflow must perform a verifiable side effect in Azure DocumentDB (for example, insert an "Exception" document with tradeId, timestamp, and failure reason).
-- Expose an HTTP aggregation endpoint (e.g., Express GET /settlement-rates) implemented in Node.js that runs a MongoDB aggregation pipeline (via Mongoose/collection.aggregate) grouping by assetClass and counterparty and returns settlement rates (settled_count / total_count) for each group.
-- Provide a replay/reconstruction function that derives a trade's current state by replaying its eventLog (demonstrable via a unit test or an endpoint), showing the system implements event-sourcing semantics for trade state.
+- A Node.js application uses the Mongoose ODM to store each trade as a single document in Azure DocumentDB that carries the trade's current settlement state, so one document represents the trade's whole settlement lifecycle (e.g. from matched through to settled or failed).
+- The settlement lifecycle is modelled as a state machine: the set of states (e.g. matched, settled, failed and any intermediate ones) and the transitions allowed between them are defined in code, and advancing a trade moves it along one of those transitions.
+- Advancing a trade's state runs inside a multi-document transaction on a Mongoose session (withTransaction, or start/commit/abort) so the state change commits atomically.
+- Every state transition is logged as a record written within the same transaction as the state change (e.g. a transition document recording which trade moved, from which state to which, and when).
+- The application opens a change stream on the trade documents in Azure DocumentDB (Mongoose watch) and detects trades whose settlement has moved to the failed state.
+- When the change stream detects a failed settlement, it triggers an exception workflow for that trade (e.g. a handler that records the exception or hands the trade to a follow-up process).
+- An HTTP endpoint runs an aggregation pipeline in Azure DocumentDB that returns settlement rates grouped by asset class and by counterparty (e.g. the share of trades that reached settled out of all trades in each group).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

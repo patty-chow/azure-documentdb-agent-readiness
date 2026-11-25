@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the service in Python using async code and Beanie ODM (the repository must contain async entry points / coroutines that initialize and use Beanie).
-- Define a Beanie Document model for lab results that stores patientId, testCode, value, and timestamp fields (types and names must match exactly).
-- Connect to Azure DocumentDB and persist each lab result document into a collection so that lab measurements are stored as time-series documents (one document per measurement).
-- Create indexes and a storage pattern appropriate for time-series queries (e.g., compound index on patientId and timestamp or an explicit time-series document pattern) and show that queries sort/scan by timestamp efficiently.
-- Implement aggregation pipelines (using MongoDB aggregation stages executed against Azure DocumentDB, not purely in Python) that compute moving averages of value over a sliding window for a given patientId and testCode.
-- Make the moving-average aggregation window configurable (by number of samples or by a time range parameter) and show the pipeline accepts that parameter.
-- Ensure aggregation pipelines also flag or annotate results that fall outside reference ranges (the pipeline must produce an output field such as flagged or outOfRange for those documents).
-- Provide a source of reference ranges for tests (e.g., a collection or input parameter keyed by testCode) and have the aggregation pipeline consult those ranges when flagging out-of-range results.
-- Open an async change stream on the lab results collection using Azure DocumentDB change streams and listen for inserts/updates to detect newly written critical values.
-- When the change stream detects a critical value (defined by configurable critical thresholds), the async listener must trigger a real-time alert action (for example, call an async callback, emit a log message marked as an alert, or enqueue a notification); include a demo script that inserts a critical lab result and demonstrates the alert firing.
+- Implement the service in async Python with the Beanie ODM: define a Beanie Document model for lab results and insert instances into an Azure DocumentDB collection.
+- Store each lab result as its own time-series document carrying the fields patientId, testCode, value and timestamp.
+- Provide an aggregation pipeline, run through Beanie, that computes a moving average of value over time-ordered results for a patient and test (e.g. $setWindowFields partitioned by patientId and testCode over a window of recent documents).
+- Flag results whose value falls outside the reference range for the test inside the aggregation pipeline, marking out-of-range results in the pipeline output (e.g. a boolean field added with $addFields).
+- Open a change stream on the lab results collection and consume its events asynchronously as new results are written.
+- When a change event carries a critical value (e.g. beyond a critical threshold for the test), trigger a real-time alert from the change-stream handler.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

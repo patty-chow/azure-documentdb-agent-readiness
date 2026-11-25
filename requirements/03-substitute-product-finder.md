@@ -8,16 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement the backend in Python using FastAPI and define/persist product documents with Beanie ODM connected to Azure DocumentDB.
-- Product JSON documents must include a numeric embedding vector field; embeddings for product attributes must be generated using OpenAI embeddings and stored on each document in Azure DocumentDB.
-- The code must create or declare an Azure DocumentDB vector search index on the document embedding field so the field is searchable by vector in Azure DocumentDB.
-- Provide a FastAPI /substitute endpoint that accepts a product ID parameter, queries Azure DocumentDB vector search using cosine similarity, and returns the 5 closest alternative products (include product metadata and similarity scores in the JSON response).
-- The /substitute implementation must perform the nearest-neighbor retrieval via Azure DocumentDB vector search (server-side vector search query) rather than computing cosine similarity client-side.
-- Include a standalone ingestion script that generates and inserts 10,000 product transactions/documents: each generated product must have attributes, an OpenAI embeddings call to produce its vector, and insertion into Azure DocumentDB via Beanie ODM.
-- The ingestion script must read the same Azure DocumentDB connection string from the application config file and verify the insert count is 10,000 (e.g., report or assert the number inserted).
-- Use a config file to supply the Azure DocumentDB connection string; the app must detect a missing or invalid connection string and display a clear, user-friendly error message at startup or when attempting DB access.
-- Serve an artistic, retailer-style UI (HTML/CSS) from the FastAPI app (root route) that displays product details and a UI to request substitutes so the app looks like an online retailer website.
-- Add detailed comments or docstrings immediately before every function or method explaining its purpose, inputs, outputs, and interactions with Beanie/Azure DocumentDB so reviewers can read each method easily.
+- A Python FastAPI app uses the Beanie ODM to define a product document model and store product JSON documents in Azure DocumentDB.
+- An embedding is generated from each product's attributes and stored as a vector field on that product's document in Azure DocumentDB (e.g. an `embedding` array of floats).
+- A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field, with similarity COS and dimensions matching the embedding model's output size.
+- A `/substitute` endpoint accepts a product ID, looks up that product's stored embedding and runs an Azure DocumentDB `$search` / cosmosSearch query with similarity COS that returns the 5 closest alternative products (the requested product itself excluded).
+- A script ingests 10,000 product transactions into Azure DocumentDB through the Beanie model.
+- The app serves an artistic UI styled like an online retailer's website that shows the substitutes returned by the `/substitute` endpoint.
+- The Azure DocumentDB connection string is read from a config file, and the app displays a clear error when that connection string is missing or invalid.
+- The code is kept simple and readable, with a detailed comment placed before each method or function describing what it does.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

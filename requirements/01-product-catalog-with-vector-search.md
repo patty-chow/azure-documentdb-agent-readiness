@@ -8,17 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the app in Python using the Flask framework (i.e., a Python Flask app) with a runnable server exposing HTTP endpoints.
-- Persist the product catalog as documents in Azure DocumentDB (store product documents in the database/collection used by the app).
-- For each product, compute a single embedding over the product title and description using the text-embedding-ada-002 model (code must call that model to produce embeddings).
-- Store each product embedding in its DocumentDB document as a BSON binary vector (e.g., bson.Binary containing the raw float32 bytes).
-- Create a DocumentDB vector-ivf index on the embedding field (index creation shown in code/config, referencing the same embedding field stored as BSON binary).
-- Ensure the vector-ivf index is created with a dimension parameter that matches the embedding length returned by text-embedding-ada-002 (dimension value set programmatically or in the index creation code).
-- Provide a Flask /search endpoint that accepts a natural language query (e.g., query parameter or JSON body) and returns results in JSON.
-- When /search is called, embed the incoming natural language query using text-embedding-ada-002 and convert that embedding to the same BSON binary vector format used for stored product vectors.
-- Use Azure DocumentDB's vector search (server-side, using the vector-ivf index) to query with the query-vector and retrieve the top 10 semantically similar products (the code must perform the vector search query, not client-side nearest-neighbor computation).
-- Return up to 10 products from /search, sorted by similarity, and include each product's identifier and key fields such as title and description in the JSON response.
-- Include a seeding or ingestion routine (script or endpoint) that adds product documents to Azure DocumentDB by computing embeddings with text-embedding-ada-002 and storing them as BSON binary vectors and ensuring the vector-ivf index exists before searches.
+- The app is written in Python using the Flask framework.
+- Product documents are stored in Azure DocumentDB through a Python MongoDB-compatible driver (e.g. pymongo); each product carries at least a title and a description.
+- For each product, the title and description are embedded with text-embedding-ada-002 and the resulting vector is stored on the product document in a form the cosmosSearch index can index (e.g. a numeric array).
+- A cosmosSearch index of kind vector-ivf is created in code on the embedding field, with dimensions matching text-embedding-ada-002 (1536).
+- The app exposes a /search endpoint that accepts a natural-language query (e.g. as a query parameter or JSON body field).
+- /search embeds the incoming query with text-embedding-ada-002 and runs the similarity search in Azure DocumentDB with a $search / cosmosSearch query over the vector-ivf index using that query vector.
+- The cosmosSearch query requests the top 10 results (k = 10) and /search returns those 10 most semantically similar products in its response.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
