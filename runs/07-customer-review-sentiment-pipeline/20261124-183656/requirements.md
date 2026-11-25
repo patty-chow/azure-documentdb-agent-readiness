@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the pipeline in Python using async/await and Beanie ODM for data models and persistence.
-- Define Beanie ODM Document models for raw product reviews and for enriched review documents that include the original review text, product identifier, a numeric sentiment_score field, and a tags field (array of strings).
-- Initialize Beanie ODM to connect to Azure DocumentDB (the MongoDB-compatible endpoint) so all reads and writes target Azure DocumentDB.
-- Read raw product reviews asynchronously from a designated Azure DocumentDB collection using Beanie async queries (e.g., async find/query that yields multiple review documents).
-- For each review, make an asynchronous call to the OpenAI API to (a) classify sentiment and (b) extract key themes; parse the OpenAI response into a numeric sentiment_score and a list of tag strings.
-- Enrich each review document in memory by adding the numeric sentiment_score and the tags array while preserving original review fields.
-- Upsert the enriched document back into Azure DocumentDB using Beanie ODM (an upsert/replace or save operation that inserts if missing and updates if present).
-- Process reviews concurrently in an asynchronous pipeline (e.g., using asyncio.gather or an async worker/queue with semaphore-based concurrency control) so OpenAI calls and DB upserts are non-blocking.
-- Implement and expose a summary aggregation query executed against Azure DocumentDB that groups results by product identifier and by sentiment (label or bucket), returning at minimum counts per group and average sentiment_score; implement this aggregation using Beanie/Motor aggregation pipeline primitives.
-- Provide a runnable async entry point or script that demonstrates reading raw reviews, enriching and upserting them, and printing the aggregation summary so a reviewer can execute the end-to-end flow.
+- The pipeline is written in Python with async/await and uses the Beanie ODM to read the raw product review documents from Azure DocumentDB (e.g. a Beanie `Document` model for reviews queried with an awaited `find`).
+- For each review, the pipeline calls OpenAI to classify the review's sentiment and to extract its key themes.
+- The OpenAI classification call is made asynchronously inside the pipeline (e.g. the async OpenAI client awaited per review).
+- Each review document is enriched with a sentiment score field and a tags field derived from the OpenAI result (the tags holding the extracted themes).
+- The enriched document is upserted back into Azure DocumentDB through Beanie (e.g. an awaited `save`/`replace`, or an upsert on the underlying collection), so an existing review is updated in place.
+- A summary aggregation query runs against Azure DocumentDB (via Beanie's aggregate or the underlying collection) and groups the enriched reviews by product and by sentiment (e.g. a `$group` on a compound key returning a count per group).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
