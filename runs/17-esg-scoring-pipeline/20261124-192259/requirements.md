@@ -8,13 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement a Single-agent LangChain agent in Python that iterates company ESG documents stored in Azure DocumentDB and processes them one-by-one.
-- Use prompt engineering inside the LangChain agent to instruct the LLM to return a numeric score (1–10) and a short reasoning/rationale for each pillar (E, S and G), and parse the LLM response into three numeric score fields and three corresponding rationale text fields.
-- Use LangChain embeddings in Python to produce an embedding of the generated rationale text and attach that embedding to the company document before writing it back to Azure DocumentDB.
-- Read and update documents in Azure DocumentDB from Python using a MongoDB driver (e.g. pymongo): the update must write the three numeric pillar scores, the three rationale strings, and the embedding vector into the same company document.
-- Create a cosmosSearch vector index in Azure DocumentDB in code (using createSearchIndexes) on the stored embedding field (index kind vector-hnsw, vector-ivf or vector-diskann) with dimensionality equal to the embedding model’s output dimension (e.g. 1536) so the embedding field is queryable for semantic search.
-- Store embeddings as an array of floats on the document (the embedding field), not as external files or references.
-- Implement an Azure DocumentDB aggregation pipeline (using the driver’s aggregate) that computes a composite ESG score from the numeric E, S and G fields and returns companies ranked by that composite score (e.g., composite = average(E,S,G) as an example of aggregation).
+- A single LangChain agent written in Python reads company ESG data documents from an Azure DocumentDB collection using a MongoDB driver (e.g. PyMongo).
+- The agent's prompt instructs the LLM to score each ESG pillar (E, S and G) on a 1-10 scale and to give reasoning for each score.
+- The agent embeds the LLM's rationale text with a LangChain embeddings integration.
+- The agent writes the scored document back to Azure DocumentDB, so the company document carries the three pillar scores, their reasoning and the rationale embedding.
+- A cosmosSearch vector index of kind vector-ivf, vector-hnsw or vector-diskann is created in code on the embedding field, with dimensions matching the embedding model's output and a similarity of COS, L2 or IP.
+- Semantic search over the stored rationales is a $search / cosmosSearch aggregation query against that index, so the similarity is computed in Azure DocumentDB.
+- An aggregation pipeline run through the driver computes a composite ESG score from the three pillar scores and returns the companies ranked by that composite score.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
