@@ -1,6 +1,6 @@
 # Phase report (arm default)
 
-100 samples with a run. 100 finished with exit 0; 0 failed; 0 unfinished. Regenerate with `python loop/phase_report.py`.
+100 samples with a run. 97 finished with exit 0; 3 failed; 0 unfinished. Regenerate with `python loop/phase_report.py`.
 
 ## Readiness confidence
 
@@ -113,7 +113,7 @@ Most violated practices across audits:
 | customer-360-13 | default | Household grouping & linkage | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 77 | completed | pass_with_findings | 17.3 |
 | customer-360-14 | default | Hyper-personalized content engine | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 70 | partial | pass_with_findings | 12.7 |
 | customer-360-15 | default | Cohort analysis backend | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 61 | completed | pass_with_findings | 9.3 |
-| customer-360-16 | default | Multi-touch attribution model | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 70 |  |  | 4.9 |
+| customer-360-16 | default | Multi-touch attribution model | audit | 4 | sufficient_with_assumptions | ready_with_gaps | 70 | completed | fail | 10.8 |
 | customer-360-17 | default | AI survey response analyzer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 57 | completed | pass_with_findings | 13.3 |
 | customer-360-18 | default | 360 data platform (CDP) orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 67 | partial | pass_with_findings | 9.5 |
 | customer-360-19 | default | Proactive outreach orchestration | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 80 | completed | pass_with_findings | 11.5 |
@@ -124,7 +124,7 @@ Most violated practices across audits:
 | fintech-04 | default | Earnings call RAG assistant | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 64 | partial | pass_with_findings | 10.7 |
 | fintech-05 | default | KYC document ingestion pipeline | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | partial | pass_with_findings | 8.0 |
 | fintech-06 | default | Credit risk multi-agent scorer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 69 | completed | pass_with_findings | 9.4 |
-| fintech-07 | default | Multi-currency ledger | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 70 |  |  | 4.6 |
+| fintech-07 | default | Multi-currency ledger | audit | 4 | sufficient_with_assumptions | ready_with_gaps | 70 | partial | fail | 5.1 |
 | fintech-08 | default | Regulatory compliance RAG checker | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 67 | partial | pass_with_findings | 10.3 |
 | fintech-09 | default | Crypto wallet activity analyzer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 75 | completed | pass_with_findings | 11.7 |
 | fintech-10 | default | Expense report auto-categorizer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 69 | completed | pass_with_findings | 13.3 |
@@ -148,7 +148,7 @@ Most violated practices across audits:
 | healthcare-08 | default | Insurance pre-auth multi-agent | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 66 | completed | pass_with_findings | 9.5 |
 | healthcare-09 | default | Clinical notes de-identification | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 80 | completed | pass_with_findings | 9.1 |
 | healthcare-10 | default | Drug formulary semantic search | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 79 | partial | pass_with_findings | 9.1 |
-| healthcare-11 | default | Care gap identification pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 74 |  |  | 4.8 |
+| healthcare-11 | default | Care gap identification pipeline | audit | 4 | sufficient_with_assumptions | ready_with_gaps | 74 | completed | fail | 8.3 |
 | healthcare-12 | default | Hospital bed occupancy tracker | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 76 | completed | pass_with_findings | 9.5 |
 | healthcare-13 | default | Chronic disease risk predictor | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 60 | partial | pass_with_findings | 6.5 |
 | healthcare-14 | default | Telehealth session summarizer | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | completed | pass_with_findings | 9.4 |

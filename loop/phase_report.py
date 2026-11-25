@@ -41,15 +41,18 @@ def score_of(entry: dict) -> int | None:
 
 
 def latest_per_sample(state: dict, arm: str | None) -> dict[str, dict]:
-    """Furthest-reaching successful run per sample (and arm), else the latest attempt."""
+    """Furthest-reaching finished run (exit 0 or 4) per sample (and arm), else the latest attempt."""
     best: dict[str, dict] = {}
     for e in state["runs"]:
         if arm and e["arm"] != arm:
             continue
         key = e["id"] if arm else f"{e['id']}|{e['arm']}"
         cur = best.get(key)
-        rank = (e.get("exit_code") == 0, STAGE_ORDER.get(e.get("stop_after"), 4) if e.get("exit_code") == 0 else 0, e["started"])
-        cur_rank = (cur.get("exit_code") == 0, STAGE_ORDER.get(cur.get("stop_after"), 4) if cur.get("exit_code") == 0 else 0, cur["started"]) if cur else None
+        # Exit 4 (audit failed) is a finished run too: a failed audit outranks a readiness-only run.
+        def rank_of(r: dict) -> tuple:
+            done = r.get("exit_code") in (0, 4)
+            return (done, STAGE_ORDER.get(r.get("stop_after"), 4) if done else 0, r["started"])
+        rank, cur_rank = rank_of(e), (rank_of(cur) if cur else None)
         if cur is None or rank > cur_rank:
             best[key] = e
     return best
