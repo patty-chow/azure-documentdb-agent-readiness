@@ -8,17 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the solution in Python and build the search agent using LangChain.
-- Provide a single LangChain agent (no multi-agent orchestration) that exposes a hybrid search tool callable by the agent.
-- Implement a prompt-engineering rewrite step (a LangChain chain or function) that takes the raw user query and returns a well-formed "search intent" string; the agent must invoke this rewrite step programmatically before any database queries.
-- The hybrid search tool must query Azure DocumentDB using a full-text $text query constructed from the rewritten search intent (the code must send a query document containing "$text").
-- The hybrid search tool must perform a vector search using an embedding of the rewritten search intent and the app's vector index/field stored in Azure DocumentDB (compute an embedding for the rewritten intent and use it to retrieve nearest neighbors).
-- Both the $text and vector queries must return per-document relevance scores (or a score that the code exposes) that the hybrid tool uses for ranking.
-- The hybrid tool must merge the two ranked lists by normalizing/combining the $text and vector relevance scores, deduplicate documents present in both lists, and produce a single combined ranking.
-- The merged result set must be sorted by the combined relevance score and the tool must return the top-N matches (N must be configurable in code).
-- Returned matches must include product document fields sufficient for presentation (at minimum product ID, title/name, and a description/snippet) taken from Azure DocumentDB documents.
-- The agent must handle the case where one side of the hybrid search (either $text or vector) returns zero results by still returning merged results from the other side rather than failing.
-- All queries to the database must be sent to Azure DocumentDB (the MongoDB-compatible cluster) from the running Python code (i.e., the hybrid search tool must execute real queries against Azure DocumentDB, not only simulated or in-memory searches).
+- A single Python agent built with LangChain that accepts a shopper's plain-English product query, calls a hybrid search tool, and replies with the best-matching products from the catalog.
+- A prompt-engineering step that rewrites the shopper's raw query into a well-formed search intent before any search is issued; the hybrid search tool searches with that rewritten intent.
+- The hybrid search tool runs a full-text search over the product catalog in Azure DocumentDB (what the prompt calls $text) using a search index created in code with createSearchIndexes and queried with the $search aggregation stage, through a Python MongoDB driver (e.g. PyMongo), and keeps the ranked results it returns.
+- The same tool embeds the rewritten intent and runs a vector search against Azure DocumentDB with $search / cosmosSearch over the embedding field stored on each product document, so the similarity ranking is computed by the database, and keeps those ranked results.
+- A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the product documents' embedding field, with dimensions matching the embedding model the app uses.
+- The two ranked result lists are merged in the application into one ranking (e.g. reciprocal rank fusion), and the best matches from that merged ranking are what the tool returns to the agent.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
