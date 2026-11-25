@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose service that stores store locations as GeoJSON Point documents in DocumentDB with a 2dsphere index. Expose a /nearby endpoint that accepts a latitude, longitude, and radius, runs a $geoNear aggregation, and returns stores sorted by distance with opening hours and stock availability.
