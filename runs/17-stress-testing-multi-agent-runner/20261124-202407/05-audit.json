@@ -1,0 +1,576 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested Python LangChain multi-agent stress test: three agent roles, aggregation-based impact calculations against Azure DocumentDB, run persistence as audit documents, idempotent seeding, a CLI runner, and a small test suite. Key best-practice guidance from the DocumentDB skills (singleton client, env-based URI, index creation, upsert-style seeds) was discovered and followed. Remaining findings are mostly hygiene and discoverability gaps (unpinned dependencies, one failing unit test due to a fragile mock, some minor mismatches between seed scripts and code, and missing explicit driver pool/timeout tuning and retry logic). None of the uncovered issues makes the sample insecure or non-functional for the demonstrated run against the live cluster; they do affect sample robustness and gallery-readiness.",
+  "requirement_results": [
+    {
+      "requirement": "The system is written in Python with LangChain and is organised as a multi-agent runner: an orchestrator coordinates three distinct agent roles (a scenario agent, an impact agent and a reporting agent) and runs them as one stress test, handing each agent's output to the next.",
+      "status": "met",
+      "evidence": "src/run_stress_test.py:41-50 (ScenarioAgent instantiation, ImpactAgent compute call, ReportingAgent synthesis) and src/agents.py class definitions (ScenarioAgent, ImpactAgent, ReportingAgent).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The scenario agent uses the LLM to generate macroeconomic shock parameters for a stress scenario and returns them in a structured form that the impact agent can consume.",
+      "status": "partly_met",
+      "evidence": "src/agents.py:6-27 (ScenarioAgent.generate returns a structured dict); src/run_stress_test.py:48-50 (build_llm_client returns None if no OPENAI_API_KEY, making LLM path optional).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Document that the LLM path is optional and add an integration test exercising the OpenAI path when OPENAI_API_KEY is present."
+    },
+    {
+      "requirement": "The impact agent computes P&L impacts by running aggregation pipelines in Azure DocumentDB over the stored position data.",
+      "status": "met",
+      "evidence": "src/agents.py:37-95 (ImpactAgent.compute builds and runs aggregation pipeline); src/run_stress_test.py:45-46 (ImpactAgent created and compute called).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The reporting agent synthesises scenario parameters and impact results into a structured stress test report and the orchestrator returns that report as the result of the run.",
+      "status": "met",
+      "evidence": "src/agents.py:111-124 (ReportingAgent.synthesize), src/run_stress_test.py:50-63 (report created, persisted, and printed).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Every scenario run is stored as a document in Azure DocumentDB for audit.",
+      "status": "met",
+      "evidence": "src/run_stress_test.py:53-61 (run_doc constructed with schemaVersion and inserted via persist_run -> coll.insert_one); verification in builder_report: 'documentdb_find_documents ... returned the inserted run document'.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": ".env.example: lines 4-7 (DOCUMENTDB_URI and OPENAI_API_KEY placeholders); src/db.py:8-13 reads DOCUMENTDB_URI from environment and errors if missing.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI, OPENAI_API_KEY and DB_NAME (app/.env.example: lines 4-10). Code uses DB_NAME/DB_NAME equivalent and OPENAI_API_KEY where applicable.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use vector indexes; vector features are not exercised (builder_report: 'Vector index creation and vector-search pipeline: not used or created by this sample').",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding vector search, add env vars EMBEDDING_MODEL/EMBEDDING_DIMS and create-index code that uses EMBEDDING_DIMS."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index created or referenced in code or README.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is added, include guidance in README and env placeholders for index parameters."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "src/db.py:15-20 defines a module-level MongoClient singleton and get_client/get_db helpers (lines 15-23).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "scripts/seed.py: ensure_collections, create_indexes, and load_seed_data perform replace_one upserts (scripts/seed.py: load_seed_data uses replace_one ... upsert=True). The run used run_seed.py which imports scripts/seed.py and completed successfully (events: run_seed.py executed with exit code 0).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "The sample does not implement a /search endpoint or a search flow using embeddings.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small search API or CLI routine that validates input and returns clear errors on empty query or embedding failures."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search implementation or vector-search results exist in the repo.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding search, include similarity scores in result documents and in the returned report structure."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "not_met",
+      "evidence": "app/requirements.txt contains version ranges using >= rather than exact pins (pymongo>=4.5.0, langchain>=0.0.350, etc.).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Pin exact versions in requirements.txt (e.g. pymongo==4.20.1, langchain==1.5.2, python-dotenv==1.2.4, openai==3.59.0, pytest==7.4.0)."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "partly_met",
+      "evidence": "Tests are present (tests/test_agents.py and tests/test_orchestrator.py). Running pytest produced 3 passed, 1 failed (test_run_persists_run) due to a fragile MagicMock side_effect pattern (tests/test_orchestrator.py:17-19 uses __getitem__.side_effect that returns a new MagicMock for stress_runs).",
+      "cause": "builder_error",
+      "smallest_fix": "Change the test's fake_db.__getitem__.side_effect to return a stable MagicMock for 'stress_runs' (pre-create fake_stress_runs = MagicMock() and return it), or use mongomock to simulate the DB."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep/ARM/Terraform) are present in the repository; readiness findings flagged this as likely missing and events show no write_file creating IaC.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small Bicep/ARM or Terraform sample that uses Microsoft.DocumentDB/mongoClusters (or az documentdb mongocluster CLI snippet) with tier/storage/region parameters."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes 'What this sample shows', 'Prerequisites', 'Quickstart' and 'Cleaning up' sections (README.md lines 1-34).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and code comments use 'Azure DocumentDB' and do not reference CosmosDB or Amazon DocumentDB.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create one MongoClient per process and reuse it (module/global singleton) rather than creating a new client per request.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "src/db.py:15-20 (module-level _client and get_client/get_db exposing singleton).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune connection-pool and driver timeouts to your deployment pattern; set serverSelectionTimeoutMS/connectTimeoutMS/socketTimeoutMS appropriately.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "src/db.py:15-16 creates MongoClient(_DOCUMENTDB_URI, retryWrites=True) without explicit maxPoolSize, serverSelectionTimeoutMS, or connectTimeoutMS.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Set sensible pool/timeouts on MongoClient (e.g. MongoClient(uri, maxPoolSize=20, serverSelectionTimeoutMS=5000, connectTimeoutMS=10000, retryWrites=True)).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Read URI from env",
+      "practice": "Read the cluster connection string only from environment variables (e.g., DOCUMENTDB_URI) and never hard-code or write it to logs or files.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "src/db.py:8-13 reads DOCUMENTDB_URI from environment and raises if missing; .env.example uses placeholders.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always use TLS for connections and do not disable certificate validation in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": ".env.example suggests a TLS-enabled SRV URI with tls=true (app/.env.example: lines 2-4). The client relies on the connection string TLS settings rather than forcing tls flags in code (src/db.py:16).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Optionally add explicit MongoClient tls parameters for clarity: MongoClient(uri, tls=True, tlsAllowInvalidCertificates=False).",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry semantics",
+      "practice": "Implement retry semantics for transient errors and throttling: use exponential backoff with jitter and honor 429 / Retry-After responses.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "Aggregation calls in src/agents.py:87-89 and src/main.py:54-55 call collection.aggregate(...) with no retry wrapper. MongoClient is created with retryWrites=True but no application-level retries for aggregations.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Wrap aggregation calls in a small retry helper (exponential backoff + jitter) or use tenacity; handle transient network errors explicitly.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index queries",
+      "practice": "Create indexes that match the fields used in filters and early $match stages; prefer a well-ordered compound index rather than many single-field indexes.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "scripts/seed.py: create_indexes creates indexes on account_id, instrument, timestamp and risk_factors.rateSensitivity (scripts/seed.py: lines that create indexes). These support the sample's aggregation patterns.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Aggregation pipeline patterns",
+      "practice": "When running aggregation pipelines, push $match and $project stages early and use allowDiskUse for large groups/sorts; verify plan with explain() to avoid COLLSCANs.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/aggregate",
+      "status": "followed",
+      "evidence": "Main aggregation pipelines in src/main.py and src/agents.py put projection before grouping (src/main.py:12-41, src/agents.py:45-81). No large sorts are used in the sample; explain() was used by the builder interactively via MCP but not invoked in code.",
+      "source": "aggregate",
+      "searched": "",
+      "fix": "Consider using allowDiskUse in code for large production pipelines and/or call explain() during investigation (outside sample run).",
+      "sources": [
+        {
+          "title": "aggregate",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/aggregate"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotency",
+      "practice": "Make seed scripts idempotent by using upsert/replaceOne.",
+      "category": "bulk_ops",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#database-commands",
+      "status": "followed",
+      "evidence": "scripts/seed.py: load_seed_data uses pos.replace_one({'_id': d['_id']}, d, upsert=True) (scripts/seed.py load_seed_data).",
+      "source": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#database-commands"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Schema versioning",
+      "practice": "Include a schemaVersion field in persisted documents and perform lazy per-document migration.",
+      "category": "schema",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "src/run_stress_test.py:59 sets 'schemaVersion': 1 when persisting run_doc. src/main.py:69 sets 'schemaVersion': 1 in run_doc as well.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size",
+      "practice": "Keep documents well under the 16 MB BSON document limit.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "data/positions_seed.json contains small position documents and run documents are compact (app/data/positions_seed.json, src/run_stress_test.py run_doc).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Instrumentation and explain() usage",
+      "practice": "Use explain('executionStats') or the MCP explain_operation tool to verify index usage for aggregation pipelines when tuning.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The builder inspected indexes via the MCP server during verification (builder_report mentions MCP inspection) but the application does not call explain() programmatically.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Consider providing a small 'explain' helper in the repo to reproduce plans during investigations.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed indexes",
+      "practice": "Create useful indexes as part of seed/index scripts so sample data and queries run efficiently and idempotently.",
+      "category": "seed",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "scripts/seed.py create_indexes() creates indexes for positions (scripts/seed.py: pos.create_index calls).",
+      "source": "src/seed.py (local file)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/seed.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compatibility checks",
+      "practice": "If a driver or command isn't supported on Azure DocumentDB (check compatibility), adapt code to supported alternatives rather than assuming server parity (e.g., use replaceOne upsert loops).",
+      "category": "compatibility",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#database-commands",
+      "status": "followed",
+      "evidence": "scripts/seed.py uses replace_one upserts rather than bulkWrite, avoiding bulkWrite compatibility issues (scripts/seed.py: load_seed_data uses replace_one with upsert=True).",
+      "source": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#database-commands"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring guidance",
+      "practice": "Monitor cluster metrics and enable diagnostic settings and slow-query logs.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample is a small CLI demonstration; it does not attempt to set diagnostic settings or monitoring. The builder did inspect the cluster via MCP during verification (builder_report).",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a README section describing recommended monitoring settings for production runs and links to the monitoring skill.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit document shape",
+      "practice": "Treat a recommended audit document shape (immutable, run_id, created_at, schema_version, scenario_parameters, agent_outputs, aggregated_results, provenance) as an application-level convention.",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P30",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/run_stress_test.py:53-60 constructs run_doc with _id, scenario, impact_summary, narrative, generated_at, schemaVersion (src/run_stress_test.py:53-60).",
+      "source": "prior_knowledge",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short public example run-document schema on the DocumentDB sample-page would let agents confirm this exact shape."
+    },
+    {
+      "topic": "Tests/Unit testing guidance",
+      "practice": "For unit tests prefer lightweight mocks or run integration tests against an isolated live test database.",
+      "category": "testing",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P32",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "tests/test_agents.py uses deterministic ScenarioAgent and ReportingAgent; tests/test_orchestrator.py uses mocks to avoid a live DB but has a fragile MagicMock side_effect (tests/test_orchestrator.py:17-19).",
+      "source": "prior_knowledge",
+      "searched": "",
+      "fix": "Stabilize tests by returning a persistent MagicMock for 'stress_runs' or use mongomock to emulate MongoDB in-memory.",
+      "sources": [],
+      "what_would_help": "An example in the sample README showing how to run tests offline (mongomock or mock patterns) would help agents author similar samples."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Decision to approve build with readiness 'ready_with_gaps' is recorded and consistent with the build actions and the builder_report."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "questionable",
+      "comment": "D002 states 'I chose Python 3.11'. That is a reasonable choice, but events/logs show the actual run environment used Python 3.13 artifacts (pip wheels referenced cp313). The choice is defensible but not strictly reflected in the runtime observed; duplicate D009 also records a 3.11 choice."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Decision to use synchronous PyMongo and a singleton client is consistent with the documentdb-driver skill and is implemented in src/db.py."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "D004 recorded the intention to set conservative pool settings (maxPoolSize=20). The skill was loaded, but the final src/db.py in the repo does not set maxPoolSize or explicit timeouts (it calls MongoClient(_DOCUMENTDB_URI, retryWrites=True)). The decision is therefore not fully implemented in code."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Indexing decision D005 is implemented: scripts/seed.py creates indexes matching the decision (idx_account, idx_instrument, idx_timestamp, idx_rate_sens)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Decision to use the live DocumentDB cluster (DOCUMENTDB_URI) for seeding and verification is recorded and matches the run (run_seed.py executed successfully against the live cluster)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Decision to add run_seed.py because PYTHONPATH=... was refused is supported by events showing the PYTHONPATH invocation was refused and run_seed.py was created and used."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Duplicate readiness approval entry; consistent with D001."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "questionable",
+      "comment": "Duplicate record of choosing Python 3.11 recorded with reason_source 'model_default'. See D002 comments: the environment logs suggest cp313 (Python 3.13) packages were used, so this decision is defensible but not fully aligned with the runtime artifacts."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Decision to use synchronous PyMongo (again) is reflected in code (sync PyMongo usage) and tests; this is implemented."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Decision to read DOCUMENTDB_URI from environment is implemented in src/db.py and recorded in events; evidence present."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "questionable",
+      "comment": "D012 records a choice of OpenAI and embedding model dimensions (text-embedding-3-small / 1536 dims). The repository makes the LLM path optional and does not create vector indexes or embeddings; the stated embedding-model decision is not exercised in code. The decision is reasonable but not realized by the sample."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Decision to expose a CLI entrypoint (run_stress_test.py) is reflected in the repo and README and was used for verification."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Pinned dependency guidance for samples",
+      "what_was_missing": "The sample and many skills recommend using supported driver versions, but there is no clear agent-friendly guidance page prescribing exact pinned package versions to use for a given Python target (e.g., the minimal tested set for Python 3.11).",
+      "where_searched": "Searched installed skills (documentdb-driver, connection) and the repo; no public page prescribing exact pinned versions.",
+      "effect_on_this_build": "requirements.txt contains >= ranges rather than exact pins. This leaves sample reproducibility at risk and may cause tests or runtime to use an incompatible package version.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A short 'Supported client versions' doc that lists exact tested package versions for Python (pymongo, python-dotenv, langchain, openai, pytest) per Python minor version (3.10/3.11/3.13). Include a suggested pinned requirements.txt snippet for copy/paste.",
+      "priority": "high"
+    },
+    {
+      "topic": "Driver pool and timeout defaults for sample code",
+      "what_was_missing": "The documentdb-connection and documentdb-driver skills discuss tuning but there is no small discoverable example showing the exact MongoClient args the sample should use for a CLI/long-running process versus a serverless function.",
+      "where_searched": "documentdb-connection skill and documentdb-driver skill resources; no short 'one-line' example for sample authors.",
+      "effect_on_this_build": "The builder logged an intention to set maxPoolSize but the code ended up not setting it. Agents may omit these options unless a concrete snippet is nearby.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a 1-page snippet 'MongoClient for samples' in the documentdb-driver skill showing the recommended MongoClient constructor for CLI/long-running apps and a variant for serverless/short-lived processes, including sensible values for maxPoolSize, serverSelectionTimeoutMS and connectTimeoutMS.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Retry patterns for aggregation and read paths",
+      "what_was_missing": "Skills mention retries for transient errors but there is no short, copyable helper in the kit that shows how to wrap aggregate() calls with a small exponential-backoff retry that handles transient network/Mongo errors.",
+      "where_searched": "documentdb-connection and documentdb-driver skills.",
+      "effect_on_this_build": "Aggregations are called with no application retry, leaving long-running or flaky network runs more likely to fail in sample usage.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Publish a snippet 'retry_aggregation' with a 3-attempt exponential-backoff wrapper using tenacity or a tiny loop that retries on network-related PyMongo exceptions and respects Retry-After-like headers where present.",
+      "priority": "high"
+    },
+    {
+      "topic": "Test mocking pattern examples",
+      "what_was_missing": "There is no small example in the agent kit showing a robust MagicMock pattern to emulate a database mapping (db['positions'] and db['stress_runs']) such that tests can assert insert_one was called without returning a fresh MagicMock for each __getitem__ call.",
+      "where_searched": "sample tests and documentdb-local-deployment skill; no explicit small example found.",
+      "effect_on_this_build": "One unit test failed due to a fragile __getitem__.side_effect pattern returning a new MagicMock each access. This caused a false negative in unit testing.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short testing helper doc showing two patterns: 1) pre-create named MagicMocks for collection names and return them from fake_db.__getitem__; 2) use mongomock for in-memory emulation. Include a short code example illustrating assert fake_db['stress_runs'].insert_one.assert_called_once().",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC example for Microsoft.DocumentDB/mongoClusters",
+      "what_was_missing": "The sample lacks an IaC example for the vCore-managed Azure DocumentDB mongoClusters resource; authors may default to databaseAccounts or az cosmosdb commands (wrong resource).",
+      "where_searched": "Readiness findings and skills; there are Microsoft Learn pages but no small sample file bundled with the agent kit.",
+      "effect_on_this_build": "No IaC provided in the repo; readers cannot repro the cluster as code from the sample. This increases friction for users who want to provision a cluster.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a minimal Bicep or ARM template (and an az CLI snippet) to the repo demonstrating Microsoft.DocumentDB/mongoClusters resource creation with parameters (tier, storage, region), and a note explaining not to run in the sample CI as desktops may lack permission.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Vector index create-index examples for Python (DocumentDB-specific payload)",
+      "what_was_missing": "Agents often search for 'knnVector' community syntax and will try to use community examples which are rejected by DocumentDB. The vector search docs exist but no concise Python create-index snippet for DocumentDB is bundled for sample copy/paste.",
+      "where_searched": "documentdb-vector-search skill and Microsoft Learn vector-search pages; no small Python create-index snippet in the kit.",
+      "effect_on_this_build": "This sample did not use vector features, but future sample authors may try to create vector indexes with the wrong JSON payload and fail.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a short Python snippet showing the exact createIndexes JSON for DocumentDB (cosmosSearchOptions with kind:'vector-hnsw' / 'vector-ivf' / 'vector-diskann') that the sample can copy to create vector indexes with given dimensions and similarity.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Public example run-document schema",
+      "what_was_missing": "There is no single, public 'stress-run audit document' schema example. The practice is sensible but only exists in prior knowledge.",
+      "where_searched": "Searched DocumentDB docs and agent-kit resources; no authoritative run-document schema.",
+      "effect_on_this_build": "The sample created a reasonable run document with schemaVersion, but agents cannot confirm a canonical schema or find examples to copy exactly.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page 'Storing audit runs in DocumentDB' that gives an example JSON schema with run_id/_id, created_at, schemaVersion, scenario_parameters, agent_outputs (raw), aggregated_results, and provenance and explains migration strategy.",
+      "priority": "low"
+    }
+  ]
+}
