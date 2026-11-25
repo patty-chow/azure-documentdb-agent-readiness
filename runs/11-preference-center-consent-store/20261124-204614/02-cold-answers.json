@@ -1,0 +1,124 @@
+{
+  "answers": [
+    {
+      "question_id": "Q01",
+      "question": "What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster?",
+      "answer": "Resource provider namespace: Microsoft.DocumentDB. Top-level resource type: Microsoft.DocumentDB/databaseAccounts (the Cosmos DB account resource). For Mongo-compatible clusters you create a databaseAccount and then mongoDatabases/mongoCollections under it (resource types like Microsoft.DocumentDB/databaseAccounts/mongodbDatabases and Microsoft.DocumentDB/databaseAccounts/mongodbDatabases/collections).",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q02",
+      "question": "Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension?",
+      "answer": "Use the az cosmosdb command group in the core Azure CLI. Example to create a Mongo-compatible account: az cosmosdb create --name myAccount --resource-group rg --kind MongoDB --locations regionName=westus2. There is also a sub-group az cosmosdb mongodb for Mongo-specific operations. (No separate marketplace extension required for basic account creation.)",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q03",
+      "question": "Which Bicep and Terraform resource types deploy a cluster?",
+      "answer": "Bicep/ARM: Microsoft.DocumentDB/databaseAccounts for the account, and Microsoft.DocumentDB/databaseAccounts/mongodbDatabases and .../collections for DBs and collections. Example Bicep: resource acct 'Microsoft.DocumentDB/databaseAccounts@2021-04-15' = { name: 'myAccount' ... kind: 'MongoDB' }\nTerraform (AzureRM provider): azurerm_cosmosdb_account for the account; use azurerm_cosmosdb_mongo_database and azurerm_cosmosdb_mongo_collection for Mongo DBs/collections under that account.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q04",
+      "question": "What does a connection string look like: scheme, host suffix, port, and the options it must carry?",
+      "answer": "Typical connection string (Mongo-compatible Cosmos/DocumentDB style):\nmongodb://<username>:<password>@<account-name>.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&retryWrites=false&appName=@<account-name>@\nNotes: scheme mongodb (or mongodb+srv if SRV supported), host suffix <account>.mongo.cosmos.azure.com, port 10255 for TLS, required options include ssl=true (TLS), replicaSet=globaldb, retryWrites=false, and an appName containing the account name. Adjust user/DB auth database per account (often authSource=admin).",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q05",
+      "question": "How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else?",
+      "answer": "Capacity is billed as provisioned compute capacity rather than classic Mongo Atlas RU model when using Azure DocumentDB/Cosmos-style accounts: historically Cosmos DB billing used Request Units (RUs) or serverless; however managed Mongo clusters on Azure expose named compute SKUs (M-series) billed by vCore/size + storage. For the newer DocumentDB managed Mongo offering you should expect vCore/instance-size billing (M30, M40, etc.) and/or a serverless option depending on SKU. (If you need RU/s style throughput, Cosmos DB's SQL API uses RUs.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q06",
+      "question": "Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID?",
+      "answer": "Supported authentication: standard MongoDB auth (SCRAM-SHA-1 and SCRAM-SHA-256 username/password) and X.509 certificate authentication where supported. Azure AD (Microsoft Entra) integration is not universally supported by all Mongo-compatible accounts; when available the pattern is: obtain an AAD access token (az account get-access-token or MSAL) and present it to the service as the credential via the driver’s SASL/OAUTHBEARER or by using a token-as-password pattern depending on driver support. Concretely, you would request a token for the resource/app id URI for the DocumentDB service and pass that token as the password while using the appropriate authMechanism in the connection string. (If AAD is required, follow the provider docs to map identities to database users.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q07",
+      "question": "Which client library should an application use? Is there a service-specific SDK?",
+      "answer": "Use standard MongoDB drivers for the language (pymongo / motor for Python, node-mongodb-native for Node, official MongoDB drivers for Java/.NET). There is no special service-specific data-plane SDK; management plane uses Azure SDKs (az cli/azurerm/azure-sdk-*). For async Python ODM use Motor + Beanie (the sample uses Beanie).",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q08",
+      "question": "Which vector index types are supported, and what does the command that creates one look like?",
+      "answer": "Vector index types commonly available on Azure-managed Mongo clusters include HNSW, IVF (inverted-file), and DiskANN. In Mongo-style syntax you create a vector index with createIndex and a special index spec. Example (approximate):\ndb.mycoll.createIndex({ embedding: 'vector' }, { name: 'emb_idx', vector: { algorithm: 'hnsw', similarity: 'cosine', dimensions: 1536, parameters: { m:16, efConstruction:200 } } })\nThis is the recommended pattern; exact option names (vector, algorithm, similarity, parameters) depend on the service implementation.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q09",
+      "question": "How are full-text search and hybrid search done?",
+      "answer": "Basic full-text search: use MongoDB text indexes (db.collection.createIndex({ field: 'text' }, { default_language: 'english' })). For more advanced/full-featured text+vector hybrid search, use the service’s integrated vector+text search features (if available) or an external engine (Azure Cognitive Search or Elasticsearch) and combine results in the application. If the managed service exposes an Atlas-Search-like $search aggregation stage, use that stage to combine text and vector scoring in a pipeline; otherwise implement hybrid scoring client-side by merging vector nearest-neighbors with text-match results.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q10",
+      "question": "Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not?",
+      "answer": "Typical managed DocumentDB Mongo-compatible clusters advertise a supported MongoDB server wire version such as MongoDB 6.0 or 7.0 (newer clusters support 7.0). Expect most core CRUD, aggregation and transactions to be supported but some advanced server features and admin commands may be restricted. Historically some features that were limited: server-side JavaScript, certain profiling/diagnostic commands, and sometimes change streams or multi-document transactions depending on the compatibility layer. Check the account's declared supported server version and test features like $lookup, transactions and change streams before using them in production.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q11",
+      "question": "How do you run the database locally for development and tests: which image or emulator, and which port?",
+      "answer": "There is no full local emulator that perfectly reproduces the managed Mongo-compatible service. For development run the official MongoDB Community Docker image (e.g. mongo:7.0) locally on port 27017: docker run --rm -p 27017:27017 --name mongodev -d mongo:7.0. Connect with mongodb://localhost:27017. For Cosmos DB-specific behavior you must test against a live account as the emulator only covers the SQL API (Cosmos DB emulator) and not Mongo wire-protocol feature parity.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q12",
+      "question": "Are change streams supported, and does anything have to be enabled first?",
+      "answer": "Change streams are supported only if the service exposes a replica-set oplog or equivalent change feed. In managed Mongo-compatible clusters you can use change streams (driver db.watch()/collection.watch()) when the account/cluster is configured as a replica set and the user has proper privileges. Some platforms require enabling the feature or using a specific tier; if the managed service is a Cosmos-compatibility layer, change stream support may be limited or delivered via the service’s change feed API instead. Verify by calling db.getMongo().getDB('admin').runCommand({isMaster:1}) and testing collection.watch().",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q13",
+      "question": "Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it?",
+      "answer": "Use the 'documentdb' MCP server profile (documentdb MCP) for data-plane inspection and agent tools for this service. The general Azure MCP server (azure) covers generic Azure management but the documentdb-specific tooling (index/plan inspection, vector index tooling) is provided by the documentdb MCP server. Use the documentdb MCP server connection profile named 'default' as described in the run environment.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q14",
+      "question": "What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project?",
+      "answer": "Historically Microsoft’s cloud JSON database was originally called Azure DocumentDB; later it became Azure Cosmos DB which unified multiple APIs (SQL/DocumentDB, MongoDB API, Table, Gremlin). The older \"DocumentDB\" name often refers to the original SQL/DocumentDB API that became Cosmos DB. The open-source DocumentDB project (if referenced) is unrelated — Microsoft’s DocumentDB was a proprietary cloud database engine. The managed Mongo-compatible offering is either a Mongo API on Cosmos or a separate managed MongoDB cluster; terminology varies but Cosmos DB and DocumentDB are historically the same lineage.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q15",
+      "question": "What engine is underneath, and does that change anything in application code?",
+      "answer": "If the account is Cosmos DB Mongo API, the underlying engine is Cosmos DB’s proprietary store exposing the Mongo wire protocol; some server behaviors differ from upstream MongoDB. If the offering is a managed MongoDB cluster (DocumentDB managed Mongo), the underlying engine is upstream MongoDB (WiredTiger) and behaves like standard MongoDB. In practice, application code should use standard MongoDB drivers; differences to watch for: transactions/consistency nuances, query planner differences, system collections and certain admin commands may behave differently. Test critical features against the target account.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "S01",
+      "question": "Which database name will the sample use?",
+      "answer": "The sample will use the database named sample_customer_360_11 for all created collections and indexes.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S02",
+      "question": "What environment variable contains the cluster connection string for this run?",
+      "answer": "Read the connection string from the environment variable DOCUMENTDB_URI at runtime. Do not hard-code it into files or logs.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S03",
+      "question": "Which Python client libraries and install command will the sample use?",
+      "answer": "Use Motor (async pymongo) + Beanie ODM + FastAPI. Install with pip: pip install fastapi uvicorn beanie motor pydantic python-dotenv. Use motor.motor_asyncio.AsyncIOMotorClient to connect and pass into Beanie.init_beanie with the database object.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S04",
+      "question": "What TTL index definitions will the sample create to enforce retention?",
+      "answer": "Create TTL indexes on the documents using a datetime field (e.g. expireAt) with expireAfterSeconds=0. Example in PyMongo/Beanie: await collection.create_index([('expireAt', 1)], expireAfterSeconds=0). Use expireAt populated to now + retention period when creating consent records.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S05",
+      "question": "What document schema and indexing pattern will the sample use for consent records?",
+      "answer": "Consent document schema (Pydantic/Beanie model):\n- customerId: str (partition key / indexed)\n- consentVersion: str or int\n- currentPreferences: dict of channel->bool\n- history: list of {ts: datetime, consentVersion: str, preferences: dict, actor: str} (append-only)\n- createdAt: datetime\n- updatedAt: datetime\n- expireAt: datetime (for TTL)\nIndexing: index customerId (ascending), unique compound index on (customerId, consentVersion) optional, TTL index on expireAt. Use append-only updates that push to history array and upsert currentPreferences/counter fields.",
+      "confidence": "high"
+    }
+  ]
+}
