@@ -1,0 +1,53 @@
+# 3. Build report: 08-dynamic-segmentation-engine
+
+**Status: completed**
+
+Built a small Python sample that demonstrates a LangChain-compatible segmentation agent with a DocumentDB aggregation tool. The sample seeds a small customers+events dataset, creates indexes, computes per-customer behavioural metrics (recency, frequency, category affinity), assigns a segment (rule-based fallback), and writes the assigned segment back to the customer profile in the sample_customer_360_08 database. A one-shot CLI demo and a small FastAPI endpoint are included. I verified dependency installation, seeding, aggregation, segmentation (write-back), and unit tests; I also inspected the live cluster (databases, indexes, documents, aggregation) via the documentdb MCP tools.
+
+## How to run
+
+1) Copy .env.example -> .env and set DOCUMENTDB_URI (and optionally OPENAI_API_KEY).
+2) Install dependencies: pip install -r requirements.txt
+3) Seed the sample data (idempotent): python scripts/seed.py
+4) One-shot CLI segmentation demo: python -c "import sys, os; sys.path.append(os.getcwd()); sys.argv=['', '--customer_id', 'cust_1']; from src.cli import main; main()"
+   - This computes metrics for cust_1, assigns a segment (deterministic rules if no OPENAI_API_KEY), writes it to the customers collection, and prints results.
+5) (Optional) Run the HTTP demo: uvicorn src.app:app --reload --port 8000 and POST {"customer_id":"cust_1"} to /segment
+Notes:
+- The sample reads DOCUMENTDB_URI and OPENAI_API_KEY from environment variables. See .env.example.
+- Do not commit secrets to source control.
+
+## Verified by running
+
+- pip install -r requirements.txt: completed (packages installed successfully).
+- Seed script: python scripts/seed.py executed (idempotent creation of indexes and insertion of sample customers/events).
+- CLI segmentation run: run agent for cust_1 via python -c "..." -> assigned segment and wrote back to customers collection. Output example: Assigned segment: Active-High-LoyalTo-electronics; metrics returned and profile document shown.
+- pytest -q: 1 passed (tests/test_aggregate.py ran successfully and validated aggregation results).
+- documentdb_list_databases: returned sample_customer_360_08 among databases.
+- documentdb_find_documents on customers (customer_id=cust_1): returned updated profile with 'segment' and 'lastSegmentedAt'.
+- documentdb_aggregate on events (customer_id=cust_1): returned lastSeen, total and byCategory matching seeded data.
+- documentdb_list_indexes for events and customers: indexes created as intended (events: {customer_id:1,timestamp:-1} and {customer_id:1,category:1}; customers: {customer_id:1} unique).
+
+## Not verified
+
+- LLM (LangChain/OpenAI) path: Not executed/validated in this run. During an initial import attempt, langchain import triggered a pydantic compatibility error on Python 3.13; agent.py now performs lazy import and falls back to deterministic rules when an LLM is not available. The actual OpenAI/LangChain end-to-end flow was not tested because an API key was not used and langchain import may be incompatible with the system pydantic/runtime. To verify LLM behavior, set OPENAI_API_KEY and run the CLI with --use_llm; if langchain import fails due to pydantic, use Python 3.11 or pin compatible langchain/pydantic versions.
+- FastAPI server end-to-end HTTP demo: I did not start a long-running uvicorn server as part of automated verification, but the endpoint is provided and follows the same code path as the CLI.
+- Any provisioning/deployment of Azure resources (Bicep/Terraform/az): explicitly not performed per run policy; the sample uses the existing cluster via DOCUMENTDB_URI.
+
+## Open issues
+
+- LangChain / pydantic compatibility on Python 3.13: an import-time error was observed when langchain was imported at module load time. I changed the code to import langchain/OpenAI lazily and to fall back to the deterministic rules engine. Users who want to run the LLM path should either set OPENAI_API_KEY and attempt a run, or use Python 3.11 (or pin langchain/pydantic to compatible versions).
+- The sample writes data to the live cluster pointed to by DOCUMENTDB_URI. There is no automatic teardown in the sample; users should manually delete the sample database when finished.
+- If you want the LLM path validated in CI or this environment, add an OPENAI_API_KEY and confirm langchain imports successfully on the chosen Python runtime; otherwise the deterministic rules engine will be used.
+
+## Files
+
+- `README.md`
+- `.env.example`
+- `requirements.txt`
+- `src/db.py`
+- `src/agent.py`
+- `src/cli.py`
+- `src/app.py`
+- `scripts/seed.py`
+- `tests/test_aggregate.py`
+

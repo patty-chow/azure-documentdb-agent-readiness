@@ -1,0 +1,510 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core requested behaviour: a single Python agent computes recency/frequency/category-affinity with an on-demand aggregation, applies injected segmentation rules (LLM or deterministic fallback), and writes the assigned segment back to the profile document. The repo is mostly complete (pinned dependencies, idempotent seed, README, singleton MongoClient, indexes that match the aggregation patterns). Shortcomings that matter to maintainers and the product team are: (1) the aggregation tool was not registered as a LangChain Tool object (builder implemented a LangChain-compatible flow but did not register a tool), (2) tests require a live cluster (no offline/unit mocks), (3) no explicit retry/backoff logic around transient DB errors, and (4) no infra-as-code for provisioning the mongoClusters resource. Many of the checklist practices are present and were discoverable in public docs and the installed skills; several expected gallery hygiene items that were flagged at risk turned out to be present (.env.example, pinned requirements), while others (vector-index guidance, offline tests, infra) remain gaps. See requirements, practice checks, decision reviews and doc gaps below for evidence and the smallest fixes.",
+  "requirement_results": [
+    {
+      "requirement": "The application is a Python LangChain agent, and one agent carries a customer through the whole flow: calling the aggregation tool, applying the segmentation rules, assigning the label and writing it back.",
+      "status": "met",
+      "evidence": "app/src/agent.py: lines 128-151 (compute_metrics called, label chosen and customers.update_one(...,$set...) performed).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The agent has a DocumentDB aggregation tool, registered as a LangChain tool, that runs an aggregation pipeline through the Python MongoDB driver (e.g. PyMongo) against the event data in Azure DocumentDB for the customer the agent is working on, when the agent calls it.",
+      "status": "not_met",
+      "evidence": "app/src/agent.py implements compute_metrics() and run_agent_assign_segment(), but there is no LangChain Tool wrapper or tool registration (no use of langchain.agents.Tool or Tool registration).",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap compute_metrics in a LangChain Tool (e.g., from langchain.agents import Tool) and register it with the agent executor; add a small glue function that calls compute_metrics and returns serializable JSON."
+    },
+    {
+      "requirement": "The aggregation pipeline computes the behavioural metrics per customer on demand, at the time the tool is called: recency, frequency and category affinity, which the tool returns to the agent.",
+      "status": "met",
+      "evidence": "app/src/agent.py: pipeline building at lines 30-45 and frequency pipeline lines 64-68; compute_metrics returns recency_days, frequency_30d, category_counts and top_category (lines 83-92).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The segmentation rules are injected into the agent's prompt through context engineering (e.g. as a rules section assembled into the system prompt), so the rules the agent applies are present in its prompt context.",
+      "status": "met",
+      "evidence": "app/src/agent.py: when using the LLM path a prompt string is composed that includes the rules (lines 135-140).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The agent assigns a segment label to the customer from the computed metrics and the injected segmentation rules.",
+      "status": "met",
+      "evidence": "app/src/agent.py: assign_segment_from_rules() (lines 95-116) is used when LLM path is unavailable; when LLM path is used the prompt instructs the model to return a label and that label is used (lines 130-147).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The agent writes the assigned segment label back to that customer's profile document in Azure DocumentDB (e.g. an update that sets a segment field on the profile).",
+      "status": "met",
+      "evidence": "app/src/agent.py: customers.update_one({\"customer_id\": customer_id}, {\"$set\": update}, upsert=True) at line 151.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.py: reads DOCUMENTDB_URI from env (lines 9-12). app/src/agent.py reads OPENAI_API_KEY from env (line 11). app/.env.example contains placeholders only.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example (lines 1-4) contains DOCUMENTDB_URI placeholder and OPENAI_API_KEY placeholder; README documents copying .env.example (app/README.md lines 20-24).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample intentionally does not create vector indexes (decision D008). No vector indexes or embedding model are present in the repository to inspect.",
+      "cause": "none",
+      "smallest_fix": "If vectors are added, have the seed/index creation code accept a DIMENSIONS value from env and document model→dimensions mapping in the README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index is created in the sample (see decision D008), so no parameters exist to evaluate.",
+      "cause": "none",
+      "smallest_fix": "If vector indexes are added, document sensible defaults and how to tune 'numLists'/'efConstruction'/'lSearch' for larger corpora in README."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py implements a process-wide singleton MongoClient with a lock (lines 14-26).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.py: create_index calls (lines 15-19), upsert for customers (line 28), events.delete_many for seeded customer ids before insert (line 32) and events.insert_many (line 54).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample does not expose a /search endpoint; only POST /segment exists (app/src/app.py lines 15-19).",
+      "cause": "none",
+      "smallest_fix": "If a /search endpoint is added, add explicit validation for empty queries and explicit error handling for embedding failures and return a 400/502 with clear message."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No vector/search endpoints are present in the sample; similarity scores are not applicable.",
+      "cause": "none",
+      "smallest_fix": "If search is added, include similarity scores in the response and document the score interpretation."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "met",
+      "evidence": "app/requirements.txt pins versions (pymongo==4.6.1, fastapi==0.95.2, etc.).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "app/tests/test_aggregate.py imports compute_metrics and assumes seed.py has been run; no mocks or local gateway are used (lines 4-13).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock pymongo (or use the local DocumentDB gateway in CI) or add a test fixture that spins up a local DocumentDB gateway docker image; update tests to run against an in-memory/mocked client."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/ARM/Terraform/az templates or IaC files are present in the repo; no Microsoft.DocumentDB/mongoClusters template is included.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small Bicep/ARM template or Terraform snippet that provisions Microsoft.DocumentDB/mongoClusters with sensible default tier/storage/region and a note that the sample is intended to target an existing cluster by default."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains 'What this sample shows' (lines 3-11), 'Prerequisites' (lines 12-16), 'Quickstart' setup/run steps (lines 18-44) and 'Cleaning up' (lines 45-47).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md title and text use 'Azure DocumentDB (mongoClusters)' (line 1); code and comments reference DocumentDB and sample_customer_360_08. No Cosmos DB or Amazon DocumentDB names are used in the sample files.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton MongoClient",
+      "practice": "Create one MongoClient per process and reuse it as a singleton rather than creating a new client per request.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.py lines 14-26 implement _client singleton with _client_lock and get_client().",
+      "source": "documentdb-driver / driver-singleton-client",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver / driver-singleton-client",
+          "url": ""
+        },
+        {
+          "title": "documentdb-driver / driver-singleton-client",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Read URI from env",
+      "practice": "Read the cluster connection URI from an environment variable at runtime and do not commit it to source control; provide a .env.example with a placeholder.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/persist-agent-state#get-started-install-dependencies",
+      "status": "followed",
+      "evidence": "app/src/db.py lines 9-12 read DOCUMENTDB_URI from the environment and raise if missing; app/.env.example present (app/.env.example lines 1-4).",
+      "source": "Use LangGraph with Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use LangGraph with Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/persist-agent-state#get-started-install-dependencies"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforced by connection string",
+      "practice": "Always enable TLS for connections to Azure DocumentDB and do not disable certificate validation in production.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials",
+      "status": "followed",
+      "evidence": "app/src/db.py defers to the URI for TLS/options (comment at line 23) and the repo provides .env.example that includes ssl/tls options (app/.env.example line 2).",
+      "source": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID (azure-resource-manager-bicep)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver version pinned",
+      "practice": "The driver version is pinned and is one the service supports.",
+      "category": "connection_handling",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python",
+      "status": "followed",
+      "evidence": "app/requirements.txt pins pymongo==4.6.1 (app/requirements.txt line 1).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "Searched Microsoft Learn quickstart and docs for pymongo compatibility and guidance recommending drivers be pinned; quickstart docs recommend using official MongoDB drivers and indicate supported Python versions.",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index per aggregation",
+      "practice": "Design and create compound indexes that match your aggregation/query patterns (e.g., a compound index on customer_id then timestamp to accelerate per-customer recency and sort-by-timestamp queries).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py creates events.create_index([('customer_id',1),('timestamp',-1)]) and events.create_index([('customer_id',1),('category',1)]) (lines 17-18). compute_metrics matches on customer_id and uses timestamp (app/src/agent.py lines 30-36 and 64-68).",
+      "source": "documentdb-indexing / index-compound-esr",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing / index-compound-esr",
+          "url": ""
+        },
+        {
+          "title": "documentdb-indexing / index-compound-esr",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index category field",
+      "practice": "Index the category field (or create a compound index with customer_id when filtering by both) to make category-affinity grouping/lookup efficient.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py creates events.create_index([('customer_id',1),('category',1)]) (line 18). compute_metrics uses category values for affinity calculations (app/src/agent.py lines 72-81).",
+      "source": "documentdb-indexing / index-single-field",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing / index-single-field",
+          "url": ""
+        },
+        {
+          "title": "documentdb-indexing / index-single-field",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Project only required fields",
+      "practice": "When computing metrics or running aggregations, project only the required fields (use $project) to reduce I/O and network transfer.",
+      "category": "queries_and_aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation#single-collection-pipeline-examples",
+      "status": "followed",
+      "evidence": "compute_metrics aggregation includes a $project stage (app/src/agent.py lines 38-44).",
+      "source": "Aggregation pipeline examples and limitations",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Aggregation pipeline examples and limitations",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation#single-collection-pipeline-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Atomic writeback",
+      "practice": "When writing an assigned segment back to a customer document, perform an atomic single-document update (updateOne with $set or findAndModify) rather than a read-modify-write cycle to avoid race conditions.",
+      "category": "data_integrity",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-update",
+      "status": "followed",
+      "evidence": "app/src/agent.py uses customers.update_one({\"customer_id\": customer_id}, {\"$set\": update}, upsert=True) (line 151).",
+      "source": "Updating data in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Updating data in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-update"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Optimistic concurrency",
+      "practice": "For stronger concurrency control when multiple writers may update the same profile, use optimistic concurrency (etags / _etag + If-Match) or include a version field in the update filter.",
+      "category": "data_integrity",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/database-transactions-optimistic-concurrency#optimistic-concurrency-control",
+      "status": "violated",
+      "evidence": "app/src/agent.py writes with update_one(..., upsert=True) without a version filter or _etag handling (line 151). No optimistic-concurrency usage is present.",
+      "source": "Transactions and optimistic concurrency control",
+      "searched": "",
+      "fix": "Add a version field or include _etag/If-Match semantics: read the current version or _etag and use find_one_and_update with a filter that includes that version (or use a conditional update filter with a 'version' value), and retry on mismatch.",
+      "sources": [
+        {
+          "title": "Transactions and optimistic concurrency control",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/database-transactions-optimistic-concurrency#optimistic-concurrency-control"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries on transient errors",
+      "practice": "Handle transient errors (including 429 rate-limited responses) with retries and exponential backoff and respect server-provided retry guidance when present.",
+      "category": "retries_and_error_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.py and app/src/agent.py contain no retry/exponential-backoff wrappers for database operations; MongoClient is created but operations are not wrapped with retry/backoff logic.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Wrap DB calls in a small retry helper (e.g., using tenacity) or enable and document pymongo retry options; add a simple retry decorator for key DB operations (aggregation, update_one) with exponential backoff and honoring Retry-After where applicable.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotency & bulk writes",
+      "practice": "Use bulk writes/inserts (insertMany / bulk APIs, unordered where appropriate) when seeding or ingesting many events to improve throughput and reduce RU cost.",
+      "category": "provisioning_and_ingestion",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py deletes events for seeded customers (line 32) and then calls events.insert_many(evs) (line 54); create_index is idempotent (lines 17-19).",
+      "source": "Optimize write performance in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Optimize write performance in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Events in separate collection",
+      "practice": "Don't store unbounded/high-cardinality event arrays inside frequently-updated customer profile documents; keep events in a separate events collection and pre-aggregate or summarize into a small profile document to avoid hot documents and large update costs.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "Seed script creates separate 'events' collection and 'customers' collection; events documents are stored separately (app/scripts/seed.py lines 11-13 and 49-55). compute_metrics aggregates events into summary metrics (app/src/agent.py).",
+      "source": "documentdb-data-modeling / model-embed-vs-reference",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling / model-embed-vs-reference",
+          "url": ""
+        },
+        {
+          "title": "documentdb-data-modeling / model-embed-vs-reference",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: index shapes",
+      "practice": "Audit trail: the seed script creates specific compound indexes (customer_id,timestamp) and (customer_id,category) and customers unique index customer_id but there is no separate decision logging the chosen index shapes.",
+      "category": "audit_trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py lines 17-19 show index creation; no recorded decision in decisions.jsonl naming the index shapes.",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "Record the index shapes and rationale in a build decision or README section for traceability.",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "An operator approval. Nothing in the trace contradicts the approval and it matches the builder report status 'completed'."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Decision to target Python 3.13 and pin packages is reflected in README (app/README.md line 14) and requirements.txt pins; events.jsonl contains a log_decision entry for this decision."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Decision to read DOCUMENTDB_URI from the environment is implemented in app/src/db.py lines 9-12. The readiness report cited in the decision justifies the choice."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Decision not to provision Azure resources is consistent with the repo (no IaC files) and the run policy; the implementation uses an existing cluster via DOCUMENTDB_URI."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Decision to implement a LangChain-compatible agent with an OpenAI LLM path and deterministic fallback is implemented: lazy import of langchain/OpenAI and fallback to assign_segment_from_rules (app/src/agent.py lines 130-147). The decision's reason_source is 'model_default' but the code implements the chosen behaviour."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Decision to provide both a CLI and FastAPI endpoint is implemented: app/src/cli.py and app/src/app.py exist and are wired to run_agent_assign_segment()."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Decision to create collections and indexes with pymongo is implemented in app/scripts/seed.py (index creation and upserts). Verification steps in the builder report and events show that the seed script ran."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision not to use vectors is coherent with the repo (no vector fields or vector indexes present) and the decision rationale (keep the sample focused) matches what was implemented."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Tests run offline (mocking guidance)",
+      "what_was_missing": "Explicit examples and a small test fixture that let unit tests run without a live cluster (e.g., using a local DocumentDB gateway docker image example or a pymongo/mongomock mocking pattern).",
+      "where_searched": "Repository tests and Microsoft Learn quickstarts; searched the repo for test fixtures and the installed documentdb-local-deployment skill docs.",
+      "effect_on_this_build": "The provided tests (tests/test_aggregate.py) require a seeded live cluster. This meant CI or consumers who lack a live cluster cannot run tests offline; it also raises the bar for contributors.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short README subsection 'Running tests' plus a test-helper module. Content: 1) A one-paragraph explanation of two options: (a) run tests against a running local DocumentDB gateway docker image (docker run example, default port 10260 and env vars), with sample docker-compose; (b) run pure unit tests by setting TEST_MONGO_MOCK=true and using a provided test fixture that swaps out src.db.get_db for a mongomock-backed client. Include a small example test that uses the fixture.",
+      "priority": "high"
+    },
+    {
+      "topic": "Infrastructure-as-code for mongoClusters",
+      "what_was_missing": "An example Bicep/ARM or Terraform snippet that provisions Microsoft.DocumentDB/mongoClusters with sensible default tier, storage and region.",
+      "where_searched": "Repository (no IaC files), documentdb-azure-deployment skill docs and Microsoft Learn templates for mongoClusters.",
+      "effect_on_this_build": "The sample currently requires an existing cluster; users may copy the repo and not have an owned cluster. Lack of IaC reduces reproducibility and forces manual portal steps.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Provide a minimal Bicep file named deploy/mongoCluster.bicep that provisions Microsoft.DocumentDB/mongoClusters with parameters (tier, region, storage) and outputs connection strings; a README subsection explains running az extension install documentdb and az deployment group create --template-file. Also include Terraform/azapi example in a second file for users who prefer Terraform.",
+      "priority": "high"
+    },
+    {
+      "topic": "Auth options and Entra ID guidance",
+      "what_was_missing": "A short note in the README explaining available auth modes (connection-string SCRAM vs Microsoft Entra ID) and why the sample uses a connection string by default, and how to change to Entra ID (if the cluster is configured for MONGODB-OIDC).",
+      "where_searched": "Repository README (no discussion of Entra ID), documentdb-security skill and Microsoft docs about Entra ID auth.",
+      "effect_on_this_build": "Users who expect to use Microsoft Entra ID may be uncertain whether the sample supports it and how to enable it; they might try to embed credentials incorrectly.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a 'Authentication' subsection in README: list supported methods, show a short example of how to exchange an Entra token and how to configure the driver for MONGODB-OIDC, and mention that the sample demonstrates connection-string usage for simplicity and how to adapt code to call the token-exchange helper.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Retry/backoff examples for common DB ops",
+      "what_was_missing": "A small example showing how to wrap aggregation and update operations with retries + exponential backoff and how to honor server-supplied retry guidance.",
+      "where_searched": "documentdb-connection skill and repo code (no retry wrappers present).",
+      "effect_on_this_build": "The sample runs against a live cluster but lacks robustness instructions; intermittent 429s or transient network blips could cause the sample or CI to fail until retried.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "A short code snippet (new module src/retry.py) that supplies a retry decorator using tenacity, plus examples showing wrapping compute_metrics and update_one calls and how to read Retry-After from responses. Include a note in README recommending enabling retries in production workloads.",
+      "priority": "high"
+    },
+    {
+      "topic": "LangChain tool registration example",
+      "what_was_missing": "A small example showing how to wrap an aggregation function as a LangChain Tool and register it in an AgentExecutor.",
+      "where_searched": "Repo (agent implements compute_metrics but no langchain Tool wrapper), LangChain docs (general) and 'Use LangChain on Azure with Azure DocumentDB' page.",
+      "effect_on_this_build": "The sample demonstrates LangChain-compatible behavior and lazy LLM import, but does not present the recommended pattern for exposing the aggregation pipeline as a callable LangChain tool. This may confuse sample users expecting a Tool-registered example.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a short code snippet in the README or src/agent.py that creates from langchain.agents import Tool and Tool(func=compute_metrics, name='documentdb_aggregate', description='Compute recency/frequency/affinity') and shows how to pass it into an agent.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Runtime compatibility guidance (LangChain/pydantic)",
+      "what_was_missing": "A short note describing the potential LangChain/Pydantic compatibility issue observed on Python 3.13 and suggested mitigations (pin langchain/pydantic to working versions or use Python 3.11).",
+      "where_searched": "Builder open_issues and runtime inventory; no such note in README.",
+      "effect_on_this_build": "The builder encountered an import-time pydantic compatibility error with langchain on Python 3.13 and implemented a lazy-import fallback. Users who try the LLM path on 3.13 may run into the same issue and not know why the sample falls back to deterministic rules.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Runtime and LLM notes' subsection in README explaining: recommended Python minors (3.11/3.12) if using LLM path, or exact pinned langchain/pydantic versions that are known to work. Include a sample requirements-llm.txt showing the compatible pin set.",
+      "priority": "medium"
+    }
+  ]
+}
