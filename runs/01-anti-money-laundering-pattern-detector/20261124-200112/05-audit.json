@@ -1,0 +1,771 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested AML detection pipelines (structuring, rapid pass-through, circular transfers) using MongoDB aggregation and $graphLookup, seeds idempotent sample data, creates indexes (via PyMongo fallback), exposes a CLI and a FastAPI endpoint, and emits structured narratives (stub or LLM-backed). Key best-practices from the DocumentDB skills are followed (singleton client, env-driven secrets, projection, index creation verified via MCP/explain). Gaps remain around connection-pool tuning and retry/backoff, running heavy aggregations synchronously in request handlers, vector-index/embedding wiring (not implemented), test isolation, dependency pinning, and several documentation/discoverability issues (cluster resource type vs legacy names, enabling MCP management tools, vector-index creation syntax). See detailed requirement_results, practice checks and documentation gaps below for exact lines, causes and smallest fixes.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the agent in Python with LangChain as a single agent that is given a DocumentDB aggregation tool and invokes that tool to analyse transactions.",
+      "status": "partly_met",
+      "evidence": "No LangChain agent/tool wrapper found. The code performs aggregation calls directly (aml_agent/analysis.py:6-17, 31-46) and uses langchain only for LLM calls (aml_agent/llm.py:19-26).",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap the aggregation functions as a LangChain Tool and create a simple LangChain Agent that calls that tool (or update run.py to instantiate a LangChain Agent with a Tool that calls aml_agent.analysis)."
+    },
+    {
+      "requirement": "The DocumentDB aggregation tool runs aggregation pipelines against the transaction documents in Azure DocumentDB through a MongoDB driver (e.g. PyMongo's `aggregate`).",
+      "status": "met",
+      "evidence": "Aggregation pipelines executed with PyMongo aggregate in aml_agent/analysis.py (e.g. detect_structuring pipeline lines 11-17 and use of tx.aggregate in detect_rapid_pass_through lines 33-45).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Transactions are modelled as documents that reference other documents and the aggregation tool follows those references to assemble counterparty chains (e.g. with `$graphLookup` or chained `$lookup` stages).",
+      "status": "met",
+      "evidence": "Seeded transactions include from_account/to_account fields and optional linked_tx_ids (seed.py lines 48-58 and 60-73). Aggregation uses $graphLookup (aml_agent/analysis.py lines 33-43 and 71-81).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Known AML typology rules are expressed as stages of the aggregation pipeline so the typology matching runs in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "Structuring implemented as aggregation $match/$group/$project (aml_agent/analysis.py lines 11-17); circular and pass-through detection use $graphLookup stages (aml_agent/analysis.py lines 33-43 and 71-81).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Chains that match a typology rule are flagged as suspicious, and the flagged chains are what the tool returns to the agent.",
+      "status": "met",
+      "evidence": "detect_* functions return lists of matching chains; analyze() collects them and passes to summarize_flags (aml_agent/analysis.py lines 109-120).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "For each flagged chain the agent generates a structured suspicious activity narrative: an object with defined fields (e.g. a Pydantic model or JSON) that describes the chain and the suspicious pattern it matched.",
+      "status": "met",
+      "evidence": "summarize_flags builds structured dict objects with 'type', 'details', 'narrative' (aml_agent/analysis.py lines 92-106).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "DOCUMENTDB_URI read from environment in aml_agent/db.py (lines 6-12); OPENAI_API_KEY read in aml_agent/llm.py (line 6). .env.example contains placeholders (app/.env.example lines 3-9).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI, OPENAI_* model/dims, and DOCUMENTDB_DATABASE placeholders (app/.env.example lines 3-12).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_met",
+      "evidence": "No vector index creation is implemented in seed.py or elsewhere; llm.py exposes EMBEDDING_DIMS default 1536 but no index is created (aml_agent/llm.py lines 7-8; seed.py index creation lines 18-22 create only account/tx indexes).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add optional vector index creation in seed.py that reads EMBEDDING_DIMS and creates a cosmosSearch vector index, or document that vectors are not used and remove embedding-related env defaults."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "README and seed scripts do not create or document vector index parameters; builder_report and open_issues note vector indexes were not implemented.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a README section describing index algorithm and parameter choices for the sample data and a seed.py option to create vector indexes with adjustable params (numLists/efConstruction/M/lBuild/lSearch)."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "Singleton pattern implemented in aml_agent/db.py (get_client() uses module-level _client to reuse MongoClient, aml_agent/db.py lines 14-21).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "seed.py uses UpdateOne with upsert=True and bulk_write for idempotent upserts; it creates indexes via create_index (seed.py lines 18-23 and 36-39, 87-88).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint is implemented. FastAPI exposes only /analyze (app/main.py lines 11-16).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search endpoint that validates input, returns a 400 for empty queries, and catches embedding/LLM errors returning a clear 5xx/4xx error with diagnostic info."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No vector/text search implemented; no code returns a similarity score.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is added, include searchScore in projection and return it in API responses; update README examples."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "not_met",
+      "evidence": "requirements.txt uses >= ranges instead of exact pins (requirements.txt lines 1-8).",
+      "cause": "builder_error",
+      "smallest_fix": "Pin to exact tested package versions (e.g., pymongo==4.20.1, langchain==1.5.2, openai==3.59.0, python-dotenv==1.2.4 etc.) or add constraints file with exact versions."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "tests/test_seed_and_analysis.py calls get_db() and expects collections to exist (tests/test_seed_and_analysis.py lines 15-21); CI run used a live cluster to pass tests (events show pytest passing only after seed run).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock/get_db (e.g., use mongomock or monkeypatch get_db) so pytest runs offline, or provide explicit integration-test marker and document the requirement for a live DB in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep/Terraform/ARM) for Microsoft.DocumentDB/mongoClusters in repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small Bicep or Terraform example that creates Microsoft.DocumentDB/mongoClusters with minimal default settings and a 'destroy' example for cleanup."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "README.md includes What this shows, Prerequisites, Setup, Run, Tests, Cleanup sections (README.md lines 1-29).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README and code reference Azure DocumentDB (README.md lines 3-5). Note: some runtime warnings from drivers may mention 'CosmosDB' in logs but repository text uses 'Azure DocumentDB'.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton client",
+      "practice": "Create one long-lived MongoClient per process and reuse it (do not create a new MongoClient per request).",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "aml_agent/db.py:14-21",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS & secret placement",
+      "practice": "Always connect with TLS (tls=true) and verify server certificates; keep connection strings out of source control and only in environment or secure stores.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": ".env.example:3 and aml_agent/db.py:8-12 (DOCUMENTDB_URI read from env)",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "Consider explicitly setting TLS/verify options when instantiating MongoClient or validating the provided SRV includes tls=true.",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection pool tuning",
+      "practice": "Tune MongoClient pool and timeout options (maxPoolSize, minPoolSize, maxIdleTimeMS, connectTimeoutMS, socketTimeoutMS) appropriate to your deployment and reuse the pool across workers.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "aml_agent/db.py:16-21 creates MongoClient(DOCUMENTDB_URI) with no explicit pool/timout options",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Create the MongoClient with tuned options (e.g., MongoClient(DOCUMENTDB_URI, maxPoolSize=100, minPoolSize=0, serverSelectionTimeoutMS=5000, socketTimeoutMS=120000)).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets in env",
+      "practice": "Store credentials and keys in a secrets manager or environment variables; never commit DOCUMENTDB_URI or API keys to the repository.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "aml_agent/db.py:6-12 reads DOCUMENTDB_URI from environment and .env.example contains placeholders (app/.env.example:3-9).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Least-privilege auth",
+      "practice": "Use least-privilege database users or Microsoft Entra (Azure AD) RBAC for applications instead of cluster admin/root credentials.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control",
+      "status": "violated",
+      "evidence": "No guidance or code to create/use a least-privilege DB user or AAD auth; sample uses DOCUMENTDB_URI connection string (aml_agent/db.py:8-12, README.md:9-16).",
+      "source": "security-entra-rbac (documentdb-security)",
+      "searched": "",
+      "fix": "Document how to create a DB user with minimal privileges or provide an alternate .env.example showing how to use Azure AD authentication (and why the sample uses the SRV URI).",
+      "sources": [
+        {
+          "title": "security-entra-rbac (documentdb-security)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index fields for graphs",
+      "practice": "Index all fields used to join or traverse graphs (e.g., from_account/to_account, transaction_id, timestamp) and create compound indexes for common filter + sort patterns.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "seed.py ensures indexes: transactions.create_index([('from_account',1)]), create_index([('to_account',1)]), create_index([('from_account',1),('timestamp',1)]) (seed.py lines 19-23). documentdb_list_indexes shows these indexes (events documentdb_list_indexes result).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Limit $graphLookup depth",
+      "practice": "When doing recursive/graph traversals (e.g., $graphLookup), limit recursion depth and apply restrictive match filters so the engine can push filters to indexes and avoid unbounded scans.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/release-notes#february-12,-2025",
+      "status": "followed",
+      "evidence": "analysis.py uses maxDepth in $graphLookup (detect_rapid_pass_through maxDepth: aml_agent/analysis.py:40-43; detect_circular_transfers maxDepth parameter aml_agent/analysis.py:76-80).",
+      "source": "Azure DocumentDB release notes / compatibility pages",
+      "searched": "",
+      "fix": "Consider adding restrictSearchWithMatch to $graphLookup pipelines to further narrow search early.",
+      "sources": [
+        {
+          "title": "Azure DocumentDB release notes / compatibility pages",
+          "url": "https://learn.microsoft.com/azure/documentdb/release-notes#february-12,-2025"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "$match early & allowDiskUse",
+      "practice": "Put $match stages as early as possible in aggregation pipelines to reduce the working set, and use allowDiskUse=true for very large aggregations that exceed memory.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output#detect-performance-problems",
+      "status": "followed",
+      "evidence": "detect_structuring places $match at the start of the pipeline (aml_agent/analysis.py lines 11-16).",
+      "source": "Read query explain output in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add allowDiskUse=True option on aggregate calls where datasets may exceed memory.",
+      "sources": [
+        {
+          "title": "Read query explain output in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output#detect-performance-problems"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use explain()",
+      "practice": "Use explain('executionStats') on representative find and aggregate operations and inspect index usage, totalDocsExamined vs nReturned, and plan stages to detect COLLSCANs and inefficiencies.",
+      "category": "monitoring and diagnostics",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output#detect-performance-problems",
+      "status": "followed",
+      "evidence": "documentdb_explain_operation was run for a find {from_account: 'A6'} and explain output captured (events: documentdb_explain_operation result).",
+      "source": "Read query explain output in Azure DocumentDB",
+      "searched": "",
+      "fix": "Inspect explain output carefully; in the run an explain showed a COLLSCAN despite indexes existing (events/documentdb_explain_operation).",
+      "sources": [
+        {
+          "title": "Read query explain output in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output#detect-performance-problems"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry on throttling",
+      "practice": "Treat 429 (throttling) and transient network errors as transient: honor Retry‑After / retry-after-ms headers and retry with exponential backoff and jitter to avoid throttling loops.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/optimize-cost-throughput#optimize-with-rate-limiting-your-requests",
+      "status": "violated",
+      "evidence": "No retry/backoff implementation present in code; MongoClient calls are direct (aml_agent/analysis.py, seed.py).",
+      "source": "Optimize provisioned throughput cost in Azure Cosmos DB / Throttling guidance",
+      "searched": "",
+      "fix": "Add a retry wrapper for DB calls that honors Retry-After and implements exponential backoff with jitter.",
+      "sources": [
+        {
+          "title": "Optimize provisioned throughput cost in Azure Cosmos DB / Throttling guidance",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/optimize-cost-throughput#optimize-with-rate-limiting-your-requests"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid synchronous long-running analysis",
+      "practice": "Avoid running long-running synchronous analysis inside request/response handlers; run heavy aggregations or graph jobs as background tasks or batch jobs and return job IDs for async processing.",
+      "category": "provisioning and performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/architecture/best-practices/background-jobs",
+      "status": "violated",
+      "evidence": "FastAPI endpoint calls analyze() synchronously (app/main.py:11-16) which performs aggregations inline (aml_agent/analysis.py).",
+      "source": "Best practices for background jobs (Azure Architecture)",
+      "searched": "",
+      "fix": "Run analysis as a background task (FastAPI BackgroundTasks, Celery, or return a job id and process offline) and provide a status/result endpoint.",
+      "sources": [
+        {
+          "title": "Best practices for background jobs (Azure Architecture)",
+          "url": "https://learn.microsoft.com/azure/architecture/best-practices/background-jobs"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transaction assumptions",
+      "practice": "Don't assume multi-document transactions span collections or shards; verify support for the Mongo-compatible API/version and prefer idempotent writes or application-level compensation where possible.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation#cross-collection-aggregation-limitations",
+      "status": "not_applicable",
+      "evidence": "Sample performs read-only aggregations and idempotent upserts; no cross-collection multi-document transactions are used.",
+      "source": "Aggregation pipeline examples and limitations / feature tables",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Aggregation pipeline examples and limitations / feature tables",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation#cross-collection-aggregation-limitations"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Model for graph queries",
+      "practice": "Design the data model to support graph queries: keep transaction references in top-level fields optimized for $graphLookup and denormalize or precompute attributes used frequently by analysis.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "Transactions use top-level from_account/to_account fields (seed.py lines 51-56, 64-71, 78-85) used by $graphLookup (analysis.py).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection",
+      "practice": "Limit the size of returned documents with projection ($project) to reduce network and memory overhead during aggregations and narrative construction.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/aggregate",
+      "status": "followed",
+      "evidence": "detect_structuring and graph-based pipelines use $project to limit fields (aml_agent/analysis.py lines 11-16 and 82-83).",
+      "source": "Full-text search and aggregation examples / aggregate operator docs",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Full-text search and aggregation examples / aggregate operator docs",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/aggregate"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk load best practice",
+      "practice": "When bulk-loading, use bulk_write / bulk insert with appropriate batch sizes and unordered mode, and create indexes after the bulk load when possible to speed ingestion.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#queryable-fields-should-always-have-indexes-created",
+      "status": "violated",
+      "evidence": "seed.py creates indexes before bulk_write (seed.py lines 18-23, then performs bulk writes at lines 38-39 and 87-88).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "Move index creation until after bulk_write or use background:true index creation; use unordered bulk writes and batch sizes appropriate for the cluster.",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#queryable-fields-should-always-have-indexes-created"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid excessive indexes",
+      "practice": "Avoid excessive or redundant indexes; each additional index increases write cost—monitor index usage via $indexStats and drop indexes with low usage.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "Sample creates a small set of indexes relevant to queries (seed.py lines 20-22); developer used documentdb_list_indexes to inspect (events documentdb_list_indexes).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "PII redaction",
+      "practice": "Detect/redact or pseudonymize PII before sending data to external LLM/embedding services and use Azure PII-detection/redaction features or enterprise Azure OpenAI privacy controls when possible.",
+      "category": "llm and privacy",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://learn.microsoft.com/azure/foundry/responsible-ai/language-service/transparency-note-personally-identifiable-information#example-use-cases",
+      "status": "violated",
+      "evidence": "llm.py builds prompts including raw details and passes them to LLM without redaction (aml_agent/llm.py lines 21-25). summarize_flags will pass account IDs to llm_client (aml_agent/analysis.py lines 96-105).",
+      "source": "Transparency note for Personally Identifiable Information (PII) / Azure OpenAI data privacy",
+      "searched": "",
+      "fix": "Add PII-detection/redaction step before constructing prompts (or provide an option to pseudonymize account IDs and redact sensitive fields).",
+      "sources": [
+        {
+          "title": "Transparency note for Personally Identifiable Information (PII) / Azure OpenAI data privacy",
+          "url": "https://learn.microsoft.com/azure/foundry/responsible-ai/language-service/transparency-note-personally-identifiable-information#example-use-cases"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Diagnostics & monitoring",
+      "practice": "Enable diagnostic settings and collect metrics/alerts for RU consumption, CPU, memory, IOPS, storage, and slow-query logs; analyze them in Log Analytics and alert on saturation.",
+      "category": "monitoring and diagnostics",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "No monitoring/diagnostic setup code is present in repository; sample is demonstrative and relies on a pre-provisioned cluster.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a README section describing recommended diagnostic settings and an optional script or ARM snippet to enable diagnostic settings for the cluster.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Mask logs",
+      "practice": "Mask or redact sensitive fields in application logs and exported narratives (e.g., partially mask account IDs) and enforce role-based access to investigative artifacts.",
+      "category": "security and compliance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "violated",
+      "evidence": "summarize_flags returns narratives containing raw account/tx ids (aml_agent/analysis.py lines 100-106) and logs/prints (run.py prints results lines 16-19) without redaction.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Implement redaction/masking in summarize_flags and any logging output (e.g., show only last 4 characters of account ids).",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Schema versioning",
+      "practice": "Add a schemaVersion field to documents and migrate lazily so analysis and migration code can evolve safely.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "seed.py account and transaction documents have no schemaVersion field (seed.py lines 27-36 and 48-85).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Add schemaVersion when inserting documents and add a short doc in README about migration strategy.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Validate indexes & tooling",
+      "practice": "Use explain() plus indexStats and collection stats (or the MCP/explorer tools) to validate indexes and query plans; if portal/index-creation fails, create indexes asynchronously or with background:true via drivers.",
+      "category": "indexing and tooling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation",
+      "status": "followed",
+      "evidence": "documentdb_create_index MCP tool was attempted but failed (events documentdb_create_index exception lines 40-41) and builder used PyMongo fallback in seed.py (seed.py lines 18-23). documentdb_explain_operation was used (events line 52).",
+      "source": "Manage indexing in Azure DocumentDB / Indexing Best Practices",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB / Indexing Best Practices",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Paginate $graphLookup results",
+      "practice": "When materializing recursive/$graphLookup results, paginate or limit returned chain lengths and project only the attributes required to build the narrative to bound memory and RU use.",
+      "category": "queries and performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "Max depth is enforced in $graphLookup (aml_agent/analysis.py lines 40-43 and 76-80). detect_rapid_pass_through uses a $limit after the graphLookup in its inner pipeline (aml_agent/analysis.py line 44).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client-side rate limiting",
+      "practice": "Implement client-side rate limiting and batching when performing many lookups or embedding requests to avoid bursts that trigger throttling or RU spikes.",
+      "category": "retries and performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/vector-search-performance-tips#tips-for-optimizing-insert-throughput",
+      "status": "violated",
+      "evidence": "No client-side rate limiting or batching logic for lookups/embeddings in code (analysis/llm/seed are direct calls).",
+      "source": "Optimize provisioned throughput cost in Azure Cosmos DB / vector search tips",
+      "searched": "",
+      "fix": "Add a simple rate-limiter for embedding calls and bulk DB lookups, or batch requests with small delays and exponential backoff.",
+      "sources": [
+        {
+          "title": "Optimize provisioned throughput cost in Azure Cosmos DB / vector search tips",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/vector-search-performance-tips#tips-for-optimizing-insert-throughput"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Network hardening",
+      "practice": "Harden network and encryption: use Private Endpoints / firewall rules and, for regulated workloads, use customer-managed keys (CMK) for encryption at rest.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample does not provision infrastructure; network hardening is out of the sample's code scope though the README warns about secrets (README.md line 31).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Add an optional 'production checklist' in README that recommends private endpoints and CMK for production workloads.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index Advisor",
+      "practice": "Use Index Advisor and the service's index recommendation tools to analyze slow queries and get prioritized index suggestions before applying changes.",
+      "category": "indexing and tooling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/index-advisor",
+      "status": "not_applicable",
+      "evidence": "Index Advisor was not used; sample is a small demo and uses explicit indexes created in seed.py and verify via MCP tools.",
+      "source": "Tune query performance with Index Advisor in Azure DocumentDB (preview)",
+      "searched": "",
+      "fix": "Document that Index Advisor should be used for production tuning and link to the Index Advisor doc in README.",
+      "sources": [
+        {
+          "title": "Tune query performance with Index Advisor in Azure DocumentDB (preview)",
+          "url": "https://learn.microsoft.com/azure/documentdb/index-advisor"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approving the build with readiness 'ready_with_gaps' is supported by the readiness report and the builder_report evidence that many features were implemented and some gaps remain."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing system Python 3.13 is reasonable; events.log shows Python 3.13 available and D002 was recorded (events)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choosing PyMongo 4.x is consistent with quickstart docs and the code uses pymongo (requirements.txt includes pymongo>=4.4.0); D003 was recorded in events."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Choosing the SRV connection string from DOCUMENTDB_URI is consistent with the run environment note and is implemented in code (aml_agent/db.py:8-12); D004 is recorded in events."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Choosing separate accounts and transactions collections is implemented (seed.py lines 15-16) and D005 is recorded in events."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choosing text-embedding-3-small and keeping embedding optional is recorded and matches llm.py defaults (aml_agent/llm.py lines 7-8) and D006 was logged."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Implementing both a CLI and FastAPI endpoint is recorded and present (run.py and app/main.py); D007 recorded in events."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "questionable",
+      "comment": "Decision to use the documentdb MCP server to create indexes was reasonable and recorded, but MCP tool calls failed in this run (events show ToolExecutionException complaining 'Management tools are disabled by default'). The decision was not invalid, but the tool was unavailable and the builder fell back to PyMongo (D009)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "D009 records the fallback to PyMongo after MCP index-creation failed. Events show the MCP call failed and seed.py created indexes (events lines showing MCP exception and subsequent seed.py run)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Vector-index & embedding alignment",
+      "what_was_missing": "No guidance in the sample or a single public quickstart stating which embedding model to pick for sample code, and no automated step to create vector indexes sized to the embedding dimension.",
+      "where_searched": "Read installed skills (documentdb-vector-search, documentdb-full-text-search) and Microsoft vector-search docs via learn_microsoft_docs_search.",
+      "effect_on_this_build": "Builder left embeddings optional and did not implement vector index creation; sample has embedding env defaults but no index creation and README has no vector-index tuning advice.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Embeddings & vector index' page: state a default embedding model (e.g., text-embedding-3-small, 1536 dims), show createIndexes JSON with cosmosSearchOptions that sets dimensions, algorithm (HNSW/IVF/DiskANN) and minimal tuning params, and a note on when to change numLists/efConstruction/M for larger datasets.",
+      "priority": "high"
+    },
+    {
+      "topic": "Seed data shape and acceptance criteria",
+      "what_was_missing": "No canonical sample dataset or acceptance criteria document describing minimal transactions to exercise structuring/rapid pass-through/cycle detection.",
+      "where_searched": "Checked installed skills and sample code; no public sample dataset guidance found.",
+      "effect_on_this_build": "Builder created small, sensible seed data, but an authoring standard would make results more consistent across builds and tests.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short sample-data page: list document examples for each typology (example transactions and accounts), expected detection outputs, and idempotent seeding rules. Include JSON fixtures and a seed acceptance checklist for tests.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Test isolation guidance (unit tests without live cluster)",
+      "what_was_missing": "No guidance or template for authoring unit tests that mock the DocumentDB client (e.g., mongomock or monkeypatch get_db) so tests run without a live cluster.",
+      "where_searched": "Searched skills and Microsoft docs; installation and local-gateway docs exist but not a quick recipe for test isolation.",
+      "effect_on_this_build": "Tests in this repo require running seed against a live cluster; CI or consumers expecting offline unit tests will be surprised.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A short agent-kit rule or README section showing 1) how to monkeypatch get_db to return a mongomock client for pytest, 2) a minimal example fixture, and 3) an integration-test marker for tests that require a live cluster.",
+      "priority": "high"
+    },
+    {
+      "topic": "Management tools opt-in (MCP) and index creation",
+      "what_was_missing": "The MCP/documentdb_create_index tool fails unless the run environment opts in (ENABLE_MANAGEMENT_TOOLS=true). There was no discoverable note in the sample telling builders this or explaining the fallback.",
+      "where_searched": "Events show the MCP tool error; looked at documentdb-agent-kit skills and quickstarts but no single opt-in note in repo.",
+      "effect_on_this_build": "The MCP index-creation call failed during the run; the builder fell back to PyMongo index creation. This could break CI pipelines that expect MCP-managed index operations.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a rule and README note: 'To use MCP management tools set ENABLE_MANAGEMENT_TOOLS=true in your environment or use the MCP proper connection profile; otherwise the sample will fall back to driver-based index creation. Provide sample commands and expected error message.'",
+      "priority": "high"
+    },
+    {
+      "topic": "Which IaC resource to use for vCore clusters (mongoClusters vs databaseAccounts)",
+      "what_was_missing": "Clear, short guidance that modern vCore DocumentDB clusters use Microsoft.DocumentDB/mongoClusters (not the legacy Microsoft.DocumentDB/databaseAccounts), with example Bicep/ARM snippets.",
+      "where_searched": "learn.microsoft.com resource-type docs (events: microsoft_docs_search results on mongoClusters and databaseAccounts), readiness findings",
+      "effect_on_this_build": "Risk of a builder authoring templates for the wrong resource type; this sample used an existing cluster so it didn't block the build but is a common agent failure mode.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "A short 'Which resource type to use' micro-page: show the mongoClusters ARM/Bicep snippet, call out databaseAccounts is the legacy RU model, and provide the CLI snippet (az documentdb mongocluster create) for vCore clusters.",
+      "priority": "high"
+    },
+    {
+      "topic": "Azure CLI command group disambiguation (az documentdb vs az cosmosdb)",
+      "what_was_missing": "A short note in CLI docs clarifying that vCore/mongoClusters uses az documentdb mongocluster and some older cosmosdb commands target databaseAccounts.",
+      "where_searched": "Azure CLI docs and readiness findings",
+      "effect_on_this_build": "Builder attempted to use MCP and Azure CLI guidance could confuse automation authors; not a blocking problem for this sample but dangerous for infra authors.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a one-liner and examples to quickstarts and CLI pages: 'For vCore clusters use az documentdb mongocluster ...; az cosmosdb targets legacy databaseAccounts.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Vector index creation JSON template",
+      "what_was_missing": "Examples showing the exact createIndexes JSON payload for cosmosSearchOptions (HNSW/IVF/DiskANN) and minimal params so authors don't copy Atlas-style APIs.",
+      "where_searched": "Vector-search docs (learn.microsoft.com) and documentdb-agent-kit; some examples exist but a minimal snippet is missing from quickstarts.",
+      "effect_on_this_build": "Builder did not implement vector indexes; a wrong createIndex payload would be rejected by the service.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A minimal 'createIndexes' JSON example for each algorithm, showing only required keys (name, key, cosmosSearchOptions.kind, dims, metric) and a short note where to tune parameters for scale.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Connection-string examples for vCore clusters and AAD/OIDC connection string examples",
+      "what_was_missing": "A short, canonical SRV connection-string snippet for vCore clusters (global.mongocluster.cosmos.azure.com) and an OIDC example for Microsoft Entra ID authentication.",
+      "where_searched": "learn.microsoft.com connection docs and readiness findings",
+      "effect_on_this_build": "Potential for builder mistakes when copying legacy cosmos host/port examples; this repo uses a sample SRV in .env.example but a dedicated microdoc would prevent confusion.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A small connect.md reference with two canonical examples: SRV for SCRAM-SHA-256 and OIDC connection string example with authMechanism=MONGODB-OIDC and authMechanismProperties usage.",
+      "priority": "high"
+    },
+    {
+      "topic": "Test isolation vs local gateway guidance",
+      "what_was_missing": "Clear advice: when to use the DocumentDB local gateway Docker image for local parity vs using mongomock for unit tests, with example docker run and test fixture.",
+      "where_searched": "documentdb-local-deployment skill and quickstarts",
+      "effect_on_this_build": "Builder used live cluster for tests in run; maintainers may assume tests pass offline.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A 'local dev & tests' quick page: show docker command for gateway image (port 10260), an example .env for local gateway (TLS/port adjustments), and a pytest fixture to switch between mongomock (unit) and real gateway (integration).",
+      "priority": "medium"
+    }
+  ]
+}
