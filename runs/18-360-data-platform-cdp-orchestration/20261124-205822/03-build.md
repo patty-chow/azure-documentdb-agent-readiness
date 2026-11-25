@@ -1,0 +1,48 @@
+# 3. Build report: 18-360-data-platform-cdp-orchestration
+
+**Status: partial**
+
+Built a Python LangChain orchestration sample that seeds synthetic customer data, runs an ingest → dedupe → enrich pipeline against the provided Azure DocumentDB cluster, and records a workflow document per run. Unit tests for utilities passed. The sample reads DOCUMENTDB_URI (and optionally OPENAI_API_KEY) from environment. I verified seeding, the pipeline run, and basic collection/index state. Creation of a native vector (`cosmosSearch`) index via the documentdb MCP API failed during this run and therefore is not verified here; LLM-assisted dedupe (OpenAI) and real embeddings were not exercised because no OpenAI key was available in the run environment, so the code used deterministic fallbacks for those features.
+
+## How to run
+
+1) Copy .env.example to .env and set DOCUMENTDB_URI (and optionally OPENAI_API_KEY).
+2) Install deps: python -m pip install -r requirements.txt
+3) Seed sample data: python seed.py
+4) Run pipeline: python run_pipeline.py --run
+Notes: The code reads DOCUMENTDB_URI and DOCUMENTDB_DBNAME (default sample_customer_360_18) from environment. If OPENAI_API_KEY is provided the sample will attempt LLM-assisted dedupe and real embeddings via LangChain/OpenAI; otherwise deterministic fallbacks are used so the sample can still be run without cloud LLM access.
+
+## Verified by running
+
+- pip install -r requirements.txt: completed (exit code 0)
+- pytest -q tests/test_utils.py: 2 passed
+- python seed.py: seeded 5 records into sample_customer_360_18.customers (exit code 0)
+- python run_pipeline.py --run: completed; workflow document written (example result: {'_id': 'adefcc4f-99ef-493d-975a-613919a5c910', 'stages': {'ingest': {'status': 'done'}, 'dedupe': {'status': 'done', 'merged': 0}, 'enrich': {'status': 'done', 'updated': 4}}})
+- documentdb_list_databases(db_name=sample_customer_360_18): returned collections [{'name': 'customers', 'count': 4}, {'name': 'workflows', 'count': 1}]
+- documentdb_list_indexes(collection=customers): returned indexes ['_id_', 'email_1']
+
+## Not verified
+
+- Creation of a native vector `cosmosSearch` index via documentdb_create_index: I attempted to create a vector-diskann index programmatically but the documentdb_create_index call failed (tool returned an error). I did not create the vector index by another route; therefore vector-index creation and subsequent vector-search queries are not verified.
+- LLM-assisted dedup using OpenAI and real OpenAI embeddings (text-embedding-3-small): Not verified because OPENAI_API_KEY was not set in the environment during verification. The code path falls back to deterministic pseudo-embeddings and a non-LLM merge policy in that case.
+- Vector search behavior (cosmosSearch queries and tuning of lBuild/lSearch/maxDegree): not verified because vector index was not successfully created in this run.
+
+## Open issues
+
+- documentdb_create_index call to create a `cosmosSearch` vector index failed with a tool error. If you want a working vector index in this sample, run the appropriate index creation payload against the cluster (portal or documentdb MCP API). I left the MCP-call attempt in the build logs; the exact request shape may need adjusting to the cluster API version.
+- If you want to exercise LLM-assisted dedupe and real embeddings, set OPENAI_API_KEY in your environment before running. The sample will then call LangChain/OpenAI for chat & embeddings; be aware of API usage and costs.
+- The sample's LLM prompt/response parsing is intentionally minimal for a demo. For production use, a stricter JSON output contract (and safe parsing/validation) is recommended when asking an LLM to return canonical documents + IDs to remove.
+
+## Files
+
+- `README.md`
+- `.env.example`
+- `requirements.txt`
+- `src/__init__.py`
+- `src/db.py`
+- `src/utils.py`
+- `src/pipeline.py`
+- `seed.py`
+- `run_pipeline.py`
+- `tests/test_utils.py`
+

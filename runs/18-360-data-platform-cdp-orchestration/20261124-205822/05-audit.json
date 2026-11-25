@@ -1,0 +1,676 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested Python + LangChain orchestration (ingest → dedupe → enrich) and runs end-to-end against the provided Azure DocumentDB cluster. Core behaviors are present and were exercised in the run: the app reads DOCUMENTDB_URI from the environment, uses a singleton MongoClient, seeds data idempotently, runs the pipeline and writes a workflow document. Major gaps: native vector-index creation failed in this run because management tools were disabled (tool error), so vector-search verification and vector-index tuning were not completed; several operational best-practices (retries/backoff, bulkWrite batching, TTL for workflow logs, explicit transaction usage for multi-document merges where atomicity is required) are absent. Tests are designed to run offline and are present. The report below lists per-requirement results, practice checks, decision reviews and recommended documentation/tooling fixes the product team should consider.",
+  "requirement_results": [
+    {
+      "requirement": "Pipeline is Python + LangChain and orchestrator runs ingest → dedupe → enrich in that order.",
+      "status": "met",
+      "evidence": "app/src/pipeline.py:156-173 (Orchestrator.run_batch invokes ingest.normalize_and_upsert, then dedupe.find_potential_duplicates/llm_decide_and_merge, then enrich.enrich)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Ingest, dedup and enrich are distinct LangChain-based components the orchestrator invokes.",
+      "status": "partly_met",
+      "evidence": "app/src/agents.py:15-41 (IngestAgent), 43-85 (DedupAgent), 86-102 (EnrichAgent) — these are distinct classes and use LangChain clients (OpenAI/OpenAIEmbeddings).",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap the agent classes as LangChain Runnables/Chains/Agents (e.g., subclass Runnable or use Chains) and call those objects from the orchestrator, or document why simple classes are sufficient."
+    },
+    {
+      "requirement": "Ingest agent normalises incoming records and writes the normalised records to Azure DocumentDB through a MongoDB driver (PyMongo).",
+      "status": "met",
+      "evidence": "app/src/pipeline.py:24-42 (IngestAgent.normalize_and_upsert uses normalize_name and update_one/upsert to customers).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dedup agent identifies duplicate profiles using LLM-assisted matching (candidate profiles passed to an LLM through LangChain).",
+      "status": "met",
+      "evidence": "app/src/agents.py:46-55 (DedupAgent.__init__ creates OpenAI via LangChain and is_duplicate builds a prompt and calls self.llm.predict).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dedup agent merges the profiles judged to be duplicates into a single profile in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/agents.py:69-84 (run_merging_pass merges, update_one and delete_one used to persist merged document), app/src/pipeline.py:90-112 (pipeline-level merging fallback also updates/deletes).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Enrich agent appends third-party firmographic or demographic signals to the customer profiles stored in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/agents.py:90-98 (enrich_profile writes 'firmographics' and updates the customers collection), app/src/pipeline.py:121-143 (EnrichAgent.enrich fallback synthetic signals).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Orchestrator logs each batch run as a workflow document in Azure DocumentDB (run id, start/end times, stages).",
+      "status": "met",
+      "evidence": "app/src/pipeline.py:174-182 (Orchestrator.run_batch constructs a workflow doc with _id/run/timestamps/stages and inserts it), events.jsonl:122 shows workflow document written.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Connection string and model credentials come from environment variables; none appear in the repo.",
+      "status": "met",
+      "evidence": "app/.env.example:2-4 (DOCUMENTDB_URI, OPENAI_API_KEY placeholders) and app/src/db.py:8-11 (reads DOCUMENTDB_URI); no secrets committed.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": ".env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example:2-6 lists DOCUMENTDB_URI, OPENAI_API_KEY and DOCUMENTDB_DBNAME, but code also reads EMBEDDING_MODEL / LLM_MODEL defaults and the run scripts document other optional settings.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add EMBEDDING_MODEL, LLM_MODEL, EMBEDDING_DIMS (if used), and any other optional env keys to .env.example, with explanatory comments."
+    },
+    {
+      "requirement": "Vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "app/src/pipeline.py:14 and app/src/agents.py:8 set embedding model / dims to 1536 (text-embedding-3-small), but the attempt to create a native vector index via the MCP tool failed: events.jsonl:123 (documentdb_create_index) shows management tools are disabled and the index was not created.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Either enable the management tool (set ENABLE_MANAGEMENT_TOOLS=true in the environment used for verification) or add an alternative idempotent index-creation path (portal script or documented manual step) that sets the index dimensions to EMBED_DIM."
+    },
+    {
+      "requirement": "Vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "README mentions creating a native vector index (app/README.md:53) and decisions chose HNSW/1536 dims, but README lacks a short tuning guide and specific example parameters for larger datasets.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a README section with recommended index kind (IVF/HNSW/DiskANN) by dataset size and example parameter values (lBuild/lSearch/numLists/maxDegree) and show where to change them (index payload or portal)."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py:11-24 (module-level _client with _client_lock and get_client() singleton pattern), app/src/db.py:27-29 (get_database reuses client).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/seed.py (idempotent upserts) and app/ensure_indexes.py create indexes; events.jsonl:121 shows python seed.py seeded records and did not duplicate them.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample does not implement an HTTP /search endpoint; no code path to assert error behaviour for empty queries or embedding failures.",
+      "cause": "could_not_determine",
+      "smallest_fix": "Add a documented search API or CLI that validates queries and returns explicit errors for empty input and for embedding-service failures; include tests for both cases."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "The sample does not expose a search API or CLI that would return similarity scores; internal code stores embeddings but there is no vector-search result surface to verify scores.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If you expose search results, include the score in the result documents and add unit/integration tests that assert score presence and format."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "app/requirements.txt:1-7 lists exact versions (pymongo==4.4.0, langchain==0.0.321, openai==0.27.8, etc.).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/test_orchestrator.py patches agents, app/tests/test_pipeline.py uses an in-memory DummyDB via monkeypatch; events.jsonl:120 shows pytest -q tests/test_utils.py passed, and tests are written to avoid a live DB.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/Terraform/ARM templates or Az CLI IaC files in the repository (searches for 'mongoClusters', 'bicep', 'terraform' returned no app files).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add optional IaC (Bicep/Terraform) that uses Microsoft.DocumentDB/mongoClusters with small, cost-conscious defaults and parameters for tier/region/storage; mark it optional in README."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes sections: What this shows, Prerequisites, Quickstart (setup/run) and Cleanup (app/README.md:1-46).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and other docs refer to 'Azure DocumentDB'; no references to Amazon DocumentDB or 'Cosmos DB' as the primary product name except as the internal API name used in product features (cosmosSearch index name).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "MongoClient reuse",
+      "practice": "Reuse a single long-lived MongoClient (share the driver instance/pool) for the process and do not create a new client per request.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#initialize-the-project",
+      "status": "followed",
+      "evidence": "app/src/db.py:11-24 (module-level _client with a lock and get_client() that instantiates MongoClient once).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#initialize-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets in env",
+      "practice": "Do not hard-code the cluster connection string or credentials in source; read DOCUMENTDB_URI (or MONGODB_URI) from environment/config and keep secrets out of the repo.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#initialize-the-project",
+      "status": "followed",
+      "evidence": "app/.env.example:2 and app/src/db.py:8-23 show the code reads DOCUMENTDB_URI from environment; README warns not to commit secrets (app/README.md:49).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#initialize-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS and network",
+      "practice": "Enforce TLS for client connections and restrict network access with cluster firewall rules or Private Link; prefer private endpoints for production instead of exposing the public endpoint.",
+      "category": "auth",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/faq#how-should-i-manage-encryption-keys-when-using-cmk",
+      "status": "followed",
+      "evidence": "app/src/db.py:22-24 passes the URI to MongoClient which, for SRV URIs, will use TLS; README instructs to use cluster SRV connection string and not to commit secrets (app/README.md:14-16).",
+      "source": "Frequently asked questions about Azure DocumentDB (with MongoDB compatibility)",
+      "searched": "",
+      "fix": "Consider explicitly asserting tls=True and sensible timeout options in get_client() (serverSelectionTimeoutMS, socketTimeoutMS) to make TLS and timeouts explicit in sample code.",
+      "sources": [
+        {
+          "title": "Frequently asked questions about Azure DocumentDB (with MongoDB compatibility)",
+          "url": "https://learn.microsoft.com/azure/documentdb/faq#how-should-i-manage-encryption-keys-when-using-cmk"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index coverage",
+      "practice": "Create indexes that match your query patterns: index every field used in filters or sorts and create compound indexes for common multi-field predicates to avoid COLLSCANs.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-index",
+      "status": "followed",
+      "evidence": "app/ensure_indexes.py:8-12 and app/src/db.py:27-29 ensure email and normalized_name indexes; documentdb_list_indexes (events.jsonl:126) shows _id_ and email_1 present.",
+      "source": "Scenario based guide to indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add compound indexes or additional indexes for any query patterns you add (e.g., {tenant_id:1, normalized_email:1}) and run explain() in CI to detect COLLSCANs.",
+      "sources": [
+        {
+          "title": "Scenario based guide to indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL for workflow logs",
+      "practice": "Use a TTL index (expireAfterSeconds on _ts or a custom TTL field) to automatically expire transient workflow or log documents so collections don't grow indefinitely.",
+      "category": "logging",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/time-to-live#ttl-indexes",
+      "status": "violated",
+      "evidence": "app/ensure_indexes.py does not create a TTL index on workflows and app/src/pipeline.py inserts workflow docs but does not schedule expiry.",
+      "source": "Expire data with Azure Cosmos DB for MongoDB and per-document TTL",
+      "searched": "",
+      "fix": "Add an expireAfterSeconds TTL index on the workflows collection (e.g., ensure_indexes.py should create an index on started_at or finished_at with expireAfterSeconds=<demo_ttl_seconds>).",
+      "sources": [
+        {
+          "title": "Expire data with Azure Cosmos DB for MongoDB and per-document TTL",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/time-to-live#ttl-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid offset pagination",
+      "practice": "Avoid large offset/skip pagination for large datasets; implement keyset (range/continuation token) pagination by sorting on an indexed, unique field and using a last-seen cursor.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/ef/core/querying/pagination",
+      "status": "not_applicable",
+      "evidence": "The sample has no public pagination API or large dataset pagination flows.",
+      "source": "Pagination (guidance)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Pagination (guidance)",
+          "url": "https://learn.microsoft.com/ef/core/querying/pagination"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Multi-document transactions",
+      "practice": "Azure DocumentDB supports multi-document ACID transactions (use startSession()/withTransaction in drivers) where needed.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions",
+      "status": "violated",
+      "evidence": "app/src/agents.py:79-84 and app/src/pipeline.py:96-103 perform multi-document merges via update/delete without using driver transactions (no startSession/withTransaction seen).",
+      "source": "Group multiple operations in transactions in Azure DocumentDB",
+      "searched": "",
+      "fix": "Use driver sessions and withTransaction() for multi-document merges across documents/partitions where atomicity is required, or document why single-document patterns were chosen.",
+      "sources": [
+        {
+          "title": "Group multiple operations in transactions in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries and backoff",
+      "practice": "Implement retries with exponential backoff and jitter for transient network errors and throttling (429) and honor Retry-After when provided.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/en-us/azure/well-architected/design-guides/throttling#[tp-5]-respect-backpressure",
+      "status": "violated",
+      "evidence": "No retry or backoff logic found in app/src/agents.py or app/src/pipeline.py for DB operations or vector/embedding calls.",
+      "source": "Design throttling to improve resilience",
+      "searched": "",
+      "fix": "Add a retry wrapper around DB and external calls implementing exponential backoff and jitter; respect 429/Retry-After where applicable.",
+      "sources": [
+        {
+          "title": "Design throttling to improve resilience",
+          "url": "https://learn.microsoft.com/en-us/azure/well-architected/design-guides/throttling#[tp-5]-respect-backpressure"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain plans",
+      "practice": "Use explain('executionStats') to inspect query plans and verify aggregation pipelines and dedupe queries use intended indexes.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output",
+      "status": "violated",
+      "evidence": "No call to explain() or query-plan inspection exists in the codebase (search of src shows no explain() usage).",
+      "source": "Read query explain output in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add explain() checks during local verification or a debug mode that logs queryPlanner/executionStats for dedupe/enrich queries and include a CI check to fail if COLLSCAN is detected.",
+      "sources": [
+        {
+          "title": "Read query explain output in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Store embeddings as number[]",
+      "practice": "Store vector embeddings as first-class numeric arrays alongside documents and create a dedicated vector index (cosmosSearch).",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "app/src/agents.py:31-39 computes and normalizes embedding as a list of floats and stores embedding_model and embedding_dims metadata; app/src/pipeline.py sets EMBED_DIM=1536.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create vector index via provider",
+      "practice": "Create vector indexes through the provider APIs (createIndexes / cosmosSearch options) and tune algorithm-specific parameters.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index",
+      "status": "not_assessable",
+      "evidence": "The build attempted to create a vector index via the documentdb_create_index tool (events.jsonl:123) but the call failed because management tools were disabled. The code includes index creation intent but it was not created/verified in this run.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Enable the MCP management tools or provide a manual index-creation snippet for the portal with the correct 'dimensions' and algorithm params; ensure the code's EMBED_DIM is used in the index payload.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Canonical merged profile & provenance",
+      "practice": "Keep a canonical merged profile per customer and store provenance/audit records (merge history) in a separate collection rather than deleting originals.",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P16",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/agents.py merges documents and deletes duplicates (run_merging_pass) but does not persist a separate provenance/merge-history collection; there is no public Azure DocumentDB page prescribing the suggested audit pattern.",
+      "source": "prior_knowledge",
+      "searched": "searches tried: 'Azure DocumentDB canonical merge provenance' etc (no Azure-specific guidance found)",
+      "fix": "Add a 'merge_history' collection and record {workflow_run_id, source_ids, canonical_id, fields_changed, timestamp} at each merge. Product doc suggestion: a small 'dedupe provenance' page describing recommended schema.",
+      "sources": [],
+      "what_would_help": "A short 'merge provenance' page that prescribes an audit document schema and when to keep originals vs soft-delete."
+    },
+    {
+      "topic": "Deterministic matching metadata",
+      "practice": "Persist deterministic matching metadata (scores, model/prompt/version) for reproducibility and audit of LLM-assisted merges.",
+      "category": "logging",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P23",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample does not record the LLM prompt/version or model metadata with dedupe decisions; no public Azure DocumentDB doc prescribes this pattern.",
+      "source": "prior_knowledge",
+      "searched": "searches tried: 'Azure DocumentDB persist LLM matching metadata' etc (no Azure-specific doc found)",
+      "fix": "Record matching metadata in the workflow or a dedupe_jobs collection: {model_name, model_version, prompt_hash, similarity_score, fallback_used}. Provide a short README section on what to persist.",
+      "sources": [],
+      "what_would_help": "A public page that says 'persist model & prompt metadata with LLM-assisted decisions' or a sample dedupe audit schema."
+    },
+    {
+      "topic": "Canonical identifiers at ingest",
+      "practice": "Validate and canonicalize input identifiers at ingest (normalize emails/phones, store normalized keys and optional hashed keys).",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P25",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/utils.py normalizes names (normalize_name) but there is no email canonicalization or hashed key creation; public Azure docs do not prescribe canonicalization patterns for this use-case.",
+      "source": "prior_knowledge",
+      "searched": "searches tried: 'normalize email canonicalize Azure DocumentDB' etc (no Azure-specific doc found)",
+      "fix": "Add email_normalized and email_hash fields at ingest (lowercase, trim, optionally hash canonical email) and index them; document this choice in README.",
+      "sources": [],
+      "what_would_help": "A short sample page recommending canonicalized key fields for dedupe use-cases (email_normalized, phone_digits, hashed_id)."
+    },
+    {
+      "topic": "Bulk operations",
+      "practice": "Limit batch sizes and use driver bulk operations (bulkWrite) for high-throughput writes.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#tune-for-the-optimal-batch-size-and-thread-count",
+      "status": "violated",
+      "evidence": "app/src/agents.py:19-41 and app/src/pipeline.py:24-42 perform per-document update_one in loops rather than using bulk_write/bulkWrite for batched upserts.",
+      "source": "Optimize write performance in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "Replace per-document loops with bulk_write UpdateOne/ReplaceOne operations batched at a safe size (e.g., 500 docs) and tune unordered vs ordered mode.",
+      "sources": [
+        {
+          "title": "Optimize write performance in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#tune-for-the-optimal-batch-size-and-thread-count"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection string shape",
+      "practice": "Use a proper MongoDB connection string with TLS and auth parameters (tls=true, authMechanism=MONGODB-OIDC when using Entra ID) and appropriate driver options.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication",
+      "status": "followed",
+      "evidence": "app/.env.example shows an SRV-style URI and app/src/db.py delegates to MongoClient(DOCUMENTDB_URI). The README instructs to use the cluster SRV string (app/README.md:14-16).",
+      "source": "Connect to Azure DocumentDB using MongoDB Shell examples",
+      "searched": "",
+      "fix": "If you want the sample to demonstrate Entra ID, add an example connection string with authMechanism=MONGODB-OIDC and a short README note about enabling role-based access.",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using MongoDB Shell",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval decision logged; no assertions to verify beyond the record."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python + pymongo + LangChain matches the prompt and the environment; events.jsonl shows this decision recorded and the code uses those technologies."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Using pymongo and LangChain is consistent with the code: app/src/db.py uses pymongo and agents.py imports langchain.OpenAI and OpenAIEmbeddings."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "wrong",
+      "comment": "D004 states a two-collection model with 'staging_customers' and 'customers', but the final code and runtime evidence use a single 'customers' collection (no 'staging_customers' found). Search of the repo shows no 'staging_customers' (events.jsonl and repository files)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Embedding model and dims (text-embedding-3-small / 1536) are reflected in code (app/src/pipeline.py:14 and app/src/agents.py:8) and in .env.example defaults."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Decision to create hashed/text indexes via application code and to attempt a vector index via MCP was followed. The MCP attempt was made (events.jsonl:123) but failed due to management tools being disabled; that failure is recorded in the event trace."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "A runtime fallback when OPENAI_API_KEY is absent is implemented: code paths use deterministic embeddings/fallback heuristics. The run used the fallback when no key was present (builder report and events show this)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Creating basic indexes via ensure_indexes.py is implemented (app/ensure_indexes.py) and used prior to seeding in the run; events show email index present (documentdb_list_indexes)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Pinning langchain to an available PyPI version was a pragmatic choice to make installs succeed; events show requirements.txt modified and pip install succeeded."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Second readiness approval — no additional validation required."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Repeated Python selection; codebase is Python-based."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Choice of OpenAI-compatible provider matches code (langchain.OpenAI used) and README guidance about OPENAI_API_KEY."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Reiterates embedding selection; code reflects the choice."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Singleton MongoClient pattern chosen and implemented (app/src/db.py)."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Decision to use the provided cluster via DOCUMENTDB_URI matches the run environment and code; no provisioning attempted."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "questionable",
+      "comment": "D016 selects vector-hnsw for sample index, but the documented/attempted MCP create-index call used vector-diskann in events.jsonl:123. The repository and event trace show both discann and hnsw decisions at different times — the choice is inconsistent in the decision log vs the actual create-index payload attempted."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Storing normalized embeddings, model and dims as document fields is implemented (app/src/agents.py:36-39)."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "sound",
+      "comment": "Another readiness approval — consistent with earlier approvals."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "Python runtime choice repeated; code uses Python."
+    },
+    {
+      "decision_id": "D020",
+      "assessment": "sound",
+      "comment": "OpenAI/ChatOpenAI via LangChain is used in agents.py; matches decision."
+    },
+    {
+      "decision_id": "D021",
+      "assessment": "sound",
+      "comment": "Embedding dims restated and used in code."
+    },
+    {
+      "decision_id": "D022",
+      "assessment": "sound",
+      "comment": "Singleton MongoClient confirmed in code; decision recorded and implemented."
+    },
+    {
+      "decision_id": "D023",
+      "assessment": "questionable",
+      "comment": "D023 also records a preference for HNSW; see D016 comment — the decision log contains both HNSW and DiskANN choices and the attempted MCP payload used DiskANN. This is inconsistent and should be consolidated."
+    },
+    {
+      "decision_id": "D024",
+      "assessment": "sound",
+      "comment": "Decision to use a single 'customers' collection with embedded firmographics and addresses matches the code and models.py dataclass."
+    },
+    {
+      "decision_id": "D025",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from environment is implemented (app/src/db.py) and documented in .env.example and README."
+    },
+    {
+      "decision_id": "D026",
+      "assessment": "sound",
+      "comment": "Reading OPENAI_API_KEY from environment is implemented (app/src/pipeline.py:13 and run_pipeline.py:11)."
+    },
+    {
+      "decision_id": "D027",
+      "assessment": "sound",
+      "comment": "Readiness approval recorded again."
+    },
+    {
+      "decision_id": "D028",
+      "assessment": "sound",
+      "comment": "Python runtime choice repeated (no issue)."
+    },
+    {
+      "decision_id": "D029",
+      "assessment": "sound",
+      "comment": "Decision to avoid committing secrets is implemented and documented."
+    },
+    {
+      "decision_id": "D030",
+      "assessment": "sound",
+      "comment": "Decision not to provision Azure resources is consistent with run policy and with the repo (no IaC executed)."
+    },
+    {
+      "decision_id": "D031",
+      "assessment": "sound",
+      "comment": "Schema choice recorded and matches code (app/src/models.py and app/src/agents.py usage)."
+    },
+    {
+      "decision_id": "D032",
+      "assessment": "sound",
+      "comment": "Embedding fallback decision is implemented (app/src/utils.py deterministic_embedding used when OPENAI key missing or tests run)."
+    },
+    {
+      "decision_id": "D033",
+      "assessment": "sound",
+      "comment": "Decision to create standard indexes with pymongo and vector index with MCP was followed; MCP call was attempted and failed (events.jsonl:123), and standard indexes were observed in the cluster (events.jsonl:126)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Dedupe + provenance guidance (missing public doc)",
+      "what_was_missing": "No Azure DocumentDB Learn page or official guidance prescribing a recommended schema for storing dedupe/merge provenance (which fields to keep, how to store model/prompt metadata, and when to soft-delete originals).",
+      "where_searched": "Microsoft Learn docs (search terms: 'Azure DocumentDB merge provenance', 'store merge history', 'dedupe audit'), internal skills and repo search.",
+      "effect_on_this_build": "The sample deletes merged documents and does not persist a canonical 'merge_history' audit document; an agent cannot confirm a recommended audit schema for LLM-assisted merges.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Deduplication and provenance' Learn page recommending: (1) keep a canonical document per customer; (2) create a 'merge_history' collection storing {workflow_run_id, merged_ids, canonical_id, fields_changed, model_name, prompt_hash, timestamp}; (3) example code for writing the audit doc and for rolling back merges if needed.",
+      "priority": "high"
+    },
+    {
+      "topic": "Persisting LLM matching metadata",
+      "what_was_missing": "No public guidance that codifies persisting model/prompt/version/scores for LLM-assisted matching for reproducibility and audit.",
+      "where_searched": "Microsoft Learn docs and the documentdb LangChain guidance.",
+      "effect_on_this_build": "The sample does not persist model/prompt metadata so LLM-driven decisions are not auditable by default.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short guidance page for 'LLM-assisted workflows on DocumentDB' describing what metadata to persist for each LLM call (model name/version, prompt hash, deterministic fallback seed, similarity scores) and an example schema.",
+      "priority": "high"
+    },
+    {
+      "topic": "Canonical identifier canonicalization examples",
+      "what_was_missing": "No Azure-lead page prescribing canonicalization and hashed keys for identifiers (email/phone) specifically for dedupe scenarios.",
+      "where_searched": "Microsoft Learn and documentdb skills for 'normalize email', 'hashed key', 'dedupe'.",
+      "effect_on_this_build": "The sample normalizes names but does not canonicalize emails (lowercase/hash) by default; an agent will not know recommended canonicalization steps.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Canonical identifiers for dedupe' section on the data-modeling guidance page: examples of email normalization, phone normalization, storing hashed keys for equality lookup, index recommendations and sample code.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Vector-index demo defaults and tuning",
+      "what_was_missing": "A one-page recommendation for default vector-index parameters suitable for demo-sized datasets (tens to hundreds of vectors) showing safe lBuild/lSearch/numLists defaults and an explanation of algorithm trade-offs.",
+      "where_searched": "documentdb-vector-search skill and Microsoft Learn vector-search pages.",
+      "effect_on_this_build": "The builder had to pick reasonable defaults (HNSW/1536 dims) but no concise demo defaults page exists, making consistent choices across samples harder.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a 'Vector index quickstart: demo defaults' subsection on the vector-search page with a short table: 'Dataset size → recommended algorithm → example params (lBuild,lSearch,numLists,maxDegree)'.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Management tools opt-in behaviour (MCP indexing calls disabled by default)",
+      "what_was_missing": "The run encountered a tool error: 'Management tools are disabled by default. Set ENABLE_MANAGEMENT_TOOLS=true to opt in.' There should be a clearly discoverable note about this opt-in requirement where MCP tool usage is documented.",
+      "where_searched": "Events trace; searched repo for documentdb_create_index usage and general MCP docs.",
+      "effect_on_this_build": "Vector index creation via the MCP tool failed during verification; the build could not verify native vector index creation.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A short note in the MCP/documentdb skill docs and the sample README: 'To run management operations via the MCP tools in automated verification runs, set ENABLE_MANAGEMENT_TOOLS=true. If not set, create indexes via the portal or documentdb CLI.'",
+      "priority": "high"
+    },
+    {
+      "topic": "Driver version guidance in quickstarts",
+      "what_was_missing": "No single-sentence recommendation in the quickstart indicating the exact driver versions the service supports or recommends for Python/pymongo (and a statement about compatibility when wire protocol versions change).",
+      "where_searched": "Quickstart and compatibility pages on Microsoft Learn.",
+      "effect_on_this_build": "The builder had to pick pinned driver versions; tests and users would benefit from explicit supported-version guidance.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Supported driver versions' note on the top of the quickstart and vector-search pages with tested pymongo versions and guidance on reading the cluster's supported wire protocol.",
+      "priority": "medium"
+    }
+  ]
+}

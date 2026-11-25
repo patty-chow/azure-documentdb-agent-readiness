@@ -1,150 +1,183 @@
 import os
-import uuid
 import time
-from datetime import datetime
-from pymongo import UpdateOne
-from langchain import OpenAI
-from langchain.embeddings import OpenAIEmbeddings
+import uuid
+from typing import List, Dict, Any, Optional
+from pymongo import ASCENDING, IndexModel
 from dotenv import load_dotenv
-from .db import get_db
+
+from .db import get_database
+from .utils import normalize_name, deterministic_embedding, name_similarity
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-EMBEDDING_DIMS = 1536  # decision: text-embedding-3-small
-
-# Simple normalizer
-
-def normalize_name(name: str) -> str:
-    if not name:
-        return ""
-    return " ".join(part.capitalize() for part in name.strip().replace('\n', ' ').split())
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+EMBED_DIM = 1536  # default embedding dims for text-embedding-3-small
 
 
-class Pipeline:
-    def __init__(self):
-        self.db = get_db()
-        self.customers = self.db["customers"]
-        self.staging = self.db["staging_customers"]
-        self.workflows = self.db["workflows"]
-        # configure embeddings if key provided
-        if OPENAI_API_KEY:
-            self.embedder = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-            # langchain OpenAI wrapper used here only for embeddings; chat used in dedupe when available
-        else:
-            self.embedder = None
+class IngestAgent:
+    def __init__(self, db):
+        self.db = db
+        self.customers = db.get_collection("customers")
+        # ensure unique email index
+        self.customers.create_index([("email", ASCENDING)], unique=False)
 
-    def log_workflow_start(self):
+    def normalize_and_upsert(self, records: List[Dict[str, Any]]):
+        ops = []
+        for r in records:
+            r = r.copy()
+            r["normalized_name"] = normalize_name(r.get("name"))
+            r.setdefault("schemaVersion", 1)
+            # compute a placeholder embedding if not provided (real embedding happens later)
+            if "embedding" not in r:
+                r["embedding"] = None
+            # use email for id if exists
+            if r.get("email"):
+                filter_q = {"email": r["email"]}
+            else:
+                if "_id" in r:
+                    filter_q = {"_id": r["_id"]}
+                else:
+                    r["_id"] = str(uuid.uuid4())
+                    filter_q = {"_id": r["_id"]}
+            self.customers.update_one(filter_q, {"$set": r}, upsert=True)
+
+
+class DedupAgent:
+    def __init__(self, db, embeddings_fn=None, llm_fn=None):
+        self.db = db
+        self.customers = db.get_collection("customers")
+        self.embeddings_fn = embeddings_fn
+        self.llm_fn = llm_fn
+
+    def find_potential_duplicates(self, threshold: float = 0.6) -> List[List[Dict[str, Any]]]:
+        # naive approach: group by similar normalized_name using a windowed scan
+        docs = list(self.customers.find({}))
+        groups = []
+        seen = set()
+        for i, doc in enumerate(docs):
+            if doc.get("_id") in seen:
+                continue
+            group = [doc]
+            for j in range(i+1, len(docs)):
+                other = docs[j]
+                if other.get("_id") in seen:
+                    continue
+                # quick email exact match
+                if doc.get("email") and other.get("email") and doc.get("email") == other.get("email"):
+                    group.append(other)
+                    seen.add(other.get("_id"))
+                    continue
+                sim = name_similarity(doc.get("normalized_name"), other.get("normalized_name"))
+                if sim >= threshold:
+                    group.append(other)
+                    seen.add(other.get("_id"))
+            if len(group) > 1:
+                groups.append(group)
+        return groups
+
+    def llm_decide_and_merge(self, groups: List[List[Dict[str, Any]]]):
+        merged_count = 0
+        for group in groups:
+            # Ask LLM whether to merge and how. If not available, merge by simple rules.
+            if self.llm_fn:
+                try:
+                    decision = self.llm_fn(group)
+                except Exception:
+                    decision = None
+            else:
+                decision = None
+
+            if decision is None:
+                # fallback merge: pick the doc with most filled fields as canonical
+                canonical = max(group, key=lambda d: len([k for k,v in d.items() if v]))
+                for d in group:
+                    if d["_id"] == canonical["_id"]:
+                        continue
+                    # merge non-null fields into canonical
+                    for k, v in d.items():
+                        if k not in canonical or not canonical.get(k):
+                            canonical[k] = v
+                    self.customers.delete_one({"_id": d["_id"]})
+                # upsert canonical
+                self.customers.update_one({"_id": canonical["_id"]}, {"$set": canonical}, upsert=True)
+                merged_count += len(group)-1
+            else:
+                # If LLM returned a canonical doc, apply it
+                canonical = decision.get("canonical")
+                to_remove = decision.get("remove_ids", [])
+                self.customers.update_one({"_id": canonical["_id"]}, {"$set": canonical}, upsert=True)
+                for rid in to_remove:
+                    self.customers.delete_one({"_id": rid})
+                merged_count += len(to_remove)
+        return merged_count
+
+
+class EnrichAgent:
+    def __init__(self, db, enrichment_provider=None):
+        self.db = db
+        self.customers = db.get_collection("customers")
+        self.enrichment_provider = enrichment_provider
+
+    def enrich(self, batch_size: int = 100) -> int:
+        updated = 0
+        cursor = self.customers.find({})
+        for doc in cursor:
+            # Skip if already enriched with firmographics
+            if doc.get("firmographics"):
+                continue
+            if self.enrichment_provider:
+                signals = self.enrichment_provider(doc)
+            else:
+                # synthetic enrichment: domain-based firmographic cues from email
+                signals = {
+                    "company_size": "small",
+                    "industry": "unknown"
+                }
+                email = doc.get("email") or ""
+                if "@" in email:
+                    domain = email.split("@")[-1]
+                    if domain.endswith("example.com"):
+                        signals["company_size"] = "enterprise"
+                        signals["industry"] = "technology"
+            self.customers.update_one({"_id": doc["_id"]}, {"$set": {"firmographics": signals}})
+            updated += 1
+        return updated
+
+
+class Orchestrator:
+    def __init__(self, db, embeddings_fn=None, llm_fn=None, enrichment_provider=None):
+        self.db = db
+        self.customers = db.get_collection("customers")
+        self.workflows = db.get_collection("workflows")
+        self.ingest = IngestAgent(db)
+        self.dedup = DedupAgent(db, embeddings_fn=embeddings_fn, llm_fn=llm_fn)
+        self.enrich = EnrichAgent(db, enrichment_provider=enrichment_provider)
+
+    def run_batch(self, records: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         run_id = str(uuid.uuid4())
-        now = datetime.utcnow()
+        started_at = time.time()
+        stages = {}
+        # Stage: ingest
+        if records:
+            self.ingest.normalize_and_upsert(records)
+        stages["ingest"] = {"status": "done"}
+
+        # Stage: dedupe
+        groups = self.dedup.find_potential_duplicates()
+        merged = self.dedup.llm_decide_and_merge(groups)
+        stages["dedupe"] = {"status": "done", "merged": merged}
+
+        # Stage: enrich
+        enriched = self.enrich.enrich()
+        stages["enrich"] = {"status": "done", "updated": enriched}
+
+        finished_at = time.time()
         doc = {
-            "run_id": run_id,
-            "started_at": now,
-            "stages": {},
+            "_id": run_id,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "duration_seconds": finished_at - started_at,
+            "stages": stages,
         }
         self.workflows.insert_one(doc)
-        return run_id
-
-    def log_workflow_end(self, run_id, updates: dict):
-        now = datetime.utcnow()
-        self.workflows.update_one({"run_id": run_id}, {"$set": {"finished_at": now, "stages": updates}})
-
-    def ingest(self):
-        # Move from staging to customers with normalization and upsert
-        ops = []
-        for doc in self.staging.find():
-            normalized = {
-                "email": doc.get("email"),
-                "name": doc.get("name"),
-                "normalized_name": normalize_name(doc.get("name")),
-                "addresses": doc.get("addresses", []),
-                "schemaVersion": 1,
-            }
-            # compute embedding if embedder present
-            if self.embedder and doc.get("name"):
-                emb = self.embedder.embed_query(doc.get("name"))
-                normalized["embedding"] = emb
-            ops.append(UpdateOne({"email": normalized["email"]}, {"$set": normalized, "$setOnInsert": {"workflow_history": []}}, upsert=True))
-        if ops:
-            res = self.customers.bulk_write(ops)
-            return {"ingested": res.upserted_count + res.modified_count}
-        return {"ingested": 0}
-
-    def dedupe(self):
-        # Very small demo: group by email duplicates and also check normalized_name similarity via heuristic or LLM
-        merged = 0
-        # first, merge exact-email duplicates (should be handled by upsert but we demonstrate merging addresses and firmographics)
-        pipeline = [
-            {"$group": {"_id": "$email", "ids": {"$push": "$_id"}, "count": {"$sum": 1}}},
-            {"$match": {"count": {"$gt": 1}}}
-        ]
-        groups = list(self.customers.aggregate(pipeline))
-        for g in groups:
-            ids = g["ids"]
-            primary = ids[0]
-            others = ids[1:]
-            primary_doc = self.customers.find_one({"_id": primary})
-            updates = {}
-            for oid in others:
-                other = self.customers.find_one({"_id": oid})
-                # merge addresses
-                upd_addresses = primary_doc.get("addresses", []) + [a for a in other.get("addresses", []) if a not in primary_doc.get("addresses", [])]
-                primary_doc["addresses"] = upd_addresses
-                # merge firmographics
-                if not primary_doc.get("firmographics") and other.get("firmographics"):
-                    primary_doc["firmographics"] = other.get("firmographics")
-                # remove the duplicate
-                self.customers.delete_one({"_id": oid})
-                merged += 1
-            # write merged primary
-            self.customers.replace_one({"_id": primary}, primary_doc)
-        # second, LLM-assisted fuzzy dedupe on similar normalized_name (fallback to heuristic if no OPENAI_API_KEY)
-        if OPENAI_API_KEY:
-            # TODO: call LLM to generate match decisions. For demo we keep this simple and skip detailed prompt construction.
-            pass
-        else:
-            # heuristic: merge documents with identical normalized_name
-            pipeline = [
-                {"$group": {"_id": "$normalized_name", "ids": {"$push": "$_id"}, "count": {"$sum": 1}}},
-                {"$match": {"count": {"$gt": 1}}}
-            ]
-            groups = list(self.customers.aggregate(pipeline))
-            for g in groups:
-                name = g["_id"]
-                ids = g["ids"]
-                primary = ids[0]
-                for oid in ids[1:]:
-                    other = self.customers.find_one({"_id": oid})
-                    primary_doc = self.customers.find_one({"_id": primary})
-                    primary_doc["addresses"] = primary_doc.get("addresses", []) + [a for a in other.get("addresses", []) if a not in primary_doc.get("addresses", [])]
-                    if not primary_doc.get("firmographics") and other.get("firmographics"):
-                        primary_doc["firmographics"] = other.get("firmographics")
-                    self.customers.delete_one({"_id": oid})
-                    merged += 1
-                self.customers.replace_one({"_id": primary}, primary_doc)
-        return {"merged": merged}
-
-    def enrich(self):
-        # Append deterministic firmographic signals based on email domain when missing
-        updated = 0
-        for c in self.customers.find({"firmographics": {"$exists": False}}):
-            email = c.get("email", "")
-            domain = email.split("@")[-1] if "@" in email else "unknown"
-            firm = {
-                "company_size": "small" if domain.endswith(".com") else "micro",
-                "industry": "technology" if "example" in domain else "other",
-            }
-            self.customers.update_one({"_id": c["_id"]}, {"$set": {"firmographics": firm}})
-            updated += 1
-        return {"enriched": updated}
-
-
-if __name__ == "__main__":
-    p = Pipeline()
-    run_id = p.log_workflow_start()
-    stages = {}
-    stages["ingest"] = p.ingest()
-    stages["dedupe"] = p.dedupe()
-    stages["enrich"] = p.enrich()
-    p.log_workflow_end(run_id, stages)
-    print("Run complete", stages)
+        return doc

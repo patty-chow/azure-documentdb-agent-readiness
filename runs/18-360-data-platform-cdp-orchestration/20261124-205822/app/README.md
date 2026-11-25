@@ -1,36 +1,54 @@
-Customer 360 orchestration sample for Azure DocumentDB
+Customer 360 sample with Azure DocumentDB + LangChain
 
-What this sample shows
-- A Python LangChain orchestration pipeline with three agents: ingest, dedup, and enrich.
-- Uses an Azure DocumentDB (MongoDB wire protocol) cluster; connection read from DOCUMENTDB_URI.
-- Stores customer profiles in database `sample_customer_360_18`, collection `customers`.
-- Uses an LLM (OpenAI) for dedup matching and embeddings (text-embedding-3-small) for vector search.
-- Logs each batch run to the `workflows` collection.
+What this shows
+
+- A small Python LangChain-based orchestration pipeline with three agents:
+  - ingest agent: normalizes incoming customer records and upserts them into Azure DocumentDB
+  - dedup agent: identifies & merges duplicate profiles (LLM-assisted with a deterministic fallback)
+  - enrich agent: appends firmographic/demographic signals (synthetic in this sample)
+- A workflow document is written per batch run (collection `workflows`).
+- Demonstrates creating a native vector index for semantic matching (via the documentdb MCP tool) and a unique email index.
 
 Prerequisites
-- Python available (the environment's `python`/`pip` will be used).
-- An Azure DocumentDB cluster reachable; set DOCUMENTDB_URI in your .env.
-- OpenAI API key in OPENAI_API_KEY for the LLM and embeddings (or set to blank to use heuristics).
 
-Setup
-1. python -m venv .venv
-2. source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-3. pip install -r requirements.txt
-4. cp .env.example .env and fill DOCUMENTDB_URI and OPENAI_API_KEY
+- Python (the run environment already provides a virtualenv; `python`/`pip` resolve to it).
+- An Azure DocumentDB cluster reachable from this machine. Set DOCUMENTDB_URI in your environment (or in a local `.env`) to the cluster connection string. Do not store secrets in the repo.
+- (Optional) OpenAI API key in OPENAI_API_KEY to enable LLM-assisted dedupe and real embeddings. If not present, the sample falls back to deterministic behavior so it can still be run for verification.
 
-Run the sample
-- Seed sample incoming records: python seed.py
-- Run the pipeline once: python run_pipeline.py
+Files of interest
 
-Files
-- seed.py: loads sample incoming records into `incoming` collection (idempotent upsert by email).
-- run_pipeline.py: runs ingest -> dedup -> enrich and records a workflow document.
-- src/db.py: Mongo client singleton.
-- tests/: pytest-based unit tests (mocks DB and LLM).
+- src/db.py - MongoDB client singleton and helpers
+- src/pipeline.py - Ingest/Dedup/Enrich agents and orchestrator
+- seed.py - Idempotent seeding/upsert of synthetic sample customer records
+- run_pipeline.py - CLI entrypoint to run the pipeline
+- .env.example - example environment variables
+
+Quickstart
+
+1. Copy .env.example to .env and fill DOCUMENTDB_URI and optionally OPENAI_API_KEY
+   cp .env.example .env
+   # edit .env
+
+2. Install dependencies
+   python -m pip install -r requirements.txt
+
+3. Seed the sample data (idempotent upserts)
+   python seed.py
+
+4. Run the pipeline (ingest -> dedupe -> enrich)
+   python run_pipeline.py --run
+
+5. Inspect the `customers` and `workflows` collections in database `sample_customer_360_18`.
 
 Cleanup
-- Remove sample documents by deleting the `customers`, `incoming`, and `workflows` collections from the `sample_customer_360_18` database.
+
+- Remove sample documents by dropping the `customers` and `workflows` collections, or remove the `sample_customer_360_18` database (do not run in production).
+
+Security
+
+- Never commit your DOCUMENTDB_URI or OPENAI_API_KEY. These are read from the environment or a local `.env` file loaded at runtime.
 
 Notes
-- Do not commit secrets. Keep DOCUMENTDB_URI and OPENAI_API_KEY in your environment and never in source control.
-- This sample is for demo purposes only; do not use in production without security reviews and proper IAM/networking.
+
+- The sample creates a native vector `cosmosSearch` index via the documentdb MCP server for accurate options — see the code and the build report for the exact index created.
+- For real enrichment, replace the synthetic enrich logic with calls to your third-party signal provider.
