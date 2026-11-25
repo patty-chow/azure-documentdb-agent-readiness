@@ -1880,7 +1880,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 17-rare-disease-literature-search | `runs/17-rare-disease-literature-search/20261124-195633` | 4 | 0 | 12 | 116 | 4 |
 | 17-seasonal-trend-spotter-agent | `runs/17-seasonal-trend-spotter-agent/20261124-185115` | 5 | 0 | 18 | 105 | 3 |
 | 17-stress-testing-multi-agent-runner | `runs/17-stress-testing-multi-agent-runner/20261124-202407` | 2 | 0 | 14 | 105 | 1 |
-| 18-360-data-platform-cdp-orchestration | `runs/18-360-data-platform-cdp-orchestration/20261124-205822` | 0 | 0 | 10 | 72 | 3 |
+| 18-360-data-platform-cdp-orchestration | `runs/18-360-data-platform-cdp-orchestration/20261124-205822` | 0 | 0 | 10 | 84 | 4 |
 | 18-adverse-event-reporting-pipeline | `runs/18-adverse-event-reporting-pipeline/20261124-195726` | 2 | 0 | 19 | 52 | 3 |
 | 18-chargeback-dispute-multi-agent | `runs/18-chargeback-dispute-multi-agent/20261124-192501` | 10 | 0 | 26 | 110 | 5 |
 | 18-returns-refund-workflow-orchestration | `runs/18-returns-refund-workflow-orchestration/20261124-185415` | 2 | 0 | 20 | 96 | 2 |
@@ -1889,8 +1889,8 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 19-cross-sell-recommendation-beanie | `runs/19-cross-sell-recommendation-beanie/20261124-185532` | 0 | 0 | 21 | 31 | 4 |
 | 19-insider-threat-detection-pipeline | `runs/19-insider-threat-detection-pipeline/20261124-202818` | 4 | 0 | 11 | 77 | 3 |
 | 19-option-chain-data-store | `runs/19-option-chain-data-store/20261124-192712` | 4 | 0 | 22 | 107 | 1 |
-| 19-proactive-outreach-orchestration | `runs/19-proactive-outreach-orchestration/20261124-205844` | 4 | 0 | 11 | 46 | 3 |
-| 20-identity-resolution-multi-agent | `runs/20-identity-resolution-multi-agent/20261124-210002` | 0 | 0 | 7 | 4 | 0 |
+| 19-proactive-outreach-orchestration | `runs/19-proactive-outreach-orchestration/20261124-205844` | 4 | 0 | 16 | 69 | 3 |
+| 20-identity-resolution-multi-agent | `runs/20-identity-resolution-multi-agent/20261124-210002` | 0 | 0 | 7 | 15 | 1 |
 | 20-interest-accrual-batch-processor | `runs/20-interest-accrual-batch-processor/20261124-202826` | 3 | 0 | 20 | 52 | 0 |
 | 20-open-banking-api-cache-layer | `runs/20-open-banking-api-cache-layer/20261124-192737` | 2 | 0 | 27 | 52 | 0 |
 | 20-provider-directory-semantic-search | `runs/20-provider-directory-semantic-search/20261124-200008` | 3 | 0 | 19 | 77 | 1 |
