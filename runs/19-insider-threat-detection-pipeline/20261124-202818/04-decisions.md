@@ -1,3 +1,49 @@
 # Decision log
 
-No decisions were recorded.
+| Reason came from | Decisions |
+|---|---|
+| model_default | 2 |
+| operator | 1 |
+| readiness_report | 1 |
+| prompt | 1 |
+
+`model_default` means the agent had no prompt, skill, doc or tool result to go on. Each one is a candidate prompt or documentation gap.
+
+## D001 (readiness): I approved the build with readiness 'ready_with_gaps'
+
+- **Instead of:** Stop and fix gaps first
+- **Because:** Approved with --yes
+- **Reason came from:** `operator`
+- **When:** 2026-11-25T10:49:09+00:00
+
+## D002 (build): I chose Python 3.13 (python on PATH) for the sample app and scripts.
+
+- **Instead of:** Node.js/TypeScript; Python 3.13
+- **Because:** Python is standard for data pipelines, the run environment has Python 3.13 available, and developer familiarity and libraries (pymongo, openai) are best supported in Python.
+- **Reason came from:** `readiness_report`
+- **Evidence:** Assumption from prompt review: "Use Python 3.11 (or latest 3.x commonly available on developer machines)." Readiness report: "Python 3.13.13 on PATH".
+- **When:** 2026-11-25T10:49:26+00:00
+
+## D003 (build): I chose the official pymongo driver, pinned to 'pymongo>=4.5' and will implement a singleton MongoClient per process.
+
+- **Instead of:** pymongo 3.x; pymongo >= 4.5
+- **Because:** pymongo 4.x is current, supports MongoDB 7.0 wire protocol and modern features used by DocumentDB; using a singleton client follows documentdb-driver skill guidance.
+- **Reason came from:** `prompt`
+- **Evidence:** Assumption from prompt review: "Use the official pymongo driver (pymongo >= 4.3, e.g. 4.5) and implement a process-wide singleton MongoClient per documentdb-driver guidance."
+- **When:** 2026-11-25T10:49:29+00:00
+
+## D004 (build): I chose OpenAI embedding model 'text-embedding-3-small' with 1536 dimensions for the sample.
+
+- **Instead of:** text-embedding-3-small (1536 dims); text-embedding-3-large (3072 dims)
+- **Because:** Smaller model reduces compute/cost for sample while providing reasonable quality; 1536 dims is common for 'small' models; we'll record dimensionality and use it to create the vector index.
+- **Reason came from:** `model_default`
+- **Evidence:** readiness_report: "Builder must pick OpenAI embedding model & dims" and assumption list recommended text-embedding-3-small.
+- **When:** 2026-11-25T10:49:35+00:00
+
+## D005 (build): I chose a cosine similarity threshold of 0.7 for flagging significant deviations (cosine similarity between recent embedding and historical centroid).
+
+- **Instead of:** Cosine similarity threshold 0.8; Cosine similarity threshold 0.7; Z-score based detection
+- **Because:** A 0.7 cosine threshold is a reasonable illustrative cutoff for semantic drift in embeddings for a sample; this is documented and configurable in config.
+- **Reason came from:** `model_default`
+- **Evidence:** readiness_report: "Anomaly threshold definition... builder must pick and document the threshold and metric".
+- **When:** 2026-11-25T10:49:38+00:00
