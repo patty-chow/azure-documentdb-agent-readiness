@@ -1483,11 +1483,11 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 16-atm-network-status-monitor | `runs/16-atm-network-status-monitor/20261124-202405` | 0 | 0 | 9 | 1 | 0 |
 | 16-loyalty-points-ledger | `runs/16-loyalty-points-ledger/20261124-184937` | 3 | 0 | 27 | 67 | 0 |
 | 16-multi-touch-attribution-model | `runs/16-multi-touch-attribution-model/20261124-205342` | 0 | 0 | 6 | 10 | 0 |
-| 16-population-health-dashboard-backend | `runs/16-population-health-dashboard-backend/20261124-195348` | 1 | 0 | 16 | 82 | 2 |
+| 16-population-health-dashboard-backend | `runs/16-population-health-dashboard-backend/20261124-195348` | 1 | 0 | 26 | 92 | 2 |
 | 16-subscription-billing-engine | `runs/16-subscription-billing-engine/20261124-192251` | 2 | 0 | 23 | 58 | 1 |
 | 17-ai-survey-response-analyzer | `runs/17-ai-survey-response-analyzer/20261124-205518` | 0 | 0 | 6 | 12 | 0 |
 | 17-esg-scoring-pipeline | `runs/17-esg-scoring-pipeline/20261124-192259` | 4 | 0 | 15 | 89 | 4 |
-| 17-rare-disease-literature-search | `runs/17-rare-disease-literature-search/20261124-195633` | 4 | 0 | 12 | 77 | 2 |
+| 17-rare-disease-literature-search | `runs/17-rare-disease-literature-search/20261124-195633` | 4 | 0 | 12 | 105 | 2 |
 | 17-seasonal-trend-spotter-agent | `runs/17-seasonal-trend-spotter-agent/20261124-185115` | 5 | 0 | 18 | 105 | 3 |
 | 17-stress-testing-multi-agent-runner | `runs/17-stress-testing-multi-agent-runner/20261124-202407` | 0 | 0 | 8 | 6 | 0 |
 | 18-360-data-platform-cdp-orchestration | `runs/18-360-data-platform-cdp-orchestration/20261124-205822` | 0 | 0 | 10 | 6 | 0 |
@@ -1495,7 +1495,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 18-chargeback-dispute-multi-agent | `runs/18-chargeback-dispute-multi-agent/20261124-192501` | 10 | 0 | 26 | 110 | 5 |
 | 18-returns-refund-workflow-orchestration | `runs/18-returns-refund-workflow-orchestration/20261124-185415` | 2 | 0 | 20 | 96 | 2 |
 | 18-sanctions-list-screening-agent | `runs/18-sanctions-list-screening-agent/20261124-202645` | 0 | 0 | 10 | 3 | 0 |
-| 19-care-coordination-multi-agent | `runs/19-care-coordination-multi-agent/20261124-195730` | 0 | 0 | 14 | 1 | 0 |
+| 19-care-coordination-multi-agent | `runs/19-care-coordination-multi-agent/20261124-195730` | 0 | 0 | 14 | 25 | 0 |
 | 19-cross-sell-recommendation-beanie | `runs/19-cross-sell-recommendation-beanie/20261124-185532` | 0 | 0 | 21 | 31 | 4 |
 | 19-insider-threat-detection-pipeline | `runs/19-insider-threat-detection-pipeline/20261124-202818` | 0 | 0 | 7 | 6 | 0 |
 | 19-option-chain-data-store | `runs/19-option-chain-data-store/20261124-192712` | 4 | 0 | 22 | 107 | 1 |

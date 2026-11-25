@@ -10,8 +10,8 @@
 
 - A Python FastAPI service exposes HTTP endpoints for a population health dashboard, each returning cohort-level metrics computed by an aggregation pipeline run on the patient records in Azure DocumentDB through the Python driver (e.g. PyMongo).
 - The faceted-query pipeline uses a $facet stage with one sub-pipeline per breakdown dimension: diagnosis, age band, gender and region.
-- Each $facet sub-pipeline groups or buckets the patient cohort into that dimension's categories and computes a per-category metric (e.g. patient count), with the age band derived in the pipeline from the patient's age or date of birth (e.g. $bucket).
-- Expensive aggregation results are written by the service into Azure DocumentDB as materialised summary documents in a collection of their own (e.g. a summaries collection).
+- Each $facet sub-pipeline groups the patient cohort into that dimension's categories (e.g. with $group or $bucket) and computes a per-category metric (e.g. patient count).
+- Expensive aggregation results are written by the service into Azure DocumentDB as materialised summary documents (e.g. in a summaries collection).
 - A scheduled refresh (e.g. a background scheduler or periodic task) recomputes the expensive aggregations and replaces the materialised summary documents on a recurring schedule.
 - Dashboard endpoints that serve the cached aggregations read the stored materialised summary documents from Azure DocumentDB.
 
