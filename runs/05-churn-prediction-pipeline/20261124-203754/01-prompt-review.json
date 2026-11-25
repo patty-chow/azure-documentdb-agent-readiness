@@ -1,0 +1,170 @@
+{
+  "verdict": "sufficient_with_assumptions",
+  "summary": "The starter prompt gives a clear high-level goal (Python LangChain agent that computes RFM, embeds vectors, stores them in a DocumentDB vector index, retrieves similar churned profiles, and generates narrative/actions). The run environment (live cluster, database name, and an instruction to read DOCUMENTDB_URI from env) in skill_md fills several infra details. Several important implementation choices are left unspecified (Python version, embedding model & dims, exact data model, app surface, seed/idempotency, tests, IaC), so the builder will make reasonable defaults using installed skills for guidance.",
+  "rubric": [
+    {
+      "item": "Goal and scenario",
+      "status": "specified",
+      "blocking": false,
+      "found_in_prompt": "\"compute RFM scores per customer and embed the resulting feature vectors... retrieve the most similar churned customer profiles... generate a churn risk narrative and recommended retention action per customer.\"",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "",
+      "note": "Business problem, user story and what to demonstrate are clearly stated."
+    },
+    {
+      "item": "Workflow type",
+      "status": "specified",
+      "blocking": false,
+      "found_in_prompt": "\"a Python LangChain agent with tools\"",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "",
+      "note": "Single-agent LangChain workflow is explicit."
+    },
+    {
+      "item": "Language and runtime",
+      "status": "ambiguous",
+      "blocking": false,
+      "found_in_prompt": "\"Python LangChain\"",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Use Python 3.10 or 3.11 (a modern 3.x runtime available via `python` in the environment).",
+      "note": "Python is specified but no explicit version. skill_md implies a dev Python environment exists but not version."
+    },
+    {
+      "item": "Driver and version",
+      "status": "ambiguous",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "documentdb-driver",
+      "assumption_if_unanswered": "Use PyMongo (the official Python MongoDB driver) at a recent stable 4.x release; follow documentdb-driver guidance to reuse a singleton MongoClient.",
+      "note": "Prompt doesn't name the driver or version. documentdb-driver covers client usage patterns but does not pick a concrete PyMongo version."
+    },
+    {
+      "item": "Target service and tier",
+      "status": "specified",
+      "blocking": false,
+      "found_in_prompt": "\"Using the DocumentDB skill\"",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "",
+      "note": "skill_md gives explicit run-environment details: a live vector-capable DocumentDB cluster (compute tier M30, MongoDB 7.0 wire protocol, DiskANN/HNSW/IVF support) and the DB name `sample_customer_360_05`."
+    },
+    {
+      "item": "Authentication and secrets",
+      "status": "specified",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "",
+      "note": "skill_md instructs reading the cluster connection string from environment variable DOCUMENTDB_URI and to never write it into files/logs; that settles where secrets come from."
+    },
+    {
+      "item": "Data model",
+      "status": "ambiguous",
+      "blocking": false,
+      "found_in_prompt": "\"compute RFM scores per customer\"",
+      "skill_that_covers": "documentdb-data-modeling",
+      "assumption_if_unanswered": "Create two collections: `customers` (customer doc with _id, churn boolean, embedding field, schemaVersion) and `transactions` (each transaction: _id, customer_id, amount, timestamp). RFM aggregation runs on `transactions` grouped by customer_id and upserts RFM + embedding into `customers`.",
+      "note": "Prompt requires RFM but does not define collection names or document shape. documentdb-data-modeling provides design guidance but not a concrete schema; the builder will pick a customers + transactions model as most straightforward."
+    },
+    {
+      "item": "Sample data",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "documentdb-local-deployment",
+      "assumption_if_unanswered": "Include a small synthetic sample (e.g., ~1k customers and their transactions) in a seed script under `scripts/seed.py`, licensed MIT, and the repo includes a note about data provenance.",
+      "note": "The prompt and skill_md do not specify data source, size, license, or an explicit seed dataset; documentdb-local-deployment mentions patterns for local sample-data but no concrete dataset."
+    },
+    {
+      "item": "Queries and indexes",
+      "status": "covered_by_skill",
+      "blocking": false,
+      "found_in_prompt": "\"tools that run DocumentDB aggregations to compute RFM scores... Store embeddings in a DocumentDB vector index and retrieve the most similar churned customer profiles\"",
+      "skill_that_covers": "documentdb-vector-search, documentdb-indexing",
+      "assumption_if_unanswered": "Create a cosmosSearch vector index on a per-customer embedding field with `dimensions` matching chosen embedding model; for M30 prefer `vector-diskann` (or `vector-hnsw` for smaller dev datasets). Also create any single-field indexes needed for churn boolean and customer lookup. Use `$search` + `cosmosSearch` with a pre-filter on churned=true when retrieving similar churned profiles.",
+      "note": "Prompt requires vector index and aggregations but leaves specific index type and parameters unspecified; vector/indexing skills provide the choices and tuning guidance the builder will apply."
+    },
+    {
+      "item": "AI components",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "\"embed the resulting feature vectors... Use prompt engineering to generate a churn risk narrative\"",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Use OpenAI embeddings (e.g., `text-embedding-3-small` or `text-embedding-3-large`) via LangChain's OpenAI embeddings interface; assume 1536 or 3072 dimensions depending on model chosen and set index `dimensions` accordingly. Use an LLM (OpenAI GPT-4o-mini or gpt-4.1) via LangChain for the narrative prompt template.",
+      "note": "No embedding model, dims, provider or chat model is specified. This materially affects the vector index shape and must be decided by the builder or clarified by the author."
+    },
+    {
+      "item": "App surface",
+      "status": "ambiguous",
+      "blocking": false,
+      "found_in_prompt": "\"build a Python LangChain agent\"",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Provide a CLI script (`run_agent.py`) that runs the LangChain agent for a given customer_id; include an optional minimal FastAPI `/search` endpoint example for demonstration but keep the sample focused on the agent CLI.",
+      "note": "Prompt says to build a LangChain agent but does not specify if there should be an API route, CLI, or UI. The reference requirements expect a `/search` endpoint, but it's not in the prompt."
+    },
+    {
+      "item": "Provisioning and deployment",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "documentdb-azure-deployment",
+      "assumption_if_unanswered": "Do not provision cloud resources in the sample; rely on the pre-existing cluster (as stated in skill_md). If IaC is added, include an optional Bicep sample using documentdb-azure-deployment, but do not run it by default.",
+      "note": "Prompt doesn't ask to create a cluster; reference requirements expect IaC but the prompt does not. The documentdb-azure-deployment skill could supply IaC if requested."
+    },
+    {
+      "item": "Run and test instructions",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "README will include: create virtualenv, pip install -r requirements.txt, copy .env.example to .env and fill DOCUMENTDB_URI and API keys, run `scripts/seed.py`, then `python run_agent.py --customer CUSTOMER_ID`. Tests: `pytest` with environment overrides for offline/unit tests.",
+      "note": "No concrete run/test commands are in the prompt or skill_md."
+    },
+    {
+      "item": "Definition of done",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Consider done when: (1) agent computes and stores RFM + embedding for a customer, (2) vector index is created with correct dimensions, (3) a retrieval on churned profiles returns k neighbors with scores, and (4) the prompt template produces a narrative and action.",
+      "note": "No acceptance criteria explicitly provided in the prompt."
+    },
+    {
+      "item": "Constraints and non-goals",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Keep costs low: use small sample data and dev-tier settings; do not provision new cloud infra by default; avoid storing secrets in repo.",
+      "note": "No cost/scale constraints or non-goals stated."
+    },
+    {
+      "item": "Repository conventions",
+      "status": "covered_by_skill",
+      "blocking": false,
+      "found_in_prompt": "\"Never write its value into any file, log, README or test fixture; use a config file or `.env.example` with a placeholder, as the prompt asks.\" (skill_md)",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Include `.env.example`, `requirements.txt` with pinned versions, `README.md` that uses the phrase 'Azure DocumentDB' consistently, `scripts/seed.py`, `src/` for code, and `tests/` for unit tests. Use a singleton MongoClient pattern per documentdb-driver guidance.",
+      "note": "skill_md explicitly instructs using `.env.example` placeholders and not writing the connection string; documentdb-driver enforces singleton client usage. However prompt did not enumerate all conventions (pinning deps, README sections)."
+    }
+  ],
+  "contradictions": [],
+  "questions_for_author": [
+    "Which embedding provider and model should the sample use (provider and model name), and what are the embedding dimensions? This determines the vector index dimensions.",
+    "Do you want a runnable HTTP endpoint (e.g., `/search`) as part of the sample, or is a CLI/script demo sufficient?",
+    "Should the sample include IaC to provision the DocumentDB cluster, or must it rely on the pre-provisioned cluster (skill_md suggests a live cluster is already available)?"
+  ],
+  "requirements_at_risk": [
+    "The connection string and model credentials come from environment variables; none appear in the repository. (Partially covered by skill_md for DOCUMENTDB_URI, but embedding/model creds not specified.)",
+    "A `.env.example` lists every setting with placeholder values. (skill_md requests `.env.example` but the starter prompt doesn't; builder will probably add it, but not explicit.)",
+    "The vector index dimensions match the embedding model's output. (Embedding model/dims not specified — high risk.)",
+    "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. (Index parameters left unspecified; vector skill gives guidance but README detail is not in prompt.)",
+    "A seed script loads sample data and creates the index, and can be run twice without duplicating data. (No seed/idempotency instruction in prompt.)",
+    "/search returns a clear error for an empty query and when the embedding call fails. (Prompt does not specify API surface or error behavior.)",
+    "Search results include the similarity score. (Prompt requests retrieval of most similar churned profiles but doesn't say to return scores; likely omitted unless builder adds it.)",
+    "Dependencies are pinned in `requirements.txt`. (Prompt doesn't mention pinning; often omitted unless specified.)",
+    "Unit tests run without a live cluster. (No testing strategy given; likely missing or mocked tests required but not specified.)",
+    "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. (Prompt does not ask for provisioning; skill exists but builder may not include IaC.)",
+    "The README covers what the sample shows, prerequisites, setup, run, and clean-up. (Prompt doesn't require README contents; builder may add, but not guaranteed.)",
+    "The sample uses the name \"Azure DocumentDB\" throughout. (Prompt says 'DocumentDB' but doesn't mandate consistent naming in README; skill_md uses 'Azure DocumentDB'.)"
+  ]
+}
