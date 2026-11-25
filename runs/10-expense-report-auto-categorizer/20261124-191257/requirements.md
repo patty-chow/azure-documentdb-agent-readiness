@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the sample in Python and include code entry points that run the agent-driven categorisation workflow.
-- Use a LangChain agent as the agent framework to orchestrate LLM calls and control the per-report processing logic.
-- Use Beanie ODM for all reads and writes to Azure DocumentDB; define Beanie Document models representing expense reports and their line items.
-- Connect Beanie to an Azure DocumentDB (MongoDB API) cluster and query for expense report documents with a "submitted" status (or equivalent) to select reports to process.
-- For each line item, invoke the LangChain agent with a prompt template that applies prompt engineering by embedding the company policy text and the line item fields, and request a category plus any policy-violation assessment.
-- Augment each line item in the in-memory model with at least a "category" field and a "policy_violation" boolean plus a human-readable "violation_reason" when a violation is flagged.
-- Persist the enriched report back to Azure DocumentDB via Beanie by updating the original expense report document (do not create duplicate submitted documents).
-- Use LangChain agent memory (agent memory) during a session to store and retrieve prior categorisation decisions so the agent applies consistent categories across multiple reports processed in the same session.
-- Demonstrate processing multiple reports in one agent session so that identical or similar line items encountered in later reports receive the same category according to the agent memory.
-- Ensure the stored enriched report documents clearly reflect the agent’s outputs (categories and violation flags/reasons) so a reviewer can verify categorisation and flagged policy violations in Azure DocumentDB.
+- Implement the agent in Python with LangChain as a single agent that, for each submitted expense report, reads the report, categorises its line items, flags policy violations and writes the enriched report back.
+- Define Beanie ODM Document models for expense reports and use Beanie to read the submitted expense reports from Azure DocumentDB.
+- Each line item in a report receives a category from the LLM (e.g. OpenAI through LangChain) through an engineered prompt that supplies the company policy and the line item's details.
+- Flag policy violations: each line item that breaks the company policy is marked as a violation in the agent's output for the report.
+- Write the enriched report back to Azure DocumentDB through Beanie, with the category and violation flag for each line item attached to the report document.
+- Provide an agent memory component that lives for a session spanning multiple reports and records the categorisation decisions the agent makes.
+- When categorising a line item, the agent consults the session memory and applies an earlier decision to a matching item, so the same kind of expense receives the same category across the reports processed in that session.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
