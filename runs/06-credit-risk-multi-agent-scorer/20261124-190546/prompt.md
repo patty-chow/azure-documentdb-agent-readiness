@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain multi-agent pipeline with three agents: a data-fetch agent that retrieves applicant history from DocumentDB, a scoring agent that applies risk rules and an LLM to produce a credit score, and an explainer agent that generates a human-readable rationale. Store the final score and explanation back in DocumentDB.
