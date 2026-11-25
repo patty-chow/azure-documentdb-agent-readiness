@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LlamaIndex agent with agent memory that fetches the customer's profile, segment, and recent interaction documents from DocumentDB, retrieves semantically relevant content pieces via vector search, and uses context engineering to generate a personalised content selection rationale and ranked list for the customer.
