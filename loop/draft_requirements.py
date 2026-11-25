@@ -35,6 +35,8 @@ to satisfy the starter prompt. Rules:
   those are covered by a shared section appended later.
 - Name the language, framework, driver or ODM, agent framework, and DocumentDB feature the prompt names,
   exactly as it names them. Name the embedding model only if the prompt does.
+- "Using the DocumentDB skill" at the start of a prompt refers to guidance installed in the coding agent,
+  not to a component of the app. Never turn it into a requirement.
 - Use the name "Azure DocumentDB" for the service.
 - Output only the bullets, each starting with "- ". No heading, no preamble."""
 
@@ -42,7 +44,9 @@ to satisfy the starter prompt. Rules:
 def gallery_section() -> str:
     text = EXAMPLE.read_text(encoding="utf-8")
     marker = "## What a gallery sample also needs"
-    return text[text.index(marker):].rstrip() + "\n"
+    section = text[text.index(marker):].rstrip() + "\n"
+    # The example is a retail catalog; the shared section must read the same for every vertical.
+    return section.replace("loads sample products", "loads sample data").replace("for the catalog size", "for the sample's data size")
 
 
 def make_client():
