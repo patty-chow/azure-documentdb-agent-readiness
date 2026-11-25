@@ -1,45 +1,45 @@
 # Phase report
 
-100 samples with a run. 94 finished with exit 0; 4 failed; 2 unfinished. Regenerate with `python loop/phase_report.py`.
+100 samples with a run. 100 finished with exit 0; 0 failed; 0 unfinished. Regenerate with `python loop/phase_report.py`.
 
 ## Readiness confidence
 
-94 scored. Min 57, median 73, mean 71.5, max 80. Bands: High 80 and above, Medium 60 to 79, Low below 60.
+100 scored. Min 57, median 73, mean 71.7, max 81. Bands: High 80 and above, Medium 60 to 79, Low below 60.
 
 | Vertical | Samples | Mean | Min | Max | High | Medium | Low |
 |---|---|---|---|---|---|---|---|
 | banking | 20 | 70.5 | 62 | 80 | 2 | 18 | 0 |
 | customer-360 | 20 | 70.8 | 57 | 80 | 2 | 17 | 1 |
-| fintech | 19 | 71.2 | 58 | 78 | 0 | 18 | 1 |
-| healthcare | 18 | 72.9 | 60 | 80 | 1 | 17 | 0 |
-| retail | 17 | 72.2 | 66 | 80 | 1 | 16 | 0 |
+| fintech | 20 | 70.8 | 58 | 78 | 0 | 19 | 1 |
+| healthcare | 20 | 73.4 | 60 | 80 | 2 | 18 | 0 |
+| retail | 20 | 73.1 | 66 | 81 | 2 | 18 | 0 |
 
 ## What the model got wrong before reading anything
 
-Cold-quiz questions whose answer from memory was wrong, partly wrong or outdated, across 94 readiness reports.
+Cold-quiz questions whose answer from memory was wrong, partly wrong or outdated, across 100 readiness reports.
 
 | Question | Wrong in | Share |
 |---|---|---|
-| Q02 Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension? | 94/94 | 100% |
-| Q03 Which Bicep and Terraform resource types deploy a cluster? | 94/94 | 100% |
-| Q04 What does a connection string look like: scheme, host suffix, port, and the options it must carry? | 94/94 | 100% |
-| Q06 Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID? | 93/94 | 98% |
-| Q01 What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster? | 92/94 | 97% |
-| Q09 How are full-text search and hybrid search done? | 92/94 | 97% |
-| Q11 How do you run the database locally for development and tests: which image or emulator, and which port? | 92/94 | 97% |
-| Q08 Which vector index types are supported, and what does the command that creates one look like? | 91/94 | 96% |
-| Q10 Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not | 86/94 | 91% |
-| Q05 How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something els | 83/94 | 88% |
-| Q15 What engine is underneath, and does that change anything in application code? | 79/94 | 84% |
-| Q12 Are change streams supported, and does anything have to be enabled first? | 78/94 | 82% |
-| Q14 What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source Document | 78/94 | 82% |
-| S04 (sample-specific question in this slot) | 36/94 | 38% |
-| S05 (sample-specific question in this slot) | 36/94 | 38% |
-| S03 (sample-specific question in this slot) | 36/94 | 38% |
-| S02 (sample-specific question in this slot) | 33/94 | 35% |
-| S01 (sample-specific question in this slot) | 20/94 | 21% |
-| Q13 Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it? | 5/94 | 5% |
-| Q07 Which client library should an application use? Is there a service-specific SDK? | 3/94 | 3% |
+| Q02 Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension? | 100/100 | 100% |
+| Q03 Which Bicep and Terraform resource types deploy a cluster? | 100/100 | 100% |
+| Q04 What does a connection string look like: scheme, host suffix, port, and the options it must carry? | 100/100 | 100% |
+| Q06 Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID? | 98/100 | 98% |
+| Q09 How are full-text search and hybrid search done? | 98/100 | 98% |
+| Q11 How do you run the database locally for development and tests: which image or emulator, and which port? | 98/100 | 98% |
+| Q01 What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster? | 97/100 | 97% |
+| Q08 Which vector index types are supported, and what does the command that creates one look like? | 97/100 | 97% |
+| Q10 Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not | 91/100 | 91% |
+| Q05 How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something els | 87/100 | 87% |
+| Q12 Are change streams supported, and does anything have to be enabled first? | 82/100 | 82% |
+| Q15 What engine is underneath, and does that change anything in application code? | 82/100 | 82% |
+| Q14 What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source Document | 81/100 | 81% |
+| S05 (sample-specific question in this slot) | 40/100 | 40% |
+| S03 (sample-specific question in this slot) | 39/100 | 39% |
+| S04 (sample-specific question in this slot) | 37/100 | 37% |
+| S02 (sample-specific question in this slot) | 36/100 | 36% |
+| S01 (sample-specific question in this slot) | 20/100 | 20% |
+| Q13 Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it? | 5/100 | 5% |
+| Q07 Which client library should an application use? Is there a service-specific SDK? | 3/100 | 3% |
 
 ## Blocked samples
 
@@ -119,7 +119,7 @@ Most violated practices across audits:
 | fintech-01 | default | Fraud detection with vector similarity | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 77 |  |  | 4.4 |
 | fintech-02 | default | Transaction categorization agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 66 |  |  | 4.4 |
 | fintech-03 | default | Portfolio tracker with live alerts | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 78 |  |  | 5.8 |
-| fintech-04 | default | Earnings call RAG assistant | readiness | 7 |  |  |  |  |  | 2.9 |
+| fintech-04 | default | Earnings call RAG assistant | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 64 |  |  | 3.4 |
 | fintech-05 | default | KYC document ingestion pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 5.0 |
 | fintech-06 | default | Credit risk multi-agent scorer | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 69 |  |  | 4.0 |
 | fintech-07 | default | Multi-currency ledger | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 70 |  |  | 4.6 |
@@ -138,7 +138,7 @@ Most violated practices across audits:
 | fintech-20 | default | Open banking API cache layer | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 58 |  |  | 6.1 |
 | healthcare-01 | default | Patient record summarizer (RAG) | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 74 |  |  | 5.4 |
 | healthcare-02 | default | Clinical trial matching orchestration | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 71 |  |  | 6.5 |
-| healthcare-03 | default | Medication interaction checker | readiness | 7 |  |  |  |  |  | 3.7 |
+| healthcare-03 | default | Medication interaction checker | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 3.1 |
 | healthcare-04 | default | Medical imaging metadata store | readiness | 0 | sufficient_with_assumptions | blocked | 73 |  |  | 5.4 |
 | healthcare-05 | default | Appointment scheduling assistant | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.6 |
 | healthcare-06 | default | Symptom triage chatbot (RAG) | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 71 |  |  | 5.0 |
@@ -154,16 +154,16 @@ Most violated practices across audits:
 | healthcare-16 | default | Population health dashboard backend | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 74 |  |  | 3.5 |
 | healthcare-17 | default | Rare disease literature search | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 4.6 |
 | healthcare-18 | default | Adverse event reporting pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 72 |  |  | 4.9 |
-| healthcare-19 | default | Care coordination multi-agent | readiness | 7 |  |  |  |  |  | 2.5 |
+| healthcare-19 | default | Care coordination multi-agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 80 |  |  | 3.0 |
 | healthcare-20 | default | Provider directory semantic search | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 4.6 |
 | retail-01 | default | Product catalog with vector search | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 68 | partial | pass_with_findings | 11.1 |
 | retail-02 | default | AI-powered product recommendations | audit | 0 | sufficient_with_assumptions | ready_with_gaps | 73 | completed | pass_with_findings | 12.7 |
-| retail-03 | default | Substitute product finder | readiness | None |  |  |  |  |  |  |
+| retail-03 | default | Substitute product finder | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 81 |  |  | 2.9 |
 | retail-04 | default | Natural language product search | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 80 |  |  | 4.3 |
-| retail-05 | default | Shopping cart with real-time inventory | readiness | None |  |  |  |  |  |  |
+| retail-05 | default | Shopping cart with real-time inventory | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 78 |  |  | 4.7 |
 | retail-06 | default | Order history & timeline agent | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 66 |  |  | 5.1 |
 | retail-07 | default | Customer review sentiment pipeline | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 66 |  |  | 5.4 |
-| retail-08 | default | Personalized email campaign builder | readiness | 7 |  |  |  |  |  | 3.1 |
+| retail-08 | default | Personalized email campaign builder | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 76 |  |  | 2.9 |
 | retail-09 | default | Inventory reorder multi-agent system | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.7 |
 | retail-10 | default | Multi-tenant storefront SaaS | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 75 |  |  | 4.0 |
 | retail-11 | default | Visual similarity search (image embeddin | readiness | 0 | sufficient_with_assumptions | ready_with_gaps | 67 |  |  | 3.9 |
