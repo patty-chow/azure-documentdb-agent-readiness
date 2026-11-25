@@ -153,9 +153,75 @@ When its PostgreSQL backend is down, the gateway keeps accepting TLS connections
 request, including `hello` and `saslStart`, with code 1 `InternalError` and a generic message and no
 labels. A client cannot distinguish "backend down" from any other internal error.
 
-## Rerun
+## Rerun on engine 1.2.0 (2026-11-25)
 
-The results above are for engine 0.117. The `write-read-concerns` test did not run. Rerun all ten on
-`pg17-1.2.0` with a fresh container before quoting any of them, and compare the `listIndexes` key,
-the `$jsonSchema` keyword set, the snapshot read concern and the transaction error labels, which are
-the items most likely to have changed.
+All nine tests were rerun on a fresh `documentdb-local:pg17-1.2.0` container (engine release 1.2-0,
+commit 965b6e7a, built 2026-11-12, PostgreSQL 17.12, pgvector 0.8.7, wire version 21), each followed
+by an independent reproduction against a fresh database; every reproduction ran. Scripts and raw
+reports are in `findings/phase4/engine-tests-1.2/`. Note that the managed service reports a newer
+engine (`hello.internal.documentdb_versions` 2.2-1 and 2.3.0, wire version 25), so these are still
+open-source results.
+
+**What changed from 0.117.** Only `serverStatus`: it now returns `ok: 1` in MongoDB's layout
+(`process: "mongod"`, `storageEngine: "documentdb"`), but its counters are fixed placeholders that do
+not move under load (opcounters, network bytes and connections never change), so it is not usable for
+metrics. Every other result above reproduced on 1.2.0 with the same code, codeName and message,
+including: one vector index per path (85), same-name conflict (86), `listIndexes` reporting
+`cosmosSearchOptions` with no `cosmosSearch` key, the swapped numbers in the IVF `numLists` error, the
+2,000 and 4,000 dimension caps, Binary vectors absent from results, `enum` and `oneOf` enforced and the
+other keywords rejected, code 112 with no labels on a write conflict, snapshot read concern rejected in
+a transaction (115), client-level `bulkWrite` unavailable, the 25,000 batch cap (16), the TTL rules,
+and the parity gaps (no full-text search, change streams, DiskANN, `$rankFusion` or MONGODB-OIDC).
+
+**New findings on 1.2.0.**
+
+- **Transactions do not isolate reads from concurrent commits.** Transaction B read a value, A
+  incremented it and committed, B's second read in the same transaction returned A's value, and B's
+  write based on its first read committed without error, losing A's update. This reproduced in 5 of 5
+  runs. Treat multi-document transactions as read-committed: guard read-modify-write with a
+  conditional update on the value read, not with a transaction alone.
+- **30 seconds is a lifetime limit, not only an idle limit.** Transactions that wrote every 2 to 8
+  seconds were still ended with 251 `NoSuchTransaction` ("Cannot continue transaction N") between 32
+  and 44 seconds; one in nine committed. An idle transaction's next write returns code 1
+  `InternalError` or 251, depending on a race between PostgreSQL's idle timeout and the gateway's sweep.
+- **No error labels anywhere.** None of 213 captured error replies carried `errorLabels`, and the
+  gateway binary contains no `TransientTransactionError`, `UnknownTransactionCommitResult` or
+  `RetryableWriteError` string. PyMongo's `with_transaction` ran its callback once and re-raised the
+  112 in 5 of 5 runs; it retried only when the label was added client-side. The 112 arrives after the
+  gateway's short lock timeout (about 20 to 30 ms), not after the other transaction commits.
+- **`COLLSCAN` does appear, once statistics exist.** Right after a 100,000-document load, unindexed
+  finds planned as `FETCH` over a bitmap `IXSCAN` on `_id_`; after PostgreSQL analyzed the table, the
+  same finds planned as `COLLSCAN`. The earlier "no `COLLSCAN`" result was a fresh-statistics artefact.
+  Top-level `executionStats` describe only the root stage (a `SORT` or `LIMIT` on top hides the
+  documents examined below it), and parallel plans report per-loop averages, so neither `COLLSCAN` nor
+  top-level `totalDocsExamined` alone is a reliable full-scan check.
+- **`maxTimeMS` is per command.** It is not cumulative across `getMore`; a `getMore` that carries its
+  own `maxTimeMS` is limited on its own and, on expiry, the cursor is gone (43 `CursorNotFound`).
+  Expiry is code 50 with codeName `ExceededTimeLimit`.
+- **Write concerns are all accepted silently.** `w:0`, `w:1`, `"majority"`, `w:2`, `w:3`, a tag,
+  `j` and `wtimeout: 1` all succeed with no `writeConcernError`; `w:0` through the driver is
+  unacknowledged as expected. This contradicts DECISIONS topic 9, which read `w:2` and above as
+  `BadValue` from the engine's main branch: the 1.2.0 gateway does not contain that validation.
+- **Read concerns.** `local`, `majority`, `available`, `linearizable` and `snapshot` are all accepted
+  outside a transaction; `available`, `linearizable` and `snapshot` are rejected (115) only as a
+  transaction's read concern. No reply carries `operationTime`, `$clusterTime` or `atClusterTime`, so
+  causally consistent sessions run without a causal token and snapshot reads cannot be pinned.
+  `readPreference: secondary` fails with 133 `FailedToSatisfyReadPreference`; `primaryPreferred`,
+  `secondaryPreferred` and `nearest` are accepted.
+- **Vector search defaults depend on collection size.** On small collections the engine applied
+  `efSearch` equal to the index's `efConstruction` and `nProbes` equal to `numLists`; from about
+  10,000 documents `efSearch` defaulted to 40. Explicit values pass through unchanged.
+- **Reply shapes.** `createIndexes` nests its counts under `raw.defaultShard` (the gateway answers as a
+  sharded router, `hello.msg` is `isdbgrid`), and listed secondary indexes carry an extra
+  `storageEngine: { enableOrderedIndex: true }`. That extra option makes Beanie's
+  `allow_index_dropping=True` drop and rebuild unchanged indexes on every start; the default `False` is
+  a no-op.
+- **TTL** purges with a per-minute `pg_cron` job; an array that holds one past Date expires the
+  document.
+- **Drivers.** `AsyncMongoClient` exists from PyMongo 4.9; Beanie 2.2 needs PyMongo 4.11 or newer
+  (not 4.15.0) and no Motor; `pip install "beanie<2"` silently installs Motor 3.7.1, and that stack
+  also works against the engine.
+
+**Still to compare with the managed service.** The managed-cluster tests (engine 2.2/2.3) cover the
+same areas plus full-text search activation, Entra ID and the CLI. Where they differ from 1.2.0, the
+managed results win.
