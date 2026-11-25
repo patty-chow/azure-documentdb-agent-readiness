@@ -1,0 +1,124 @@
+{
+  "answers": [
+    {
+      "question_id": "Q01",
+      "question": "What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster?",
+      "answer": "Provider namespace: Microsoft.DocumentDB. Resource type (new MongoDB-compatible managed clusters): Microsoft.DocumentDB/mongodbClusters (for older Cosmos DB accounts the resource type is Microsoft.DocumentDB/databaseAccounts).",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q02",
+      "question": "Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension?",
+      "answer": "CLI group: az mongodb (extension). Example (create): az mongodb cluster create -g myRg -n myCluster --location eastus --sku M30 --version 7.0. The az mongodb group is provided as an Azure CLI extension (not the legacy az cosmosdb group).",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q03",
+      "question": "Which Bicep and Terraform resource types deploy a cluster?",
+      "answer": "Bicep: resource of type 'Microsoft.DocumentDB/mongodbClusters'. Terraform (AzureRM provider): azurerm does not have a first-class mongodbClusters resource in older providers; use azurerm_resource or azapi_resource for 'Microsoft.DocumentDB/mongodbClusters' or the legacy 'azurerm_cosmosdb_account' for Cosmos DB MongoDB API. Example Terraform (azapi):\n\nresource \"azapi_resource\" \"docdb_cluster\" {\n  type = \"Microsoft.DocumentDB/mongodbClusters@2024-01-01\"\n  name = \"myCluster\"\n  parent_id = azurerm_resource_group.rg.id\n  location = \"eastus\"\n  body = jsonencode({ /* cluster properties */ })\n}\n",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q04",
+      "question": "What does a connection string look like: scheme, host suffix, port, and the options it must carry?",
+      "answer": "Typical MongoDB-compatible connection string for Azure DocumentDB: use standard MongoDB URI style with TLS and replicaSet options. Example (SCRAM user/password):\n\nmongodb://myUser%40myAccount:MyP@ssw0rd@myaccount.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&retryWrites=false&appName=@myaccount@\n\nSRV style (if supported):\n\nmongodb+srv://myUser%40myAccount:MyP@ssw0rd@myaccount.mongo.cosmos.azure.com/?ssl=true&replicaSet=globaldb&retryWrites=false\n\nRequired options commonly: ssl/tls=true, replicaSet=globaldb (Cosmos-style), retryWrites=false, and the username is often of the form user@account.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q05",
+      "question": "How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else?",
+      "answer": "For the MongoDB-compatible managed clusters you provision compute tiers (instance sizes like M30) and pay for compute (vCores/instance size) and storage. This is not billed in Cosmos-style RU/s for cluster-level compute tiers — billing is by instance/tier and storage. (Legacy Cosmos DB API for Mongo uses RU/s; the newer managed MongoDB cluster uses named compute SKUs such as M30.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q06",
+      "question": "Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID?",
+      "answer": "Primary supported auth for the MongoDB protocol: SCRAM (SCRAM-SHA-1 and SCRAM-SHA-256) using database users, and X.509 certificate authentication where supported. Historically the Cosmos DB Mongo API used username/passwords (username in form user@account). Microsoft Entra ID (Azure AD) authentication for MongoDB protocol is not broadly supported the same way as for SQL/gremlin APIs; if AAD is supported it is via a special token-based flow and a driver plugin or SAS-style token passed as the password in the standard MongoDB URI. For a quick working approach use the connection string with username/password (SCRAM) or client X.509 certs. (If AAD is required, obtain a token from MSAL and supply it via the driver as the password/authMechanism = PLAIN or a service-specific mechanism.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q07",
+      "question": "Which client library should an application use? Is there a service-specific SDK?",
+      "answer": "Use the standard MongoDB drivers for data-plane operations (pymongo for Python, mongodb for Node.js, the official MongoDB drivers). There is no special DocumentDB-specific MongoDB client for application reads/writes. For management/ARM operations use Azure management SDKs (azure-mgmt-documentdb or azure-cli/az commands).",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q08",
+      "question": "Which vector index types are supported, and what does the command that creates one look like?",
+      "answer": "Supported vector index types (service sample environment): DiskANN, HNSW, IVF. The Mongo-style index creation for vectors follows the MongoDB 7.0 kNN index syntax. Example (approximate) command using the mongo shell / pymongo to create an HNSW index on field 'embedding':\n\ndb.patient_chunks.createIndex({ embedding: \"knnVector\" }, {\n  name: \"embedding_hnsw\",\n  knnVector: {\n    dimension: 1536,\n    similarity: \"cosine\",\n    indexType: \"hnsw\",\n    initialCapacity: 10000\n  }\n})\n\n(Exact option names vary; this is the form expected by MongoDB 7.x-style vector indexes: createIndex with a key value of \"knnVector\" and knnVector options specifying dimension, indexType (hnsw|ivf|diskann), and metric.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q09",
+      "question": "How are full-text search and hybrid search done?",
+      "answer": "Basic full-text: use MongoDB text indexes (db.collection.createIndex({field: 'text'}) and queries with $text). For richer/full-featured hybrid vector+text search, use the MongoDB-style $search pipeline stage (Atlas Search-like) with a compound search combining a text operator and a kNN/knnBeta operator, e.g. an aggregation pipeline like:\n\ndb.patient_chunks.aggregate([\n  { $search: {\n      compound: {\n        must: [ { text: { query: \"pneumonia\", path: \"text\" } } ],\n        should: [ { knnBeta: { path: \"embedding\", vector: [...], k: 10 } } ]\n      }\n  } },\n  { $limit: 10 }\n])\n\nIf the managed service supports vector search with $search, that pattern provides hybrid ranking; otherwise combine a $text filter with a separate vector similarity aggregation and then re-rank in the application.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q10",
+      "question": "Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not?",
+      "answer": "The service in the sample environment advertises MongoDB 7.0 wire protocol support (so drivers compatible with MongoDB 7.0 should work). Commonly-unsupported features historically include server-side JavaScript eval/MapReduce, some admin-level commands, and some cluster/replica-set admin operations; also some Cosmos Mongo API variants historically lacked change streams or transactions across shards. Expect driver compatibility for CRUD, aggregation, and the new vector index features, but check service docs for any missing admin commands and for limits on transactions/change-streams.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q11",
+      "question": "How do you run the database locally for development and tests: which image or emulator, and which port?",
+      "answer": "There is no fully equivalent local emulator that perfectly reproduces Azure DocumentDB managed MongoDB clusters with vector indexes. For local development use the official MongoDB docker image (e.g. mongo:7.0) listening on port 27017: docker run --rm -p 27017:27017 --name mongo-local -d mongo:7.0. For Cosmos DB API-specific testing, the Azure Cosmos DB Emulator can be used for some APIs but historically it does not fully emulate the MongoDB managed-cluster feature set and vector indexes. In short: use a real cloud cluster for vector/search feature tests; for local-only unit tests use mongo:7.0 on port 27017.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q12",
+      "question": "Are change streams supported, and does anything have to be enabled first?",
+      "answer": "Change streams are supported by MongoDB 3.6+ drivers when the server is a replica set or sharded cluster. In a managed MongoDB 7.0 cluster change streams should be available and usable via collection.watch() or db.watch(). No special user-level switch is normally required, but the cluster must be provisioned as a replica-set/sharded topology that supports them and the user must have appropriate privileges. Historically some managed MongoDB APIs (Cosmos DB Mongo API) lacked change-streams support or had limited support, so verify against the target cluster.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q13",
+      "question": "Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it?",
+      "answer": "Use the general Azure MCP (managed control plane) tooling that integrates with Azure monitoring/agents. There is no separate, special MCP server required just for the MongoDB-compatible data plane — the general Azure MCP/agent setup covers collecting metrics/logs and installing the Azure monitoring agent. If you need MongoDB-specific agent functionality (database backups or mongod metrics) use the MongoDB exporter or a dedicated agent configured to talk to the MongoDB endpoint.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q14",
+      "question": "What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project?",
+      "answer": "Historically 'DocumentDB' was the early name for what became Azure Cosmos DB (DocumentDB was the original SQL/document DB API). Azure Cosmos DB later added a MongoDB-compatible API. The open-source 'DocumentDB' project (several projects use that name) is different from Azure's service; Azure's DocumentDB/Cosmos DB is Microsoft-managed. In short: this service is the MongoDB-compatible/document-store offering in Azure lineage that relates to Cosmos DB (earlier DocumentDB) but the managed MongoDB cluster is a distinct offering exposed under Microsoft.DocumentDB provider namespace.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q15",
+      "question": "What engine is underneath, and does that change anything in application code?",
+      "answer": "The service exposes a MongoDB-compatible server (a Microsoft-managed MongoDB-compatible engine or fork compatible with MongoDB wire protocol). From an application perspective use standard MongoDB drivers (no code changes for CRUD/aggregation beyond connection-string specifics, TLS, and any auth differences). Some admin commands or exotic MongoDB server features may be missing or behave differently; vector-search and indexing options are provider-extended and require using the provider's vector-index creation/aggregation syntax.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "S01",
+      "question": "What index definition does this sample need for vector search?",
+      "answer": "Create a kNN vector index on the chunk embedding field. Example mongo shell command (approximate syntax for MongoDB 7-style vector indexes):\n\ndb.patient_chunks.createIndex({ embedding: \"knnVector\" }, {\n  name: \"embedding_hnsw\",\n  knnVector: {\n    dimension: 1536,\n    similarity: \"cosine\",\n    indexType: \"hnsw\",\n    initialCapacity: 10000\n  }\n})\n\nThis index allows efficient nearest-neighbour queries for the vector embeddings stored in 'embedding'.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "S02",
+      "question": "Which database and collection names should the sample use and how should the connection be supplied?",
+      "answer": "Database name: sample_healthcare_01. Collections: patient_chunks (holds chunked text, embedding array, patientId, chunkId, source). Supply connection via the environment variable DOCUMENTDB_URI and pass it to pymongo.MongoClient(os.environ['DOCUMENTDB_URI']) at runtime. Do not hard-code credentials.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S03",
+      "question": "How should the Python app connect using pymongo (exact command/syntax)?",
+      "answer": "Use pymongo.MongoClient with the URI from the environment. Example:\n\nfrom pymongo import MongoClient\nimport os\n\nuri = os.environ['DOCUMENTDB_URI']\nclient = MongoClient(uri)\ndb = client['sample_healthcare_01']\ncollection = db['patient_chunks']\n\nEnsure the URI contains tls=true (or tls=true&replicaSet=globaldb) and the credentials needed.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S04",
+      "question": "What aggregation or query will be used to perform a vector nearest-neighbour lookup for retrieval in the RAG flow?",
+      "answer": "Use the provider's kNN/$search aggregation stage if available. Example aggregation (Atlas-style $search knnBeta approximate):\n\npipeline = [\n  { \"$search\": { \"knnBeta\": { \"path\": \"embedding\", \"vector\": query_vector, \"k\": 10 } } },\n  { \"$project\": { \"score\": { \"$meta\": \"searchScore\" }, \"text\": 1, \"patientId\":1, \"chunkId\":1 } },\n  { \"$limit\": 10 }\n]\n\nIf $search/knnBeta is not available, fetch top-N candidates by scanning a small subset (or use a stored IVF index) and re-rank by cosine distance in Python.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "S05",
+      "question": "What access-control pattern will the sample rely on to restrict documents to a patientId?",
+      "answer": "Store a patientId field on every chunk document and always include an equality filter on patientId in queries. Example query for retrieval combined with vector search: use a $match: { patientId: 'patient-123' } before or combined with the $search stage, or post-filter results by patientId. Also create an index on patientId for efficient filtering: db.patient_chunks.createIndex({ patientId: 1 }).",
+      "confidence": "high"
+    }
+  ]
+}
