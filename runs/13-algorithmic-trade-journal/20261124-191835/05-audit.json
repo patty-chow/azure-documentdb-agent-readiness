@@ -1,0 +1,546 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested Python/FastAPI trade-journal: immutable per-event documents (signals, executions, outcomes) with strategy_id and timestamp, server-side aggregation for counts/avg/win-rate, a deterministic client-side max-drawdown computation, an LLM-ready formatter, idempotent seeding, pinned dependencies, a singleton MongoClient and a compound index. Tests and seeding were exercised against the reachable cluster. Main findings: (1) max-drawdown is computed client-side rather than purely server-side (developer chose this intentionally because no canonical server-side pipeline was found), (2) client retry/backoff behavior is not implemented, (3) unit tests require a live cluster rather than running offline via mocks, and (4) the repo does not include IaC for provisioning the cluster or explicit clean-up steps in the README. Several public guidance gaps were confirmed (notably a missing canonical server-side max-drawdown pipeline example) and are listed under doc_gaps with recommended fixes.",
+  "requirement_results": [
+    {
+      "requirement": "A Python service inserts each trading signal, each execution and each outcome as its own document into Azure DocumentDB using a MongoDB-compatible Python driver (e.g. PyMongo); every document carries a strategy identifier and a timestamp.",
+      "status": "met",
+      "evidence": "app/app/journal.py:6-24 (Signal/Execution/Outcome models declare strategy_id and timestamp); app/app/journal.py:27-33 (insert_event uses coll.insert_one(payload))",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Journal documents are immutable: the service has no code path that updates or deletes a stored signal, execution or outcome document.",
+      "status": "met",
+      "evidence": "app/app/journal.py:27-33 (insert-only API); app/app/main.py:16-29 (endpoints only insert events). Note: tests delete test fixtures (tests/test_aggregations.py:18) but the service itself has no update/delete endpoints.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Win rate, average P&L and drawdown are computed by aggregation pipelines run in Azure DocumentDB (e.g. through the driver's aggregate call) that group on the strategy identifier, returning one result per strategy.",
+      "status": "partly_met",
+      "evidence": "app/app/aggregations.py:39-51 (server-side $group computes trade_count, total_pnl, avg_pnl, wins; coll.aggregate used at line 53). Drawdown is computed client-side: app/app/aggregations.py:56-73 (ordered series is fetched then processed in Python).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you require a purely server-side drawdown, add to the starter prompt: 'Compute max drawdown server-side using an aggregation pipeline (use $setWindowFields if available); if unsupported, compute it client-side and document why.' Alternatively, add a canonical server-side drawdown pipeline to the documentdb-query-optimization or a new aggregation example doc (preferred for re-use)."
+    },
+    {
+      "requirement": "The pipeline computes win rate per strategy from the outcome documents (e.g. winning outcomes divided by total outcomes).",
+      "status": "met",
+      "evidence": "app/app/aggregations.py:42-49 ($group computes wins and trade_count) and app/app/aggregations.py:74 (win_rate computed from those values).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The pipeline computes average P&L per strategy from a numeric P&L value on the outcome documents.",
+      "status": "met",
+      "evidence": "app/app/aggregations.py:45-46 ($sum and $avg over 'pnl' in the server-side $group) and projection at line 50.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The pipeline computes drawdown per strategy from that strategy's outcomes ordered by timestamp (e.g. the largest peak-to-trough decline of cumulative P&L).",
+      "status": "partly_met",
+      "evidence": "app/app/aggregations.py:16-21 (outcomes_pipeline sorts by timestamp), app/app/aggregations.py:56-73 (client-side cumulative series and max_drawdown calculation).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Either require server-side drawdown in the starter prompt or include a canonical server-side pipeline in a skill/doc so future builders can implement it (add a documented $setWindowFields-based example in documentdb-query-optimization)."
+    },
+    {
+      "requirement": "A context engineering layer in Python takes the aggregated per-strategy stats and formats them into prompt-ready context for LLM-driven strategy review (e.g. a structured block of win rate, average P&L and drawdown with a short narrative).",
+      "status": "met",
+      "evidence": "app/app/formatter.py:4-11 (format_strategy_review returns a deterministic LLM-ready summary string).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The service exposes operations (e.g. functions or endpoints) to record a signal, an execution or an outcome, and to produce the review context for a given strategy.",
+      "status": "met",
+      "evidence": "app/app/main.py:16-29 (POST endpoints /journal/signal, /journal/execution, /journal/outcome) and app/app/main.py:31-35 (GET /stats/{strategy_id} returning stats and formatted summary).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/app/db.py:5-7 (DOCUMENTDB_URI read from environment, runtime error if missing); app/.env.example contains placeholder (app/.env.example:1-2); README admonishes not to commit secrets (app/README.md:25-26).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example:1-2 (DOCUMENTDB_URI placeholder present). Only DOCUMENTDB_URI is required by the sample; it is listed.",
+      "cause": "none",
+      "smallest_fix": "If additional settings are later added (e.g., TLS flags, DB name), add them to .env.example similarly."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not store vector embeddings or create vector indexes; vector features are not used by this app.",
+      "cause": "none",
+      "smallest_fix": "not applicable for this sample"
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexes or embeddings are created by this sample.",
+      "cause": "none",
+      "smallest_fix": "not applicable for this sample"
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/app/db.py:12-17 (module-level _client and get_client() returns singleton MongoClient created once).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed_data.py:19-21 (ensure_indexes()), app/scripts/seed_data.py:26-30 (idempotent guard: check existing outcomes count and exit if >=10), and the script inserts signals/executions/outcomes (lines 32-46).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "There is no /search endpoint in app/app/main.py; sample does not implement semantic/vector search.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If search is in scope, add a /search endpoint that validates non-empty query payloads and returns clear error codes; wrap embedding calls with try/except and return 4xx/5xx responses describing failures."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search endpoint or similarity scoring implemented in the sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding search, include similarity score in results (e.g., return normalized similarity with each hit)."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "met",
+      "evidence": "app/requirements.txt:1-6 (fastapi==0.100.0, uvicorn==0.22.0, pymongo==4.4.0, python-dotenv==1.0.0, pytest==7.4.0, httpx==0.26.0).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "app/tests/test_aggregations.py uses get_db() and runs against the reachable cluster (tests create and delete documents in the real DB at lines 7-23). The builder ran pytest against the live cluster (build report).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that patch get_db or use an in-memory/mocked Mongo client (e.g., mongomock or unittest.mock to patch app.db.get_db) so tests run offline. Provide an additional CI/test task that runs integration tests only when a real DOCUMENTDB_URI is provided."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository contains no Bicep/ARM/Terraform templates for Microsoft.DocumentDB/mongoClusters or analogous IaC files.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal IaC template (Bicep or Terraform) that targets Microsoft.DocumentDB/mongoClusters with parameters for tier, region, and storage; include a README note that the template is not executed by the sample and is for operator use."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md:3-23 covers what the sample shows, prerequisites and quickstart; README does not include explicit clean-up steps (no instructions to drop the DB/collection or delete resources).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a 'Clean-up' section to README with commands to drop the sample DB/collection or instructions to delete the cluster if you created one (and a safety warning about deleting shared resources)."
+    },
+    {
+      "requirement": "The sample runs with the commands in the README.",
+      "status": "met",
+      "evidence": "Builder verified pip install -r requirements.txt and python scripts/seed_data.py and pytest -q (see build report verification). README commands match what was run (app/README.md:19-23).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Tests exist and pass without a live cloud resource, or the README says what they need.",
+      "status": "met",
+      "evidence": "Tests require a live cluster but the README documents the prerequisite 'set DOCUMENTDB_URI' and the need for a reachable cluster (app/README.md:13-16), satisfying the 'or README says what they need' clause.",
+      "cause": "none",
+      "smallest_fix": "If desired, add offline mock tests as noted above."
+    },
+    {
+      "requirement": "Dependencies are pinned.",
+      "status": "met",
+      "evidence": "app/requirements.txt shows pinned dependency versions (app/requirements.txt:1-6).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The sample names the service correctly and does not use a former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md:1-3 uses 'Azure DocumentDB (MongoDB-compatible)'; no references to Azure Cosmos DB for MongoDB RU or Amazon DocumentDB appear in the repository.",
+      "cause": "none",
+      "smallest_fix": "none"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Client reuse",
+      "practice": "Create and reuse a single MongoClient per process (singleton) rather than creating a new client per request; initialize it once and reuse across handlers.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app/db.py:12-17 (module-level _client and get_client() creating a MongoClient instance once)",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection settings",
+      "practice": "Connection settings (timeouts, retry options, TLS) follow the service's recommendation for the chosen driver.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "violated",
+      "evidence": "app/app/db.py:15-16 sets serverSelectionTimeoutMS=5000 but the client is not configured with retryWrites/retryReads, socketTimeoutMS, or explicit TLS flags. No application retry/backoff wrapper is present.",
+      "source": "documentdb-driver / documentdb-security / documentdb-connection",
+      "searched": "",
+      "fix": "Create the MongoClient with explicit recommended options and add application-level retry/backoff where appropriate. Example smallest change: MongoClient(DOCUMENTDB_URI, serverSelectionTimeoutMS=5000, socketTimeoutMS=300000, retryWrites=True). Add an app-level retry wrapper with exponential backoff for transient errors.",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        },
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        },
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets from env",
+      "practice": "Keep the cluster connection string/credentials out of source control by reading the connection URI from environment variables (e.g. DOCUMENTDB_URI) or a secret store and providing only a placeholder in .env.example.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app/db.py:5-7 (reads DOCUMENTDB_URI from environment and errors if missing); app/.env.example:1-2 contains a placeholder; README warns about not committing secrets (app/README.md:25-26).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver version pinning",
+      "practice": "The driver version is pinned and is one the service supports.",
+      "category": "connection",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/requirements.txt:3 pins pymongo==4.4.0. The sample pins dependencies but public guidance that names specific pinned driver versions for Azure DocumentDB was not found during discovery.",
+      "source": "checklist only",
+      "searched": "Searched for 'Azure DocumentDB pymongo supported versions', 'DocumentDB driver compatibility pymongo', 'which pymongo version should I pin for Azure DocumentDB'. Found compatibility pages confirming drivers work but no authoritative pinned-version matrix.",
+      "fix": "Add a short note in the quickstart or documentdb-driver skill listing recommended driver versions (e.g., 'Use pymongo >=4.x; pin to 4.4.0 in samples') and include a compatibility matrix.",
+      "sources": [],
+      "what_would_help": "A one-paragraph compatibility table in the quickstart showing supported driver major versions and a recommended pinned version per language."
+    },
+    {
+      "topic": "Compound index",
+      "practice": "Create a compound index following ESR (Equality → Sort → Range), for example a compound index on { strategy_id: 1, timestamp: -1 } to serve time-range and sorted queries per strategy.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app/db.py:25-29 (ensure_indexes creates idx_strategy_time with [ ('strategy_id',1), ('timestamp',-1) ]); decisions.jsonl D007 records that choice.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregation best practices",
+      "practice": "Compute aggregates like win rate, average and total P&L using server-side aggregation pipelines ($match → $group → $project) and retrieve ordered series for cumulative/drawdown calculations; for very large aggregations consider allowDiskUse for server-side sorts or spilling.",
+      "category": "aggregation",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P11",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/app/aggregations.py:39-51 implements $match/$group/$project on outcome documents for trade_count, total_pnl, avg_pnl; coll.aggregate used (line 53).",
+      "source": "prior_knowledge",
+      "searched": "Searched for 'Azure DocumentDB aggregation allowDiskUse' and 'DocumentDB aggregation pipelines best practices' (learn.microsoft.com returned general aggregation docs but no dedicated allowDiskUse cookbook).",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short page in the aggregation guidance stating when to set allowDiskUse and how to detect memory pressure from explain() would help."
+    },
+    {
+      "topic": "Drawdown windowing",
+      "practice": "For server-side cumulative metrics and drawdown, prefer $setWindowFields if the cluster supports it; if not available compute cumulative series client-side after retrieving an ordered series from the DB.",
+      "category": "aggregation",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P12",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/app/aggregations.py:16-21 (ordered series pipeline) and app/app/aggregations.py:56-73 (client-side cumulative and max_drawdown). The app chooses client-side computation. Public canonical server-side drawdown pipeline examples were not found during discovery.",
+      "source": "prior_knowledge",
+      "searched": "Searched for 'Azure DocumentDB $setWindowFields support' and 'DocumentDB server-side max drawdown example' with no complete tested example returned.",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A canonical server-side pipeline example that computes max drawdown using $setWindowFields/$reduce would let an agent implement this server-side reliably."
+    },
+    {
+      "topic": "Schema validation",
+      "practice": "Enforce collection-level validation (JSON Schema) to require and type-check fields such as strategy_id, event_type, timestamp and pnl to prevent invalid events from being stored.",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P18",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "No collection validator is created in app/app/db.py (ensure_indexes only creates an index at app/app/db.py:25-29). The sample models use pydantic validation on inputs but does not create a DB-level JSON Schema validator.",
+      "source": "prior_knowledge",
+      "searched": "Searched for 'Azure DocumentDB schema validation json schema' with no single official example showing schema validators for event journaling.",
+      "fix": "Add collection-level JSON Schema validation to ensure required fields (strategy_id, type, timestamp, pnl for outcomes). Example 'createCollection' options with 'validator' JSON Schema in a setup script.",
+      "sources": [],
+      "what_would_help": "A short 'collection validation' example page in the local-deployment or indexing skill showing json-schema examples for event journals."
+    },
+    {
+      "topic": "Retries/backoff",
+      "practice": "Implement exponential backoff with jitter for client-side retries (initial delay ~100–200ms, exponential factor ~2, max attempts 3–5) and treat some server error codes specially as retryable or non-retryable.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/app/db.py:15-16 sets only serverSelectionTimeoutMS=5000. No application-level retries or backoff are implemented and insert paths (app/app/journal.py:27-33) directly call insert_one.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add an application retry wrapper around insert operations (e.g., 3 attempts with exponential backoff + jitter) or use a helper library; at minimum set retryWrites=True on the client and add a retry loop for transient network errors.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotence",
+      "practice": "Design seed scripts and tests to be idempotent: guard with existence checks or deterministic IDs so repeated runs do not create duplicate documents.",
+      "category": "testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/seed_data.py:26-30 (checks existing outcome count and exits if >=10) and app/scripts/seed_data.py:19-21 (ensure_indexes called).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Tests offline",
+      "practice": "Write tests that run without a live cluster (use mocks/fakes) or document the test requirements clearly.",
+      "category": "testing",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/tests/test_aggregations.py:7-23 creates real documents via get_db() and coll.insert_one / delete_many; the test requires a live cluster.",
+      "source": "checklist only",
+      "searched": "Searched for 'unit tests DocumentDB without live cluster', 'mongomock pymongo example' (found general mocking resources but no DocumentDB-specific test patterns documented in the skills discovered).",
+      "fix": "Add tests that patch app.db.get_db to return a mongomock.MongoClient() or use unittest.mock to stub the DB for unit tests. Keep one integration test suite that runs only when a DOCUMENTDB_URI is provided.",
+      "sources": [],
+      "what_would_help": "A short sample in documentdb-local-deployment showing how to write mongomock-based unit tests for apps that use pymongo."
+    },
+    {
+      "topic": "IaC resource type",
+      "practice": "Infrastructure is defined as code using the service's own resource type (Microsoft.DocumentDB/mongoClusters).",
+      "category": "provisioning",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "https://learn.microsoft.com/azure/templates/microsoft.documentdb/mongoclusters",
+      "status": "not_applicable",
+      "evidence": "No IaC files in the repository. The documentation page for Microsoft.DocumentDB/mongoClusters exists (learn.microsoft.com template).",
+      "source": "Microsoft Learn (searched)",
+      "searched": "Searched for 'Microsoft.DocumentDB/mongoClusters Bicep example' and 'Azure DocumentDB bicep template'. Found the mongoClusters template documentation at learn.microsoft.com.",
+      "fix": "Add a minimal Bicep or Terraform example that provisions a mongoClusters resource with parameters for tier, storage and region. Include it in the repo and mark it 'do not execute in the sample run environment' if needed.",
+      "sources": [
+        {
+          "title": "Microsoft.DocumentDB mongoClusters 2024-07-01 (deployment-language-terraform)",
+          "url": "https://learn.microsoft.com/azure/templates/microsoft.documentdb/mongoclusters"
+        }
+      ],
+      "what_would_help": "A short 'create vCore cluster' quickstart template in the documentdb-azure-deployment skill or sample repo so agents surface correct IaC snippets."
+    },
+    {
+      "topic": "README clean-up instructions",
+      "practice": "Clean-up steps are provided.",
+      "category": "provisioning",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/README.md (no 'Clean-up' section present).",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "Add a 'Clean-up' section with commands such as 'mongo <URI> --eval \"db.getSiblingDB(\\\"sample_fintech_13\\\").dropDatabase()\"' or steps to delete the cluster via az cli/templates. Warn about shared clusters.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pinned dependencies (audit trail)",
+      "practice": "Pin dependency versions used in the sample.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/requirements.txt:1-6 shows pinned versions. No matching decision entry in decisions.jsonl records the chosen pinned versions.",
+      "source": "check",
+      "searched": "",
+      "fix": "Record the decision in the build log or decisions.jsonl indicating pinned versions and rationale (compatibility/supported versions).",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Tests against live DB (audit trail)",
+      "practice": "Test strategy: integration tests run against provided cluster vs offline tests.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/tests/test_aggregations.py:7-23 interacts with the real DB; there is no decision recorded in decisions.jsonl explaining whether offline tests were considered or why live-cluster tests were chosen.",
+      "source": "check",
+      "searched": "",
+      "fix": "Add a decision log entry stating test strategy: which tests are integration (live DB) vs unit (mocked).",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Decision to approve the build with readiness 'ready_with_gaps' is consistent with the build artifacts and the operator-supplied reason. events.jsonl contains operator/approval activity; no contradictions found."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python with FastAPI is consistent with the code produced (app/main.py uses FastAPI). The decision cites the prompt and matches the implemented surface."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from the environment is implemented (app/app/db.py:5-7). The reason cites skill/readiness and is supported by the run environment."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Decision not to provision Azure resources matches the run policy in the run environment and the builder's approach (no IaC executed). events.jsonl and the run.md indicate provisioning was disallowed."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Decision to compute max drawdown client-side is justified by the readiness findings (missing canonical server-side example). The code implements this approach (app/app/aggregations.py:56-73)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Decision to use a singleton MongoClient is aligned with the documentdb-driver guidance and implemented in app/app/db.py:12-17. events.jsonl shows the documentdb-driver skill was loaded during design/build."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Decision to create a compound index {strategy_id:1, timestamp:-1} is implemented in app/app/db.py:28-29 and the index creation was validated against the live cluster in the builder's verification steps."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Server-side max-drawdown aggregation example",
+      "what_was_missing": "A complete, tested, production-ready aggregation pipeline example that computes maximum drawdown purely server-side (using $setWindowFields, $reduce, or equivalent DocumentDB-supported stages) was not found in the discovered docs or skills.",
+      "where_searched": "Searched DocumentDB skills (documentdb-query-optimization, documentdb-indexing), and Microsoft Learn pages for aggregation/windowing examples; readiness_findings and discovered_practices search logs show the gap.",
+      "effect_on_this_build": "Builder chose to compute max drawdown client-side (app/app/aggregations.py:56-73). This makes the implementation correct and deterministic, but prevents an example that demonstrates purely server-side computation for very large series and misses a teaching example for gallery users who want server-side-only solutions.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A 'Max drawdown with aggregation pipelines' documentation page showing: (1) a $match/$sort/$setWindowFields-based pipeline that computes cumulative P&L and peak-to-trough declines, (2) a $reduce or windowed approach for max-drawdown, (3) allowDiskUse considerations, explain() examples and explain('executionStats') guidance, and (4) fallbacks (client-side algorithm) with performance tradeoffs.",
+      "priority": "high"
+    },
+    {
+      "topic": "setWindowFields availability & examples",
+      "what_was_missing": "Clear guidance mapping cluster 'server-version' settings to availability of $setWindowFields and other windowing operators, plus a small examples page showing how to test for operator support (explain or server-version check).",
+      "where_searched": "Searched for '$setWindowFields support Azure DocumentDB' on Microsoft Learn and in documentdb skills; only general compatibility pages were found, not the per-cluster actionable guidance.",
+      "effect_on_this_build": "Builder conservatively implemented drawdown client-side (app/app/aggregations.py:56-73). Without clear guidance an agent or builder may attempt server-side pipelines that fail or are inefficient on some clusters.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a small 'operator availability by server-version' section in the compatibility docs and a one-page example showing how to detect support and fall back to client-side if needed.",
+      "priority": "high"
+    },
+    {
+      "topic": "Driver-version compatibility & pinning guidance",
+      "what_was_missing": "A compact compatibility note that lists recommended/pinned driver versions for common languages (Python/pymongo version recommended for DocumentDB) and the reason to pin (compatibility matrix).",
+      "where_searched": "Searched Microsoft Learn quickstarts and skills; compatibility pages confirm 'drivers work' but do not give a recommended pinned version matrix for samples.",
+      "effect_on_this_build": "The sample pinned dependencies sensibly (app/requirements.txt) but external users and agents would benefit from a short authoritative note on which driver major/minor versions are tested/supported.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Driver compatibility' table to the quickstart documenting supported driver ranges (e.g., 'pymongo 4.x supported; sample pins 4.4.0') and guidance on pinning.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Retry/backoff example in the agent kit",
+      "what_was_missing": "A concrete code sample in the documentdb-connection skill showing a small Python helper that wraps pymongo operations with exponential backoff + jitter and examples of which error codes to treat as retryable vs fatal.",
+      "where_searched": "Searched documentdb-connection and connection-related skills; the conceptual guidance exists, but a short copy-paste-ready code snippet was not found.",
+      "effect_on_this_build": "The sample omitted application-level retries (app/app/db.py and app/app/journal.py) and thus may be brittle during transient network faults. The builder set serverSelectionTimeoutMS but did not implement backoff.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A one-file snippet 'pymongo_retry.py' demonstrating a retry_with_backoff decorator (initial_delay=150ms, factor=2, max_attempts=4) and examples of wrapping insert_one/aggregate calls; include guidance on idempotency keys or unique constraints for safe retries.",
+      "priority": "high"
+    },
+    {
+      "topic": "Tests: offline mocking patterns",
+      "what_was_missing": "A short example showing how to write unit tests for DocumentDB-backed code using mongomock or by patching app.db.get_db, so unit tests run without a live cluster.",
+      "where_searched": "Searched skills/local-deployment and sample tests; the seed/idempotence guidance exists but the exact mocking pattern for unit tests (mongomock example) was not present in the agent kit docs.",
+      "effect_on_this_build": "Current tests run against the live cluster (app/tests/test_aggregations.py), which prevents running unit tests in CI without a cluster. That increases friction for contributors.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a 'Testing' quickstart page with two patterns: (1) use mongomock for unit tests with an example that patches app.db.get_db to return mongomock.MongoClient().db, and (2) run integration tests gated by an env var or a pytest marker.",
+      "priority": "medium"
+    },
+    {
+      "topic": "IaC resource-type disambiguation (mongoClusters vs databaseAccounts)",
+      "what_was_missing": "Clear, prominent guidance in the deployment docs that vCore clusters use Microsoft.DocumentDB/mongoClusters (not the older databaseAccounts resource), with Bicep/Terraform examples. The readiness notes show that agents can confuse the two.",
+      "where_searched": "Searched Microsoft Learn pages and the agent kit; the authoritative mongoClusters templates page exists but agent guidance that disambiguates older docs from vCore cluster templates is thin.",
+      "effect_on_this_build": "If an agent or builder attempts to provide IaC and uses databaseAccounts templates, they'll target the wrong product model. This repo omitted IaC (not included), increasing the chance of user confusion when they try to repro the environment from IaC.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a 'Deployment' note calling out Microsoft.DocumentDB/mongoClusters with example Bicep and Terraform snippets for a minimal cluster, a short explanation of why databaseAccounts is for RU-based Cosmos accounts, and a pointer to the mongoClusters template.",
+      "priority": "high"
+    },
+    {
+      "topic": "Collection-level JSON Schema examples for event journals",
+      "what_was_missing": "Concrete JSON Schema validator examples tailored to event journals (requirements for strategy_id, type, timestamp, pnl), with commands to apply the validator at collection creation time.",
+      "where_searched": "Searched for 'DocumentDB JSON Schema validator example' in skills and learn pages but no small event-journal-specific example was found.",
+      "effect_on_this_build": "The app uses Pydantic validation on incoming payloads but lacks a DB-level validator; malformed data could be inserted if callers bypass the API.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A one-page example showing createCollection with 'validator' option, example JSON Schema for the journal collection, and migration steps for applying validation to an existing collection.",
+      "priority": "medium"
+    }
+  ]
+}
