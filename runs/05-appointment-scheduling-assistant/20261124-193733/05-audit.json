@@ -1,0 +1,500 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core functionality the starter prompt asked for: a single Node.js LangChain agent with per-user in-memory memory, tools that read provider slots and create/reschedule/cancel appointments in Azure DocumentDB, an idempotent seed script that creates slots and indexes, and demo verification scripts that were run against the live cluster. Main correctness and concurrency practices (atomic conditional updates and multi-document transactions) are implemented. Findings: (1) relative-time handling ('move it an hour later') is not implemented in application code — the sample relies on the LLM to produce a tool call; (2) retry/backoff and 429 handling are not implemented; (3) there are no unit tests that run offline (the provided verification uses a live cluster); (4) some operational items (auth alternatives like Microsoft Entra ID, cleanup steps, explicit retry/tls flags, and dependency pinning semantics) are documented only partially or not at all. Several of these are due to reasonable builder choices (kept the sample small) but the product team should address the documentation gaps so agents and future builders do not assume missing behavior.",
+  "requirement_results": [
+    {
+      "requirement": "A single Node.js agent built with LangChain lets a patient book and reschedule appointments through conversation, choosing which of its tools to call for each request.",
+      "status": "met",
+      "evidence": "app/src/agent.js lines 19-54 (tools defined) and lines 56-99 (handleMessage) wired to src/server.js /chat endpoint (app/src/server.js lines 9-15).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The agent has agent memory that carries the conversation context across turns, so a follow-up such as \"move it an hour later\" is resolved against the appointment discussed earlier without the patient restating the provider, date or time.",
+      "status": "partly_met",
+      "evidence": "app/src/agent.js lines 9-17 (per-user BufferMemory created) and lines 95-97 (tool result saved to memory).",
+      "cause": "builder_error",
+      "smallest_fix": "Implement explicit relative-time parsing/rewriting step: after the model requests a reschedule with a relative expression, look up lastAppointment in memory, compute the target ISO time, call findAvailableSlots with that target time, and then call rescheduleAppointmentAtomic. Add a helper in agent.js that converts relative phrases to a Date using the saved appointment start time."
+    },
+    {
+      "requirement": "A LangChain tool queries provider availability slots from Azure DocumentDB each time the agent needs availability, reading the current slot documents through a MongoDB-compatible Node.js driver (e.g. the `mongodb` package).",
+      "status": "met",
+      "evidence": "app/src/agent.js tool 'findAvailableSlots' calls store.findAvailableSlots (app/src/store.js lines 3-9) which uses the MongoDB driver via getDb (app/src/db.js lines 15-31).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Provider availability is modelled as slot documents in Azure DocumentDB, each carrying a status that the booking and rescheduling tools change (e.g. available to booked).",
+      "status": "met",
+      "evidence": "app/src/seed.js constructs slot documents with fields start, end, status and metadata (lines 22-34). app/src/store.js operates on 'slots' documents and updates status (e.g., lines 23-27, 80-84).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A tool books an appointment by creating an appointment document in Azure DocumentDB for the chosen slot and updating that slot's status.",
+      "status": "met",
+      "evidence": "app/src/store.js createAppointmentAtomic uses session.withTransaction, findOneAndUpdate on slots to set status:'booked' (lines 22-27) and inserts an appointment document (lines 33-35).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A tool reschedules an existing appointment by updating slot status atomically (e.g. a single conditional update that claims the new slot only while it is still available, or a session `withTransaction` when the old slot, the new slot and the appointment document change together) and pointing the appointment document at the new slot.",
+      "status": "met",
+      "evidence": "app/src/store.js rescheduleAppointmentAtomic uses session.withTransaction, findOneAndUpdate on the target slot with filter { _id, status:'available' } (lines 80-85), frees the old slot (line 88) and updates the appointment (line 91).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "When a patient gives a relative time such as \"an hour later\", the agent computes the target time from the remembered appointment time and uses the availability tool to find a matching slot in Azure DocumentDB before rescheduling.",
+      "status": "partly_met",
+      "evidence": "Memory is saved (app/src/agent.js lines 11-16 and lines 95-97) so prior appointment/tool results are retained in-memory, but there is no code that parses relative-user-times and converts them into a concrete slot search before calling rescheduleAppointmentAtomic.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a relative-time resolution step in agent.handleMessage that: (a) reads the last appointment from the user's BufferMemory, (b) parses the relative expression (e.g., 'an hour later') to compute a target ISO datetime, (c) calls tools.findAvailableSlots(providerId, targetISO, targetISO) to find a slot, then calls tools.rescheduleAppointment with that slotId."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example (lines 2–5) contains placeholders; app/src/db.js reads process.env.DOCUMENTDB_URI (line 5); app/src/agent.js reads process.env.OPENAI_API_KEY and OPENAI_MODEL (line 7). No secret values are committed.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI, DATABASE_NAME, OPENAI_API_KEY, OPENAI_MODEL and PORT (app/.env.example lines 2-6).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "No vector index is created in the sample; vector search is out of scope for this sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is required, document the embedding model and dimensions in .env.example/README and create the index with matching 'dimensions' in the seed script."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexing or parameter guidance present in repo.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is added, include parameter choices in the README and a commented section in seed.js showing how to change lBuild/lSearch/maxDegree/dimensions for larger datasets."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js implements a singleton pattern: getClient() caches client (lines 12-24) and getDb() reuses the db (lines 27-33).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/src/seed.js creates indexes (lines 11-14) and upserts slots and an appointment using updateOne with upsert:true (lines 37-39, 44-48), then updates the slot status (line 51).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint is present in the sample; only /chat is implemented (app/src/server.js).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search endpoint and validate input: return 400 on empty query, attempt embedding call with try/catch and return 503 or 500 with a clear message if embeddings fail."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "Search functionality is not present in the codebase.",
+      "cause": "prompt_silent",
+      "smallest_fix": "When implementing semantic search, return scores from the $search aggregation stage or vector search API and include them in the endpoint response."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "partly_met",
+      "evidence": "This is a Node.js sample: package.json lists semver ranges (e.g. \"mongodb\": \"^5.7.0\", app/package.json lines 14-20) but package-lock.json is present (app/package-lock.json) which pins versions for installs.",
+      "cause": "builder_error",
+      "smallest_fix": "Either list exact dependency versions in package.json or add a note in README indicating that package-lock.json is the authoritative pinned manifest and should be committed (already present)."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "There are no unit tests that mock the MongoDB driver; the project's 'test' script runs demo_seed_verify.js which exercises the real cluster (app/src/demo_seed_verify.js lines 4-12, 15-33).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock mongodb (e.g., with sinon or mongodb-memory-server) and CI jobs that run them without network access; or include a lightweight LLM shim for agent tests."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/Terraform/ARM) files are present in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep/ARM template snippet that deploys Microsoft.DocumentDB/mongoClusters or an example az documentdb mongocluster command as an optional artifact (documentdb-azure-deployment skill has recommended snippets)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "README.md documents what the sample shows, prerequisites and setup (app/README.md lines 3-14, 24-42) but does not include explicit clean-up steps for the created documents or how to remove seeded data/indexes.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a 'clean-up' section to README with commands to remove sample documents (e.g., a small script or 'mongo' delete commands) and a note about running seed/verify on non-production clusters only."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md title and text use 'DocumentDB'/'Azure DocumentDB' (app/README.md lines 1,3). No other product names are used in code comments or README.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Single shared client",
+      "practice": "Read DOCUMENTDB_URI from an environment variable and create a single shared MongoClient at process startup, reusing that client across modules instead of opening a new connection per request.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 12-24 implement a singleton MongoClient and getDb() caches the db (lines 27-31).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning & TLS",
+      "practice": "Tune MongoClient pool and timeout settings (maxPoolSize, minPoolSize, maxIdleTimeMS, serverSelectionTimeoutMS, socketTimeoutMS) based on your environment (serverless vs long-running) and expected concurrency.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js sets maxPoolSize:10 and serverSelectionTimeoutMS:5000 (lines 17-21) but does not set retry options (retryReads/retryWrites) or socketTimeoutMS/maxIdleTimeMS explicitly.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Expose and set recommended options (socketTimeoutMS, maxIdleTimeMS, retryReads/retryWrites) and prefer reading some from env rather than hard-coding; e.g., update client options in db.js.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Require TLS",
+      "practice": "Always require TLS on connections to Azure DocumentDB and do not disable certificate validation in production.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "The sample expects a TLS-enabled SRV-style connection string in .env.example (app/.env.example line 2 contains '?ssl=true' in the example). The driver options do not explicitly toggle tls flags (app/src/db.js lines 17-21) but the example connection string includes TLS.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Explicitly document in README to never set tlsAllowInvalidCertificates and optionally pass tls: true in client options; prefer SRV-style URIs with TLS in .env.example.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry on transient errors",
+      "practice": "Implement retries with exponential backoff for transient errors and rate-limit responses (handle 429/Retry-After), and enable the driver's retryReads/retryWrites where appropriate.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/store.js and app/src/db.js do not implement retry/backoff or 429 handling. Transactions are used but retries on transient transaction failures are not implemented.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add retry/backoff wrappers around DB operations and enable driver retry options (retryReads/retryWrites) and respect 429 Retry-After. Smallest fix: wrap critical operations in a retryWithBackoff helper and call it from store.js.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Atomic slot booking",
+      "practice": "Perform slot booking with an atomic conditional update (e.g., findOneAndUpdate or updateOne with filter { _id: slotId, status: 'available' } and check the returned/modified count) to detect conflicts instead of a separate read-then-write.",
+      "category": "data integrity / concurrency",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/store.js createAppointmentAtomic uses findOneAndUpdate with filter { _id: slotId, status: 'available' } inside a transaction (lines 23-27) and checks slot.value (line 29).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use transactions for multi-document invariants",
+      "practice": "Use multi-document transactions (session.withTransaction) when supported by the cluster's MongoDB API version to make related updates atomic; if transactions are unavailable, use a compensated pattern and detect partial failures.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/store.js uses session.withTransaction for createAppointmentAtomic, rescheduleAppointmentAtomic and cancelAppointment (store.js lines 18-36, 72-94, 49-61).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index for availability queries",
+      "practice": "Create a compound index that matches common availability queries (example: { providerId: 1, start: 1, status: 1 }) and make index creation idempotent in seed scripts.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/seed.js creates the compound index on slots (line 12) and seed upserts documents (lines 37-39) making the seed idempotent.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Data modelling: separate slots and appointments",
+      "practice": "Model for access patterns: keep one slot document per slot and a separate appointments collection that references slotId so you can target atomic updates on slots without large document rewrites.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/seed.js creates two collections 'slots' and 'appointments' (lines 8-9) and appointments reference slotId (seed.js line 46). store.js performs targeted slot updates and appointment updates (e.g., lines 23-36, 80-92).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Observability and monitoring",
+      "practice": "Instrument and trace booking and rescheduling flows (record latency, RU cost, success/failure) and surface slow queries and RU hotspots through diagnostic settings and Log Analytics alerts.",
+      "category": "observability / ops",
+      "availability": "discovered_not_listed",
+      "discovery_id": "P24",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "No instrumentation/diagnostic code or Log Analytics guidance is present in the sample repo; the sample is small and intended for demos.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add minimal tracing / metrics hooks in store.js (timers, error counters) and document how to enable diagnostic settings in README.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Persist minimal identifiers for memory",
+      "practice": "Persist only minimal identifiers for agent conversational memory (conversationId, lastAppointmentId) and keep full conversational context ephemeral; encrypt persisted sensitive state at rest when required.",
+      "category": "data modeling / security",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample uses in-memory BufferMemory (app/src/agent.js lines 9-17) and does not persist memory; therefore it happens to keep full context ephemeral, but the service-specific guidance for persisting minimal identifiers is not present in public docs found.",
+      "source": "prior_knowledge_only",
+      "searched": "azure documentdb conversation memory persistence; azure documentdb agent memory persist conversation identifiers best practice",
+      "fix": "If persistent memory is added, persist only conversationId and appointment id references; add encryption guidance and a sample DocumentDB-backed memory implementation or Redis example.",
+      "sources": [],
+      "what_would_help": "A short guidance page in the docs that states 'If you persist agent memory for appointment flows, store only identifiers (conversationId, lastAppointmentId), avoid full PII and encrypt persisted state.'"
+    },
+    {
+      "topic": "Overlapping slot checks",
+      "practice": "When rescheduling slot times, check for overlapping slots for the same provider using indexed queries and enforce application-level checks to prevent overlapping bookings because DB-level partial unique constraints on time ranges are not a general replacement.",
+      "category": "data integrity / modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P23",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample does not implement slot-time rewriting (slots have fixed start/end times) and does not contain logic to shift slot times; rescheduling moves appointments between existing slots (app/src/store.js lines 79-92). The guidance about preventing overlapping time ranges was not resolvable to a public DocumentDB-specific source.",
+      "source": "prior_knowledge_only",
+      "searched": "azure documentdb enforce non-overlapping time ranges unique constraint; documentdb prevent overlapping time ranges booking constraint",
+      "fix": "If rescheduling will create or alter slot times, add an indexed overlap check (query for slots with start < newEnd && end > newStart for the provider) and document the pattern in a short how-to page.",
+      "sources": [],
+      "what_would_help": "A documented pattern page showing sample queries and index recommendations for detecting overlaps and guidance that DB-level partial unique constraints do not cover arbitrary time ranges."
+    },
+    {
+      "topic": "Audit trail: transactions used",
+      "practice": "Use transactions for multi-document operations (appts + slots).",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/store.js uses client.startSession() and session.withTransaction in createAppointmentAtomic, rescheduleAppointmentAtomic and cancelAppointment (store.js lines 14-36, 66-96, 43-63).",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval 'ready_with_gaps' is operative and consistent with the builder_report. Evidence: builder_report/status and events show build proceeded."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Node.js + Express is implemented (package.json & app/src/server.js). Reason: 'prompt' — matches the starter prompt. events.jsonl shows skill loads and build events for Node usage."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Duplicate approval entry; consistent with build logs."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Choice reiteration of Node.js + Express, implemented in repository (app/src/server.js)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "The builder selected OpenAI as the LLM provider and wired OPENAI_API_KEY into app/src/agent.js (line 7). The reason_source is 'model_default' (a default choice). The events trace does not show an external constraint preventing other providers; the code matches the decision."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "In-memory BufferMemory was chosen and is implemented (app/src/agent.js lines 9-16). Reason_source is 'model_default'; this choice is visible in code and events do not contradict it."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Duplicate approval entry; consistent with logs."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Choice of JavaScript (non-TypeScript) implementation is reflected in the codebase (no TypeScript files)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Duplicate/near-duplicate of D005; implemented in code (app/src/agent.js)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Duplicate/near-duplicate of D006; implemented in code."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Choice of two collections 'slots' and 'appointments' is implemented (seed.js lines 8-9) and matches the data model in store.js."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Choice to create the compound index { providerId:1, start:1, status:1 } is implemented in seed.js (line 12). events.jsonl shows documentdb-indexing skill was loaded earlier (events contain load_skill calls)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Persisted-memory guidance (prior_knowledge_only)",
+      "what_was_missing": "No public DocumentDB-specific guidance was found that explicitly recommends what minimal conversation identifiers to persist (conversationId, lastAppointmentId) or how to store them safely for agent memory.",
+      "where_searched": "Searched installed skills, and web searches: 'azure documentdb conversation memory persistence', 'azure documentdb agent memory persist conversation identifiers best practice'.",
+      "effect_on_this_build": "The builder used in-memory BufferMemory (ephemeral). Without explicit guidance, implementers may persist full conversational context or PII inadvertently.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short guidance page: 'Agent memory with Azure DocumentDB' that: (1) explains recommended minimal persisted keys for conversational memory (conversationId, lastAppointmentId), (2) gives a small DocumentDB-backed memory example storing only identifiers, (3) lists PII redaction guidance and encryption recommendations, and (4) shows how to resume an agent using stored identifiers.",
+      "priority": "high"
+    },
+    {
+      "topic": "Overlapping-slot reschedule guidance (prior_knowledge_only)",
+      "what_was_missing": "No authoritative DocumentDB-specific page described the recommended application-level pattern for preventing overlapping slot times when rescheduling or creating slots (e.g., indexed overlap queries and why DB-level partial unique constraints are insufficient).",
+      "where_searched": "Searched installed skills and performed web searches: 'azure documentdb enforce non-overlapping time ranges unique constraint', 'documentdb prevent overlapping time ranges booking constraint'.",
+      "effect_on_this_build": "The sample uses discrete slot documents for fixed times (no slot-time rewriting), so it avoided the problem. Future samples that alter slot boundaries could accidentally create overlapping bookings if they rely on DB uniqueness semantics alone.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A 'Preventing overlapping time ranges' how-to that shows example queries (start < newEnd && end > newStart), recommended indexes and code patterns to enforce this atomically (transaction + conditional checks), and sample JS snippets for DocumentDB.",
+      "priority": "medium"
+    },
+    {
+      "topic": "LLM provider & model selection (decision defaults)",
+      "what_was_missing": "The starter prompt left model/provider unspecified; the builder defaulted to OpenAI (model_default). There is no central guidance in the sample or skills that instructs which model or environment variables to prefer for DocumentDB samples (OpenAI vs Azure OpenAI vs on-prem).",
+      "where_searched": "Checked the repo README and installed skills; searched product docs for sample conventions.",
+      "effect_on_this_build": "The builder chose OpenAI and documented OPENAI_API_KEY; other implementers might pick Azure OpenAI or provider-specific env names, causing inconsistency across samples and making discovery by an agent harder.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "An agent-kit rule that standardizes LLM env var names across samples (e.g., OPENAI_API_KEY, OPENAI_MODEL, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY) and a README subsection offering examples for OpenAI and Azure OpenAI with minimal configuration examples.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Memory persistence default (decision default)",
+      "what_was_missing": "The builder defaulted to in-memory BufferMemory for simplicity (decision reason_source=model_default). There is no product guidance telling builders when to prefer ephemeral memory vs durable memory for samples that demonstrate appointment workflows.",
+      "where_searched": "Checked README and installed skills for memory persistence guidance; none gave a default for sample builds.",
+      "effect_on_this_build": "The sample demonstrates conversational continuity but the memory is ephemeral; readers might assume persistence across restarts and build fragile demos.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "A short rule in the agent kit that says: 'Samples should default to ephemeral in-memory memory for demos; if persistence is required, add a second example that persists only identifiers (conversationId, lastAppointmentId) to DocumentDB or Redis and document security considerations.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Retry/429 guidance discoverability",
+      "what_was_missing": "The sample did not implement retries/429 handling. Although retry guidance exists in the documentdb-connection skill, it is not highlighted in the sample README as a must-have for production booking flows.",
+      "where_searched": "Checked installed skill documentdb-connection and sample README.",
+      "effect_on_this_build": "This build runs correctly against a live cluster in a test run, but a production-like workload or RU throttling could cause transient failures that the sample does not demonstrate handling for.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a 'Reliability' subsection to README referencing the documentdb-connection guidance and a short code snippet showing a retryWithBackoff wrapper and how to handle 429/Retry-After.",
+      "priority": "high"
+    },
+    {
+      "topic": "Unit-test mocking guidance",
+      "what_was_missing": "No example tests that mock the MongoDB driver or a local DocumentDB Gateway container were present in the repo; the README does not point to a recommended mock strategy.",
+      "where_searched": "Repo README and installed skills (documentdb-local-deployment) and general repo files.",
+      "effect_on_this_build": "The verification relies on a live cluster; the repo lacks offline tests suitable for CI and gallery validation.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a short 'Testing' page that includes: (a) a lightweight unit test that stubs the mongodb module (example using sinon or jest mocks), (b) an optional docker-compose snippet to run the DocumentDB Gateway locally (documentdb-local-deployment skill), and (c) CI guidance to run tests without network access.",
+      "priority": "high"
+    },
+    {
+      "topic": "Cleanup instructions in README",
+      "what_was_missing": "The README shows how to seed and run verification but lacks explicit cleanup steps to remove seeded documents or indexes.",
+      "where_searched": "app/README.md and seed.js",
+      "effect_on_this_build": "Users may not know how to remove sample data from a live test cluster and may accidentally leave sample documents/indexes in test accounts.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a 'Clean-up' section to README that provides a small script or a mongo CLI snippet that deletes seeded documents (deleteMany on slots/appointments) and how to remove sample indexes and collections.",
+      "priority": "medium"
+    }
+  ]
+}
