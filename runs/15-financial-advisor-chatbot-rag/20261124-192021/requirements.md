@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the application in Node.js and instantiate a LlamaIndex RAG agent (use the name "LlamaIndex" in the code) to handle user conversations.
-- Create and populate an Azure DocumentDB vector index containing curated financial knowledge articles; include code that upserts documents with their vector embeddings into the Azure DocumentDB collection.
-- Implement and demonstrate vector search against the Azure DocumentDB vector index: a function that submits a user query, performs similarity search, and returns the top-k relevant knowledge article snippets and metadata.
-- Add a clear Azure DocumentDB connection/configuration mechanism (environment variables or config file) and use it in the code paths that upsert and query the DocumentDB vector index.
-- Expose a tool function the agent can call to fetch a client's live portfolio data (structured JSON with holdings, allocations, and quantities); the agent must call this tool during query handling rather than reading a static file.
-- Combine retrieved DocumentDB knowledge article snippets and the fetched portfolio tool output into the RAG retrieval context passed to the LlamaIndex agent so the generator sees both sources when creating answers.
-- Implement and use "agent memory" to persist conversation history (user turns and assistant turns) and ensure the LlamaIndex agent consults this agent memory when resolving follow-up questions.
-- Include an end-to-end conversation example (seed data and/or automated test) that demonstrates a follow-up question such as "how does that affect my bond allocation?" is answered using prior conversation context from agent memory plus the retrieved DocumentDB articles and the client’s live portfolio data.
-- Ensure the agent’s final responses reference or cite the specific DocumentDB knowledge articles and the relevant portfolio values used in reasoning (e.g., include article titles/IDs and portfolio allocation numbers in the output or logs).
-- Provide automated or manual tests that verify: (a) DocumentDB vector search returns expected articles for a sample query, (b) the portfolio tool returns structured client data, and (c) a follow-up conversational query produces a response that changes when agent memory or portfolio data are modified.
+- A Node.js application built with LlamaIndex runs a single RAG agent that answers a retail investor's financial questions in conversation.
+- Financial knowledge articles are stored as documents in Azure DocumentDB, each carrying its embedding vector on the document (e.g. written through the mongodb Node.js driver or a LlamaIndex vector store backed by it).
+- A cosmosSearch vector index of kind vector-ivf, vector-hnsw or vector-diskann is created in code on the embedding field, with dimensions matching the embedding model the agent uses.
+- Retrieval embeds the user's question and runs a $search / cosmosSearch query against Azure DocumentDB so the similarity ranking happens in the database and returns the most relevant knowledge articles.
+- The agent has a tool that fetches the client's live portfolio data, and the agent calls it when a question needs the client's portfolio context.
+- The retrieved knowledge articles and the portfolio data returned by the tool are both placed in the context the agent passes to the language model when generating its reply.
+- Agent memory holds the conversation history across turns, so a follow-up such as "how does that affect my bond allocation?" is answered using the earlier exchange in that conversation.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
