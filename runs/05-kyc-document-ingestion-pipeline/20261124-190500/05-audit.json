@@ -1,0 +1,456 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core async Beanie+FastAPI pipeline, sends uploaded documents to OpenAI, validates with Pydantic, models customers with Beanie, and upserts on a government_id key. Secrets are read from the environment and a .env.example is provided. Key gaps: (1) connection timeout/retry parameters recommended by the documentdb-connection guidance were not applied, (2) index creation via the MCP tooling failed because management/write tools are opt-in in this environment, (3) the seed script is not idempotent in all cases and index-creation/verification was not completed programmatically, and (4) a few gallery checklist items (search endpoints, unit tests, infra-as-code) are missing. The build choices are mostly reasonable and recorded; one builder choice (Beanie vs Beanie2 / Motor vs AsyncMongoClient) was made in code but the decision log attempt failed and is missing a final recorded decision. See requirement-by-requirement results, practice checks, decision reviews and documentation gaps below.",
+  "requirement_results": [
+    {
+      "requirement": "The pipeline accepts uploaded KYC documents as its input (e.g. a file upload or document bytes handed to an ingestion entry point).",
+      "status": "met",
+      "evidence": "app/src/app/main.py lines 16-23 (FastAPI /upload handler reading UploadFile and file.read()).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The pipeline is written in async Python, with the OpenAI calls and the Beanie ODM database operations awaited.",
+      "status": "met",
+      "evidence": "app/src/app/openai_client.py defines async extract_entities and app/src/app/main.py awaits extract_entities (line 26) and awaits cust.upsert() (line 40).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Each uploaded document is sent to OpenAI with a request for structured entity extraction covering name, DOB, address and ID numbers.",
+      "status": "met",
+      "evidence": "app/src/app/openai_client.py PROMPT_TEMPLATE (lines 12-22) requests name, dob, address, government_id and main.py calls extract_entities (line 26).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A Pydantic schema declares the extracted entities (name, DOB, address, ID numbers), and the OpenAI output is validated against that schema before it is stored.",
+      "status": "met",
+      "evidence": "app/src/app/schemas.py defines ExtractionSchema and main.py constructs ExtractionSchema(**extracted) on line 29 before mapping to Customer.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The customer record is modelled as a Beanie ODM Document, and a validated record is upserted into Azure DocumentDB through Beanie (updated when a matching customer already exists, inserted otherwise; matched on e.g. an ID number).",
+      "status": "met",
+      "evidence": "app/src/app/models.py defines class Customer(Document) with an upsert() method that calls replace_one({'government_id': self.government_id}, self, upsert=True) (lines 13-21, 33-39). main.py constructs Customer and calls await cust.upsert() (main.py lines 31-41).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A record whose extraction fails schema validation or lacks required entities is stored as incomplete and flagged for manual review (e.g. a review flag on the stored document).",
+      "status": "met",
+      "evidence": "app/src/app/models.py: Customer.status defaults to 'manual_review' (line 19) set_complete_if_valid toggles status to 'complete' only if all fields present (lines 26-31). For missing government_id, upsert inserts (lines 33-38) leaving status 'manual_review'.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/app/db.py reads DOCUMENTDB_URI from environment (lines 8-12). app/src/app/openai_client.py reads OPENAI_API_KEY and OPENAI_MODEL from environment (lines 7-10). app/.env.example contains placeholders (app/.env.example lines 2-4). No real secrets are committed.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": ".env.example lists DOCUMENTDB_URI, OPENAI_API_KEY and OPENAI_MODEL (app/.env.example lines 1-4). README instructs to copy .env.example (app/README.md lines 21-25).",
+      "cause": "builder_error",
+      "smallest_fix": "Add any runtime variables the app relies on (for example DATABASE_NAME or MONGODB_DATABASE / DB_NAME if you want explicit database selection) to .env.example and document their use in README; e.g., add DB_NAME=sample_fintech_05."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "This sample does not compute or store embeddings and has no vector-index creation code.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If you add embeddings, document the embedding model and set vector index dims to the model's output size in the index-creation script or README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index or embedding code present.",
+      "cause": "could_not_determine",
+      "smallest_fix": "Only applicable if embeddings are added; provide index-creation helper with parameters and README guidance."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/app/db.py defines a module-level _client and init_db() sets _client = AsyncIOMotorClient(uri) (lines 6, 14-21); startup event calls init_db() (app/src/app/main.py lines 12-15).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "scripts/seed.py exists and uploads three sample documents to the /upload endpoint (scripts/seed.py lines 8-12, 14-22). The app declares a unique index via Beanie's model (models.py line 17) but MCP index creation failed in this run (events.jsonl documentdb_create_index exception). The seed script uses POST to /upload (which upserts on government_id only when provided), but two of the three seed samples have no government_id so repeated runs would produce duplicates.",
+      "cause": "builder_error",
+      "smallest_fix": "Make the seed script idempotent by providing government_id for all seed samples or change the seed to call an upsert endpoint directly with deterministic keys; also add a script to create/verify indexes idempotently (createIndex with if-not-exists pattern or use Beanie init to create indexes on startup and document how to run it)."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "There is no /search endpoint in app/src/app/main.py.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search endpoint that validates input, returns 400 for empty queries, wraps embedding/LLM calls with try/except, and returns clear error messages when embedding fails."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search implementation present.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add semantic search, include similarity scores in the HTTP response and document the score semantics in README."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "app/requirements.txt pins fastapi==0.95.2, uvicorn[standard]==0.22.0, beanie==1.16.4, motor==3.5.3, pydantic==1.10.12, openai==1.0.0, pytest==7.4.2, httpx==0.24.1 (app/requirements.txt).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files present in the repository; pytest is listed in requirements but no unit tests or mocking harness provided.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests with mocked OpenAI and mocked database clients (e.g., using pytest + pytest-asyncio + respx/httpx mocking or monkeypatching Beanie/Motor) so tests run offline."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/Terraform/ARM templates or infra-as-code files found in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal Bicep/ARM/Terraform snippet (Microsoft.DocumentDB/mongoClusters) or a link to the documentdb-azure-deployment skill example, if you want to provide infra as code."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains Overview, Prerequisites, Setup, Run instructions and Cleanup (app/README.md lines 3-39, 41-45).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README and code name the target service 'Azure DocumentDB' (app/README.md lines 5, 10).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "When using drivers, prefer a single shared MongoClient instance per process (connection-pool singleton) instead of creating a client per request.",
+      "category": "driver_usage",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/odbc/reference/develop-app/driver-manager-connection-pooling?view=sql-server-ver17",
+      "status": "followed",
+      "evidence": "app/src/app/db.py lines 6, 14-21: module-level _client is assigned AsyncIOMotorClient(uri) in init_db() and reused.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Driver Manager Connection Pooling",
+          "url": "https://learn.microsoft.com/odbc/reference/develop-app/driver-manager-connection-pooling?view=sql-server-ver17"
+        },
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS & timeouts",
+      "practice": "Require TLS for all client connections to Azure DocumentDB (connection strings include tls=true) and use certificate validation in production; configure sensible driver timeouts so code fails fast.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/security#transport-security",
+      "status": "violated",
+      "evidence": "app/.env.example includes tls=true (app/.env.example line 2) and db.py comments note TLS is required (app/src/app/db.py line 17) but no driver timeout parameters (serverSelectionTimeoutMS/socketTimeoutMS) are set on AsyncIOMotorClient (app/src/app/db.py line 19).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Set sensible timeouts when creating the client, e.g. AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000, socketTimeoutMS=60000) or parse and append serverSelectionTimeoutMS to the URI.",
+      "sources": [
+        {
+          "title": "Secure your Azure DocumentDB cluster",
+          "url": "https://learn.microsoft.com/azure/documentdb/security#transport-security"
+        },
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver version pinning",
+      "practice": "Driver version is pinned and is one the service supports.",
+      "category": "connection",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie",
+      "status": "followed",
+      "evidence": "app/requirements.txt pins beanie==1.16.4 and motor==3.5.3 (app/requirements.txt). Quickstarts list tested combinations (Beanie 2 + PyMongo AsyncMongoClient) but the sample pins Motor+Beanie 1; the code runs with the pinned packages.",
+      "source": "Quickstart: Connect Beanie to Azure DocumentDB",
+      "searched": "learn.microsoft.com quickstart Beanie tested driver versions",
+      "fix": "Consider aligning pinned versions with the published quickstart (Beanie 2 + PyMongo AsyncMongoClient) or add a README note explaining the chosen Beanie/Motor versions and any incompatibilities.",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Beanie to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#prerequisites"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets in repo",
+      "practice": "Read the Azure DocumentDB connection string from a runtime secret store (environment variable or secret manager) and do not commit the connection string to source control.",
+      "category": "auth_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/migrate-amazon-documentdb#update-your-application",
+      "status": "followed",
+      "evidence": "app/src/app/db.py reads DOCUMENTDB_URI from environment (lines 8-12) and .env.example uses placeholders (app/.env.example lines 1-4); no real secrets are in the repo.",
+      "source": "Migrate from Amazon DocumentDB to Azure DocumentDB (with MongoDB compatibility)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Migrate from Amazon DocumentDB to Azure DocumentDB (with MongoDB compatibility)",
+          "url": "https://learn.microsoft.com/azure/documentdb/migrate-amazon-documentdb#update-your-application"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unique upsert index",
+      "practice": "Create a unique index for the stable upsert key used by the pipeline (for example government_id) to prevent duplicates and make upserts deterministic.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#index-types",
+      "status": "followed",
+      "evidence": "app/src/app/models.py declares government_id: Optional[Indexed(str, unique=True)] (line 17). The upsert method uses replace_one with upsert=True (lines 33-39).",
+      "source": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#index-types"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid large binaries",
+      "practice": "Avoid storing large binary files or multi-megabyte payloads in DocumentDB documents; keep only metadata and structured fields in the database and store raw files in blob storage or other object storage.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/at-a-glance#security-and-governance",
+      "status": "followed",
+      "evidence": "The app accepts file uploads but decodes text and stores structured fields and raw extraction; it does not persist the uploaded binary file into the DB (main.py lines 16-23, 31-37). README warns that only text uploads are supported and suggests adding OCR and storing raw files in blob storage (app/README.md lines 31-35).",
+      "source": "Azure DocumentDB at a glance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Azure DocumentDB at a glance",
+          "url": "https://learn.microsoft.com/azure/documentdb/at-a-glance#security-and-governance"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries & backoff",
+      "practice": "Handle transient faults with bounded retries that use exponential backoff (and jitter) and only retry operations that are safe to replay.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/well-architected/design-guides/handle-transient-faults#implementing-retries",
+      "status": "violated",
+      "evidence": "No retry/backoff logic around the OpenAI call or DB operations. openai_client.extract_entities will raise and be translated to HTTP 500 (openai_client.py lines 24-39 and main.py lines 25-28). DB upsert operations are executed without explicit retry/backoff (models.py upsert uses replace_one directly).",
+      "source": "Recommendations for handling transient faults",
+      "searched": "",
+      "fix": "Wrap non-idempotent operations in retries with exponential backoff and jitter where safe, or rely on driver retry settings for idempotent operations; for OpenAI calls use bounded retries and circuit-breakers for transient network errors.",
+      "sources": [
+        {
+          "title": "Recommendations for handling transient faults",
+          "url": "https://learn.microsoft.com/azure/well-architected/design-guides/handle-transient-faults#implementing-retries"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Beanie init patterns",
+      "practice": "When public guidance is absent for framework-specific initialization (e.g., Beanie-specific init rules), follow framework docs and treat service-level guidance as application policy.",
+      "category": "app_orm",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P55",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "The app uses init_beanie(database=_client.get_default_database(), document_models=[Customer]) in db.py line 21; this matches common Beanie init usage, but there is known public guidance recommending Beanie 2 + AsyncMongoClient in some quickstarts.",
+      "source": "Quickstart: Connect Beanie to Azure DocumentDB",
+      "searched": "Azure DocumentDB Beanie init patterns and Motor vs AsyncMongoClient",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short authoritative note in product docs about recommended async client patterns for Beanie (Motor vs AsyncMongoClient) would remove ambiguity."
+    },
+    {
+      "topic": "Use MCP for verification",
+      "practice": "Use the service-provided tooling (MCP server) to inspect live collections, index definitions and query plans as part of verification and troubleshooting.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P46",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-migrate-vs-code-extension#perform-the-migration",
+      "status": "not_assessable",
+      "evidence": "The build attempted MCP operations: documentdb_list_databases returned the empty sample_fintech_05 (events.jsonl tool call at timestamp 06:42:12). documentdb_create_index and documentdb_insert_documents failed because management/write tools are disabled by default in this environment (events.jsonl shows ToolExecutionException errors at 06:42:15 and 06:42:19).",
+      "source": "Migrate MongoDB to Azure DocumentDB online by using Azure DocumentDB migration extension",
+      "searched": "",
+      "fix": "Document the environment opt-in requirement (ENABLE_MANAGEMENT_TOOLS and ENABLE_WRITE_TOOLS) or adjust verification steps to run with appropriate tool flags or run init_db() on app startup to create indexes.",
+      "sources": [
+        {
+          "title": "Migrate MongoDB to Azure DocumentDB online by using Azure DocumentDB migration extension",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-migrate-vs-code-extension#perform-the-migration"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "LLM output validation & raw preservation",
+      "practice": "When using OpenAI or other LLMs in a pipeline, validate outputs server-side and persist only validated structured fields while preserving raw responses in a non-indexed raw field for auditing.",
+      "category": "data_validation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P57",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/full-text-search-overview#how-azure-documentdb-full-text-search-works",
+      "status": "followed",
+      "evidence": "openai_client.extract_entities parses JSON and returns a 'raw' fallback when parsing fails (openai_client.py lines 41-50). Extraction is validated by Pydantic ExtractionSchema(**extracted) before storage (main.py line 29) and the Customer model stores extracted.raw (models.py lines 6-11, 18).",
+      "source": "Full-text search / sample README review",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Full-text search in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/full-text-search-overview#how-azure-documentdb-full-text-search-works"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approving the build as 'ready_with_gaps' is a reasonable operator-level decision. The log entry exists (decisions.jsonl) and fits the recorded readiness state."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python 3.13 is supported by the readiness report and build logs (pip installs ran). events.jsonl includes the readiness evidence quoted."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Reading secrets from environment matches the prompt instruction and the code: db.py and openai_client.py read environment variables. Evidence: prompt and code lines referenced."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "Choosing gpt-4o-mini is a sensible default for an extraction sample. However the decision's reason_source is 'model_default' (decisions.jsonl) rather than a documented product recommendation; per the audit rules this should be documented explicitly in sample README or product guidance so other builders don't pick different models unexpectedly."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Upserting by government_id and creating a unique index is implemented in code (models.py uses Indexed(..., unique=True) and upsert uses replace_one with upsert=True). The decision matches implementation."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Using the existing cluster and not provisioning new resources follows the run policy and readiness report. The decision is consistent with build actions."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Selecting motor==3.5.3 because a later motor release was unavailable on PyPI in this environment is supported by the pip install traces in events.jsonl; the change is recorded in requirements.txt."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Selecting openai==1.0.0 based on available PyPI versions is supported by the pip traces. Implementation uses the older ChatCompletion.create surface invoked in a thread, matching the selected client."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "questionable",
+      "comment": "Choosing to create/verify the unique index via the documentdb MCP server was reasonable. However the attempt to create the index and insert a seed document failed because management/write MCP tools are disabled by default in this environment (events.jsonl shows ToolExecutionException for documentdb_create_index and documentdb_insert_documents). The plan was sound but the verification step did not succeed; the decision should have included an environment check or fallback plan (e.g., create indexes on app init) and the run should log the failed MCP calls (which it does)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Complete .env.example for runtime settings",
+      "what_was_missing": "The .env.example omits an explicit DB_NAME / MONGODB_DATABASE variable and does not document MCP opt-in flags (ENABLE_MANAGEMENT_TOOLS / ENABLE_WRITE_TOOLS) that the build environment required to run management operations.",
+      "where_searched": "Repository (.env.example, README) and Microsoft Learn quickstarts for Beanie and MongoDB connection patterns.",
+      "effect_on_this_build": "Small: the sample runs but verification steps relying on environment flags and an explicit DB name were not automated; index creation via MCP failed in this run and the README leaves DB selection implicit.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Update .env.example with DB_NAME=MONGODB_DATABASE=sample_fintech_05 and document optional flags for MCP verification (e.g., 'To allow automated MCP index creation during CI/local verification set ENABLE_MANAGEMENT_TOOLS=true and ENABLE_WRITE_TOOLS=true in your verification environment; this is opt-in by design'). Add a short README subsection 'Runtime variables' listing each env var, default, and example.",
+      "priority": "high"
+    },
+    {
+      "topic": "Idempotent seed and index-creation script",
+      "what_was_missing": "The seed script uploads sample documents but is not fully idempotent (two sample documents lack government_id so re-running the seed creates duplicates). There is no programmatic, idempotent index creation script that works in the default verification environment without enabling MCP write/management flags.",
+      "where_searched": "Repository scripts/seed.py and events.jsonl (MCP create_index tool call failed).",
+      "effect_on_this_build": "Medium: prevented automated verification of index creation and made seed runs non-idempotent in some cases; the builder had to leave index creation as a manual step in README.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Provide a seed-and-init script that: (1) uses deterministic government_id values for all seed records (so upserts are idempotent), (2) creates declared indexes via Beanie init_beanie (documented) or via the MCP API but only after a runtime opt-in check, and (3) can be re-run safely without duplicating data. Document how to run the script and the expected result (e.g., 'After running init_seed.py twice the collection still contains three customers').",
+      "priority": "high"
+    },
+    {
+      "topic": "Connection timeout & retry guidance for async clients",
+      "what_was_missing": "The product skill and quickstarts describe TLS and provide examples for timeouts, but the sample did not add explicit driver timeout/query settings or example code showing safe defaults (serverSelectionTimeoutMS, socketTimeoutMS).",
+      "where_searched": "documentdb-connection skill, quickstart docs (learn.microsoft.com references), repo code (app/src/app/db.py).",
+      "effect_on_this_build": "Low/Medium: lack of driver timeouts can cause long-hanging requests in poor-network conditions; the sample leaves this to readers rather than demonstrating recommended settings.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a short rule or code snippet to the documentdb-connection skill and sample README showing how to instantiate an AsyncIOMotorClient with safe defaults, for example: AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000, socketTimeoutMS=60000, maxPoolSize=50). Explain the trade-offs and point to the skill for tuning guidance.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Beanie + async client authoritative guidance (Motor vs AsyncMongoClient)",
+      "what_was_missing": "Public guidance about exact recommended async client patterns for Beanie (Motor vs PyMongo's AsyncMongoClient) and the tested Beanie + driver combinations is scattered; prior-knowledge choices led to differing sample implementations.",
+      "where_searched": "Microsoft Learn Beanie quickstarts, documentdb-driver and documentdb-connection skill resources, and general searches for 'Azure DocumentDB Beanie Motor'.",
+      "effect_on_this_build": "Medium: the builder chose Motor + Beanie (Beanie 1.x pattern) and pinned motor==3.5.3; quickstarts show Beanie 2 with AsyncMongoClient as a tested combination. This ambiguity may lead readers to mismatch versions or run into subtle incompatibilities.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A one-page 'Beanie + Azure DocumentDB' note in product docs or the documentdb-connection skill that: (a) lists recommended Beanie versions and the corresponding async client (Motor vs AsyncMongoClient), (b) shows a minimal init example for each supported pattern, and (c) lists known tested combinations (Beanie 2 + PyMongo AsyncMongoClient with specific tested versions).",
+      "priority": "high"
+    },
+    {
+      "topic": "Recommended OpenAI model & embedding dimension mapping",
+      "what_was_missing": "The build made a model choice (gpt-4o-mini) via a model_default decision; product documentation does not state a recommended extraction/embedding model or embedding dimensionality to use in samples.",
+      "where_searched": "decisions.jsonl (D004), openai_client.py (OPENAI_MODEL default), and discovered practice searches for embedding dims.",
+      "effect_on_this_build": "Low: the sample defaults to gpt-4o-mini; if a future sample adds embeddings, not pinning the embedding model and dims may cause mismatch with vector-index parameters.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add guidance in the sample README or a product 'LLM integrations' page recommending a default text-extraction model for structured extraction and the embedding model (with explicit output dimensions) to use for vector indexes. If you do not want to mandate a model, document that the embedding dimension must be set to the model's output vector size and show examples for common choices (e.g., OpenAI 'text-embedding-3-small' -> 1536 dims).",
+      "priority": "medium"
+    },
+    {
+      "topic": "MCP tool opt-in discoverability and verification fallback",
+      "what_was_missing": "The build's programmatic attempts to create indexes and insert seed docs via MCP failed because management and write tools are disabled by default and require opt-in flags (events.jsonl shows ToolExecutionException with guidance to set ENABLE_MANAGEMENT_TOOLS/ENABLE_WRITE_TOOLS).",
+      "where_searched": "events.jsonl MCP tool failure logs and the MCP skill docs.",
+      "effect_on_this_build": "High for automated verification: it prevented automated index creation and seed insertion during this run, which forced the builder to leave index creation as a manual step.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Document the MCP opt-in requirements prominently in the MCP skill and in the sample README, including the exact env vars (ENABLE_MANAGEMENT_TOOLS, ENABLE_WRITE_TOOLS) and recommended security considerations for enabling them in CI or local debugging. Provide a fallback approach for verification that uses the app's init_db() to create indexes if MCP calls fail.",
+      "priority": "high"
+    },
+    {
+      "topic": "Unit testing without a live cluster",
+      "what_was_missing": "No unit tests or mocking harness were included to allow offline verification of parsing, schema validation, and logic.",
+      "where_searched": "Repository (no tests folder) and requirements.txt showing pytest present.",
+      "effect_on_this_build": "Medium: maintainers and reviewers cannot run behavior-preserving tests offline; missing tests reduce confidence in behavior changes.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a tests/ directory with pytest-based unit tests that mock openai.Client responses and mock or stub Beanie/Motor operations (or use a simple in-memory replacement). Include instructions in README how to run tests locally without a live cluster.",
+      "priority": "high"
+    }
+  ]
+}
