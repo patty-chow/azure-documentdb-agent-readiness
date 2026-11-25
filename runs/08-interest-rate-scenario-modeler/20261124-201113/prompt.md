@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with a DocumentDB aggregation tool that groups fixed and floating rate positions by maturity bucket. Use prompt engineering to instruct the LLM to reason through the NII impact of parallel shift, steepening, and inversion scenarios, and return a structured scenario analysis report.

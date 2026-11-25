@@ -1,0 +1,63 @@
+# 1. Prompt review: 08-interest-rate-scenario-modeler
+
+**Verdict: sufficient_with_assumptions**
+
+The starter prompt clearly states the core goal: a Python LangChain single-agent that exposes a DocumentDB aggregation tool to group fixed vs floating positions by maturity bucket and have an LLM reason about NII under three scenarios, returning a structured report. The prompt plus the installed DocumentDB skills provide good coverage for driver patterns, aggregation/pipeline generation, connection handling, indexing guidance and cluster facts in the provided skill_md, but many concrete choices are left to the builder (Python/runtime version, driver package/version, LLM provider/model, exact data shape, seed data, app surface, README / IaC, tests). The build can start but will rely on sensible defaults for those items listed below.
+
+## Where each answer will come from
+
+| Source | Rubric items |
+|---|---|
+| In the prompt | 4: Goal and scenario, Workflow type, Target service and tier, Authentication and secrets |
+| Covered by a skill | 1: Driver and version |
+| Ambiguous: builder will guess | 4: Language and runtime, Data model, Queries and indexes, App surface |
+| Missing: builder will guess | 7: Sample data, AI components, Provisioning and deployment, Run and test instructions, Definition of done, Constraints and non-goals, Repository conventions |
+| Not applicable | 0: - |
+
+## Reference requirements at risk
+
+- .env.example lists every setting with placeholder values — not mentioned in the starter prompt; skill_md suggests using .env.example but the prompt does not require it, so the builder may or may not include it.
+- The vector index dimensions match the embedding model's output — AI components and embedding model are unspecified, so matching vector index dims is at risk.
+- Vector index parameters are chosen for the sample's data size and README explains how to change them — index parameterization and documentation are not in the prompt; likely omitted or left to defaults.
+- One database client is created and reused across requests — though documentdb-driver skill covers singleton client, the prompt doesn't mandate this; builder will likely follow the skill but it's not explicit.
+- A seed script loads sample data and creates the index, and can be run twice without duplicating data — seed script is not specified by prompt; at risk unless the builder includes it.
+- /search returns a clear error for an empty query and when the embedding call fails — prompt doesn't mention a search endpoint; error-handling for search is at risk.
+- Search results include the similarity score — if the sample implements search, the prompt doesn't require returning similarity scores; at risk.
+- Dependencies are pinned in requirements.txt — prompt doesn't require pinned dependencies; builder may or may not pin them.
+- Unit tests run without a live cluster — tests are not requested; at risk unless builder writes tests that mock the DB/LLM.
+- Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type — prompt/skill_md say a cluster already exists and forbid provisioning in the run; IaC is not provided by default and is at risk.
+- The README covers what the sample shows, prerequisites, setup, run, and clean-up — prompt doesn't mandate README contents; this is often required for the gallery and thus at risk unless added.
+- The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name — prompt says 'DocumentDB' but doesn't mandate exact naming; ensuring the precise product name is used throughout is at risk.
+
+## Questions for the prompt author
+
+- Which LLM provider and model should the LangChain agent use for the reasoning step (e.g., OpenAI GPT-4, gpt-4o, or a local/hosted model)? This affects env vars, model tokens, and costs.
+- Which Python version do you want targeted (e.g., 3.10 or 3.11)? Also confirm the preferred MongoDB driver package/version (PyMongo 4.x?).
+- Should the sample include a seed script and an idempotent seed dataset (yes/no)? If yes, how large or realistic should the data be?
+- Do you want an HTTP endpoint (FastAPI) in the sample, or is a CLI demonstration sufficient?
+- Should the sample include IaC (Bicep/Terraform) to provision an Azure DocumentDB cluster, or must it avoid provisioning because a cluster is already available?
+
+## Contradictions and missing references
+
+- Prompt text: 'Using the DocumentDB skill' — there is no single installed skill named exactly 'DocumentDB skill'. The installed skills are a set of DocumentDB-focused skills (documentdb-driver, documentdb-connection, etc.). Treat the phrase as a reference to the DocumentDB skillset, not a single skill.
+
+## Rubric
+
+| Item | Status | Blocking | In the prompt | Skill | Assumed if unanswered | Note |
+|---|---|---|---|---|---|---|
+| Goal and scenario | specified | no | build a Python LangChain agent with a DocumentDB aggregation tool that groups fixed and floating rate positions by maturity bucket ... instruct the LLM to reason through the NII impact of parallel shift, steepening, and inversion scenarios, and return a structured scenario analysis report. | - | - | The business problem, user-facing behavior and the three scenarios are explicitly stated. |
+| Workflow type | specified | no | build a Python LangChain agent ... with a DocumentDB aggregation tool | - | - | Single-agent LangChain workflow is explicitly requested. |
+| Language and runtime | ambiguous | no | build a Python LangChain agent | - | Builder will target a modern Python 3.x runtime (most likely 3.10 or 3.11). Use virtualenv and rely on 'python' and 'pip' resolving to that environment as the skill_md implies. | Prompt specifies Python but not a precise version; the run-context in skill_md says python/pip are available but gives no explicit version. |
+| Driver and version | covered_by_skill | no | - | documentdb-driver | Use PyMongo as the MongoDB driver (e.g., pymongo >= 4.4 / latest 4.x compatible with MongoDB 7.0). Follow the documentdb-driver guidance to create a process-wide singleton MongoClient. | The driver best-practices skill covers singleton client and reuse patterns. The prompt doesn't name a driver package or version, so the builder will pick PyMongo and a recent 4.x release compatible with MongoDB 7.0. |
+| Target service and tier | specified | no | skill_md: A vector-capable Azure DocumentDB cluster (compute tier M30, MongoDB 7.0 wire protocol, DiskANN, HNSW and IVF vector indexes) is reachable ... connection string in DOCUMENTDB_URI | - | - | The provided skill_md explicitly describes the live cluster to use for the sample (M30, MongoDB 7.0). |
+| Authentication and secrets | specified | no | skill_md: connection string is in the environment variable DOCUMENTDB_URI. Read it from the environment at run time. Never write its value into any file, log, README or test fixture; use a config file or .env.example with a placeholder, as the prompt asks. | documentdb-security | - | Connection string location is specified; security best-practices skill covers recommended patterns (TLS, private endpoints, etc.) if the builder needs guidance. |
+| Data model | ambiguous | no | group fixed and floating rate positions by maturity bucket | documentdb-data-modeling | Builder will create a 'positions' collection with documents containing fields like: position_id, notional (number), currency, rate_type ("fixed" \| "floating"), coupon_rate, start_date, maturity_date (ISODate), repricing_frequency, accrual_basis. Maturity buckets will be derived from maturity_date (e.g., 0-1y,1-3y,3-5y,5-10y,>10y). | Prompt requires grouping by derived bucket and rate type but doesn't define the document schema or exact bucket boundaries; the documentdb-data-modeling skill can guide choices but does not supply a concrete shape. |
+| Sample data | missing | no | - | - | Include a seed script that inserts a small representative dataset (dozens to low hundreds of position documents) covering fixed and floating positions across all maturity buckets. Script should be idempotent (upsert by position_id) so it can be run twice without duplication. | Prompt does not mention sample data source, size, licence, or a seed script; reference requirements expect a seed script. |
+| Queries and indexes | ambiguous | no | aggregation tool that groups fixed and floating rate positions by maturity bucket | documentdb-natural-language-querying, documentdb-indexing | Builder will implement the aggregation pipeline (bucket derivation + $group by bucket and rate_type) using PyMongo's aggregate() and will create an index to support the grouping/filtering (e.g., an index on { maturity_date: 1, rate_type: 1 } and perhaps on fields used in filters). Exact index parameterization will be a conservative choice appropriate for the small sample. | Pipeline requirement is explicit. The prompt doesn't prescribe concrete index types or parameters; indexing guidance is available from installed skills. |
+| AI components | missing | no | Use prompt engineering to instruct the LLM to reason through the NII impact ... return a structured scenario analysis report. | - | Builder will use an external chat model via LangChain (commonly OpenAI). Default: use environment variable OPENAI_API_KEY and a chat model (e.g., gpt-4 or gpt-4o if available) for reasoning. If embeddings are used for any retrieval, use a widely-available embedding model (e.g., text-embedding-3-small) and ensure vector index dimensions match (e.g., 1536 dims). | Prompt requires LLM reasoning but does not specify provider, model name, or embedding model/dimensions; these will materially affect config and must be assumed by the builder. |
+| App surface | ambiguous | no | build a Python LangChain agent ... return a structured scenario analysis report. | - | Provide a minimal interface: a CLI example that runs the agent for a given dataset and an optional small HTTP API (FastAPI) endpoint /analyze that accepts a JSON request and returns the structured analysis JSON. Include example usage in README. | Prompt asks for the agent but does not specify CLI vs API vs UI; builder will pick a simple callable entrypoint and an optional HTTP endpoint for demonstration. |
+| Provisioning and deployment | missing | no | skill_md: Do not provision another cluster unless the run policy says Azure writes are allowed; the cluster above is the one to use. | documentdb-azure-deployment | No automatic provisioning will be included in the sample (the sample will rely on the preprovisioned cluster). The repository may optionally include an IaC example (Bicep) but it is not required by the prompt. | Prompt explicitly says a reachable cluster already exists; reference requirements for gallery samples often ask for IaC, but prompt forbids provisioning so builder will likely omit full IaC unless explicitly requested. |
+| Run and test instructions | missing | no | - | - | Builder will add a README with step-by-step commands: set env vars, pip install -r requirements.txt, run seed script, run the CLI or start FastAPI, and example request/response. Unit tests will be added that mock the database and LLM and can run without a live cluster. | Prompt does not provide run commands or test expectations; these must be authored by the builder. |
+| Definition of done | missing | no | - | - | Definition of done: repo builds, dependencies install, seed script loads sample data idempotently, agent calls aggregation tool at runtime, tool returns grouped fixed/floating by bucket, LLM is invoked with those grouped results and returns a structured JSON report that covers parallel shift, steepening and inversion scenarios. | Prompt states functional goal but not an explicit acceptance checklist; builder will adopt the above practical criteria. |
+| Constraints and non-goals | missing | no | - | - | Keep costs low: do not provision new cloud resources in the sample run; avoid long-running or large compute. Security: do not commit secrets and keep the sample for demo purposes only (not production-ready). | The prompt doesn't state performance or cost constraints explicitly, but skill_md implies no provisioning; otherwise non-goals are unspecified. |
+| Repository conventions | missing | no | - | - | Follow common gallery conventions: top-level README, src/ or app/ for code, tests/, requirements.txt with pinned versions, .env.example with placeholders, seed_data/ or scripts/seed.py, LICENSE, and a brief CHANGELOG or BUILD_REPORT.md describing what was executed during the run. | Prompt doesn't give layout, dependency pinning or naming rules; builder will use standard conventions and the reference_requirements guidance. |
