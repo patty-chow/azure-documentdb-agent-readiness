@@ -1,0 +1,630 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core functionality the starter prompt asked for: a Node.js + Mongoose API that accepts heartbeats, writes them to Azure DocumentDB, opens a change stream, maintains per-ATM state, computes availability, and writes alert documents when availability falls below a configurable threshold. Several reliability and operational best practices are missing or only partially implemented (persisting change-stream resume tokens, server-side change-stream filtering, alert de-duplication/idempotency, TTL index for heartbeats, retry/backoff logic, seed idempotency for heartbeats, and pinned dependency resolution). npm install failed in the build environment (registry/version problem) and the builder stopped retrying; the repo is ready to run once dependencies are installed and a DOCUMENTDB_URI is available.",
+  "requirement_results": [
+    {
+      "requirement": "Receives status heartbeat documents from ATMs and writes each one to Azure DocumentDB through a Node.js Mongoose model.",
+      "status": "met",
+      "evidence": "app/index.js lines 19-23 (POST /heartbeat handler uses Heartbeat.create(req.body)); app/models/heartbeat.js defines the Mongoose model and indexes.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Opens a change stream on the heartbeat collection in Azure DocumentDB and processes change events as they arrive.",
+      "status": "met",
+      "evidence": "app/index.js lines 36-45 (heartbeatColl.watch([], { fullDocument: 'updateLookup' }) and 'change' handler).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Detects from the change-stream events when an ATM's status changes to online, offline or low cash (e.g. by comparing the incoming status with the ATM's last known status).",
+      "status": "partly_met",
+      "evidence": "app/index.js lines 40-44 calls handleHeartbeat({ atmId: doc.atmId, status: doc.status, timestamp: doc.timestamp }, THRESHOLD). handleHeartbeat (app/logic/summaryUpdater.js lines 31-38) upserts AtmStatus and recomputes summary but does not fetch the previous AtmStatus to compare old vs new.",
+      "cause": "builder_error",
+      "smallest_fix": "Modify handleHeartbeat to read the previous AtmStatus (AtmStatus.findOne({ atmId })) and compare previous.status !== hb.status; only treat that situation as a 'status change' for change-specific logic (or record the comparison result)."
+    },
+    {
+      "requirement": "Maintains a single live network summary document in Azure DocumentDB that the change-stream handler updates on each detected status change (e.g. counts of online, offline and low-cash ATMs).",
+      "status": "met",
+      "evidence": "app/logic/summaryUpdater.js lines 18-22 (Summary.findOneAndUpdate with upsert to maintain _id: 'network_summary') and app/index.js uses handleHeartbeat on change events.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Computes a network availability metric (e.g. the share of ATMs currently online, kept on the summary document) and uses it for the alert check.",
+      "status": "met",
+      "evidence": "app/logic/summaryUpdater.js lines 15-16 compute availability = counts.online / total and lines 18-22 write availability into the summary document.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Triggers an alert when the computed availability drops below the threshold (e.g. writes an alert document or logs an alert for the operations team).",
+      "status": "met",
+      "evidence": "app/logic/summaryUpdater.js lines 24-26: if (availability < threshold) { await Alert.create({ availability, threshold, reason: 'availability_below_threshold' }); }",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The availability threshold is configurable (e.g. via an environment variable), and the alert check uses the configured value.",
+      "status": "met",
+      "evidence": "app/index.js line 11 reads AVAILABILITY_THRESHOLD (or ALTERNATES) into THRESHOLD; app/seed.js line 9 reads AVAILABILITY_THRESHOLD for seeding logic.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/db.js lines 5-11 read process.env.DOCUMENTDB_URI and error out if unset; app/.env.example line 2 shows a placeholder connection string.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI, DATABASE_NAME and AVAILABILITY_THRESHOLD (app/.env.example lines 2-4) and a commented local example; however the app also uses SEED_ATMS (app/seed.js line 8) and PORT (app/index.js line 10) which are not present as placeholders.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add PORT and SEED_ATMS (and any other env variables used) to .env.example with placeholder values and short comments."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not implement any vector embeddings or vector indexes.",
+      "cause": "could_not_determine",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index usage in this sample.",
+      "cause": "could_not_determine",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/db.js implements a connect() that tracks `connected` and returns mongoose.connection; app/index.js calls await connect() once at startup (app/db.js lines 13-23, app/index.js line 14).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/seed.js creates deterministic ATM IDs and calls handleHeartbeat per ATM and syncIndexes on models (seed.js lines 15-31). However Heartbeat.create is used inside the loop (seed.js line 22), which will insert duplicate heartbeat documents on repeated runs; the AtmStatus upsert prevents duplicate per-ATM status docs but the heartbeat documents themselves are duplicated.",
+      "cause": "builder_error",
+      "smallest_fix": "Make the seed idempotent for heartbeat documents: either upsert a seeded heartbeat by a deterministic key (e.g., use an explicit _id or add a 'seedId' and upsert on { seedId }) or avoid inserting heartbeat docs during seeding and only upsert AtmStatus entries."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "This sample does not implement a /search endpoint.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search functionality implemented.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "not_met",
+      "evidence": "The Node sample uses package.json with caret ranges (e.g., \"mongoose\": \"^7.8.2\" in app/package.json lines 15-19) and no committed package-lock.json in the repository. The build also failed on npm install due to a registry/version problem (events.jsonl shows npm ETARGET for supertest).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Commit package-lock.json (or pin exact versions in package.json) and ensure devDependencies resolve in the target CI environment; remove unavailable ranges or choose versions known to exist in the registry used by your CI."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/test/heartbeat.test.js uses mongodb-memory-server to run tests in-memory (test/heartbeat.test.js lines 14-16) and the test imports in-repo logic that uses mongoose.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository has no IaC files (no Bicep/ARM/Terraform) and the builder chose to use the pre-provisioned cluster (decisions.jsonl D004).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small IaC example (Bicep or Terraform) that declares Microsoft.DocumentDB/mongoClusters (the vCore mongoClusters resource) as an optional convenience for users who want to provision a cluster for the sample."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes 'what this sample demonstrates', Prerequisites, Quick start, Seed and verification and Cleanup instructions (README.md lines 1-23 and 32-33).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README and .env.example and package.json refer to 'Azure DocumentDB' and 'DocumentDB' (README.md line 1, .env.example line 2). No references to Amazon DocumentDB or 'Cosmos DB for MongoDB (RU)' appear in repo files.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env and secrets",
+      "practice": "Read the cluster connection string from an environment variable at runtime and never commit credentials to source control; provide an example .env with placeholders only.",
+      "category": "auth",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples",
+      "status": "followed",
+      "evidence": "app/db.js lines 5-11 read process.env.DOCUMENTDB_URI and exit if unset; app/.env.example contains placeholder DOCUMENTDB_URI (app/.env.example lines 2-4).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Require TLS on all MongoDB connections to Azure DocumentDB and do not disable certificate verification in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples",
+      "status": "followed",
+      "evidence": ".env.example includes tls=true in its example connection string (app/.env.example line 2), and the app reads connection string from env so TLS is enforced by the provided connection URI.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection reuse",
+      "practice": "Create and reuse a single MongoClient/Mongoose connection (singleton) and tune pool options for your deployment scenario rather than creating new clients per request.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/db.js implements a connect() that only connects once and returns mongoose.connection (app/db.js lines 13-23); index.js calls connect() at startup (index.js line 14).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change-stream resume token",
+      "practice": "Persist change-stream resume tokens durably (e.g., in a small collection or durable store) so streams can be resumed after restarts or transient errors.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream",
+      "status": "violated",
+      "evidence": "app/index.js opens a change stream (index.js lines 36-45) but does not persist resume tokens or use resumeAfter; no code writes the change._id token to durable storage.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Persist the change stream resume token after processing each batch/event (e.g., in a small resume_tokens collection) and use it with watch({ resumeAfter: savedToken }) when reconnecting; add code to save change._id after a successful handleHeartbeat.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Heartbeat shape",
+      "practice": "Keep heartbeat documents small and split or store large attachments outside the database (for example, Azure Blob Storage) to avoid reaching the 16 MB BSON document limit and to reduce RU spikes.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "app/models/heartbeat.js defines a compact schema: { atmId, timestamp, status, cashLevel, meta } and explicit indexes (models/heartbeat.js lines 3-9 and 11-12).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index shapes",
+      "practice": "Create indexes that match read/query patterns—use a compound index following the ESR rule (Equality → Sort → Range) such as { atmId: 1, timestamp: -1 } for latest-heartbeat queries and a single-field index on status for fast aggregations.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/models/heartbeat.js declares HeartbeatSchema.index({ atmId: 1, timestamp: -1 }) and index({ status: 1 }) (models/heartbeat.js lines 11-12); AtmStatus has a unique index on atmId (models/atmStatus.js line 9).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Atomic summary update",
+      "practice": "Maintain a single network summary document per scope and update it with atomic single-document operations (upsert / $inc / $set) rather than recomputing the whole summary on every change to reduce RU cost and race windows.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "app/logic/summaryUpdater.js recomputes counts via AtmStatus.aggregate and then overwrites the summary document with findOneAndUpdate($set) (logic/summaryUpdater.js lines 6-22) rather than performing lightweight atomic deltas ($inc) on the summary per change.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Change handleHeartbeat to compute the delta (compare previous AtmStatus to new) and update the summary using a single-document atomic update (e.g., use $inc/$set in Summary.updateOne with upsert) rather than recomputing the whole summary each time to reduce RU usage and race windows.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid transactions",
+      "practice": "Avoid multi-document or cross-partition transactions for high-throughput heartbeat ingestion; prefer single-document atomic updates or idempotent upserts and only use transactions when necessary and within documented limits.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb",
+      "status": "followed",
+      "evidence": "The app uses single-document upserts for AtmStatus (AtmStatus.findOneAndUpdate with upsert in logic/summaryUpdater.js lines 31-37) and does not use multi-document transactions for heartbeat ingestion.",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL / retention",
+      "practice": "Use a TTL index on a Date field to expire old heartbeat documents (or run a controlled background prune job) and understand TTL semantics (date field required, ~60s sweeper granularity, single-field only).",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The repo defines timestamp indexes (models/heartbeat.js line 5) but does not create a TTL index (no expireAfterSeconds options). The sample currently does not implement TTL.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Add a TTL index if desired (e.g., HeartbeatSchema.index({ timestamp: 1 }, { expireAfterSeconds: <secs> })) and document the trade-offs in README.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "RU monitoring",
+      "practice": "Monitor request-unit (RU) consumption and index usage and provision sufficient throughput or enable autoscale to handle ingestion spikes from many frequent heartbeats.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/autoscale",
+      "status": "not_applicable",
+      "evidence": "The sample does not include RU monitoring instrumentation or autoscale guidance in README; no monitoring code is present.",
+      "source": "Autoscale for Azure DocumentDB",
+      "searched": "",
+      "fix": "Add a README section describing RU monitoring and suggest enabling autoscale or provisioning appropriate compute tier for ingestion spikes.",
+      "sources": [
+        {
+          "title": "Autoscale for Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/autoscale"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries/backoff",
+      "practice": "Implement exponential backoff with jitter for client retries on transient network/429/5xx errors and leverage driver-level retry settings where supported, limiting attempts to avoid thundering retries.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "No retry/backoff logic is implemented in db.js or summaryUpdater.js; mongoose.connect uses no explicit retry wrapper and handleHeartbeat does not retry transient failures.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add retry/backoff for idempotent operations and consider driver-level options; implement exponential backoff with jitter for operations that may fail transiently (or use a small retry wrapper around Heartbeat.create/AtmStatus.findOneAndUpdate).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change-stream server-side filtering",
+      "practice": "When using change streams, apply a server-side aggregation pipeline ($match) to filter events you don't need so you reduce event volume and associated costs.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams",
+      "status": "violated",
+      "evidence": "index.js opens the change stream with an empty pipeline (heartbeatColl.watch([], { fullDocument: 'updateLookup' }) in index.js line 39) and receives all heartbeat change events without server-side filtering.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Pass a server-side pipeline to watch(), e.g. heartbeatColl.watch([{ $match: { 'fullDocument.status': { $in: ['offline','low_cash'] } } }], { fullDocument: 'updateLookup' }) to reduce event volume.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Alert deduplication",
+      "practice": "Persist alert state (active alerts, lastTriggeredAt) in the database and make alert writes idempotent or deduplicated (use uniqueness constraints or transactional patterns) to avoid duplicate notifications from flapping events.",
+      "category": "alerting",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/architecture/patterns/idempotent-consumer#solution",
+      "status": "violated",
+      "evidence": "app/logic/summaryUpdater.js creates a new Alert document each time availability < threshold (lines 24-26) with no deduplication, active alert state, or lastTriggeredAt logic.",
+      "source": "Idempotent Consumer pattern",
+      "searched": "",
+      "fix": "Make alert writes idempotent: upsert or use a unique key for an active alert (e.g., { reason: 'availability_below_threshold', active: true }) and update lastTriggeredAt instead of inserting duplicates; or use a conditional update to create an alert only when it isn't already active.",
+      "sources": [
+        {
+          "title": "Idempotent Consumer pattern",
+          "url": "https://learn.microsoft.com/azure/architecture/patterns/idempotent-consumer#solution"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "readPreference/readConcern",
+      "practice": "Prefer explicit, documented guidance for readPreference/readConcern only when the service documents their mapping for the MongoDB driver; do not assume MongoDB defaults map identically without checking Azure DocumentDB compatibility docs.",
+      "category": "query",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P14",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The app does not set readPreference/readConcern explicitly; it uses default Mongoose/driver settings (no explicit reads configured in db.js). No Azure DocumentDB public mapping page was found by the prior-discovery agent.",
+      "source": "prior_knowledge",
+      "searched": "Azure DocumentDB readPreference readConcern (no definitive mapping page found in earlier discovery).",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short Learn page stating the recommended readPreference/readConcern mapping for DocumentDB clusters (e.g., recommended readConcern for correctness of status summaries) would let agents choose defaults safely."
+    },
+    {
+      "topic": "Per-ATM state collection",
+      "practice": "Model per-ATM current state in a dedicated collection with a unique index on atmId for cheap lookups and fast updates rather than scanning heartbeat history.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "app/models/atmStatus.js defines a schema with atmId required and unique and creates a unique index (models/atmStatus.js lines 3-9); handleHeartbeat upserts AtmStatus (logic/summaryUpdater.js lines 31-37).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Mongoose schema design",
+      "practice": "When using Mongoose, declare strict schemas, explicit indexes, and avoid heavy middleware on the hot insert path; rely on lightweight validation and explicit indexes for performance-sensitive workloads.",
+      "category": "development",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb",
+      "status": "followed",
+      "evidence": "Models declare explicit fields and indexes (e.g., HeartbeatSchema fields and indexes in app/models/heartbeat.js lines 3-12). No heavy Mongoose middleware is present in the codebase.",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Do not log credentials",
+      "practice": "Do not log the full DOCUMENTDB_URI or any credentials; redact connection strings and only log non-sensitive diagnostics, error codes and connection status.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples",
+      "status": "followed",
+      "evidence": "The code reads DOCUMENTDB_URI from environment and does not print it anywhere; error handlers log error objects but do not explicitly log the URI. app/db.js checks for URI and exits if missing (app/db.js lines 5-11); .env.example uses a placeholder (app/.env.example line 2).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Network restriction",
+      "practice": "Restrict network access with Private Endpoints / Private Link or firewall rules and avoid exposing clusters to the public internet where possible.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample is an application and does not provision network settings; README does not instruct enabling private endpoints or firewall rules for the sample cluster.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Add a README note recommending private endpoints or temporary firewall rules for developer IP addresses, and include minimal az CLI snippet to add/remove a firewall rule when needed.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change-stream limitations",
+      "practice": "Be aware of change stream limitations: multishard clusters affect resumability and ordering, and some multishard features require enabling a portal feature flag; design your change-stream usage accordingly.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams#limitations",
+      "status": "violated",
+      "evidence": "The app uses change streams but README and code do not mention the multishard change-stream caveat or any required feature flag; resume tokens are not persisted (index.js lines 36-45).",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Document the multishard caveat in README (enable 'Change streams for multishard clusters' in portal/CLI if needed) and implement durable resume-token persistence and handling.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams#limitations"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is consistent with the builder's later actions and the readiness report. The decision is procedural and supported by the run progressing; events.jsonl shows subsequent build actions."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Node.js + Express + Mongoose matches the prompt and the produced code (app/index.js, models using Mongoose). Evidence: decisions.jsonl entry D002 and created files in events.jsonl."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choosing to read DOCUMENTDB_URI from environment is implemented (app/db.js lines 5-11). The decision cites the readiness guidance and is reflected in the code."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Decision to use the pre-provisioned cluster and not provision resources aligns with run policy and the absence of IaC in the repository; events.jsonl logs D004 and no IaC files were created."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Maintaining per-ATM state in atm_statuses is implemented in models/atmStatus.js and logic/summaryUpdater.js. The decision used a model_default rationale; code demonstrates the chosen approach even though the model_default source was used."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Index choices were implemented in models/heartbeat.js (compound and status indexes) and atmStatus unique index (models/atmStatus.js line 9). Events.jsonl shows D006 being logged."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "The builder attempted npm install and encountered ETARGET errors for supertest; events.jsonl captures the npm error and the decision to downgrade to 6.4.3 (D007) and the overwrite of package.json to ^6.4.3. The trace supports the decision and the stated reason (registry/version problem)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "The decision to stop retrying npm install after two failures is consistent with the recorded npm errors in events.jsonl and the builder's subsequent actions (proceed to produce files without running npm-based verification)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "readPreference/readConcern mapping",
+      "what_was_missing": "Explicit public guidance mapping MongoDB readPreference/readConcern options to recommended settings for Azure DocumentDB clusters.",
+      "where_searched": "Searches for 'Azure DocumentDB readPreference readConcern' and discovered_practices (the earlier discovery noted no authoritative mapping page). I also used Microsoft Learn quickstarts and compatibility pages.",
+      "effect_on_this_build": "Agents and builders may not know which readConcern/readPreference to choose for correctness vs latency. The sample did not set explicit read preferences and left defaults unspecified.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short Learn page titled 'Recommended readPreference and readConcern for Azure DocumentDB (MongoDB-compatible)'. Sections: (1) recommended defaults for status/summary workloads; (2) guidance when to use primary/majority; (3) examples of mongoose.connect options and example code; (4) note about latency tradeoffs and compatibility matrix. Include examples for single-shard and multi-shard clusters.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness",
+      "what_was_missing": ".env.example did not list all env vars the sample reads (e.g., SEED_ATMS, PORT).",
+      "where_searched": "Inspected app/ files (seed.js, index.js) and .env.example in the repo.",
+      "effect_on_this_build": "Builders copying .env.example may miss configuring seed size or the port and will not see all configurable options documented in a template.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: 'Every sample must include a .env.example listing every environment variable read by the application code with placeholders and short descriptions.' Example content for this sample: DOCUMENTDB_URI, DATABASE_NAME, AVAILABILITY_THRESHOLD, SEED_ATMS, PORT, optional local gateway URI. Include a small script or rule that fails CI if a variable is used in code but missing in .env.example.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Seed script idempotency for heartbeats",
+      "what_was_missing": "Guidance and a template for making seed scripts idempotent (avoid inserting duplicate sample records on repeated runs).",
+      "where_searched": "Inspected seed.js and documentdb-local-deployment skill resources. No dedicated seed-idempotency template was present.",
+      "effect_on_this_build": "The seed claims idempotency in README but inserts duplicate heartbeat documents when run multiple times; this could confuse users and tests that assume a stable dataset.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short sample-seed pattern page showing idempotent seeding approaches: use deterministic _id or a seedId, upsert semantics for sample documents, or explicit 'seedVersion' fields to detect already-applied seed runs. Include a small seed helper library for agent kit sample templates.",
+      "priority": "high"
+    },
+    {
+      "topic": "Pinning dependencies and reproducible installs",
+      "what_was_missing": "Agent guidance / rule that samples must commit lockfiles or pin exact dependency versions to avoid registry mismatch failures in CI.",
+      "where_searched": "Inspected package.json and build events (npm install failures). No specific agent-kit rule enforced pinned dependencies for Node samples.",
+      "effect_on_this_build": "npm install failed twice in this run due to an unavailable dev dependency version; build could not run seed/start/tests. This blocks verification in CI-like environments.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: 'Node samples must check in package-lock.json or pin exact package versions in package.json for sample releases; CI should run npm ci against committed lockfile.' Provide a short doc explaining when to use ^ ranges vs exact versions for samples.",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC snippet for Microsoft.DocumentDB/mongoClusters",
+      "what_was_missing": "A minimal Bicep/Terraform example that shows how to declare the vCore mongoClusters resource (Microsoft.DocumentDB/mongoClusters) for builders who want to supply IaC.",
+      "where_searched": "Microsoft Learn templates for mongoClusters were found in readiness work but the sample repo contains no IaC.",
+      "effect_on_this_build": "Builders who expect a sample to include optional provisioning code must create it themselves; missing IaC increases manual steps to reproduce the environment.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short Bicep file snippet and a one-file Terraform/AzAPI example that creates a small M10/M30 mongoCluster with parameters for tier, storage, and firewall. Include comments that emphasize correct resource type (Microsoft.DocumentDB/mongoClusters) and warn not to use legacy databaseAccounts resource for vCore clusters.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Change-stream resume tokens and multishard note",
+      "what_was_missing": "Prominent README guidance about storing resume tokens and enabling multishard change-stream feature if needed.",
+      "where_searched": "README and code (no mention), Microsoft Learn change-streams docs were found but not surfaced in the sample README.",
+      "effect_on_this_build": "Sample uses change streams but does not persist resume tokens nor document the multishard caveat; this could cause event loss on restarts or confusion on multishard clusters.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a README section 'Change streams and resiliency' summarizing: (1) how to persist resume tokens (store change._id after processing), (2) example code snippet, (3) the multishard feature flag requirement and how to enable it in the portal/CLI, (4) retention considerations.",
+      "priority": "high"
+    },
+    {
+      "topic": "Decision guidance discoverability (atm_status pattern)",
+      "what_was_missing": "The builder used a model_default rationale to keep per-ATM state; data-modeling guidance would cover this but must be discoverable to agents at decision time.",
+      "where_searched": "documentdb-data-modeling skill exists but was loaded after the decision in this run.",
+      "effect_on_this_build": "A decision made from model_default carries risk if the agent did not find the explicit data-modeling guidance before choosing. The code implemented the pattern, but agents should find authoritative guidance earlier.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Make 'per-entity current-state' guidance more prominent in the agent-kit index and include a short checklist item 'Use per-entity state collection with unique id' in sample templates so agents will find it before making decisions.",
+      "priority": "low"
+    }
+  ]
+}
