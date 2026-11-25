@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex RAG pipeline that ingests earnings call PDF transcripts, chunks and embeds them, stores the vectors in DocumentDB, and answers analyst questions by retrieving the top relevant chunks. Use context engineering to fit retrieved passages within the LLM context window and cite the source transcript and timestamp in each answer.
