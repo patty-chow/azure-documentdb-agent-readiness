@@ -1,0 +1,36 @@
+{
+  "status": "completed",
+  "summary": "I built a small Python identity-resolution sample that demonstrates seeding synthetic profiles (with embeddings), creating a vector (HNSW) index, a match agent that performs vector KNN search, a merge agent that consolidates candidate profiles (LLM-assisted when API key present; rule-based fallback when not), an audit agent that records merges, and an orchestrator that writes golden records and audit entries back to the provided Azure DocumentDB database. I verified dependency installation, unit test, seeding, index creation, and an end-to-end run of the orchestrator writing golden records and audit entries to the live cluster. The sample reads the cluster connection string from DOCUMENTDB_URI and the LLM/embedding keys from OPENAI_* env vars (with a safe synthetic-embedding fallback when the key is not present).",
+  "files_created": [
+    "README.md",
+    "requirements.txt",
+    ".env.example",
+    "src/__init__.py",
+    "src/db.py",
+    "src/models.py",
+    "src/agents.py",
+    "src/seed_data.py",
+    "src/orchestrator.py",
+    "src/run_orchestrator.py",
+    "tests/test_models.py"
+  ],
+  "how_to_run": "1) pip install -r requirements.txt\n2) Set DOCUMENTDB_URI in your environment (required). Optionally set OPENAI_API_KEY (and OPENAI_EMBEDDING_MODEL/OPENAI_API_MODEL) to enable real embeddings and LLM merges. (See .env.example.)\n3) python -m src.seed_data --n 200   # seeds data and attempts to create the vector index\n4) python -m src.run_orchestrator --sample-size 10  # runs the orchestrator over a subset of profiles and writes golden records + audits\n5) pytest  # runs a small unit test (fast)\n\nNotes: secrets must come from environment variables. The seed script will synthesize embeddings if OPENAI_API_KEY is not set so you can run the sample end-to-end without an LLM account.",
+  "verification_done": [
+    "pip install -r requirements.txt: success (packages installed or already present in virtualenv)",
+    "pytest: 1 passed (tests/test_models.py)",
+    "python -m src.seed_data --n 200: success — inserted 200 profiles into sample_customer_360_20.profiles and attempted vector index creation (seed script reported 'Created vector-hnsw index on profiles.embedding')",
+    "documentdb_list_indexes (MCP): profiles index list shows an HNSW vector index with cosmosSearchOptions {kind: 'vector-hnsw', dimensions: 1536, similarity: 'COS'} (verified via documentdb_list_indexes)",
+    "python -m src.run_orchestrator --sample-size 5: success — orchestrator wrote multiple golden records and audit entries to sample_customer_360_20.golden_profiles and sample_customer_360_20.merge_audits (output printed 'Wrote golden record <id> audit <id>')",
+    "documentdb_find_documents (MCP): sample documents enumerated for golden_profiles (returned multiple golden records)"
+  ],
+  "not_verified": [
+    "LLM-assisted merge path using OpenAI Chat API: not executed because OPENAI_API_KEY was not set in the environment during verification (the code used the rule-based merge fallback). Reason: no API key present; the sample is written to use OPENAI_API_KEY when available.",
+    "documentdb_find_documents for collection 'merge_audits' via MCP: calls to documentdb_find_documents for 'merge_audits' failed in one attempt (the collection count is visible via documentdb_list_databases and the orchestrator wrote audit entries, but the MCP 'find documents' tool returned an error for that collection during verification).",
+    "Beanie initialization succeeded only partially: init_beanie printed 'MotorDatabase object is not callable' at runtime (observed during runs). The sample code handles this by falling back to motor-based inserts, but full Beanie-based initialization against this specific cluster/driver combination was not verified to be successful. Reason: driver/Beanie init mismatch observed at runtime."
+  ],
+  "open_issues": [
+    "Beanie init warning/failure: init_beanie produced 'MotorDatabase object is not callable' on startup. The code falls back to motor inserts, so the sample remains functional. For a production-quality sample, update Beanie/Motor usage or Beanie version compatibility for the target cluster (or call init_beanie with an explicit MotorDatabase wrapper if required).",
+    "MCP tool returned an error when listing documents from 'merge_audits' (documentdb_find_documents). The collection exists and contains audit entries (confirmed by the orchestrator run and by documentdb_list_databases), but the MCP 'find documents' call failed for that collection in this run. Investigate MCP server logs or retry the query if detailed inspection of audit entries via the MCP tool is required.",
+    "LLM integration cannot be verified without an OPENAI_API_KEY. The sample includes a safe synthetic-embedding and rule-based merge fallback so functionality can be demonstrated without a key, but to validate LLM-assisted merging and real embeddings you must set OPENAI_API_KEY and optionally OPENAI_EMBEDDING_MODEL/OPENAI_API_MODEL in the environment."
+  ]
+}

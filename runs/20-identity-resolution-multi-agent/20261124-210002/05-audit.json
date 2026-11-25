@@ -1,0 +1,532 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the multi-agent identity-resolution flow, seeds synthetic data, creates an HNSW vector index, and runs an end-to-end orchestrator that writes golden records and audit entries to the provided Azure DocumentDB database. Key functionality exists and unit tests that do not require a live cluster pass. Shortcomings: the builder did not use LangChain for the agents (LLM-assisted scoring and agent wrappers are absent), some operational best practices are omitted (connection options / TLS settings, retries/backoff, pinned dependencies, and explicit IaC for provisioning). The app hardcodes the embedding dimension (1536) without runtime verification that it matches a chosen embedding model, and README lacks clean-up and some guidance for index tuning. Many of these gaps were anticipated by the readiness review; some held up, others were mitigated by safe fallbacks (synthetic embeddings, motor fallback when Beanie init fails). See requirement_results, checks and doc_gaps below for details and recommended minimal fixes.",
+  "requirement_results": [
+    {
+      "requirement": "Customer profile documents, golden records and audit entries are defined as Beanie ODM document models in Python, and the sample's reads and writes against Azure DocumentDB go through those models.",
+      "status": "met",
+      "evidence": "app/src/models.py defines Profile, GoldenRecord, AuditEntry (class Profile: lines 19-30; class GoldenRecord: lines 31-37; class AuditEntry: lines 39-47). app/src/agents.py and app/src/orchestrator.py call init_db() and insert via Beanie when BEANIE_OK (agents.audit_agent: lines 100-109; agents.write_golden: lines 124-127).",
+      "cause": "none",
+      "smallest_fix": "None — models present and the code uses them where Beanie initialization succeeds. To make the sample robust, add compatibility notes or adjust Beanie init (see doc_gaps)."
+    },
+    {
+      "requirement": "A match agent built with LangChain retrieves candidate duplicate profiles from Azure DocumentDB through the Beanie models and uses an LLM call to score how similar each candidate is to the profile being resolved, returning the candidates together with their similarity scores.",
+      "status": "not_met",
+      "evidence": "app/src/agents.py: match_agent uses a direct Mongo aggregation with $search (lines 39-46) and a fallback brute-force cosine similarity (lines 51-61). There is no LangChain agent wrapper and no LLM call to re-score candidates in match_agent.",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap match logic in a LangChain agent or call an LLM (configurable via env var) to re-score/augment vector results; e.g. add a LangChain agent that accepts candidate docs and returns LLM-assisted similarity scores."
+    },
+    {
+      "requirement": "A merge agent built with LangChain takes the matched profiles and consolidates them into a single golden record (e.g. choosing or combining field values across the matched profiles).",
+      "status": "not_met",
+      "evidence": "app/src/agents.py: merge_agent implements a rule-based merge when OPENAI_API_KEY is absent (lines 66-77); when OPENAI_API_KEY present it calls openai.ChatCompletion directly (lines 79-96). There is no LangChain-based agent abstraction.",
+      "cause": "builder_error",
+      "smallest_fix": "Implement the merge agent as a LangChain agent (or a LangChain chain) that uses the LLM provider configured by env vars; keep the deterministic fallback but expose the LangChain wrapper for the LLM path."
+    },
+    {
+      "requirement": "An audit agent built with LangChain records every merge decision in Azure DocumentDB through a Beanie model, and each record carries the confidence score of the merge and the source documents (or references to them) that went into it.",
+      "status": "partly_met",
+      "evidence": "app/src/agents.py: audit_agent writes AuditEntry via Beanie when BEANIE_OK (lines 100-109) and falls back to motor insert (lines 111-117). AuditEntry includes confidence and source_docs fields (app/src/models.py: lines 39-46). The agent is not implemented using LangChain.",
+      "cause": "builder_error",
+      "smallest_fix": "Record audit entries exactly as now, but optionally expose audit_agent as a LangChain tool/agent or document why a LangChain wrapper isn't needed. Ensure audit entries avoid storing raw LLM keys or full request/response bodies."
+    },
+    {
+      "requirement": "An orchestrator coordinates the three agents for each identity resolution run, calling the match agent, handing its results to the merge agent, and then invoking the audit agent for the resulting merge decision.",
+      "status": "met",
+      "evidence": "app/src/orchestrator.py: resolve_one fetches candidates via match_agent (line 8), fetches full docs for auditing (lines 16-21), calls merge_agent (line 22), calls write_golden (line 23) and audit_agent (line 24), and prints written IDs (lines 32-33).",
+      "cause": "none",
+      "smallest_fix": "None."
+    },
+    {
+      "requirement": "The orchestrator writes the final golden record to Azure DocumentDB through the Beanie golden record model.",
+      "status": "met",
+      "evidence": "app/src/agents.py: write_golden inserts GoldenRecord via Beanie when BEANIE_OK (lines 124-127) and falls back to motor insert (lines 129-135). GoldenRecord model defined in app/src/models.py (lines 31-37).",
+      "cause": "none",
+      "smallest_fix": "None; consider handling duplicate golden-record writes via an idempotent upsert (see doc_gaps)."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example contains placeholder variables (lines 2-6). Code reads DOCUMENTDB_URI and OPENAI_* vars (app/src/db.py: lines 13-16; app/src/agents.py: lines 16-20; app/src/seed_data.py: lines 15-16). No secrets are committed.",
+      "cause": "none",
+      "smallest_fix": "None."
+    },
+    {
+      "requirement": ".env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example includes DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL, OPENAI_API_MODEL, DATABASE_NAME (file content).",
+      "cause": "none",
+      "smallest_fix": "None."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "app/src/seed_data.py sets EMBED_MODEL default to 'text-embedding-3-small' and DIM = 1536 (lines 15-16). The create-index call uses DIM to set dimensions (lines 71-76). However DIM is a hardcoded constant and the code does not verify at runtime that the chosen embedding model actually produces 1536-d vectors if the user overrides the embedding model env var.",
+      "cause": "builder_error",
+      "smallest_fix": "Either derive DIM from the chosen embedding model (if possible) or document in README and assert at startup that embedding vectors returned by the provider have the configured dimensionality; add a runtime check before index creation."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "app/src/seed_data.py creates an HNSW vector index with parameters (maxDegree:32, lBuild:50) (lines 70-76, 79-81). README mentions vector index (line 7) but does not provide guidance on tuning these parameters for larger datasets or cluster sizing.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a short 'Index tuning' section to README explaining the chosen HNSW params, when to switch to DiskANN, and how to change dimensions and lBuild/maxDegree for larger datasets (reference documentdb-vector-search guidance)."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py defines a module-global CLIENT and get_client() that instantiates AsyncIOMotorClient once and returns it (lines 7, 10-17).",
+      "cause": "none",
+      "smallest_fix": "None."
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/src/seed_data.py deletes all documents with coll.delete_many({}) and then inserts via insert_many (lines 62-65). The script attempts create_index and catches errors if the index already exists (lines 78-84).",
+      "cause": "none",
+      "smallest_fix": "If desired change 'delete_many' to an idempotent upsert behavior; but current behavior satisfies 'no duplication' for the sample's purpose."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample does not implement an HTTP /search endpoint or FastAPI route; there is no code path named '/search' to inspect.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If the sample should expose an HTTP search endpoint, add a FastAPI route that validates input and returns clear 400/500 errors when query is empty or embedding generation fails; include tests for those cases."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "app/src/agents.py: the aggregation projects 'score' via {$meta: 'searchScore'} (line 41) and the brute-force fallback computes 'score' (lines 56-59).",
+      "cause": "none",
+      "smallest_fix": "None."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "not_met",
+      "evidence": "app/requirements.txt uses minimum-version specifiers (e.g., 'beanie>=1.12.0', 'motor>=3.1.1') rather than pinned exact versions (lines 1-12).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Pin exact versions or provide a constraints.txt. Replace '>=' specs with '==' pins for a reproducible sample and CI (e.g., beanie==2.2.0)."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/test_models.py validates the Pydantic model (ProfileData) and runs without DB (test uses ProfileData and passed in the run: events show pytest exit code 0 for the test run).",
+      "cause": "none",
+      "smallest_fix": "None; tests already avoid requiring a live cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository contains no IaC files (no Bicep, ARM, Terraform) and events show the decision to use existing cluster (log D018).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small Bicep or Terraform snippet using Microsoft.DocumentDB/mongoClusters (or link to the portal CLI snippet) as an optional 'provisioning' artifact. Mark it optional in README and gate actual provisioning behind an operator/az CLI step."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md includes 'What it shows', 'Prerequisites', and Quickstart instructions (lines 3-21) but does not include explicit clean-up steps or index-tuning guidance (no 'clean-up' section).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a 'Clean-up' subsection to README with steps to delete created collections or use a provided helper script; add an 'Index tuning' note as recommended above."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and files reference 'Azure DocumentDB' (README line 1 and multiple locations).",
+      "cause": "none",
+      "smallest_fix": "None."
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Client reuse",
+      "practice": "Reuse a single MongoClient / AsyncIOMotorClient instance per process (create once at startup and share) to avoid ephemeral port exhaustion and reduce connection overhead.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/performance-tips#networking",
+      "status": "followed",
+      "evidence": "app/src/db.py: get_client() defines module-level CLIENT and creates AsyncIOMotorClient once (lines 7, 10-17).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Performance tips for Azure Cosmos DB and .NET SDK v2",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/performance-tips#networking"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection options",
+      "practice": "Configure client connection options for production (use TLS/mongodb+srv, set sensible max pool sizes and timeouts such as maxIdleTimeMS, and tune pool size to match app concurrency) to avoid connection/timeout problems.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials",
+      "status": "violated",
+      "evidence": "app/src/db.py: AsyncIOMotorClient(uri) is created with no explicit options or timeouts (line 16). No explicit TLS option enforcement code present.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "Pass recommended options to AsyncIOMotorClient (e.g., tls=True if needed, serverSelectionTimeoutMS, maxPoolSize) or parse them from DOCUMENTDB_URI; add a short connection-configuration helper and document expected options.",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Read connection string from env",
+      "practice": "Read the cluster connection string from an environment variable (e.g., DOCUMENTDB_URI) at runtime and do not commit credentials into source control.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/build-rag-applications#langchain-azure-documentdb-integration",
+      "status": "followed",
+      "evidence": "app/src/db.py reads DOCUMENTDB_URI from environment (lines 13-16); app/.env.example shows placeholder for DOCUMENTDB_URI.",
+      "source": "Use LangChain on Azure with Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use LangChain on Azure with Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/build-rag-applications#langchain-azure-documentdb-integration"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index creation",
+      "practice": "Create a vector index (choose HNSW, IVF, or DiskANN) on the embedding field before running KNN searches and set the index's algorithm-specific parameters appropriate for your recall/latency needs.",
+      "category": "vector search / indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index",
+      "status": "followed",
+      "evidence": "app/src/seed_data.py builds a vector-hnsw index spec and calls coll.create_index with cosmosSearch options (lines 68-81); events confirm index created with dimensions 1536 and similarity COS (builder_report verification).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index dimension consistency",
+      "practice": "Store embeddings as number[] (floating point arrays) with a fixed dimensionality and ensure the index 'dimensions' parameter matches that dimensionality; vectors must be number[] to be indexed.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index",
+      "status": "violated",
+      "evidence": "app/src/seed_data.py: DIM = 1536 and create index uses dimensions:DIM (lines 15-16, 71-73). However, the embedding model is configurable via OPENAI_EMBEDDING_MODEL and the code does not verify that outputs match DIM when the env var is changed.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "At startup compute or verify embedding dimensionality returned by the embedding provider (or require user to set both model and DIM in env). Add an assert before index creation and fail fast with clear instructions if mismatch detected.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Filter indexes for vector search",
+      "practice": "Create conventional single-field and compound indexes for fields used in equality/range filters and create filter indexes to be used with pre-filtering when performing vector searches.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/build-rag-applications#create-a-vector-index",
+      "status": "not_applicable",
+      "evidence": "The sample does not use pre-filter predicates in vector queries; match_agent issues a pure vector search (app/src/agents.py lines 39-43) and does not pass 'filter' into cosmosSearch.",
+      "source": "Use LangChain on Azure with Azure DocumentDB",
+      "searched": "",
+      "fix": "If prefiltering is required add filter index creation and include 'filter' in the cosmosSearch payload; document filter-field indexes in README.",
+      "sources": [
+        {
+          "title": "Use LangChain on Azure with Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/build-rag-applications#create-a-vector-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use $search/cosmosSearch operator",
+      "practice": "The vector search aggregation operator is $search with the cosmosSearch operator (use path, vector, k, efSearch, etc.), and you can project searchScore via {$meta: 'searchScore'} to retrieve similarity scores.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "app/src/agents.py constructs $search pipeline with cosmosSearch (line 40) and projects score via {'score': {'$meta': 'searchScore'}} (line 41).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent writes / upsert",
+      "practice": "Use upsert operations and idempotent update patterns (or transactions where supported) for write-heavy merge/upsert workflows to avoid duplicate or inconsistent golden records on retries.",
+      "category": "retries and idempotency",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples",
+      "status": "violated",
+      "evidence": "app/src/agents.py: write_golden performs insert (lines 124-127 and lines 129-135) and does not use upsert/replace semantics or a merge-operation id to make the operation idempotent.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "Use an upsert (replaceOne with upsert: true) keyed by a deterministic merge-id or check for an existing golden record marker before inserting, or use a unique constraint and handle duplicate-key errors to make merges idempotent.",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry/backoff",
+      "practice": "Implement exponential backoff with jitter for transient faults and retries, and only retry idempotent operations (or make non-idempotent workflows safe to retry).",
+      "category": "retries and error handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/well-architected/design-guides/handle-transient-faults#implementing-retries",
+      "status": "violated",
+      "evidence": "app code does not implement client-side retry/backoff logic; network/operation calls use default driver behavior (no explicit retry wrapper).",
+      "source": "Recommendations for handling transient faults",
+      "searched": "",
+      "fix": "Add a small retry wrapper for idempotent operations (or rely on driver's documented retry plus respect retry-after headers). For non-idempotent merges, add merge-status tracking to allow safe retries.",
+      "sources": [
+        {
+          "title": "Recommendations for handling transient faults",
+          "url": "https://learn.microsoft.com/azure/well-architected/design-guides/handle-transient-faults#implementing-retries"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Synthetic embeddings for dev",
+      "practice": "Seed scripts often create synthetic embeddings for local development when embedding services are unavailable and then create vector indexes via createIndexes (driver support permitting); verify index creation and wait for it to become available before running searches.",
+      "category": "developer ergonomics / seeding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/seed_data.py: generate_embeddings creates synthetic normalized vectors when OPENAI_API_KEY absent (lines 21-33). The seed script attempts to create index and catches driver errors (lines 78-84).",
+      "source": "local file seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README / src/seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid storing raw LLM artifacts in audit",
+      "practice": "Record minimal LLM-related artifacts in audit logs (confidence scores, digests, source doc references) and avoid storing raw API keys or full LLM request/response content in audit trails.",
+      "category": "security / privacy",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P31",
+      "source_url": "https://learn.microsoft.com/azure/architecture/best-practices/monitoring#auditing",
+      "status": "followed",
+      "evidence": "app/src/models.py: AuditEntry model stores confidence (float) and source_docs (list) (lines 39-46). The code does not store API keys. The merge_agent parses and stores merged JSON and confidence (agents.audit_agent and agents.merge_agent).",
+      "source": "Audit logging and monitoring overview (Azure guidance)",
+      "searched": "",
+      "fix": "When storing source_docs ensure sensitive fields are redacted if necessary.",
+      "sources": [
+        {
+          "title": "Audit logging and monitoring overview (Azure guidance)",
+          "url": "https://learn.microsoft.com/azure/architecture/best-practices/monitoring#auditing"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator approval recorded; no conflict with evidence."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Python 3.13 is supported by the readiness report and the build environment; events show Python 3.13 present."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choice of Motor + Beanie is consistent with the documentdb-driver guidance and the code; events show the documentdb-driver skill was loaded prior to implementing the Motor+Beanie stack."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "Embedding model text-embedding-3-small / dim=1536 is a reasonable default. The decision source is 'model_default' (no direct doc cited). Later the documentdb-vector-search skill (loaded in events) supports using 1536 for common OpenAI embeddings, so the choice is defensible but would be stronger if validated at runtime or explicitly documented."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "questionable",
+      "comment": "Choosing gpt-3.5-turbo is a pragmatic model_default. The code supports OPENAI_API_MODEL and will use the provided model, but the decision is recorded as model_default rather than being grounded to a public doc; that's acceptable for a sample but should be documented."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choice of vector-hnsw for a small sample is supported by the documentdb-vector-search skill (loaded in events) and is reflected in seed_data.py index creation."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Duplicate operator approval; consistent with earlier D001."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Choice of async Python with Motor+Beanie matches the product skill guidance and is implemented in the code."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "questionable",
+      "comment": "Restates embedding/index choices (model + dims + HNSW). Reason_source model_default, but the vector-search skill loaded later supports this mapping—decision is defensible though would benefit from an explicit source or runtime check."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "questionable",
+      "comment": "Choice to use OpenAI via OPENAI_API_KEY is a model_default. The repository implements this env var and a fallback, but the decision could be more explicit about alternatives (Azure OpenAI or other providers)."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Design choice to read DOCUMENTDB_URI from environment is implemented and visible in src/db.py."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Operator approval recorded again; consistent with prior approvals."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Reiterates the runtime stack choice; consistent with environment and code."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "questionable",
+      "comment": "Decision to use modern driver minimum versions is reflected in requirements.txt (>= pins). The decision was model_default; the sample would be more reproducible if exact pins were chosen."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Duplicate of reading DOCUMENTDB_URI from env; implemented in code."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Choice to implement synthetic-embedding fallback when OPENAI_API_KEY is absent is implemented and verified in seed_data.py and agents.compute_embedding."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Choice of vector-hnsw and dims/similarity matches the seed script and vector skill guidance; logged and implemented."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "sound",
+      "comment": "Decision to use the provided existing cluster is correct and consistent with prompt and run policy. No provisioning attempted."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "Collection names (profiles, golden_profiles, merge_audits) are implemented in models.py and used throughout the code; decision matches implementation."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Embedding model <-> index dimension mapping",
+      "what_was_missing": "A runtime check or authoritative README text that explicitly ties the chosen embedding model to the vector-index 'dimensions' value and fails fast if they differ.",
+      "where_searched": "README, seed_data.py, documentdb-vector-search skill resources (events show vector-create-diskann-index.md and vector-choose-index-type.md were loaded).",
+      "effect_on_this_build": "The sample hardcodes DIM=1536 and defaults the embedding model to text-embedding-3-small; this works for the default but would silently produce wrong index behavior if a user changed the embedding model to one with different dimensionality without also updating DIM. The sample created an index with dimensions=1536 (verified), so mismatch risk remains for users.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short README section 'Embedding model and index dimensions' with: 1) recommended default model (text-embedding-3-small) and its dimension (1536); 2) a code snippet showing how to assert embedding dimensionality at startup (call embedding once and assert len(vector)==DIM); 3) instructions to change DIM if using a different model.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index tuning and algorithm guidance",
+      "what_was_missing": "User-facing guidance in README showing when to pick HNSW vs DiskANN vs IVF and how to tune algorithm-specific parameters for larger datasets and cluster tiers.",
+      "where_searched": "README; vector-search skill resources were consulted in events but the README does not contain the guidance.",
+      "effect_on_this_build": "The sample picks reasonable defaults for a small dataset (HNSW) but does not tell a user how to scale or when to change algorithm and parameters. That can lead to poor production choices if copied without reading product docs.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add an 'Index tuning' subsection: describe HNSW recommended for small/medium dev sets, DiskANN for production M30+ large corpora, explain parameters (lBuild, maxDegree, efSearch), and link to the product vector-search doc with example createIndexes payloads and recommended cluster tiers.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Connection option recommendations (TLS, pool sizing, timeouts)",
+      "what_was_missing": "Explicit example and testable helper showing recommended client options (e.g., tls=true when needed, serverSelectionTimeoutMS, maxPoolSize) and how to provide them via env or config.",
+      "where_searched": "src/db.py (no options set), documentdb-connection and documentdb-driver skills in events.",
+      "effect_on_this_build": "Client is created without explicit options; while it works in many environments it may be non-optimal or insecure if DOCUMENTDB_URI lacks expected TLS flags or if pool sizes cause resource pressure at scale.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a small 'connection helper' in src/db.py that accepts and documents env settings like DB_MAX_POOL_SIZE, DB_SERVER_SELECTION_TIMEOUT_MS, and enforces tls=True unless explicitly disabled; include a one-line unit test verifying options are passed to AsyncIOMotorClient.",
+      "priority": "high"
+    },
+    {
+      "topic": "Retry/backoff for transient faults",
+      "what_was_missing": "A small retry helper or policy and guidance to retry only idempotent operations or use merge-status recording for non-idempotent workflows.",
+      "where_searched": "app code (no retry logic), documentdb retry/backoff guidance loaded in events (P14, P36).",
+      "effect_on_this_build": "No client-side retry/backoff is implemented; transient errors could cause partial merges or failures during seeding/merging in flaky networks.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Ship a retry utility with exponential backoff and jitter and a recommendation to use it only for idempotent ops; show sample usage for seeding and for read operations, and a pattern for making merge/upsert idempotent.",
+      "priority": "high"
+    },
+    {
+      "topic": "Pinned dependency guidance",
+      "what_was_missing": "A pinned requirements.txt or guidance about reproducible pins (lockfile / constraints) so samples are reproducible over time.",
+      "where_searched": "app/requirements.txt (uses >=), package install logs in events.",
+      "effect_on_this_build": "The build used floating minimum specifiers; this may cause different environments to install different versions in future runs, making CI and reproductions brittle.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Replace requirements.txt with pinned versions (requirements.lock) or add a section to README recommending exact pins and providing commands to freeze versions (pip freeze > constraints.txt) and how to use a constraints file in CI.",
+      "priority": "medium"
+    },
+    {
+      "topic": "IaC for provisioning (mongoClusters)",
+      "what_was_missing": "An example Bicep/Terraform snippet that demonstrates creating the correct Azure DocumentDB resource (Microsoft.DocumentDB/mongoClusters) and notes about cluster tier selection (M30 for vector workloads).",
+      "where_searched": "Repo (no IaC); readiness findings and CLI docs in events note the correct resource type.",
+      "effect_on_this_build": "No IaC included; the sample relies on the run environment's existing cluster. Users copying the sample may try to provision the wrong resource type (databaseAccounts) without clear guidance.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Add an optional 'provisioning' folder with a small Bicep or Terraform example using Microsoft.DocumentDB/mongoClusters and default parameters (tier=M30, low-cost region), plus an 'If you cannot provision, run against a provided cluster' note.",
+      "priority": "medium"
+    },
+    {
+      "topic": "README: clean-up and run matrix",
+      "what_was_missing": "Explicit clean-up instructions and a description of which tests run offline vs require live cluster resources (and how to run integration tests).",
+      "where_searched": "app/README.md (no clean-up); tests directory (unit tests present).",
+      "effect_on_this_build": "Users may not know how to remove created data or which tests require the live cluster. The builder ran seeding and orchestrator against a live cluster based on environment, but README doesn't document clean-up.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add README 'Clean-up' section with commands to drop the sample collections or a small script to delete seed data; add 'Testing' section clarifying unit tests are offline and integration tests require DOCUMENTDB_URI and how to run them.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Beanie initialization compatibility note",
+      "what_was_missing": "Guidance on Beanie/Motor compatibility quirks and a recommended version matrix or a 'if init_beanie fails' recipe.",
+      "where_searched": "events show init_beanie printed 'MotorDatabase object is not callable' during verification; src/db.py catches and falls back (lines 26-31).",
+      "effect_on_this_build": "During verification Beanie init produced a warning/error; the sample falls back to motor writes but lacks a documented troubleshooting step to fix Beanie init issues.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short troubleshooting subsection describing the error and recommended fixes: correct beanie/motor version matrix, how to pass the MotorDatabase instance to init_beanie, and a one-line example to run if init_beanie fails.",
+      "priority": "high"
+    }
+  ]
+}
