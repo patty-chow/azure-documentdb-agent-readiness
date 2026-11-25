@@ -1,0 +1,40 @@
+# 3. Build report: 02-transaction-categorization-agent
+
+**Status: partial**
+
+I implemented a Node.js (Express) sample that demonstrates a LangChain-backed transaction categorization agent for Azure DocumentDB. The repo includes a singleton MongoClient, an agent module that calls an OpenAI model via LangChain, an idempotent seed script that upserts sample transactions and creates the compound index {date:1, category:1}, an HTTP server exposing POST /run-categorization and GET /monthly-spend, and a README and .env.example. I installed Node dependencies successfully (npm install). I did not run the seeding or make live writes/reads against the cluster in this session, and I did not exercise the HTTP endpoints — those steps require the DOCUMENTDB_URI and OPENAI_API_KEY environment variables to be set on the machine where you run the sample. See verification and not-verified sections for details.
+
+## How to run
+
+1) Copy .env.example to .env and fill DOCUMENTDB_URI (your Azure DocumentDB connection string) and OPENAI_API_KEY (your OpenAI API key). 2) npm install 3) npm run seed    # seeds sample data and creates the index in database 'sample_fintech_02' 4) npm start       # starts Express server on PORT (default 3000) 5) POST /run-categorization to categorize uncategorized transactions, or run `npm run categorize` (CLI) 6) GET /monthly-spend to retrieve monthly per-category spend aggregation in JSON. Note: Never commit real secrets; keep them in the environment or a secret store.
+
+## Verified by running
+
+- npm install: succeeded (dependencies installed without errors)
+
+## Not verified
+
+- Seed script execution (scripts/seed.js) against the live cluster: not run here because running it requires DOCUMENTDB_URI in the environment on the runner. The seed script upserts sample transactions and creates index {date:1, category:1}.
+- Agent categorization run (POST /run-categorization or npm run categorize): not executed here because it requires both DOCUMENTDB_URI and OPENAI_API_KEY set and will call the LLM and write to the live cluster.
+- Aggregation endpoint verification (GET /monthly-spend) against the seeded data: not executed here.
+- DocumentDB MCP server checks (list databases, list indexes, run aggregation/explain) were not executed programmatically in this session; they should be used on your machine to verify the created collection, indexes, and explain plans (use connection_profile 'default' with available MCP tools).
+
+## Open issues
+
+- Environment variables must be provided before running the sample: DOCUMENTDB_URI (connection string) and OPENAI_API_KEY (or alternate LLM credentials if you adapt the code).
+- The sample uses LangChain + OpenAI. If you prefer Azure OpenAI or another provider, update src/agent.js and environment variables accordingly.
+- I logged several design decisions programmatically during the build (audit trail). A few decision-logging calls failed in this session due to transient invocation errors; refer to the file README and this BuildReport for the explicit choices.
+- Because Azure resource changes were disallowed in the run policy, I did not provision or modify Azure infrastructure. The sample expects the existing cluster referenced by DOCUMENTDB_URI.
+- You should run the seed script on a machine that has DOCUMENTDB_URI set and then run the categorization (endpoint or CLI). After that, use the MCP server tools or mongosh to verify indexes and aggregation results if desired.
+
+## Files
+
+- `package.json`
+- `src/db.js`
+- `src/agent.js`
+- `src/index.js`
+- `scripts/seed.js`
+- `scripts/run_categorization.js`
+- `.env.example`
+- `README.md`
+

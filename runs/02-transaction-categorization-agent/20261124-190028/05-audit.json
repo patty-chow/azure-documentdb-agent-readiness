@@ -1,0 +1,390 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "Documentation search tools were available for this run. The sample implements the core functionality requested (LangChain-backed categorization, writes back to Azure DocumentDB, and a server-side aggregation endpoint). Key reference requirements are met (singleton client, idempotent seed, aggregation pipeline, prompt + fixed taxonomy, env-var driven credentials, .env.example, README). Shortcomings: the implementation did not expose DocumentDB operations as LangChain Tools (the agent calls the LLM directly and the app calls the DB), dependencies are not strictly pinned in package.json (carets used though a package-lock exists), there are no tests that run without a live cluster, no infrastructure-as-code for the cluster is provided, and several gallery-quality items (unit tests, pinned deps, infra) are missing. See requirement_results, practice checks and documentation gaps below for details and minimal fixes.",
+  "requirement_results": [
+    {
+      "requirement": "A Node.js LangChain agent reads transactions that have not yet been categorised from Azure DocumentDB through a MongoDB-compatible Node.js driver (e.g. the `mongodb` package), selecting documents that carry no category.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 9-17 (MongoClient created) and app/src/index.js lines 24-33 (coll.find filter for category missing/null/empty).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The agent reaches Azure DocumentDB through LangChain tools (e.g. one tool that fetches uncategorised transactions and one that writes a category back), and the agent decides when to invoke them.",
+      "status": "partly_met",
+      "evidence": "app/src/agent.js defines the LLM call and prompt; app/src/index.js (POST /run-categorization) queries the DB and calls the agent; there is no LangChain Tool wrapper for DB operations.",
+      "cause": "builder_error",
+      "smallest_fix": "Implement DB access as LangChain Tools (e.g. fetch_uncategorized, write_category) and register them in the LangChain agent; or change the prompt requirement to accept direct DB calls."
+    },
+    {
+      "requirement": "The prompt is engineered to instruct the LLM to assign exactly one category from a fixed taxonomy: the taxonomy is defined in the application, listed in the prompt, and the LLM is told to choose only from it.",
+      "status": "met",
+      "evidence": "app/src/agent.js lines 3-12 (TAXONOMY array) and lines 24-29 (prompt text listing the taxonomy and instructing to choose ONE category).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The prompt includes each transaction's details (e.g. merchant name and amount) so the LLM reasons over them when choosing the category.",
+      "status": "met",
+      "evidence": "app/src/agent.js lines 28-29 include Merchant, Amount, Date fields in the prompt.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The category the LLM assigns is written back to the same transaction document in Azure DocumentDB (e.g. an update that sets a category field on that document).",
+      "status": "met",
+      "evidence": "app/src/index.js lines 31-33 (updateOne on _id sets category) and app/scripts/run_categorization.js lines 12-14 do the same in CLI mode.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "An HTTP endpoint returns the monthly spend breakdown by category.",
+      "status": "met",
+      "evidence": "app/src/index.js lines 8-21 implement GET /monthly-spend and return JSON of month + categories.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "That breakdown is computed by an aggregation pipeline run in Azure DocumentDB that groups transactions by month and by category and sums their amounts (e.g. `$group` on a month derived from the transaction date plus the category, with `$sum` of the amount).",
+      "status": "met",
+      "evidence": "app/src/index.js lines 12-19 define an aggregation pipeline using $dateToString to bucket by month and $group with $sum on amount.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI and OPENAI_API_KEY; app/src/db.js reads process.env.DOCUMENTDB_URI (lines 5-7); app/src/agent.js reads process.env.OPENAI_API_KEY (lines 14-18). No secrets are committed.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lines 2-4 contain placeholders for DOCUMENTDB_URI, OPENAI_API_KEY and PORT.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not use embeddings or create vector indexes (no embedding code or vector-index creation found).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you intend to use embeddings, add embedding creation + index creation steps and record the embedding model id/dimensions in .env.example or a config file."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index is created by the sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Only applicable if vectors are used. Provide a short section in README explaining index kinds (ivf/hnsw/diskann) and parameters to tune with data size."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 9-17 create a single MongoClient and clientPromise; app/src/index.js awaits clientPromise for requests.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.js lines 8-9 createIndex and lines 20-22 use updateOne with upsert: true for idempotent insertion.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample does not implement a /search endpoint.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add /search, validate input and return clear errors for empty queries and embedding failures; add tests demonstrating these cases."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search endpoint or embedding scoring is implemented.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding search, include similarity/score in the response and add unit tests."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "This Node.js sample has app/package-lock.json present (locks versions) but package.json uses caret (^) ranges for dependencies (app/package.json lines 14-19). There is no requirements.txt (Python) – the requirement appears generic.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Use exact versions in package.json or include a note to rely on package-lock.json; alternatively commit a lockfile-based policy in README (recommended minimal change: replace ^ ranges with exact versions or add 'npm ci' guidance)."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files or test framework found in repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests using a mock/memory MongoDB (e.g., mongodb-memory-server or mocking the mongodb client) and a simple test runner (Jest), plus CI instructions in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Terraform/Bicep/ARM templates in the repo; README instructs using an existing cluster.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal Bicep or Terraform example that targets Microsoft.DocumentDB/mongoClusters and documents default tier/storage params (marked for sample use only)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains Overview, What it shows, Prerequisites, Setup, Usage and Cleanup sections (lines 3-33).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md title and text refer to 'Azure DocumentDB'; env var names use DOCUMENTDB_URI; no other product names are used in top-level files.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create a single MongoClient and reuse it as a process-wide singleton; initialize/connect once and do not create a client per request.",
+      "category": "connection-handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 9-17 create a single MongoClient and clientPromise used across the app.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Partial index for uncategorized",
+      "practice": "Use partial indexes (partialFilterExpression) to index only the subset of documents your query filters on to reduce index size and write cost (e.g., index only documents where category does not exist).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "app/scripts/seed.js line 9 creates index { date: 1, category: 1 } but no partial index on category:{ $exists:false } is created.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Create a partial index for categorization scans, e.g. coll.createIndex({ date:1, category:1 }, { partialFilterExpression: { category: { $exists: false } } }) in the seed script.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index for aggregation",
+      "practice": "Create a compound index on { date: 1, category: 1 } to accelerate monthly-spend aggregations grouped by month and category.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/seed.js lines 8-9 create index { date: 1, category: 1 }.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregation pipelines",
+      "practice": "Use server-side aggregation pipelines for rollups (e.g., $group with $dateToString or $dateTrunc to bucket by month) so the grouping runs in the database.",
+      "category": "queries-and-aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/index.js lines 12-19 define an aggregation pipeline using $dateToString and $group and executes coll.aggregate(...).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent seed scripts",
+      "practice": "Seed scripts should be idempotent (use upsert or conditional writes) and not run automatically in production; keep them versioned.",
+      "category": "provisioning-and-seeding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/seed.js lines 20-22 use updateOne with upsert:true for each sample row.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent categorization updates",
+      "practice": "Make categorization updates idempotent by using conditional updates (e.g. filter { _id:..., category: { $exists: false } } and $set the category), avoiding blind re-writes so multiple runs won't overwrite audited labels.",
+      "category": "data-consistency",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P39",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/index.js lines 30-33 and app/scripts/run_categorization.js lines 11-14 call updateOne({ _id: doc._id }, { $set: { category } }) without a conditional filter to ensure category doesn't already exist. The code fetches only uncategorized docs in the query, but the update itself is blind and would overwrite if concurrency or race conditions occur.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Use a conditional update filter to make updates atomic and idempotent, e.g. coll.updateOne({ _id: doc._id, category: { $exists: false } }, { $set: { category } }).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prompt taxonomy validation",
+      "practice": "Include a fixed taxonomy in the prompt and validate that the model's output strictly matches one of the taxonomy values before writing to the DB.",
+      "category": "llm-integration",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P52",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.js lists TAXONOMY (lines 3-12) and after llm.call applies normalization & exact match rules (lines 33-40) to map the model output to a taxonomy value or fallback to 'Other'.",
+      "source": "prior_knowledge",
+      "searched": "searches for explicit Azure guidance on taxonomy enforcement returned no authoritative doc (see discovered practices searches).",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short example in the documentdb-natural-language-querying skill or sample README showing output-validation patterns (exact-match and fallback) would let an agent confirm this as a recommended practice."
+    },
+    {
+      "topic": "Protect PII before LLM",
+      "practice": "Protect PII before sending text to an external LLM: redact or hash personally-identifying fields (account numbers, full names) in the prompt or obtain explicit consent and document the data sent to the model.",
+      "category": "privacy-llm-security",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P48",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The app includes merchant, amount and date in the prompt but does not redact any fields; there is no audit collection or PII-redaction code present.",
+      "source": "prior_knowledge",
+      "searched": "searches for 'DocumentDB redact PII before LLM' returned no concrete Azure-specific guidance in the installed skills.",
+      "fix": "Add explicit redaction or consent guidance and an optional redaction step in the agent before calling the LLM (e.g., redact account numbers); record original/redacted mapping in an audit log if needed.",
+      "sources": [],
+      "what_would_help": "A small doc in the agent kit stating which fields to redact for fintech samples and a code example of canonical redaction patterns."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Decision D001 ('approved the build with readiness \"ready_with_gaps\"') is an operator decision. The builder_report and README describe remaining gaps; marking it sound."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "D002 chose Node.js v24 with Express and LangChain JS. This matches the prompt and the implementation (app/src/index.js uses Express; langchain is a dependency in package.json). Events.jsonl shows documentdb-driver skill loads during build."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "D003 selected the official mongodb driver at 5.x. package.json lists 'mongodb': '^5.9.0', which matches the decision. events.jsonl shows the documentdb-driver skill being loaded during build, supporting the choice."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "D004 chose OpenAI and OPENAI_API_KEY as the provider/env var (reason_source: model_default). A .env.example includes OPENAI_API_KEY so the implementation aligns with the decision, but the choice was made by model default rather than an explicit prompt or documented policy. If the team expects Azure OpenAI as default, this decision should be made explicit in guidance or the sample should support multiple providers."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "D005 chose a compound index { date: 1, category: 1 }. The seed script (app/scripts/seed.js) creates that index. events.jsonl shows documentdb-indexing skill was loaded. Decision aligns with code and indexing guidance."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Fixed taxonomy contents",
+      "what_was_missing": "No authoritative or recommended taxonomy for transaction categories is documented in the public kit or skills; the sample author chose a taxonomy in code.",
+      "where_searched": "Starter prompt, documentdb-* skills loaded (documentdb-natural-language-querying referenced), and quicksearches listed in discovered_practices (no useful public taxonomy found).",
+      "effect_on_this_build": "The builder picked a reasonable taxonomy (Food, Travel, Utilities, Entertainment, Income, Healthcare, Shopping, Other). This is acceptable for the sample, but other builders may pick inconsistent taxonomies and agents cannot confirm a canonical set.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page 'Suggested taxonomies for transaction categorization' listing recommended taxonomies for common samples (Personal finance: Food, Travel, Utilities, Entertainment, Income, Healthcare, Shopping, Other; Business expense: Travel, Meals, Office, SaaS, Payroll, Refunds). Include a paragraph on choosing granularity and an example JSON snippet to copy into sample code.",
+      "priority": "medium"
+    },
+    {
+      "topic": "LLM provider env vars and selection",
+      "what_was_missing": "No canonical guidance in the skills on which LLM provider or env var names the agent-kit expects for samples (OpenAI vs Azure OpenAI vs Anthropic).",
+      "where_searched": "documentdb skills, prompt and readiness artifacts; .env.example exists in repo but this is sample-local, not a kit-level rule.",
+      "effect_on_this_build": "The builder defaulted to OpenAI (OPENAI_API_KEY). This is reasonable but inconsistent choices across samples will confuse users and agents when trying to auto-run or verify samples.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "An agent-kit rule: 'When building LangChain JS samples, prefer provider X by default; declare required env vars in .env.example with canonical names (OPENAI_API_KEY for OpenAI, AZURE_OPENAI_KEY for Azure OpenAI). Provide a short code snippet demonstrating how to switch providers.'",
+      "priority": "high"
+    },
+    {
+      "topic": "Seed data schema & canonical sample rows",
+      "what_was_missing": "No central example of the canonical transaction document schema (field names, currency, amount format, date field name) in kit docs.",
+      "where_searched": "prompt, README, documentdb-data-modeling skill and discovered_practices searches.",
+      "effect_on_this_build": "Builder picked a workable schema (transactionId, merchant, amount, date, category) and the seed script uses those fields; mismatch risks arise if a verifier or another sample expects a different date field name (e.g., transactionDate vs date).",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a small 'sample-data.md' showing the document shape and a JSON example of canonical seed rows, plus a seed script template that other samples can reuse.",
+      "priority": "high"
+    },
+    {
+      "topic": "Unit tests that run without cloud",
+      "what_was_missing": "No tests or guidance on creating tests that mock Azure DocumentDB (mongodb-memory-server or driver mocks).",
+      "where_searched": "repo, documentdb-local-deployment skill, and discovered_practices searches.",
+      "effect_on_this_build": "The sample ships without tests; that reduces confidence and prevents CI validation in gallery pipelines that cannot hit the live cluster.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a 'tests' folder with example jest tests using mongodb-memory-server (or driver-mocking) to verify seeding, prompt-to-model mapping (mock LLM), and aggregation pipeline formatting. Include CI snippet to run tests with no cloud access.",
+      "priority": "high"
+    },
+    {
+      "topic": "Dependency pinning policy",
+      "what_was_missing": "No kit-level guidance enforcing pinned dependencies or an explicit policy noting that package-lock.json is required for reproducible builds.",
+      "where_searched": "repo package.json and skills documentation.",
+      "effect_on_this_build": "package.json uses caret ranges (^) though a package-lock.json is present. Different builders may check in/out different lockfile policy causing inconsistent installs.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "A short rule: 'All gallery Node samples must include package-lock.json and either use exact versions in package.json or document the lockfile policy. CI should run npm ci to ensure deterministic installs.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Infrastructure-as-code sample for mongoClusters",
+      "what_was_missing": "No example Bicep/ARM/Terraform for Microsoft.DocumentDB/mongoClusters provided in the sample repository or kit-level quickstarts.",
+      "where_searched": "repository and documentdb-azure-deployment skill docs.",
+      "effect_on_this_build": "Builder correctly used existing cluster per run policy; a future builder expecting infra-as-code would have to author templates from scratch and might mistakenly target the wrong resource type (databaseAccounts vs mongoClusters).",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Ship a small Bicep and Terraform example that creates a minimal Microsoft.DocumentDB/mongoClusters resource with paramized tier/storage/region and guidance to use environment secrets (Key Vault) for credentials. Include notes to avoid confusing 'databaseAccounts' templates.",
+      "priority": "medium"
+    },
+    {
+      "topic": "PII / LLM data-handling guidance for samples",
+      "what_was_missing": "No explicit sample-level guideline on redacting PII before sending transaction text to external LLMs in the agent kit.",
+      "where_searched": "documentdb skills and the repository; searches for 'redact PII LLM DocumentDB' returned no authoritative guidance in the kit.",
+      "effect_on_this_build": "The sample includes merchant/account text in prompts without redaction. For many datasets this is fine; for others (full names, account numbers) the absence of guidance could lead to accidental leakage.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A 'privacy when using LLMs' page describing recommended redactions for fintech samples, code snippets to perform canonical redactions, and an example audit log pattern to record prompt inputs (or their checksums).",
+      "priority": "high"
+    }
+  ]
+}
