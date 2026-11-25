@@ -1,0 +1,525 @@
+{
+  "verdict": "fail",
+  "summary": "The builder prepared a design and recorded decisions but did not create any code or sample files in the workspace. Every runtime requirement that demands code (the LlamaIndex pipeline, seed script, index creation, API endpoints, requirements.txt, .env.example, tests, README, etc.) is missing. Many domain best-practices were available in installed skills and Microsoft docs (vector index creation, singleton MongoClient, TLS, token-aware chunking, top-k retrieval), but the builder did not implement them. The run therefore cannot be executed or verified; the sample is not publishable until the files and idempotent ingestion / index-creation steps are implemented and tested. See requirement-by-requirement results, practice checks, decision reviews and documentation gaps below.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the chatbot in Python with LlamaIndex as a single RAG pipeline, using a LlamaIndex vector store backed by an Azure DocumentDB collection through a MongoDB-compatible Python driver (e.g. pymongo).",
+      "status": "not_met",
+      "evidence": "Build report (03-build.md) states: \"I did not create files, write code, or run ingestion/verification steps...\" (lines 5, 53). No Python source files present in workspace.",
+      "cause": "builder_error",
+      "smallest_fix": "Create the Python project files (e.g., src/app.py using FastAPI, src/run_query.py) implementing a LlamaIndex RAG pipeline and a DocumentDB-backed LlamaIndex vector store."
+    },
+    {
+      "requirement": "Index product descriptions, specs, and reviews: split them into chunks with LlamaIndex, embed each chunk, and store the chunk text and its embedding together on each document in Azure DocumentDB.",
+      "status": "not_met",
+      "evidence": "No seed script or ingestion code in workspace; build report notes 'seed scripts... were not created or run' (03-build.md line 53).",
+      "cause": "builder_error",
+      "smallest_fix": "Add src/seed.py that token-aware chunks product docs, computes embeddings, and upserts documents with fields: product_id, chunk_id, text, embedding, token_count, source_type."
+    },
+    {
+      "requirement": "Create a cosmosSearch vector index in code (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field, with dimensions matching the embedding model used for the chunks.",
+      "status": "not_met",
+      "evidence": "Build report states index creation planned but not executed; no index-creation code or create-index payload present (03-build.md lines 30-33, 55).",
+      "cause": "builder_error",
+      "smallest_fix": "Add index-creation step (e.g., a function in src/seed.py or infra script) that calls createIndexes/createSearchIndexes with cosmosSearchOptions.kind set (e.g., 'vector-hnsw') and dimensions=int(os.getenv('EMBEDDING_DIM'))."
+    },
+    {
+      "requirement": "On each user question, embed the question and retrieve the top 5 most relevant chunks through the LlamaIndex retriever (e.g. similarity_top_k=5), which runs a $search / cosmosSearch similarity query (COS, L2 or IP) against the index in Azure DocumentDB.",
+      "status": "not_met",
+      "evidence": "No runtime code to accept queries or call the retriever; build report: 'End-to-end query + grounding test ... not executed' (03-build.md lines 56-57).",
+      "cause": "builder_error",
+      "smallest_fix": "Implement the retriever with similarity_top_k=5 in the query path (e.g., LlamaIndex retriever configured to use the DocumentDB vector store), and ensure the retriever issues a $search / cosmosSearch query."
+    },
+    {
+      "requirement": "Inject the text of the retrieved chunks into the LLM prompt as context and generate the answer from that context (e.g. a LlamaIndex query engine or response synthesizer with a grounding instruction).",
+      "status": "not_met",
+      "evidence": "No code that composes context or calls an LLM; build report and workspace contain no implementation files.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a query engine that constructs a grounding prompt using the retrieved chunk texts and a grounding instruction, then calls the configured LLM (OPENAI_CHAT_MODEL) to synthesize a grounded answer."
+    },
+    {
+      "requirement": "Apply context engineering before the LLM call: measure the token size of the assembled prompt and, when long product docs would exceed the model's token limit, reduce the injected context (e.g. drop lower-ranked chunks or truncate chunk text) so the prompt fits within the limit.",
+      "status": "not_met",
+      "evidence": "No code or utility present that measures tokens or performs trimming; build report lists context-engineering as a design note but no implementation (03-build.md lines 26-39).",
+      "cause": "builder_error",
+      "smallest_fix": "Add token-budgeting utilities (use tiktoken or a simple tokenizer), a configurable MAX_PROMPT_TOKENS env var, and logic that drops/truncates lowest-ranked chunks to fit the budget before calling the LLM."
+    },
+    {
+      "requirement": "Accept user questions interactively and return the generated answer for each (e.g. a chat loop or chat endpoint).",
+      "status": "not_met",
+      "evidence": "No FastAPI app, CLI loop, or HTTP endpoint files in workspace; build instructions include intended commands but no files were created (03-build.md lines 34-39).",
+      "cause": "builder_error",
+      "smallest_fix": "Create src/app.py exposing POST /chat (FastAPI) and a CLI runner (src/run_query.py) to accept interactive queries and return generated answers."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "not_met",
+      "evidence": "No .env.example or code reading DOCUMENTDB_URI or model credentials in the workspace; build report instructs how to create .env from .env.example but .env.example was not created (03-build.md lines 14-21, 53).",
+      "cause": "builder_error",
+      "smallest_fix": "Create .env.example listing DOCUMENTDB_URI, OPENAI_API_KEY (or equivalently AZURE_OPENAI_*), OPENAI_CHAT_MODEL, EMBEDDING_MODEL, EMBEDDING_DIM, DATABASE_NAME, COLLECTION_NAME."
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "not_met",
+      "evidence": "No .env.example file present; build report has instructions but the file wasn't created (03-build.md line 14).",
+      "cause": "builder_error",
+      "smallest_fix": "Add .env.example with required settings and placeholder values."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_met",
+      "evidence": "Embedding model and dimension were chosen as decisions (D006) but no index-creation code exists to verify or set dimensions; no artifacts created (03-build.md lines 18-21, 30-33).",
+      "cause": "builder_error",
+      "smallest_fix": "Make EMBEDDING_DIM required in config and use it when creating the cosmosSearch index; validate at runtime that embedding vector length equals EMBEDDING_DIM."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "The build notes recommend vector-hnsw for the demo, but no index-creation code or README was committed (03-build.md lines 30-33, 62).",
+      "cause": "builder_error",
+      "smallest_fix": "Add default index parameters (e.g., HNSW M/efConstruction) in the seed/index script and document how to tune them in README.md 'Index tuning' section."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "not_met",
+      "evidence": "No db client code present. The documentdb-driver skill was loaded and its guidance was read (events.jsonl shows load_skill + driver-singleton-client.md), but no implementation exists in the workspace.",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Implement a singleton MongoClient per the documentdb-driver guidance (e.g., src/db.py exposing get_client() that instantiates MongoClient once at module import)."
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "not_met",
+      "evidence": "No seed.py or idempotent ingestion code present; build report lists seed steps but they were not executed or created (03-build.md lines 26-28, 53).",
+      "cause": "builder_error",
+      "smallest_fix": "Add src/seed.py that upserts chunks using a stable idempotency key (product_id + chunk_id) and an embeddingVersion/schemaVersion field so reruns are safe."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No API or error-handling code present; no tests. Build report notes intended endpoints but none were implemented (03-build.md lines 34-38, 53).",
+      "cause": "builder_error",
+      "smallest_fix": "Implement endpoint validation returning HTTP 400 for empty queries and return a 502/5xx with a clear message when embedding provider calls fail, with retry/backoff as needed."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No retrieval code or projection logic present; build notes mention including searchScore but no code exists to project $meta searchScore (03-build.md lines 30-33).",
+      "cause": "builder_error",
+      "smallest_fix": "When projecting $search results, include { 'score': { '$meta': 'searchScore' } } (or the equivalent LlamaIndex mapping) and return scores in /chat responses."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "not_met",
+      "evidence": "No requirements.txt file in workspace; build report instructs pip install -r requirements.txt but file was not created (03-build.md line 23-24, 53).",
+      "cause": "builder_error",
+      "smallest_fix": "Create requirements.txt with pinned versions (examples: pymongo==4.6.0, llm/llama-index and any embedding/LLM packages) or a constraints file and test matrix."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No tests present, and build report lists 'no pytest/unit/integration tests' (03-build.md line 56-57).",
+      "cause": "builder_error",
+      "smallest_fix": "Add unit tests that mock pymongo and embedding calls (pytest + pytest-mock), and example integration tests that can be skipped unless DOCUMENTDB_URI is present."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/ARM/Terraform) files present; build report notes the cluster is preprovisioned and the sample did not create resources (03-build.md lines 1-5, 61-63).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an infra/ folder with a Bicep or Terraform example that declares Microsoft.DocumentDB/mongoClusters (or equivalent AzAPI snippet) with sensible defaults and a README on how to avoid creating a paid cluster during development."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "not_met",
+      "evidence": "No README.md in workspace; build instructions included in the build report but no committed README (03-build.md lines 43, 65-67).",
+      "cause": "builder_error",
+      "smallest_fix": "Add README.md including sample purpose, prerequisites, .env setup, seed steps, index creation, run commands, example outputs, and cleanup."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "not_met",
+      "evidence": "No repository files to inspect; build notes use 'DocumentDB' in free text but no committed README or code ensures consistent naming (03-build.md).",
+      "cause": "builder_error",
+      "smallest_fix": "Ensure README, comments and code use 'Azure DocumentDB' and add a short 'naming' note to the README clarifying difference from Cosmos DB / Cosmos Mongo API."
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton MongoClient",
+      "practice": "Use a single MongoClient per process (singleton) and reuse it across requests; in serverless environments initialize the client outside the function handler to enable connection reuse and avoid pool exhaustion.",
+      "category": "driver_usage",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "No db client module found in workspace; documentdb-driver skill loaded (events.jsonl) and driver-singleton-client.md was read, but the workspace contains no implementation files (03-build.md lines 5, 53).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "Create src/db.py exporting a singleton MongoClient (instantiate once at module import) and use it across the app.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index creation",
+      "practice": "When using DocumentDB's integrated vector features, create and query vector indexes with the `cosmosSearch` operator (vector-diskann / vector-hnsw / vector-ivf) and tune index parameters such as dimensions, similarity (COS/L2/IP), lBuild/lSearch/maxDegree/efConstruction to match dataset size and recall/latency targets.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "violated",
+      "evidence": "No index-creation code or createSearchIndexes payload present; build report notes index creation planned but not executed (03-build.md lines 30-33, 55).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add index-creation logic using createIndexes/createSearchIndexes with cosmosSearchOptions.kind and dimensions read from EMBEDDING_DIM; include default HNSW parameters for demo corpus.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Store embedding field type",
+      "practice": "Store embeddings as numeric arrays on a dedicated field (e.g., embedding: number[]) and create a vector index for that field (one vector index per path) rather than indexing embeddings as text.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#how-does-a-vector-store-work",
+      "status": "violated",
+      "evidence": "No ingestion code; no documents in repo and no schema examples committed. Build notes describe storing embedding but no code exists (03-build.md lines 26-33).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "When inserting chunk documents, include a numeric embedding array in field 'embedding' and create a vector index on that path.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#how-does-a-vector-store-work"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Chunking long documents",
+      "practice": "When building RAG, chunk long documents before embedding and vectorizing; use token-aware chunking (start around 512 tokens ≈ 2000 characters) with overlap (e.g., ~25%) and record chunk metadata (parent_id/product_id, chunk_id, source, token_count) to enable selective retrieval and prompt-budgeting.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/search/vector-search-how-to-chunk-documents#common-chunking-techniques",
+      "status": "violated",
+      "evidence": "No seed/chunking code present; build report lists chunking as a design goal but not implemented (03-build.md lines 26-28).",
+      "source": "Chunk large documents for RAG and vector search in Foundry IQ (Azure AI Search)",
+      "searched": "",
+      "fix": "Implement token-aware chunker (e.g., use tiktoken) with overlap and persist chunk metadata: product_id, chunk_id, token_count, source_type.",
+      "sources": [
+        {
+          "title": "Chunk large documents for RAG and vector search in Foundry IQ (Azure AI Search)",
+          "url": "https://learn.microsoft.com/azure/search/vector-search-how-to-chunk-documents#common-chunking-techniques"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Top-k retrieval and trimming",
+      "practice": "At query time, request a top-k (e.g., k=5) vector result set from the vector index and then apply metadata filters and a lightweight reranker or token-budget-aware trimming (using stored token_count) to select which chunks to include in the LLM prompt.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "violated",
+      "evidence": "No retrieval or reranking code present; build report planned top-5 retrieval but not implemented (03-build.md lines 26-39, 56).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Implement retriever to fetch top-5, then apply token-budget-aware trimming/reranking using stored token_count before prompt construction.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index type by scale",
+      "practice": "Choose vector index type by scale: use vector-ivf for small datasets, vector-hnsw up to moderate scale (tens of thousands), and prefer DiskANN for high-scale production workloads (hundreds of thousands+); tune nlist/M/efConstruction/lBuild/lSearch and consider product quantization or fp16 for high-dimensional vectors.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "violated",
+      "evidence": "Events show the vector-search skill and 'vector-choose-index-type' resource were read (events.jsonl). The builder planned HNSW for demo but no index creation code exists (events show failed log attempt; 03-build.md lines 30-33).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Document the default (vector-hnsw) for demo and provide README guidance to switch to vector-ivf or vector-diskann for other scales; implement index creation with these defaults.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize embeddings",
+      "practice": "Normalize embeddings at ingestion (L2 / unit-length) when you use cosine similarity, and store the embedding model name, dimensions, and a version in the document so you can detect model drift and reindex safely.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "violated",
+      "evidence": "documentdb-vector-search skill resources (vector-normalize-embeddings.md) were read (events.jsonl), but no ingestion code normalizing embeddings or storing embedding metadata exists in workspace.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "Normalize embeddings at ingestion and persist metadata fields embeddingModel, embeddingDims, embeddingVersion in each chunk document.",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create search indexes programmatically",
+      "practice": "Use the MCP/documentdb toolset or SDKs to list collections and indexes, create vector and search indexes programmatically (createIndexes / createSearchIndexes or runCommand), and to retrieve searchScore (`$meta: \"searchScore\"`) when projecting $search results.",
+      "category": "provisioning_and_ingestion",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index",
+      "status": "violated",
+      "evidence": "Events show search of vector index docs and the MCP skill loaded; no index-creation code exists in the workspace and no projection of searchScore implemented (03-build.md lines 30-33, 55).",
+      "source": "Integrated vector store in Azure DocumentDB (quickstarts)",
+      "searched": "",
+      "fix": "Add code or an MCP/az CLI script to create the index and in retrieval include projection of { score: { $meta: 'searchScore' } } so the similarity score is returned.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB (quickstarts)",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Metadata for chunks",
+      "practice": "Store provenance and enrichment metadata (source, page/chunk index, embeddingModel, embeddingDims, embeddingVersion, token_count) for each chunk so retrieval, filtering, re-embedding and auditing are possible.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/architecture/ai-ml/guide/rag/rag-enrichment-phase#augment-your-chunks",
+      "status": "violated",
+      "evidence": "No ingestion code exists to show metadata is persisted; build notes planned metadata but not implemented (03-build.md lines 26-33).",
+      "source": "RAG chunk enrichment phase / Prepare data for AI app",
+      "searched": "",
+      "fix": "Persist the listed metadata fields for each chunk during ingestion (product_id, chunk_id, token_count, embeddingModel, embeddingDims, embeddingVersion, source_type).",
+      "sources": [
+        {
+          "title": "RAG chunk enrichment phase / Prepare data for AI app",
+          "url": "https://learn.microsoft.com/azure/architecture/ai-ml/guide/rag/rag-enrichment-phase#augment-your-chunks"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS required",
+      "practice": "Always require TLS for DocumentDB connections (ensure tls=true and SCRAM-SHA-256 in connection string) and do not disable certificate validation in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "documentdb-security and driver skills were loaded (events.jsonl), but no connection code is present to show TLS options are set; no files in workspace.",
+      "source": "documentdb-connection / documentdb-security",
+      "searched": "",
+      "fix": "Ensure connection URIs and client options require tls/tlsAllowInvalidCertificates=false in production; document dev exceptions for local gateway only.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets handling",
+      "practice": "Prefer managed identity / Microsoft Entra ID / RBAC or Key Vault references to long-lived connection credentials in production and never commit connection strings or secrets to source control; read connection strings from environment variables or secret stores at runtime.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/aspnet/core/security/app-secrets?view=aspnetcore-11.0#work-with-environment-variables",
+      "status": "violated",
+      "evidence": "No .env.example nor code showing environment variable reads; build report instructs to set env vars but files were not created (03-build.md lines 14-21, 53).",
+      "source": "Store application secrets safely during development / App Service connection strings",
+      "searched": "",
+      "fix": "Add .env.example and ensure code reads DOCUMENTDB_URI from env; include guidance to use Key Vault or managed identities for production.",
+      "sources": [
+        {
+          "title": "Store application secrets safely during development / App Service connection strings",
+          "url": "https://learn.microsoft.com/aspnet/core/security/app-secrets?view=aspnetcore-11.0#work-with-environment-variables"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries and backoff",
+      "practice": "Implement retries for transient errors with exponential backoff and jitter and honor server-provided retry signals (e.g., 429 Retry-After) rather than immediate aggressive retries.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "documentdb-connection skill read (events.jsonl). No client retry wrappers or retry logic code present in workspace.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Wrap DocumentDB calls with retry logic using exponential backoff and jitter; honor Retry-After and surface errors to client when retries exhausted.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client timeouts",
+      "practice": "Apply minimal tunings to client timeouts (connectTimeoutMS, socketTimeoutMS, serverSelectionTimeoutMS) appropriate to the workload: short for fail-fast server selection, longer for expected long-running analytical queries.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "documentdb-connection skill resources were inspected (events.jsonl). No client config code exists to show timeouts set.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Set sensible default timeouts in the MongoClient creation and make them configurable via env vars (e.g., SERVER_SELECTION_TIMEOUT_MS, SOCKET_TIMEOUT_MS).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: vector-index choice",
+      "practice": "Builder chose vector-hnsw for the demo vector index, but this choice did not end up as a recorded successful decision entry.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "events.jsonl contains failed attempts to log the vector-hnsw choice (failed log_decision events at timestamps ~05:54:21 - 05:54:27 indicating validation error), but no matching decision appears in decisions.jsonl. See events.jsonl entries around the failed log_decision calls.",
+      "source": "events.jsonl",
+      "searched": "",
+      "fix": "Record the index-choice decision properly into decisions.jsonl (reason_source should be one of allowed values) or include the rationale in the build report so readers can audit the choice.",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "The operator approval 'approved the build with readiness \"ready_with_gaps\"' cites an operator source; events do not contradict this. It is a high-level approval recorded by the builder (decisions.jsonl)."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Chosen Python 3.13: reason_source 'readiness_report' and readiness files note Python 3.13 on PATH; events.jsonl show the environment check and the build report references Python 3.13 (03-build.md lines 5, 9-12)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "FastAPI chosen with reason_source 'model_default'. This is a defensible default for a small async API. No installed skill contradicts this. Evidence: decisions.jsonl D003 and no events indicating an alternative."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "pymongo 4.x (pymongo==4.6.0) was selected with reason_source 'model_default'. The DocumentDB quickstarts show tested pymongo versions (e.g., quickstart mentions PyMongo 4.19.0), so pinning to 4.6.0 is defensible but may not match official quickstart test matrix. The decision is defensible but should reference a tested version in docs; evidence: decisions.jsonl D004 and learn.microsoft.com quickstart mentioning a tested driver version (learn_microsoft_docs_search results)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "OpenAI embeddings chosen (configurable). This is a reasonable sample default and the build report documents the fallback behavior; no installed skill forbids this choice. Evidence: decisions.jsonl D005 and build notes (03-build.md)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "questionable",
+      "comment": "text-embedding-3-small with EMBEDDING_DIM=1536 is a common default but the embedding-dimension must match the actual model used and the service docs do not mandate a default. The decision is defensible for a demo, but the build should record the model/dimensions in config and persist embedding metadata; evidence: D006 and readiness_findings caution the embedding model choice is an application decision."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Choosing gpt-3.5-turbo as default chat model is reasonable for a sample: it's widely available and economical. The decision is documented (D007) and consistent with the sample design notes."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Bulk upload ordered:false guidance (prior knowledge gap)",
+      "what_was_missing": "No authoritative Azure DocumentDB-specific guidance was found for using unordered/bulkWrite (ordered:false) inserts when ingesting many documents; searches returned Cosmos DB for MongoDB guidance or generic MongoDB guidance but not DocumentDB-specific docs.",
+      "where_searched": "learn.microsoft.com (DocumentDB vector search, quickstarts), agent kit skills, events.jsonl searches for 'ordered: false' and related terms.",
+      "effect_on_this_build": "The builder could not rely on a DocumentDB-specific recommendation for using unordered bulk writes; this affects seed script design decisions (batch sizes and error semantics) and may lead the author to pick a pattern based on non-DocumentDB sources.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Bulk ingestion' guidance page under Azure DocumentDB ingestion docs describing batch size recommendations, whether insertMany/BulkWrite supports ordered:false and best-practice error semantics for large-scale ingestion; include example code for Python/pymongo with recommended batch sizes for M10/M20/M30 tiers.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Optimistic concurrency / etag guidance for DocumentDB",
+      "what_was_missing": "No DocumentDB-specific documentation was found describing etag/_etag or an official optimistic concurrency pattern for upserts in the vCore-managed DocumentDB offering (searches returned Cosmos DB pages but not DocumentDB-specific ones).",
+      "where_searched": "learn.microsoft.com search for 'etag', 'optimistic concurrency' and 'DocumentDB' (events.jsonl shows searches around these terms), agent-kit resources.",
+      "effect_on_this_build": "Unclear guidance increases the risk of creating non-idempotent seed scripts or unsafe update patterns; the builder cannot confidently pick a safe concurrency approach without potentially using the wrong semantics.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page describing optimistic concurrency options for Azure DocumentDB, whether an _etag-like mechanism is exposed to the MongoDB API, and patterns for idempotent upserts including example pymongo code.",
+      "priority": "high"
+    },
+    {
+      "topic": "Embedding model + index-dimension guidance (discoverability)",
+      "what_was_missing": "The sample must choose an embedding model and then create the index with matching dimensions. While the docs explain how to create indexes they do not present a short 'choose an embedding model and set EMBEDDING_DIM' cookbook for sample authors.",
+      "where_searched": "learn.microsoft.com vector-search pages and agent-kit vector-search skill resources (events.jsonl).",
+      "effect_on_this_build": "The builder picked text-embedding-3-small and EMBEDDING_DIM=1536 by model default; without a clear example in docs, other authors may mismatch model dims and index dimensions and cause index creation/query failures.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Embedding model to index dimension' note to the vector-search quickstart: list common embedding models and dims (e.g., text-embedding-3-small=1536, text-embedding-3-large=3072), and show the exact JSON snippet for createSearchIndexes using dimensions=${EMBEDDING_DIM}.",
+      "priority": "high"
+    },
+    {
+      "topic": "Citation/grounding format for RAG responses",
+      "what_was_missing": "The starter prompt requested 'grounded answers' but did not specify a citation format (inline bracketed id, list of sources array, show product_id/chunk_id, etc.). No authoritative sample guidance states the preferred citation format for DocumentDB-backed RAG samples.",
+      "where_searched": "agent-kit skills, vector-search docs, sample gallery guidance; events.jsonl searches for 'citation format' and 'grounding' returned no definitive template.",
+      "effect_on_this_build": "Without a specified citation format the builder may omit explicit identifiers or produce inconsistent grounding; test harnesses expecting product_id/chunk_id in the LLM output cannot assert structure.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add an agent-kit rule for gallery RAG samples: require answers to include a 'sources' list with objects {product_id, chunk_id, source_type, score} and an inline bracketing style like '[source: product_id:chunk_id]' where the LLM can insert at each supporting sentence.",
+      "priority": "high"
+    },
+    {
+      "topic": "Unit tests that run offline (how-to)",
+      "what_was_missing": "No public sample pattern documenting how to author unit tests for DocumentDB-backed vector stores that run without a live cluster (mocking pymongo, embedding provider, and the LlamaIndex vector store).",
+      "where_searched": "learn.microsoft.com, agent-kit skills, quickstarts; searches for 'unit tests mock pymongo' returned examples for other services but not a concise pattern for DocumentDB + vector stores.",
+      "effect_on_this_build": "The reference expects offline tests but the builder had no guidance on mocking DocumentDB vector features and searchScore projection; this raises barrier for test authors and may cause them to skip tests or write brittle integration tests.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short 'Testing' appendix showing pytest examples that mock pymongo.collection.Collection.find/aggregate, stub embedding calls, and assert LlamaIndex uses precomputed vectors; include a template 'tests/test_seed.py' and 'tests/test_api.py' using pytest-mock.",
+      "priority": "high"
+    },
+    {
+      "topic": "Naming clarification: Azure DocumentDB vs Cosmos DB",
+      "what_was_missing": "The product naming has historically caused confusion. The team should publish a short, prominent naming note clarifying 'Azure DocumentDB (vCore-managed mongoClusters) vs Azure Cosmos DB (databaseAccounts, RU-based) vs Amazon DocumentDB'.",
+      "where_searched": "readiness findings and cold-answers revealed multiple confusions (readiness_findings S02..S05), and developer-run searches in events.jsonl returned both mongoClusters and databaseAccounts pages.",
+      "effect_on_this_build": "Naming confusion can cause authors to pick the wrong CLI commands, resource types or example connection strings (e.g., using mongodb://:10255 instead of mongodb+srv).",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "A short 'Which product is this?' note at the top of DocumentDB quickstarts and the sample README: show correct resource type (Microsoft.DocumentDB/mongoClusters), example CLI group (az documentdb mongocluster), SRV connection-string examples and portal steps.",
+      "priority": "high"
+    },
+    {
+      "topic": "Prior-knowledge-only practices (bulk inserts, optimistic concurrency)",
+      "what_was_missing": "Two discovered items (bulk insert ordered:false and optimistic concurrency / _etag) had no DocumentDB-specific public docs and were marked prior_knowledge_only by the discovery agent.",
+      "where_searched": "learn.microsoft.com searches (events.jsonl) and agent-kit docs.",
+      "effect_on_this_build": "Agents may apply MongoDB or Cosmos DB patterns that do not precisely apply to Azure DocumentDB and cause incorrect ingestion or update logic.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add short clarifications in the ingestion and data-modeling docs that state whether unordered bulkWrite is supported and how optimistic concurrency should be implemented (or a note that drivers' Mongo semantics apply), with code examples for pymongo.",
+      "priority": "medium"
+    }
+  ]
+}

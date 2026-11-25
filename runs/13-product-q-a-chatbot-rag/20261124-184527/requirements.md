@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the app in Python and use LlamaIndex to build the RAG pipeline (imports and core pipeline construction must reference LlamaIndex).
-- Ingest product data types (descriptions, specs, and reviews) and create Document objects with metadata indicating product_id and source_type (description/spec/review) before indexing.
-- Persist the vector representations / index into Azure DocumentDB by writing vectors or index entries to the DocumentDB vector store (the code must connect to an Azure DocumentDB instance and write vector records).
-- Chunk long product documents into smaller chunks during ingestion and store chunk-level metadata so each chunk is independently retrievable.
-- Apply context engineering to keep prompts within token limits: implement logic that (a) enforces a configurable max context/token budget and (b) trims, summarizes, or prioritizes chunks to fit that budget before building the prompt.
-- On each user question, perform a vector similarity retrieval from the DocumentDB vector store and return exactly the top 5 most relevant chunks (top_k=5 configurable but defaulted to 5).
-- Inject the retrieved top-5 chunks as context into the LLM prompt assembled by LlamaIndex and call the LLM to generate the answer (the assembled prompt must visibly contain the retrieved chunk text).
-- Ensure generated answers are grounded by including explicit citations or identifiers for the source chunks (e.g., product_id and chunk_id or source_type) alongside or within the response.
-- Provide a single-agent runtime (Single-agent) implementation that handles both retrieval and generation in one process (no multi-agent orchestration code paths).
-- Include an end-to-end example or automated test that indexes sample product descriptions/specs/reviews, queries with a sample shopper question, verifies retrieval returned 5 chunks, and asserts the LLM output contains grounded citations to those chunks.
+- Implement the chatbot in Python with LlamaIndex as a single RAG pipeline, using a LlamaIndex vector store backed by an Azure DocumentDB collection through a MongoDB-compatible Python driver (e.g. pymongo).
+- Index product descriptions, specs, and reviews: split them into chunks with LlamaIndex, embed each chunk, and store the chunk text and its embedding together on each document in Azure DocumentDB.
+- Create a cosmosSearch vector index in code (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field, with dimensions matching the embedding model used for the chunks.
+- On each user question, embed the question and retrieve the top 5 most relevant chunks through the LlamaIndex retriever (e.g. similarity_top_k=5), which runs a $search / cosmosSearch similarity query (COS, L2 or IP) against the index in Azure DocumentDB.
+- Inject the text of the retrieved chunks into the LLM prompt as context and generate the answer from that context (e.g. a LlamaIndex query engine or response synthesizer with a grounding instruction).
+- Apply context engineering before the LLM call: measure the token size of the assembled prompt and, when long product docs would exceed the model's token limit, reduce the injected context (e.g. drop lower-ranked chunks or truncate chunk text) so the prompt fits within the limit.
+- Accept user questions interactively and return the generated answer for each (e.g. a chat loop or chat endpoint).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
