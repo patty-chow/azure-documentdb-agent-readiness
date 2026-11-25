@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain multi-agent mortgage pipeline where an orchestrator reads the application document from DocumentDB, passes it to an underwriting agent that assesses affordability, then to a compliance agent that checks regulatory requirements, and finally to a comms agent that drafts the decision letter. Write the outcome back to DocumentDB.
