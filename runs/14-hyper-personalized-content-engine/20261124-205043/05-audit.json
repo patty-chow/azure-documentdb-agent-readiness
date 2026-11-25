@@ -1,0 +1,602 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample is runnable and demonstrates the end-to-end retrieval → ranking → explanation flow with seeded documents and deterministic mock embeddings. Core behaviors requested by the starter prompt (fetch profile/segment/interactions, build a query embedding, retrieve and rank content, return a rationale and ranked list) are implemented and were exercised against the live cluster. The build attempted to create a DocumentDB cosmosSearch vector index but index creation failed in this run because the MCP management tools were disabled in the environment; as a result server-side $search/knn was not exercised and the sample falls back to application-side cosine ranking. Several gallery checklist items are followed (singleton MongoClient, env-driven configuration, README, .env.example, package-lock present), while other requirements (explicit LlamaIndex integration, agent memory persistence, robust error handling for embedding failures, infra-as-code) are incomplete or missing. Important operational/documentation gaps are listed (how to opt into MCP management tools, guidance on embedding/model defaults and dimensions, index-parameter tuning and README guidance, and a clearer agent-memory example). See findings below for per-requirement evidence and recommended smallest fixes.",
+  "requirement_results": [
+    {
+      "requirement": "A Node.js application built with LlamaIndex in which a single agent carries out the whole flow for one customer: fetching that customer's documents, retrieving content pieces via vector search and generating the final output.",
+      "status": "partly_met",
+      "evidence": "src/agent.js implements the full flow (buildQueryEmbedding, retrieveAndRank, generateRationale) and src/server.js exposes /search that runs the flow (src/server.js lines 10-27). No LlamaIndex Node package is installed or used; the sample implements a lightweight internal agent (decisions D008/D019).",
+      "cause": "builder_error",
+      "smallest_fix": "Add and pin a known LlamaIndex Node package (add dependency in package.json) and rewrite the agent entrypoints to use that library (few functions to adapt: buildQueryEmbedding → embedding adapter, retrieval→LlamaIndex vector store adapter, generation→LLM adapter)."
+    },
+    {
+      "requirement": "Fetch the customer's profile, segment and recent interaction documents from Azure DocumentDB (e.g. with the MongoDB Node.js driver, looked up by a customer identifier) and supply them to the agent as context.",
+      "status": "met",
+      "evidence": "server.js fetches profile, segment and recent interactions: src/server.js lines 13-20. run_sample.js shows same in-process flow (src/run_sample.js lines 6-9).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Content pieces are stored in Azure DocumentDB with an embedding on each document, and a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field with dimensions matching the embedding model.",
+      "status": "partly_met",
+      "evidence": "src/seed.js inserts embedding, embedding_model and embedding_dim fields for content pieces (src/seed.js lines 89-96). src/seed.js includes createIndex call using cosmosSearchOptions (src/seed.js lines 105-115). However list_indexes showed only the default _id index during the run (events.jsonl documentdb_list_indexes result), and attempts to create the cosmosSearch index via the MCP tool failed with 'Management tools are disabled by default' (events.jsonl entries for documentdb_create_index show outcome: exception).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Make the seed script robust to the environment: detect index-creation failures and either (a) instruct the operator to enable MCP management tools (ENABLE_MANAGEMENT_TOOLS=true) / create the index via portal, or (b) call an alternate admin API if available. For a guaranteed automated build, add a CI/seed step that creates the index through the management plane (Bicep/az CLI or MCP with the opt-in flag)."
+    },
+    {
+      "requirement": "Retrieve the content pieces semantically relevant to the customer with a $search / cosmosSearch query against that index (similarity COS, L2 or IP).",
+      "status": "not_met",
+      "evidence": "The running code uses an application-side full-collection fetch and cosine-ranking (src/agent.js lines 52-60 and 54 projection), not a server-side $search/knn stage. Events show the build attempted documentdb_create_index and failed so server-side $search was not available (events.jsonl).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Ensure the cosmosSearch vector index exists (enable MCP management tools or create index via portal/API) and update retrieval to use $search/knn when the index is present. Keep the client-side fallback but make $search the primary path if explain() and index checks succeed."
+    },
+    {
+      "requirement": "The LlamaIndex agent is given agent memory that retains earlier turns of the interaction and is drawn on when generating the current recommendation.",
+      "status": "not_met",
+      "evidence": "No agent-memory persistence or short-term/long-term memory store is implemented. The app stores interactions but does not persist conversation turns, summarized facts or TTL-based session memory (no agent_memory collection).",
+      "cause": "builder_error",
+      "smallest_fix": "Add an 'agent_memory' collection and store recent raw turns (for short-term context) and derived summaries/embeddings for long-term memory. Provide code that (a) appends the current turn then (b) retrieves recent turns/summaries and includes them in the context before calling the generator."
+    },
+    {
+      "requirement": "Context engineering: the fetched profile, segment and recent interactions and the retrieved content pieces are assembled into a deliberately structured context for the model (e.g. clearly delimited sections per source) before generation.",
+      "status": "partly_met",
+      "evidence": "generateRationale builds a short template-based rationale string combining profile, segment and top items (src/agent.js lines 63-70). The code does not construct a larger structured prompt with clearly delimited 'PROFILE / RECENT_INTERACTIONS / CANDIDATES' sections for an LLM input.",
+      "cause": "builder_error",
+      "smallest_fix": "Replace the simple template with a structured context builder that emits explicit sections (e.g., '---PROFILE---', '---RECENT_INTERACTIONS---', '---CANDIDATES---') and provide that assembled string to the LLM call (or LlamaIndex) when generating the final rationale."
+    },
+    {
+      "requirement": "The agent's output for a customer contains a personalised content-selection rationale explaining why the content suits that customer and a ranked list of the retrieved content pieces.",
+      "status": "met",
+      "evidence": "The /search endpoint returns 'rationale' and 'top' with ranked items and scores (src/server.js line 27 and src/agent.js lines 63-70 and 52-60). run_sample.js prints the same output (src/run_sample.js lines 12-15).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "src/db.js reads DOCUMENTDB_URI from process.env (src/db.js lines 5-9). No secrets are committed; .env.example contains placeholders (app/.env.example).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": ".env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example includes DOCUMENTDB_URI, DATABASE_NAME, EMBEDDING_PROVIDER, EMBEDDING_DIM, CHAT_PROVIDER, CHAT_MODEL, PORT (app/.env.example lines 2-8). README describes copying .env.example (app/README.md lines 24-29).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "src/seed.js uses EMBEDDING_DIM (default 384) to create embeddings and to request index dimensions (src/seed.js lines 7, 90-94, 109-112). However there is a second seed script scripts/seed.js with a different default (EMB_DIM default 1536) (scripts/seed.js line 5), creating a possible inconsistency depending on which script is run.",
+      "cause": "builder_error",
+      "smallest_fix": "Consolidate to a single seed script and make EMBEDDING_DIM authoritative. Persist embedding_dim in each document and have createIndex explicitly read EMBEDDING_DIM so dimensions are always consistent with the vector data."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "The code requests vector-hnsw for the sample (src/seed.js cosmosSearchOptions kind: 'vector-hnsw' lines 109-112) which is reasonable for small samples. The README mentions the index but does not document index tuning parameters or how to change them for larger datasets (app/README.md lines 5-8, 34-36).",
+      "cause": "builder_error",
+      "smallest_fix": "Add a README subsection describing index types (IVF/HNSW/DiskANN), the parameters to tune (lBuild, lSearch, maxDegree, numLists), and an example mapping (e.g., \"for >50k vectors use DiskANN with lBuild=X; for <50k use HNSW with m=Y\") and point to the documentdb-vector-search skill."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "src/db.js implements a MongoClient singleton and getDb helper (src/db.js lines 11-20 and 23-26).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "src/seed.js and scripts/seed.js use upsert/updateOne with upsert:true to avoid duplicates and ensure idempotence (src/seed.js lines 44-48, 51-63, 67-79, 90-96). ensureCollections checks for existing collections (src/seed.js lines 25-34).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "partly_met",
+      "evidence": "The server returns 400 if customerId is not provided (src/server.js line 12). There is no explicit error handling that returns a distinct error when embedding generation or retrieval fails — exceptions would propagate and the handler does not always return a 4xx/422 with a clear message.",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap the /search handler with try/catch, validate inputs explicitly, and return clear 422 responses when embedding construction or retrieval fails; include friendly error messages for operators and callers."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "retrieveAndRank returns items with a numeric score (src/agent.js lines 55-60). generateRationale prints scores in the rationale (src/agent.js line 68).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "This is a Node sample; package-lock.json is present and pins dependency resolutions (app/package-lock.json). package.json contains caret ranges but lockfile ensures reproducible installs (app/package-lock.json and app/package.json).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "partly_met",
+      "evidence": "A minimal test runner exists (tests/run_node_tests.js) that runs without a live cluster (it is a placeholder which exits 0). There is no integrated test script in package.json and no mocked unit tests that exercise DB logic.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a small test suite that mocks the mongodb client (e.g., with jest and a mock MongoClient) and wire an npm test script so 'npm test' runs the mocked tests in CI without a live cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/Terraform/ARM templates or az CLI deployment scripts for Microsoft.DocumentDB/mongoClusters are present in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small infra directory containing a Bicep or Terraform example that provisions Microsoft.DocumentDB/mongoClusters (or an az CLI quickstart) with parameters for tier, region and storage; mark defaults to keep cost low."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains a Quickstart, prerequisites, run and cleanup instructions (app/README.md lines 24-32 and 31-33).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README and code use 'Azure DocumentDB' and 'cosmosSearch' terminology; there are no references to 'Cosmos DB' or 'Amazon DocumentDB' in repository files (app/README.md line 3).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton MongoClient",
+      "practice": "One client is created and reused for the life of the process.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.js lines 11-20 (getClient singleton) and src/db.js lines 23-26 (getDb helper)",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver (driver-singleton-client.md) / documentdb-connection",
+          "url": ""
+        },
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Read connection string from env",
+      "practice": "Read the cluster connection string from environment variables at runtime, never commit it to source control.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/shell/security#credential-management",
+      "status": "followed",
+      "evidence": "src/db.js lines 5-9 reads DOCUMENTDB_URI and exits if unset; .env.example contains placeholder (app/.env.example lines 2-6).",
+      "source": "Integrated vector store guidance / security docs",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Azure Cosmos DB Shell security best practices / Key Vault guidance",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/shell/security#credential-management"
+        },
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS & retryWrites",
+      "practice": "Always connect with TLS and set retryWrites=false in Azure DocumentDB connection strings.",
+      "category": "security/connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.js constructs MongoClient with retryWrites:false (src/db.js line 15-18). README instructs to use the connection string and not to commit it (app/README.md lines 12-13).",
+      "source": "documentdb-security / public guidance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security (security-tls-required.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embeddings stored as numbers",
+      "practice": "Store embeddings as numeric arrays in documents and include embedding metadata (model name and dimension).",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "src/seed.js upserts content pieces with embedding numeric arrays and sets embedding_model and embedding_dim on each document (src/seed.js lines 90-94).",
+      "source": "Integrated vector store guidance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB / vector-normalize guidance",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize embeddings on ingest",
+      "practice": "Normalize embeddings (unit-length) at ingest when using COS and store model name and dimensions with each document.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "deterministicVector() normalizes vectors before storing in src/seed.js (src/seed.js lines 20-22). embedding_model and embedding_dim are stored with each document (src/seed.js line 93).",
+      "source": "documentdb-vector-search (skill)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search (vector-normalize-embeddings.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-vector-search (vector-normalize-embeddings.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side kNN",
+      "practice": "Use the server-side kNN operator ($search / cosmosSearch) rather than pulling many vectors to the client; push filters into cosmosSearch.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "violated",
+      "evidence": "The application falls back to full-collection fetch + app-side cosine similarity (src/agent.js lines 52-60); MCP index creation attempts failed earlier (events.jsonl documentdb_create_index exceptions).",
+      "source": "Integrated vector store in Azure DocumentDB (Microsoft Learn)",
+      "searched": "",
+      "fix": "Primary retrieval should issue a $search knn aggregation if the cosmosSearch index exists; keep the current client-side fallback only for environments where index creation is impossible. Change retrieveAndRank to attempt a $search/knn aggregate and only fetch candidates for local reranking when necessary.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation shape",
+      "practice": "Index vector fields using 'cosmosSearch' and cosmosSearchOptions rather than vendor-incompatible shapes.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index",
+      "status": "followed",
+      "evidence": "src/seed.js calls createIndex with { embedding: 'cosmosSearch' } and cosmosSearchOptions (src/seed.js lines 105-115).",
+      "source": "Integrated vector store in Azure DocumentDB / examples",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB (examples)",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection & pre-filters",
+      "practice": "Push metadata filters into cosmosSearch filter clauses and project only the fields needed (omit embeddings in user responses).",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#filtered-vector-search",
+      "status": "violated",
+      "evidence": "retrieveAndRank currently uses content.find({}, { projection: { embedding: 1, title: 1, body: 1, tags: 1 } }).toArray() to fetch all embeddings and metadata prior to ranking (src/agent.js line 54). That fetch pulls embeddings over the network rather than projecting them out when returning metadata to clients.",
+      "source": "vector-knn-query guidance",
+      "searched": "",
+      "fix": "If using server-side $search, include filter clauses inside the cosmosSearch stage and project out only the needed metadata (omit embedding on the returned projection). If client-side reranking is used as fallback, fetch only necessary candidate fields and avoid returning embeddings to clients.",
+      "sources": [
+        {
+          "title": "vector-knn-query guidance",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#filtered-vector-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL for interactions",
+      "practice": "Use TTL indexes for ephemeral interaction documents.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "",
+      "status": "not_applicable",
+      "evidence": "The sample stores interactions but they are seed/demo items; no TTL index is created in seed scripts.",
+      "source": "documentdb-indexing (TTL guidance)",
+      "searched": "",
+      "fix": "Add an index creation step in the seed script for interactions if this sample intends to simulate ephemeral data (createIndex with expireAfterSeconds on a Date field).",
+      "sources": [
+        {
+          "title": "documentdb-indexing (index-ttl-expiry.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-indexing (index-ttl-expiry.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Agent memory modeling",
+      "practice": "Store short-term raw turns and long-term summaries + embeddings for agent memory; use TTL for short-term memory.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/agentic-memories",
+      "status": "violated",
+      "evidence": "No agent_memory collection or memory summarization/persistence is implemented in the repo; interactions collection exists but is not used as an agent-memory store (src/seed.js and src/agent.js).",
+      "source": "Agent memories in Azure Cosmos DB skill and Microsoft docs",
+      "searched": "",
+      "fix": "Add an agent_memory collection with two document shapes: raw_turns (with TTL) and long_term_summaries (with embeddings + embedding_dim). Include a small helper that summarizes recent raw_turns to a summary document stored with an embedding.",
+      "sources": [
+        {
+          "title": "Agent memories in Azure Cosmos DB for NoSQL",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/agentic-memories"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index verification & explain()",
+      "practice": "Instrument queries with explain() and use the MCP/documentdb diagnostics to verify index usage.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "No explain() calls or query-plan verification appear in the seed or retrieval code. The MCP server was used to list indexes (events.jsonl shows documentdb_list_indexes) but explain() is not exercised in code.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a small verification script or examples in README showing how to run explain('executionStats') and how to inspect $search plans via MCP tools.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring (monitoring-slow-query-log.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-monitoring (monitoring-slow-query-log.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Protect PII and embeddings",
+      "practice": "Do not log raw profiles or embeddings; redact identifiers in logs and use least-privilege identities.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "The seed and server code do not write profile or embedding contents to logs (src/seed.js, src/server.js). README warns 'NEVER commit your real connection string.' .env.example shows placeholders.",
+      "source": "documentdb-security skill guidance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security (security-entra-rbac.md / security-private-endpoint.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-security (security-entra-rbac.md / security-private-endpoint.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client-side reranking limits",
+      "practice": "If doing client-side reranking, fetch a modest candidate set and pre-filter by indexed metadata.",
+      "category": "vector_search",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P31",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "retrieveAndRank performs a collection scan (content.find({}, ...) ) and computes similarity across all returned docs (src/agent.js line 54). For large collections this fetch would not be appropriate.",
+      "source": "prior_knowledge (no authoritative Azure doc prescribing numeric fetch_k values)",
+      "searched": "searched for 'client-side kNN candidate size recommended Azure DocumentDB' with no authoritative numeric guidance found",
+      "fix": "Limit candidate fetch size (e.g., by metadata pre-filter), or use server-side $search; if client-side reranking is necessary, fetch a tuned 'fetch_k' (e.g., 500) rather than the full collection.",
+      "sources": [],
+      "what_would_help": "A sentence in Azure DocumentDB docs recommending practical candidate fetch sizes for client-side reranking, with examples for typical embedding dims and latency budgets."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is consistent with the build status reported (sample runnable but with documented gaps)."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Node.js 24 and Express is reflected in package.json and server.js."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Decision to use mongodb driver ^5.7.0 and singleton MongoClient is implemented: package.json lists mongodb ^5.7.0 and src/db.js contains a singleton pattern. The decision cited 'model_default' but evidence (skill load events) shows the driver guidance was consulted."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading the connection string from DOCUMENTDB_URI is implemented in src/db.js (lines 5-9)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Exposing /search via Express is implemented in src/server.js (app.get('/search'...))."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "questionable",
+      "comment": "The decision states the index will be vector-hnsw with dimensions 1536. The code in src/seed.js uses EMBEDDING_DIM default 384 while some other seed script (scripts/seed.js) uses 1536, and events show MCP calls that requested 1536. The choice and the code are inconsistent; the decision is defensible but not accurately reflected across the repo."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Use of synthetic deterministic embeddings is implemented (deterministicVector and randomVector used in seed scripts). This avoided requiring external API keys during verification."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "The builder deliberately did not add a third-party LlamaIndex Node package and instead made a lightweight internal agent; the repository code matches that decision."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The decision to attempt index creation via the documentdb MCP server is supported: events.jsonl contains documentdb_create_index calls. The calls failed because the MCP management tools were disabled by default (the tool returned an exception)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "A second documentdb_create_index attempt was executed (events.jsonl) and also failed; the log shows the retry attempts as recorded."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "The runtime fallback to in-process cosine similarity is implemented (src/agent.js) and was exercised in the run. The fallback was necessary because cosmosSearch index creation failed in this environment."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Duplicate readiness approval; same rationale as D001."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Duplicate Node.js/Express decision; evidence present in the repo."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Package.json pins mongodb ^5.7.0 (package.json line 17) matching the decision."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "questionable",
+      "comment": "Decision chooses EMBEDDING_DIM=384 as default. Some files (src/seed.js, .env.example) use 384, while scripts/seed.js defaults to 1536. This inconsistency makes the decision partially unsupported by the whole codebase."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Implementing app-side cosine similarity while still attempting index creation is exactly what happened: seed tried to create index (failed) and the app uses client-side ranking (src/agent.js)."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI and configuring retryWrites=false is implemented in src/db.js (lines 15-18). Events show the db module was written and used."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "sound",
+      "comment": "The decision to rely on documentdb_create_index after driver createIndex failed is supported by the events: driver attempts and MCP attempts are logged; MCP calls failed due to management-tools opt-in being required."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "Implementing a lightweight retrieval+generation agent rather than depending on an uncertain external library is reflected in the repository code."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Enable MCP management tools for automated index creation",
+      "what_was_missing": "A short note / automation flag explaining that the documentdb MCP server's management tools are disabled by default and must be enabled (ENABLE_MANAGEMENT_TOOLS=true) or an alternative management-plane method be used to create cosmosSearch indexes automatically.",
+      "where_searched": "Events/logs (documentdb_create_index tool calls in events.jsonl) and documentdb-mcp-setup skill.",
+      "effect_on_this_build": "Index creation failed in this run (documentdb_create_index raised 'Management tools are disabled by default'), preventing server-side $search/knn verification and causing the sample to fallback to client-side ranking.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Add a short 'MCP management tools' section to README and seed script: (1) explain the opt-in, (2) show how to set ENABLE_MANAGEMENT_TOOLS=true for MCP calls or show the equivalent portal/az CLI steps to create the cosmosSearch index, and (3) add a seed fallback that prints exact commands to run manually if the automated index creation fails.",
+      "priority": "high"
+    },
+    {
+      "topic": "Embedding & chat model defaults and dimensionality",
+      "what_was_missing": "Authoritative guidance on which embedding/chat provider and default embedding dimension to use for samples (so index dimensions can be set correctly).",
+      "where_searched": "Readiness findings and documentdb-vector-search skill; general Microsoft Learn vector-search pages do not prescribe a default embedding model and dimension for sample apps.",
+      "effect_on_this_build": "Inconsistent defaults across scripts (384 vs 1536) created ambiguity and led to attempted index requests with inconsistent dimensions. This contributed to a fragile index-creation flow and risk of silent mismatch between embeddings and index dimensions.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short policy page in the agent-kit: 'Default embedding & chat models for samples' that (a) recommends a default embedding provider & model (and its dims) for small samples (e.g., provide 'mock:384' or 'OpenAI text-embedding-3-small:1536' choices), (b) shows how to wire EMBEDDING_PROVIDER/EMBEDDING_DIM in .env.example and seed scripts, and (c) includes a snippet to validate stored embedding_dim before creating the index.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index-parameter tuning guidance & README examples",
+      "what_was_missing": "A concise README section explaining when to choose DiskANN/HNSW/IVF, the key parameters (lBuild/lSearch/maxDegree/m/numLists), and sample parameter choices for demo vs production data sizes.",
+      "where_searched": "documentdb-vector-search skill resources and Microsoft Learn vector-search pages; the sample README did not include parameter tuning guidance.",
+      "effect_on_this_build": "The seed script selected vector-hnsw (reasonable), but README lacked instructions on tuning these parameters for larger datasets; operators may not know how to change index params when scaling-up.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a 'Tuning the vector index' subsection to README with a short table: {small dataset → HNSW defaults; medium → DiskANN defaults with example lBuild/lSearch; very small → IVF example}, and show the exact createIndex/cosmosSearchOptions snippet with placeholders for parameters.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Agent-memory persistence guidance for samples",
+      "what_was_missing": "Practical example for storing agent memory (raw turns + summaries + embeddings) and using TTL for short-term memory in sample code.",
+      "where_searched": "documentdb-data-modeling and documentdb-monitoring skill docs; no sample code in the repository demonstrates a full memory persistence pattern.",
+      "effect_on_this_build": "Agent memory was requested in the starter prompt but not implemented; a canonical example would have let the builder implement it correctly (TTL + summaries + embeddings).",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Ship a short 'agent-memory' quickstart: code snippets that show (a) a document shape for raw_turns (with occurredAt and TTL index), (b) a summarization step that writes a long-term summary doc with embedding and embedding_dim, and (c) retrieval code to include memory summaries in the model prompt.",
+      "priority": "high"
+    },
+    {
+      "topic": "Client-side rerank numeric guidance (fetch_k)",
+      "what_was_missing": "Authoritative numeric guidance on candidate-fetch sizes for client-side reranking in Azure DocumentDB context (there is no Microsoft Learn doc stating specific numeric ranges).",
+      "where_searched": "Microsoft Learn vector search docs and the documentdb-vector-search skill; searches for '500-5000 candidates' returned no authoritative result (discovery notes).",
+      "effect_on_this_build": "The sample's in-process fallback scans the collection which is fine for tiny datasets but would not scale; lacking numeric guidance makes it hard for authors to pick safe defaults for larger demos.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short example on when to use client-side rerank and suggested candidate sizes by embedding dimension and latency target (e.g., 'for demo sets <5k items use full-scan; for larger sets fetch_k 500–2000; prefer server-side $search otherwise').",
+      "priority": "medium"
+    },
+    {
+      "topic": "Driver-version & wire-protocol compatibility guidance",
+      "what_was_missing": "A pinned driver-version recommendation and an explicit compatibility matrix for Node driver versions vs supported MongoDB wire protocol/version for Azure DocumentDB clusters.",
+      "where_searched": "documentdb-driver skill, documentdb-azure-deployment resources; no single authoritative 'which driver version to pin' page was found in the sample kit.",
+      "effect_on_this_build": "The builder picked mongodb ^5.7.0 (which works) but the repo lacks explicit guidance about matching driver versions to cluster wire protocol versions; this could confuse builders choosing other driver majors.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short compatibility section to the driver skill README mapping recommended Node mongodb versions to DocumentDB supported wire protocol versions and include a pinned example in new sample templates.",
+      "priority": "low"
+    },
+    {
+      "topic": "Infrastructure as code example (mongoClusters resource)",
+      "what_was_missing": "An example Bicep / Terraform snippet that deploys Microsoft.DocumentDB/mongoClusters with minimal parameters suitable for samples.",
+      "where_searched": "documentdb-azure-deployment skill and Microsoft Learn; the sample repo contains no IaC files.",
+      "effect_on_this_build": "The run used an existing cluster. Without an IaC snippet, operators may copy wrong ARM types (databaseAccounts) and fail to create a correct cluster.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Provide a small 'infra' folder with Bicep and Terraform examples that create a mongoClusters resource (default to M30 and low-cost region), plus a note about not using databaseAccounts for this product.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Document the management-plane vs data-plane createIndex limitations",
+      "what_was_missing": "A page explaining when createIndex via the MongoDB driver will be rejected and when the management plane (createSearchIndexes / MCP / portal) is required to create cosmosSearch indexes.",
+      "where_searched": "documentdb-vector-search and MCP setup skill; no short, prominent note was found in the sample repository.",
+      "effect_on_this_build": "The driver createIndex attempt reported that cosmosSearch options were not accepted and MCP createIndex calls failed due to management-tools opt-in. Builders need guidance to pick the right path.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Creating cosmosSearch indexes' note in the README clarifying: 'You may need portal / management-plane privileges for cosmosSearch indexes; driver createIndex may fail; use MCP/documentdb_create_index or portal when needed' plus a step-by-step example.",
+      "priority": "high"
+    }
+  ]
+}
