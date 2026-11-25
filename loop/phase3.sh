@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Phase 3: clean-up and comparison, run after phase 2 (build + audit for every sample) is complete.
+#   0. Resume runs that ended in a model failure (exit 7) once phase 2 is over.
 #   1. Rerun the samples whose phase-2 result was tainted by a harness defect fixed since.
 #   2. Control arm (no Agent Kit skills, no MCP servers) on two samples per vertical.
 #   3. Roll everything up: the pipeline's aggregate command, the phase report, the findings triage.
@@ -11,6 +12,10 @@ PAR="${1:-3}"
 RERUN_IDS="retail-07 retail-09 retail-13 retail-19 retail-12"
 CONTROL_IDS="retail-01 retail-11 fintech-01 fintech-11 healthcare-01 healthcare-11 banking-01 banking-11 customer-360-01 customer-360-11"
 
+echo "== phase 3.0: resume partial default-arm runs (rate-limit casualties) =="
+# Without --ids the queue covers every sample; complete ones are skipped, partial ones (exit 7 after the
+# retries ran out) are resumed from their run folder. Parallel 2 for this step: these fail on 429s.
+$PY loop/run_loop.py --parallel 2
 echo "== phase 3.1: reruns ($RERUN_IDS) =="
 # --rerun starts fresh runs; the tainted ones are already marked complete in state, so without it they would be skipped.
 # Only runs that have not yet been redone since the fixes are rerun: a sample whose latest default-arm run started
