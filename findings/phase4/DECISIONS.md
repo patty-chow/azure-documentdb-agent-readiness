@@ -60,7 +60,7 @@ https://learn.microsoft.com/en-us/azure/documentdb/compatibility-query-language.
 - One index per path: "Indexing applies to only one vector per path. You can create only one index per
   vector path." (vector-search features list and the limitations page). The quickstart's narrower
   code comment ("no two vector indexes of the same kind on the same field") is treated as imprecise.
-- `listIndexes` reports the options under `cosmosSearch` (vector-search, "Get vector index definitions").
+- `listIndexes`: the Learn vector-search sample ("Get vector index definitions") shows the options under `cosmosSearch`, but the open-source engine 0.117 returns them under `cosmosSearchOptions` with no `cosmosSearch` key (ENGINE-TESTS.md, vector-index-rules). Not yet checked on the managed service. Until it is, code and kit helpers must read both keys, and the Learn sample may be wrong.
 - BSON binary vectors: Learn requires an array of numbers and says a document whose vector has another
   type is not indexed and is silently absent from results (vector-search, DiskANN field table and IVF
   Important box). Engine issue documentdb/documentdb#109 (closed completed 2026-04-28) confirms
