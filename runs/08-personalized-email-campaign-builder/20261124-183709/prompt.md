@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LlamaIndex agent with a tool that fetches customer segment profiles from DocumentDB. Use context engineering to inject the segment's purchase history and preferences into the prompt, then generate personalised email subject lines and body copy. Write the generated drafts back to a campaigns collection in DocumentDB.
