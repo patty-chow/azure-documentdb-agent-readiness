@@ -1,0 +1,698 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested orchestrator: a Beanie Document model, a sequential orchestrator that delegates to three agents, atomic updates inside driver transactions, idempotent seed, index scripts, CLI and FastAPI surfaces, and unit tests that run without a live cluster. Major functional requirements from the starter prompt are met. Findings include: (1) the orchestrator uses Motor/MotorClient calls rather than loading the document through Beanie model methods (the code intentionally mixes Beanie model definitions with Motor updates); (2) the code uses Motor (AsyncIOMotorClient) rather than the newer PyMongo AsyncMongoClient recommended by the DocumentDB connection guidance; (3) history is embedded but not capped (no $slice), risking unbounded growth; (4) no retry/backoff logic for transient errors; (5) vector / embedding guidance and infra-as-code were not supplied (prompt did not ask), so these checklist items are missing and flagged as documentation gaps; (6) a small README/CLI mismatch and a minor info-leak risk in logging the full connection string. I verified the seed, index creation (via Motor fallback), index listing via MCP tools, and tests (1 unit test passed). See requirement_results for line-by-line status, practice checks for discoverability and follow/violate status, decision_reviews for recorded choices, and doc_gaps with recommended deliverables for the product team.",
+  "requirement_results": [
+    {
+      "requirement": "A Python Beanie ODM `Document` model represents an onboarding application as a state machine stored in Azure DocumentDB",
+      "status": "met",
+      "evidence": "app/src/sample_orchestrator/models.py:14-20 (OnboardingApplication with state, history, schemaVersion)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A Python LangChain orchestration pipeline acts as the orchestrator: it loads an onboarding application document through Beanie and drives that application through the journey",
+      "status": "partly_met",
+      "evidence": "app/src/sample_orchestrator/orchestrator.py:24-26 (loads app via coll.find_one using Motor) and app/src/sample_orchestrator/db.py:20-23 (init_beanie is called at startup)",
+      "cause": "builder_error",
+      "smallest_fix": "Change the orchestrator to load the document via Beanie (e.g. await OnboardingApplication.find_one({'applicant_id': application_id}) or use OnboardingApplication.get_by_id/ appropriate Beanie API) and pass driver sessions into Beanie/Motor calls for transactional updates."
+    },
+    {
+      "requirement": "Three separate agents exist for the roles of ID verification, risk assessment and account opening, and the orchestrator delegates each step to the matching agent",
+      "status": "met",
+      "evidence": "app/src/sample_orchestrator/agents.py:8-14,17-23,26-32 (three agent functions); app/src/sample_orchestrator/orchestrator.py:11-15 (AGENTS list) and orchestration loop uses them (line 30-33).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The orchestrator invokes the agents in sequence, ID verification first, then risk assessment, then account opening, with each agent's run completing before the next one starts",
+      "status": "met",
+      "evidence": "app/src/sample_orchestrator/orchestrator.py:30-33 (for loop over AGENTS) and line 32 (await agent_fn(app_doc)).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "After each agent step, the orchestrator updates the application document's state in Azure DocumentDB atomically",
+      "status": "met",
+      "evidence": "app/src/sample_orchestrator/orchestrator.py:41-50 (async with await client.start_session(); start_transaction(); coll.find_one_and_update(..., session=session)).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Each state transition is logged (previous state, the new state and the agent that ran)",
+      "status": "met",
+      "evidence": "app/src/sample_orchestrator/orchestrator.py:52-53 (print with from_state, new_state and agent_name) and history append in the same transaction (line 46).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository",
+      "status": "met",
+      "evidence": "app/.env.example:1-5 (DOCUMENTDB_URI placeholder); app/src/sample_orchestrator/db.py:10-16 (reads DOCUMENTDB_URI from environment). No secret is committed in repo files.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values",
+      "status": "met",
+      "evidence": "app/.env.example:1-7 (DOCUMENTDB_URI and DOCUMENTDB_DB and OPENAI_API_KEY placeholders).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output",
+      "status": "not_met",
+      "evidence": "The sample does not create any vector index (app/scripts/create_indexes.py creates simple single-field indexes; vector indexes not implemented).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an explicit instruction to the starter prompt or a README section: 'If you include vector search, specify the embedding model (provider and model) and its output dimension; pass embeddings_dim to the index-creation helper so index dims match model output.'"
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one",
+      "status": "not_met",
+      "evidence": "No vector index created, and README has no guidance about vector index sizing or parameters.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a README section explaining index type and tunables and a parameterized index creation helper in scripts/create_indexes.py to accept data-size-guided parameters."
+    },
+    {
+      "requirement": "One database client is created and reused across requests",
+      "status": "met",
+      "evidence": "app/src/sample_orchestrator/db.py:7-17 (_client singleton and get_client() that returns AsyncIOMotorClient instance).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data",
+      "status": "met",
+      "evidence": "app/scripts/seed.py:21-22 uses coll.replace_one(..., upsert=True) for idempotent upsert; scripts/create_indexes.py and scripts/create_indexes.py uses create_index which is idempotent (and was used successfully).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails",
+      "status": "not_checkable",
+      "evidence": "No /search endpoint is implemented in this sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add a /search endpoint, include explicit checks for empty query and wrap embedding calls with try/except to return clear 4xx/5xx errors."
+    },
+    {
+      "requirement": "Search results include the similarity score",
+      "status": "not_checkable",
+      "evidence": "No search endpoint or embedding-based queries implemented in this sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If search is implemented, return similarity score alongside document metadata."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`",
+      "status": "met",
+      "evidence": "app/requirements.txt:1-10 (explicit pinned versions, e.g. beanie==1.25.0, motor==3.1.1).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Unit tests run without a live cluster",
+      "status": "met",
+      "evidence": "app/tests/test_orchestrator.py uses monkeypatch/fakes; pytest run recorded a passing test (events.jsonl run_command shows '1 passed').",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type",
+      "status": "not_met",
+      "evidence": "Repository contains no Bicep/ARM/Terraform file for Microsoft.DocumentDB/mongoClusters (no infra files present).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal IaC example (Bicep or Terraform/AzAPI) that declares a Microsoft.DocumentDB/mongoClusters resource with reasonable default tier/storage (commented) so authors can provision the correct vCore DocumentDB resource."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up",
+      "status": "met",
+      "evidence": "app/README.md:1-27 (What it shows, Prerequisites, Quickstart) and lines 29-37 (Tests, Security, Cleanup).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name",
+      "status": "partly_met",
+      "evidence": "app/README.md uses 'DocumentDB' and references DocumentDB. However, app/.env.example line 2 example connection string uses a cosmos-style host (\"clustername.mongo.cosmos.azure.com\") in the comment; events/logs also include a real cluster URI referencing 'mongocluster.cosmos.azure.com' displayed in runtime logs.",
+      "cause": "builder_error",
+      "smallest_fix": "Replace host examples with neutral placeholders in .env.example and avoid printing full connection strings in logs; prefer 'mongodb+srv://<USER>:<REDACTED>@<CLUSTER_URI>/?...' or simply '<YOUR_DOCUMENTDB_URI_HERE>' so the repository doesn't hint at neighbouring product examples."
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton client",
+      "practice": "Create a single AsyncMongoClient at application startup and reuse it across the process instead of creating a client per request; Motor is deprecated for new Python async code in favor of PyMongo's AsyncMongoClient.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/sample_orchestrator/db.py:7-16 (uses Motor AsyncIOMotorClient and a singleton _client), not AsyncMongoClient from PyMongo.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Use the recommended PyMongo AsyncMongoClient (or update requirements and code) or state in README why Motor is intentionally used; change get_client to construct PyMongo's Async client and update requirements.txt accordingly.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection config",
+      "practice": "Configure the MongoDB async client with TLS and sensible connection-pool and timeout settings (maxPoolSize, minPoolSize, maxIdleTimeMS, connectTimeoutMS, socketTimeoutMS)",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/sample_orchestrator/db.py:12-17 (client = AsyncIOMotorClient(uri) with no explicit pool/timeout settings).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Pass recommended options when creating the client (e.g., AsyncIOMotorClient(uri, maxPoolSize=50, maxIdleTimeMS=120000, tls=True, serverSelectionTimeoutMS=2000)) and document the rationale in README.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secret handling",
+      "practice": "Read the cluster connection string from a secure source at runtime (environment variable such as DOCUMENTDB_URI...), do not commit credentials to the repository or logs and provide a .env.example placeholder for local dev.",
+      "category": "authentication",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example:1-5 (placeholder); app/src/sample_orchestrator/db.py:12-16 (reads DOCUMENTDB_URI from env).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transaction usage",
+      "practice": "Group multi-operation updates inside a driver session transaction and keep transactions short",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction",
+      "status": "followed",
+      "evidence": "app/src/sample_orchestrator/orchestrator.py:41-50 (start_session + start_transaction + find_one_and_update with session).",
+      "source": "Transactions",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Transactions",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Optimistic concurrency",
+      "practice": "Use optimistic concurrency (version or lastUpdated checked in update predicate)",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P05",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/sample_orchestrator/orchestrator.py performs unconditional find_one_and_update by applicant_id (no version/lastUpdated predicate); however optimistic concurrency is not documented in public DocumentDB guidance for the Mongo API in the agent-skill collection.",
+      "source": "",
+      "searched": "Searched 'Azure DocumentDB optimistic concurrency version findOneAndUpdate' (no authoritative Azure DocumentDB doc found that prescribes a specific pattern for the Mongo API).",
+      "fix": "Add an optimistic concurrency field (version or lastUpdated) and include it in the find_one_and_update query (e.g., {'applicant_id': X, 'version': current_version} plus $inc version) or, if transient conflicts are acceptable, add retry logic around the update.",
+      "sources": [],
+      "what_would_help": "A short Microsoft Learn page or note in the agent-kit documenting an optimistic-concurrency pattern for the Mongo API (example using findOneAndUpdate with version or timestamp)."
+    },
+    {
+      "topic": "Embed vs history",
+      "practice": "Model a state machine document with an embedded, bounded history only when the history is bounded; otherwise use a separate history collection",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/sample_orchestrator/models.py:14-19 (history: List[Transition] = Field(default_factory=list)) and app/src/sample_orchestrator/orchestrator.py:44-46 (pushes full transition into history) but no cap is applied.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Limit embedded history with $push + $slice (e.g., use {'$push': {'history': {'$each':[transition], '$position':0, '$slice':100}}}) or move transitions to a separate history collection. Update create/update paths accordingly.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Work-queue indexes",
+      "practice": "Create a unique index on application identifier and add a compound index for orchestrator lookup patterns",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/create_indexes.py:14-16 and later scripts/create_indexes.py (created applicant_id unique and status/state index); events.jsonl shows indexes created and listed (documentdb_list_indexes results).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Partial/sparse indexes",
+      "practice": "Use partial or sparse indexes for fields present only on active items to reduce RU cost",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The sample creates a general status index; it does not create partialFilterExpression-style partial indexes. The sample's small scale makes impact unclear.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "If production workload filters by a small set of states, create a partial index targeting that state (documented in create_indexes.py).",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transient fault retries",
+      "practice": "Handle transient faults with exponential backoff and limited retries",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "violated",
+      "evidence": "Orchestrator and seed scripts perform direct driver calls without retry/backoff wrappers; no retry logic around transactions or index creation (see app/src/sample_orchestrator/orchestrator.py and app/scripts/seed.py).",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Wrap critical operations (transactions, write operations) with retry logic and exponential backoff (or use driver-level retry settings) and make transaction bodies idempotent.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Small transactions",
+      "practice": "Keep transactions and updates small; avoid updating large blobs inside a transaction",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "Orchestrator updates only small fields (state, history entry) inside transactions (app/src/sample_orchestrator/orchestrator.py:44-46).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection to avoid vectors",
+      "practice": "Use projection to avoid transferring vectors or other large fields unless required",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample does not store or transfer vector fields in queries.",
+      "source": "documentdb-query-optimization",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimization",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Beanie startup init",
+      "practice": "When using Beanie with an async driver, initialize Beanie once at startup with your Motor/Async client and document models and reuse the client",
+      "category": "connection",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P14",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/sample_orchestrator/db.py:20-23 calls await init_beanie(database=client[db_name], document_models=[OnboardingApplication]) at startup.",
+      "source": "",
+      "searched": "Searched 'Beanie init_beanie Azure DocumentDB Motor AsyncMongoClient guidance' (no Azure-DocumentDB-specific official page found for Beanie; practice is common Beanie usage).",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short Azure doc explaining Beanie + Motor init pattern and session handling would let an agent rely on public guidance instead of prior knowledge."
+    },
+    {
+      "topic": "Atomic audit history",
+      "practice": "Record audited state transitions and make the append part of the same atomic update/transaction",
+      "category": "logging",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction",
+      "status": "followed",
+      "evidence": "app/src/sample_orchestrator/orchestrator.py:42-50 (transaction) app/src/sample_orchestrator/orchestrator.py:44-46 ($set state and $push history executed in same transaction).",
+      "source": "Group multiple operations in transactions in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Group multiple operations in transactions in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create indexes before bulk load",
+      "practice": "Create indexes (including vector indexes) before bulk-loading or running large backfills",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "scripts/create_indexes.py exists and was used to create indexes before/around seed operations (events.jsonl shows scripts/create_indexes.py executed and indexes observed).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Limit embedded history writes",
+      "practice": "Limit the size of embedded history writes with $push + $slice or cap the history length",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "orchestrator uses '$push': {'history': transition} with no $slice or cap (app/src/sample_orchestrator/orchestrator.py:44-46).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Use $push with $each/$slice to cap history length in the same transaction (update query change).",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Mock DB for CI",
+      "practice": "In CI, mock the DB and driver sessions for unit tests and run integration tests that seed and mutate a live cluster only when permitted",
+      "category": "testing",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/tests/test_orchestrator.py uses monkeypatch/fakes and does not require a live cluster; pytest passed (events.jsonl).",
+      "source": "",
+      "searched": "Searched 'unit tests mock Motor Beanie Azure DocumentDB guidance' (authoritative Azure guidance not found; test approach matches common practice).",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short Microsoft Learn note recommending mocking Motor/Beanie for unit tests and reserving live cluster integration tests for gated CI runs would help agents."
+    },
+    {
+      "topic": "Monitor RU/throughput",
+      "practice": "Monitor RU/throughput and slow queries; use explain() to diagnose slow queries and alert on RU throttling",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample is a small example and does not include monitoring/diagnostic setup.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transaction retry",
+      "practice": "When using transactions, implement recommended retry-on-transient-failure logic",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction",
+      "status": "violated",
+      "evidence": "Orchestrator transaction block does not implement retry-on-transient-error; no retry wrapper around the transaction body (app/src/sample_orchestrator/orchestrator.py:41-50).",
+      "source": "Transactions",
+      "searched": "",
+      "fix": "Wrap transaction logic inside a retry loop per guidance (retry the withTransaction callback on transient errors) and ensure transaction body is idempotent.",
+      "sources": [
+        {
+          "title": "Transactions",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size",
+      "practice": "Keep per-document size well under the 16 MB limit by avoiding large inline blobs or very high-dimension vectors",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "Model fields are small (strings, small history entries); no large inline blobs or vectors present in model (app/src/sample_orchestrator/models.py).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Verify indexes with explain",
+      "practice": "Use explain('executionStats') to verify index usage and avoid COLLSCAN",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The sample creates appropriate indexes and uses point lookups; no explain('executionStats') calls are present in repository to validate index usage in heavier queries.",
+      "source": "documentdb-query-optimization",
+      "searched": "",
+      "fix": "Add optional diagnostic script or test that runs explain('executionStats') for representative queries and documents its output in README.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimization",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "HA & DR guidance",
+      "practice": "Enable in-region high availability (HA) on production clusters",
+      "category": "high_availability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample targets an existing cluster for demonstration; production HA is out-of-scope for this sample.",
+      "source": "documentdb-high-availability",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-high-availability",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Production hardening",
+      "practice": "Harden production clusters with network isolation, Entra ID + RBAC and CMK",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample is a dev/example project and does not attempt to provision or configure production network/security features.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator decision to approve 'ready_with_gaps' is recorded in decisions.jsonl and is consistent with the run. events.jsonl includes the corresponding log entries."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Python 3.13 is consistent with the run environment and subsequent build steps; evidence in events.jsonl and used by pip/pytest runs."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "Initially choosing Beanie 1.21.x was defensible, but a later tool result (pip) led the builder to use beanie==1.25.0. The decision relied on model_default rather than a single authoritative source and was later revised (see D012)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "Pinning dependencies is good practice. The exact pinned versions were based on model_default assumptions and were later adjusted after tool feedback (pip install output). The events show subsequent changes to pinned versions (D012, D013)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Duplicate operator approval similar to D001; recorded in decisions.jsonl and consistent with events."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choosing Python async + Motor + Beanie + FastAPI matches the code produced and the prompt. Evidence in repository and events.jsonl."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "wrong",
+      "comment": "Decision to pin beanie==1.24.1 was later shown to be invalid: pip could not find 1.24.1 and the builder updated the version (events.jsonl shows pip failure and later D012 switching to 1.25.0). The events show the tool feedback and the subsequent correction."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision to read DOCUMENTDB_URI from environment is implemented (app/src/sample_orchestrator/db.py reads os.environ['DOCUMENTDB_URI']). Note: some attempts to log this decision failed due to an invalid reason_source value in a log_decision call (events.jsonl lines ~14-18 show validation exceptions for log_decision with reason_source='skill_md')."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Decision to use Motor's find_one_and_update inside a driver session/transaction is implemented in orchestrator.py and is consistent with the intent to combine Beanie definitions and explicit transactional Motor updates (events.jsonl shows the write_file for orchestrator and the transaction usage)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Decision to embed a compact history array is implemented (models.py and orchestrator.py append history inline). The choice is explicit and documented; the auditor notes the history is not capped and suggests limiting growth."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Decision to create indexes on 'state' and a compound index on applicant_id+state is implemented; create_indexes.py and events.jsonl show indexes created and verified by documentdb_list_indexes."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Tool-driven correction to beanie==1.25.0 is recorded and matches the content of app/requirements.txt and the pip installation logs in events.jsonl; the decision is supported by the pip failure that triggered it."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "FastAPI version adjustment to 0.98.0 after tool feedback is recorded and consistent with the final requirements and pip install output."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Optimistic concurrency pattern for Mongo API",
+      "what_was_missing": "No authoritative Microsoft Learn page or agent-kit skill page giving a concrete optimistic-concurrency pattern (findOneAndUpdate with version or timestamp) for the Azure DocumentDB Mongo API.",
+      "where_searched": "Microsoft Learn (transactions, optimistic concurrency queries) and agent skills (data-modeling, connection); searches: 'Azure DocumentDB optimistic concurrency version findOneAndUpdate'.",
+      "effect_on_this_build": "The builder did not implement optimistic concurrency (update predicate based on version), so concurrent updates could silently overwrite each other in a real concurrent orchestrator. For this small sample it's unlikely, but in production this would be a correctness risk.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short Learn page titled 'Optimistic concurrency with the Mongo API in Azure DocumentDB' containing: (1) the rationale; (2) a code example using findOneAndUpdate with a version field ($inc) or timestamp check; (3) how to combine with driver sessions/transactions; (4) a brief note on conflict-handling and retries. Include a small 'pattern cookbook' snippet referencing Beanie + Motor examples.",
+      "priority": "high"
+    },
+    {
+      "topic": "Beanie + DocumentDB guidance",
+      "what_was_missing": "No public Microsoft guidance documenting Beanie usage patterns with Azure DocumentDB (init_beanie startup, passing sessions into Beanie/Motor operations, and recommended versions).",
+      "where_searched": "Searches for 'Beanie Azure DocumentDB' and 'Beanie init_beanie Motor' returned only repository examples and prior-knowledge fragments; agent-kit has no official Learn page for Beanie.",
+      "effect_on_this_build": "The builder initialized Beanie correctly, but an agent couldn't rely on a canonical public page to decide exact version constraints and session usage. This contributed to model_default decisions about Beanie version pins.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A small 'Using Beanie with Azure DocumentDB' doc: recommended Beanie versions compatible with the DocumentDB driver, init_beanie example using the cluster client, how to use sessions/transactions with Beanie (passing session objects or using Motor for transaction-sensitive operations), and a short compatibility matrix.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Vector-index dimension and creation helper",
+      "what_was_missing": "The sample and prompt did not specify an embedding model or dimension. There is no small helper in samples that constructs the exact createIndexes JSON (cosmosSearch + cosmosSearchOptions) with an embedding-dimension parameter.",
+      "where_searched": "Microsoft Learn vector-search docs (found algorithm types and createIndexes shape) and agent skills; but no sample helper shipped in the agent-kit.",
+      "effect_on_this_build": "The builder avoided creating vector indexes (prompt didn't require them), so the sample does not demonstrate vector-search usage or dims. Agents lacking a helper will guess dims and likely create incorrect vector indexes.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Provide a small helper script or MCP tool that accepts: collection, field name, dims, algorithm (HNSW/IVF/DiskANN) and tunables and emits the correct createIndexes JSON with cosmosSearchOptions. Also add README guidance 'set embedding model and dims before creating vector index'.",
+      "priority": "high"
+    },
+    {
+      "topic": "Agent-driver guidance: prefer PyMongo Async client vs Motor",
+      "what_was_missing": "The agent-kit guidance contradicts prior beliefs: some examples in skills advise using PyMongo Async client for new Python async code but sample uses Motor. There is no single short note saying 'for new Python async code prefer PyMongo AsyncClient; Motor is supported for legacy code.'",
+      "where_searched": "documentdb-connection skill and public docs; agent-kit notes exist but no compact 'which driver to pick' guidance page aimed at sample authors.",
+      "effect_on_this_build": "The builder used Motor which is acceptable, but an agent selecting a driver by default might pick the non-preferred driver or stumble on API differences (tests, init patterns).",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a short 'Which Python async Mongo driver to choose' note in the documentdb-connection skill and in Quickstarts: advise AsyncMongoClient (PyMongo) as preferred for new async code, list Motor compatibility caveats, and provide a short migration snippet.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests and CI guidance for Beanie/Motor mocking",
+      "what_was_missing": "A brief public example showing how to mock Beanie/Motor sessions for unit tests and separate integration tests that seed the live cluster.",
+      "where_searched": "Searched repo tests and public docs; found repo-level examples but no Learn page.",
+      "effect_on_this_build": "The sample's tests do the right thing (mocking), but an agent authoring tests might not follow the same pattern without a short reference.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule + short sample test showing monkeypatching get_client, faking collection methods, and separating integration tests into an 'integration/' folder that run only when an env var is set.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Naming and provider confusion (DocumentDB vs Cosmos DB)",
+      "what_was_missing": "Clear, prominent guidance that distinguishes the vCore Azure DocumentDB (mongoClusters) product from legacy Cosmos DB databaseAccounts (RU-based) and shows which CLI/ARM resource to use (az documentdb / Microsoft.DocumentDB/mongoClusters).",
+      "where_searched": "Readiness findings and Microsoft Learn searches showed many docs referencing databaseAccounts and cosmos examples, which led to confusion.",
+      "effect_on_this_build": "Risk that a sample author or agent will target the wrong resource type (databaseAccounts) or wrong CLI group (az cosmosdb) for provisioning; in this run the builder avoided provisioning but the confusion appears in prompts and example comments (.env.example).",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "A 'Naming and CLI quicknote' near the top of product landing pages and quickstarts: explicitly state 'Use Microsoft.DocumentDB/mongoClusters and az documentdb for vCore DocumentDB clusters; databaseAccounts and az cosmosdb refer to legacy Cosmos DB control plane', with two small code snippets showing the correct Bicep/az commands.",
+      "priority": "high"
+    },
+    {
+      "topic": "Model-default decisions logged without public source",
+      "what_was_missing": "Several decisions were made from model_default (e.g., initial Beanie version pin) without an authoritative public doc to cite.",
+      "where_searched": "decisions.jsonl shows D003 and D004 were model_default; readiness searches did not produce a single 'official' pinned-version recommendation for Beanie.",
+      "effect_on_this_build": "Caused iterative edits to pinned versions (D012) and extra iteration. Agents should prefer asking for the repository maintainer's desired driver/ODM versions or use a small guidance page.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a 'Recommended third-party dependency versions' line to the DocumentDB quickstart or the agent-kit (a short table: beanie, motor, pymongo compatibility notes).",
+      "priority": "medium"
+    }
+  ]
+}
