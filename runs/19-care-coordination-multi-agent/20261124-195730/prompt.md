@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain multi-agent system with a GP agent that reads the patient's primary care record from DocumentDB, a specialist agent that retrieves referral notes, and a pharmacy agent that checks current medications. An orchestrator coordinates all three and synthesises a unified care plan document written back to DocumentDB.
