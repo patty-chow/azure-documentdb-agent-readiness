@@ -8,13 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the system in Node.js using LangChain Node.js to create a multi-agent architecture consisting of an orchestrator, an evidence-gathering agent, a policy-reasoning agent, and a decision agent.
-- The orchestrator receives a chargeback claim input (e.g., a claim identifier or payload) and delegates processing sequentially: first invoking the evidence-gathering agent, then passing its result to the policy-reasoning agent, and finally invoking the decision agent with the policy output.
-- The evidence-gathering agent queries Azure DocumentDB for related transaction and communication documents using the Node.js "mongodb" driver, retrieving all documents associated with the provided claim identifier (e.g., from collections for transactions and communications).
-- The evidence-gathering agent returns the fetched transaction and communication documents as structured evidence (e.g., arrays of documents) to the orchestrator, and the orchestrator forwards that evidence to the policy-reasoning agent.
-- The policy-reasoning agent accepts the evidence and interprets the dispute rules to produce a reasoning result or recommendation (an interpretation of which rules apply and a suggested accept/reject recommendation), and returns that result to the orchestrator/decision agent.
-- The decision agent uses the policy-reasoning output to produce a final accept or reject outcome and writes that outcome back to Azure DocumentDB (using the Node.js "mongodb" driver), updating or inserting a document associated with the original claim to record the outcome.
-- The orchestrator enforces the end-to-end flow so that the decision agent's stored accept/reject outcome is derived from the evidence retrieved by the evidence-gathering agent and the interpretation produced by the policy-reasoning agent (i.e., agents are invoked and data flows in the stated order).
+- Build the system in Node.js with LangChain as a multi-agent system with four distinct roles: an orchestrator, an evidence-gathering agent, a policy-reasoning agent and a decision agent.
+- The orchestrator receives a chargeback claim as its input and drives the flow in order: it delegates to the evidence-gathering agent first, hands that agent's output to the policy-reasoning agent, then hands the policy-reasoning output to the decision agent.
+- The evidence-gathering agent fetches the transaction documents and the communication documents related to the claim from Azure DocumentDB using a MongoDB-compatible Node.js driver (e.g. `mongodb`) and returns them as the evidence.
+- The policy-reasoning agent receives the gathered evidence and interprets the dispute rules against it, producing a reasoning output that is passed on to the decision agent.
+- The decision agent reaches an accept or reject outcome from the policy-reasoning output.
+- The decision agent writes the accept/reject outcome back to Azure DocumentDB, associated with the original claim.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

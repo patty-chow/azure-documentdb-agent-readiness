@@ -1,0 +1,50 @@
+# 3. Build report: 18-chargeback-dispute-multi-agent
+
+**Status: completed**
+
+Implemented a small, runnable Node.js sample that demonstrates a LangChain-style multi-agent chargeback dispute flow using Azure DocumentDB (MongoDB-compatible). The sample includes: a singleton MongoDB client that reads DOCUMENTDB_URI from the environment, an evidence agent (reads transactions/communications/claims), a policy agent (uses OpenAI Responses API when OPENAI_API_KEY is provided; otherwise a deterministic heuristic fallback), a decision agent (writes accept/reject to the decisions collection), an orchestrator that wires agents together, a minimal Express server, an idempotent seed script, and unit tests (Jest) that run without a live cluster. I verified dependency installation, unit tests, an end-to-end one-shot orchestration against the live cluster (wrote a decision document), and inspected collections/indexes using the documentdb MCP tools. I logged all major design choices before acting (language, driver, auth method, provisioning choice, schema, indexes, and the embedding/LLM choices).
+
+## How to run
+
+1) Copy environment placeholders: cp .env.example .env and set DOCUMENTDB_URI to your cluster connection string. Optionally set OPENAI_API_KEY and OPENAI_MODEL if you want the policy agent to call an LLM. 2) npm install 3) npm run seed (idempotent - creates indexes and sample documents if they don't exist) 4) npm start to run the Express server (GET /health, POST /claims/:claimId/decide) OR run a one-shot orchestrator: node src/runOrchestrator.js (will run the orchestrator for claim-9001 and exit). 5) npm test runs unit tests (mocks used so tests run without a live cluster).
+
+## Verified by running
+
+- npm install: succeeded (dependencies installed).
+- npm test (Jest): all tests passed (2 test suites, 3 tests passed).
+- documentdb MCP: documentdb_sample_documents on sample_fintech_18.claims, transactions, communications returned sample documents (evidence exists).
+- documentdb MCP: documentdb_list_indexes for claims/transactions/communications returned indexes (single-field claimId/transactionId indexes exist).
+- One-shot orchestrator: node src/runOrchestrator.js executed successfully against the live cluster (read claim 'claim-9001', transactions and communications) and wrote a decision document to sample_fintech_18.decisions (document found via documentdb_sample_documents).
+
+## Not verified
+
+- Full LangChain library integration: I initially planned to use the LangChain npm package, but a requested LangChain version failed to install (npm ETARGET). I changed plan to invoke the OpenAI SDK directly for the policy agent. The sample implements a LangChain-style multi-agent architecture but does not depend on the langchain npm package. Evidence: npm install error 'No matching version found for langchain@^0.0.275.' (logged via tool_result).
+- Vector/semantic search end-to-end: creating and validating a DocumentDB vector index (cosmosSearchOptions) and embedding pipeline was intentionally omitted from the default flow. The readiness report highlighted ambiguity about embedding model and dimensions. If you want embeddings and vector indexes, pick an embedding provider/model and create an index with matching 'dimensions' (not performed here).
+- LLM calls to a real model: The policy agent will call the OpenAI Responses API when OPENAI_API_KEY is set. In the verification runs the environment did not contain an OPENAI_API_KEY, so the agent used a deterministic heuristic fallback; I did not verify live LLM outputs.
+- Provisioning or control-plane operations: I did not create or change any Azure resources (provisioning disallowed by run policy). If you need Bicep/ARM/Terraform for mongoClusters, the documentdb-azure-deployment skill or provided guidance should be used separately.
+- mongosh or interactive shell checks: mongosh was not available in the environment (readiness report recommended installing it). I used documentdb MCP programmatic tools to inspect the cluster instead.
+
+## Open issues
+
+- LangChain package: The initial plan to include a LangChain npm dependency was changed because a requested langchain version was not available. The sample uses direct OpenAI SDK calls for the policy agent and a heuristic fallback when OPENAI_API_KEY is not set. If you prefer LangChain primitives, add an appropriate langchain version and adapt the policyAgent to use it.
+- Embedding/vector-search integration: The sample intentionally omits vector index creation and embedding generation to avoid choosing a provider/dimension without explicit requirement. To add semantic search: pick an embedding model (e.g., OpenAI text-embedding-3-small, 1536 dims), create a DocumentDB vector index (cosmosSearch options with matching dimensions), generate and store embeddings, and query with cosmosSearch. This needs an API key and careful matching of 'dimensions'.
+- Seed script robustness/timeouts: In an earlier run the seed script encountered an IndexOptionsConflict for an existing index and a later run timed out during an attempted seed (the repo was updated to check existing indexes). The seed script was made idempotent by checking existing indexes prior to creation; re-run seed if needed.
+- mongosh convenience: mongosh is useful for interactive debugging; the readiness report noted mongosh was not installed in the environment. Consider installing mongosh for developers who want interactive debugging of collections/indexes.
+
+## Files
+
+- `package.json`
+- `package-lock.json`
+- `README.md`
+- `.env.example`
+- `src/db.js`
+- `src/index.js`
+- `src/orchestrator.js`
+- `src/runOrchestrator.js`
+- `src/seed.js`
+- `src/agents/evidenceAgent.js`
+- `src/agents/policyAgent.js`
+- `src/agents/decisionAgent.js`
+- `tests/orchestrator.test.js`
+- `tests/policy.test.js`
+
