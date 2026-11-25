@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain orchestration pipeline with a scraper agent that fetches financial news headlines, a sentiment agent that scores each headline and extracts ticker mentions, and an alert agent that checks DocumentDB for matching watchlist entries and fires notifications. Store all scored articles as documents in DocumentDB.
