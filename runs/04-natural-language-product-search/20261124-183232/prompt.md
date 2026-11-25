@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with a hybrid search tool that queries DocumentDB using both $text and vector search, merges the ranked results, and returns the best matches. Include a prompt engineering step that rewrites the user's raw query into a well-formed search intent before querying.
