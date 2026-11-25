@@ -1,0 +1,675 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested CLV pipeline in Python, seeds idempotent sample data, creates an index, computes the required metrics with a DocumentDB aggregation pipeline, prompts an LLM to classify CLV, and writes results back to the customer document. Tests and index/listing/seed verification were run against the live cluster where possible. Find‑and‑fix items: the LangChain agent does not expose the DocumentDB aggregation as a LangChain Tool (the agent calls the aggregation function directly), connection tuning / retries / bulk-write patterns are not implemented, dependencies are not strictly pinned, tests require a live cluster (no offline unit tests), and infrastructure-as-code is not supplied. Several documentation gaps (LLM output audit/sanitization, MCP management-tool opt-in discoverability, guidance on choosing a default LLM) are noted for the Product team.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the sample in Python with a LangChain agent that acts as the single agent of the pipeline, with the DocumentDB aggregation tool registered as a LangChain tool the agent can invoke during a run.",
+      "status": "partly_met",
+      "evidence": "app/src/agent.py calls compute_customer_metrics() directly and does not register a LangChain Tool object (no Tool(...) or initialize_agent tool registration observed).",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap compute_customer_metrics in a langchain.agents.Tool and register it when initializing the agent (few-line change in src/agent.py)."
+    },
+    {
+      "requirement": "The DocumentDB aggregation tool runs an aggregation pipeline in Azure DocumentDB through a MongoDB driver and returns, per customer, historical purchase frequency, average order value and tenure.",
+      "status": "met",
+      "evidence": "app/src/clv_tool.py lines 9-20 create and run an aggregation pipeline; compute_customer_metrics returns purchase_count, avg_order_value and tenure_days (lines 6-42).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The agent includes the purchase frequency, average order value and tenure returned by the aggregation tool in the prompt it sends to the LLM.",
+      "status": "met",
+      "evidence": "app/src/agent.py lines 23-28 build the human prompt with `metrics` and `baseline_score` and pass it to the LLM call.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The prompt engineering instructs the LLM to estimate a CLV tier chosen from low, medium, high and VIP, to produce a CLV score, and to generate a rationale for the estimate.",
+      "status": "met",
+      "evidence": "app/src/agent.py PROMPT_INSTR (lines 11-20) instructs the model to return clv_score, clv_tier in [low, medium, high, VIP] and a rationale.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The agent writes the CLV score and tier back to that customer's profile document in Azure DocumentDB by updating the existing document.",
+      "status": "met",
+      "evidence": "app/src/clv_tool.py update_customer_clv uses coll.update_one with $set (line 46-47). compute_and_classify (app/src/agent.py lines 80-81) calls update_customer_clv to persist results.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.py reads DOCUMENTDB_URI from environment (line 13). app/src/agent.py reads OPENAI_API_KEY from environment (line 8). app/.env.example contains only placeholders (app/.env.example lines 2-3).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI and OPENAI_API_KEY placeholders (file contents).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not use vector indexes or embeddings (no embedding code or vector-index creation).",
+      "cause": "could_not_determine",
+      "smallest_fix": "If vectors are added, record the embedding model and dimensions in code and .env.example and validate at index creation time."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index creation or parameters in repository.",
+      "cause": "could_not_determine",
+      "smallest_fix": "Not applicable unless vectors are used; otherwise add guidance when adding vector search features."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py implements a module-level _client singleton and get_client() that creates MongoClient only once (lines 7-18).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/src/seed.py is idempotent (uses update_one with upsert on lines 45-46) and can be run twice. Index creation is provided as a separate script (app/src/create_indexes.py) and was executed manually via an inline python command; seed.py does not create the index.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add idempotent index creation to seed() (call create_index with name) or document that seed and index-creation are separate. Prefer adding index creation to seed for single-step setup."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint or search code exists in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If a search endpoint is intended, add a /search handler that validates input and returns clear error messages on empty query or embedding failures."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search functionality implemented in this sample.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If adding search, include score in result projection and document it in README."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "not_met",
+      "evidence": "app/requirements.txt uses >= ranges (e.g., pymongo>=4.4.0, langchain>=0.0.300) rather than exact pinned versions (file contents).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Pin exact versions (==) in requirements.txt or provide a constraints file (requirements-lock.txt) created by pip-compile or pip freeze for reproducible builds."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "app/tests/test_clv.py seeds and uses the real customers collection via get_customers_collection(); tests ran against the live cluster in this run (events show pytest executed against real DB).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock pymongo (e.g., mongomock or monkeypatch get_customers_collection) so CI can run without a live cluster, and keep integration tests separate."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/Terraform/ARM) files present in the repo. The run instructions and skill_md explicitly used an existing cluster instead.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep or Terraform example that uses Microsoft.DocumentDB/mongoClusters (sample parameters: tier, storage, region) or link to the deployment skill’s template."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes the sample purpose, prerequisites, how to run, seed/cleanup notes (file contents).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and code refer to 'Azure DocumentDB' sample and do not reference Amazon DocumentDB or Cosmos DB in documentation files.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create a single long-lived MongoClient per process (singleton) and reuse it for all requests; do not open a new client per request, and close it only on orderly shutdown.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.py lines 7-18 implement module-level _client and get_client() that creates MongoClient once.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets from env",
+      "practice": "Read the DocumentDB connection string and other secrets from environment variables (or a runtime-loaded .env) and never commit secrets into source control or logs.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.py reads DOCUMENTDB_URI from os.environ (line 13); app/.env.example contains placeholders (file contents).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always use TLS for connections to Azure DocumentDB and do not disable certificate validation in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "app/src/db.py passes the DOCUMENTDB_URI verbatim into MongoClient (line 17). Whether tls is enforced depends on the URI the user supplies; the code does not explicitly assert TLS options.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Validate the URI scheme and document in README that the sample expects an SRV or TLS-enabled URI; optionally set tlsAllowInvalidCertificates from env only for local dev.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection timeouts",
+      "practice": "Set sensible socket and server-selection timeouts and tune them for your environment so client calls fail fast on unreachable clusters.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.py constructs MongoClient(uri) without serverSelectionTimeoutMS/socketTimeoutMS options (line 17).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Pass sensible defaults in get_client(), e.g. MongoClient(uri, serverSelectionTimeoutMS=5000, socketTimeoutMS=30000), and allow overriding via environment variables.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries for transient errors",
+      "practice": "Implement automatic retries for transient errors with exponential backoff and only retry idempotent operations.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "No retry wrapper or exponential backoff logic found around DB calls (app/src/clv_tool.py and app/src/db.py show direct PyMongo usage).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add retry logic (e.g., tenacity or a small wrapper) for transient operations and restrict retries to idempotent actions; document default retry policy in the README.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk writes for updates",
+      "practice": "Use batched/bulk write operations for large-scale updates.",
+      "category": "performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/max-document-size",
+      "status": "violated",
+      "evidence": "update_customer_clv uses update_one (app/src/clv_tool.py line 46-47). No bulkWrite implementation for applying CLV for many customers is present.",
+      "source": "Document size and batch write limits in Azure DocumentDB",
+      "searched": "",
+      "fix": "Provide a bulk write helper that builds a list of UpdateOne ops and calls collection.bulk_write(ops) for batch persistence.",
+      "sources": [
+        {
+          "title": "Document size and batch write limits in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/max-document-size"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Partial updates",
+      "practice": "When updating fields on a customer document, use partial updates like $set (and upsert when appropriate) rather than replacing the entire document.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "update_customer_clv uses coll.update_one with $set to write clv_score, clv_tier, clv_rationale (app/src/clv_tool.py line 46-47).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Shard key design",
+      "practice": "Design your shard/partition key so related customer data and most writes for a single customer map to the same logical partition (e.g., customer_id).",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "This sample uses a single sample database/collection and does not create or document a sharded cluster or shard key.",
+      "source": "documentdb-sharding",
+      "searched": "",
+      "fix": "If shipping a production example, add guidance on partition key choice (customer _id) and show how to create a sharded collection.",
+      "sources": [
+        {
+          "title": "documentdb-sharding",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index ESR",
+      "practice": "Create a compound index following the ESR rule for fields used together in aggregations (e.g., customer_id + order_date).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "An index on purchases.date was created (app/src/create_indexes.py line 7). The pipeline also benefits from the _id index when matching by _id (default). Index presence confirmed by MCP list (events: documentdb_list_indexes result).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Multikey indexes for arrays",
+      "practice": "For arrays you query or aggregate over (line items, product_ids), create appropriate multikey indexes and avoid unbounded arrays.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "create_indexes.py creates an index on purchases.date (app/src/create_indexes.py line 7) which is an array field (multikey index).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection of fields",
+      "practice": "Only project (return) the fields required for the computation in aggregation pipelines to reduce RU consumption and network transfer.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "The aggregation pipeline groups and returns only computed aggregate values (app/src/clv_tool.py lines 9-20).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Early $match in pipelines",
+      "practice": "Keep aggregation pipelines concise and place $match stages early (preferably filtering on the partition/shard key) to reduce scanned records and RU costs.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "Pipeline begins with {$match: {_id: customer_id}} (app/src/clv_tool.py line 10), thus filtering early.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid very large documents",
+      "practice": "Avoid storing very large documents (stay well under the 16 MB BSON limit); split very large blobs into object storage or side collections and reference them instead.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "Sample documents in seed.py embed a small purchases array (app/src/seed.py lines 6-33), not large blobs.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Record LLM outputs",
+      "practice": "Record LLM outputs and the LLM rationale in structured fields and an append-only audit or history subdocument rather than overwriting a single source-of-truth field.",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P15",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "The sample writes clv_score, clv_tier, clv_rationale as top-level fields via $set (app/src/clv_tool.py line 46-47) and does not maintain an append-only audit/history subdocument.",
+      "source": "prior_knowledge",
+      "searched": "searched for 'Azure DocumentDB record LLM outputs rationale append-only' (no useful public result)",
+      "fix": "Change update_customer_clv to $push an audit entry into a clv_history array (timestamp, score, tier, rationale, model) and keep latest fields if desired.",
+      "sources": [],
+      "what_would_help": "A documented example page showing an audit subdocument schema and update snippet for writing LLM outputs with $push."
+    },
+    {
+      "topic": "Sanitize LLM outputs",
+      "practice": "Sanitize and validate any values produced by an LLM before writing them to the database (type checking, allowed enums, ranges).",
+      "category": "security",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P16",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/src/agent.py accepts LLM JSON and directly casts to float/string then writes to DB; there is no explicit validation of allowed tiers or score ranges before update (agent.py lines 76-81, clv_tool.update_customer_clv line 46-47).",
+      "source": "prior_knowledge",
+      "searched": "searched for 'Azure DocumentDB sanitize LLM outputs validate before write' (no useful public result)",
+      "fix": "Add validation: ensure clv_tier in {low,medium,high,VIP}, clv_score within 0..1000, sanitize rationale length and escape or truncate dangerous content before $push/$set.",
+      "sources": [],
+      "what_would_help": "A short policy page specifying allowed enums and example validation code to run before DB writes."
+    },
+    {
+      "topic": "Explain plans",
+      "practice": "Use explain(\"executionStats\") / server-side explain plans to verify aggregations use intended indexes and to measure RU consumption.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "No explain() usage was added to the sample; the run used MCP list_indexes and observed RU warnings but no explain calls in code.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Provide an optional explain workflow or script that runs explain('executionStats') for sample aggregation workloads and documents the result.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Provision compute for heavy jobs",
+      "practice": "Provision sufficient compute/throughput for heavy aggregation jobs and index builds and schedule heavy batch/index work during off-peak windows.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/storage/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample uses an existing cluster and does not perform heavy index builds beyond a small test index; no provisioning code present.",
+      "source": "documentdb-storage",
+      "searched": "",
+      "fix": "If shipping for production, add guidance in README on expected tier and how to increase compute (M-series) before large index operations.",
+      "sources": [
+        {
+          "title": "documentdb-storage",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/storage/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index build windows",
+      "practice": "Create or build indexes during low-traffic windows (or follow a safe lifecycle: hide → verify → drop).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Index creation was performed interactively in this run via a one-off pymongo command; sample does not include scheduled index lifecycle guidance.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Add a README section advising index creation during low-traffic windows and provide the index lifecycle steps.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Automatic backups",
+      "practice": "Enable and configure automatic backups (and point-in-time restore where offered) so you can recover from accidental writes or faulty aggregation runs.",
+      "category": "backup",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Backup configuration is a cluster-level setting outside the sample; sample README does not instruct on backup configuration.",
+      "source": "documentdb-high-availability",
+      "searched": "",
+      "fix": "Add a README note recommending backups/PITR be enabled and link to DocumentDB backup docs.",
+      "sources": [
+        {
+          "title": "documentdb-high-availability",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Observability",
+      "practice": "Enable diagnostic settings and application-level monitoring (Azure Monitor / Log Analytics) to track RU usage, slow queries, and throttling and alert on saturation.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample includes no observability configuration or examples.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a README troubleshooting/observability section that shows enabling diagnostic settings and sample queries to monitor slow aggregations.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transactions support",
+      "practice": "Azure DocumentDB supports multi-document ACID transactions across collections and shards (the platform documents multi-document transactions as supported).",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/at-a-glance#mongodb-compatibility",
+      "status": "not_assessable",
+      "evidence": "This sample does not attempt multi-document transactions. The discovered practice contradicts a prior belief; whether to use transactions depends on cluster configuration and workload.",
+      "source": "Azure DocumentDB at a glance",
+      "searched": "",
+      "fix": "If your pipeline needs cross-document atomicity, document transactional requirements and demonstrate transaction usage in an integration test against a suitable cluster.",
+      "sources": [
+        {
+          "title": "Azure DocumentDB at a glance",
+          "url": "https://learn.microsoft.com/azure/documentdb/at-a-glance#mongodb-compatibility"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Local TLS relaxation",
+      "practice": "In local development, drive TLS relaxation (e.g., tlsAllowInvalidCertificates) from env vars and keep such relaxation out of production code.",
+      "category": "local_development",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The sample loads .env and uses the DOCUMENTDB_URI verbatim; it does not default to tlsAllowInvalidCertificates nor provide a local-gateway example in the repo beyond README. The local TLS relaxation pattern is not explicitly followed or disallowed.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "If local gateway usage is needed, add a docker-compose snippet and an env flag (ALLOW_INVALID_TLS) to toggle tlsRelaxation only for local dev.",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "An operator-approved readiness decision. Events show readiness tooling and skills were loaded; nothing in the trace contradicts an operator acceptance of 'ready_with_gaps'."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "The code and README are Python-based and the run used Python 3.13; events show the decision was logged and environment supports Python 3.13."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "The repo pins pymongo in requirements.txt as pymongo>=4.4.0 and code uses PyMongo; the decision is consistent with the implementation."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Events and code show DOCUMENTDB_URI is read from the environment (app/src/db.py line 13) and passed to MongoClient, matching the decision and its evidence."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "questionable",
+      "comment": "The builder logged choosing OpenAI gpt-3.5-turbo (app/src/agent.py line 25). The decision's reason_source is 'model_default' (the builder's default); this is defensible but a product-level guidance page on recommended LLM providers/models would remove guesswork. Also events show OPENAI_API_KEY was unset so the LLM call was not executed in this run."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Events record creation of purchases_date_idx (src/create_indexes.py line 7) and documentdb_list_indexes confirmed the index; the choice and execution are supported by traces."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Events show documentdb_create_index MCP tool returned a ToolExecutionException (management tools disabled) and the builder then created the index via pymongo; the log_decision and subsequent commands are present in events.jsonl."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "LLM output audit trail",
+      "what_was_missing": "No public guidance or sample code for recording LLM outputs and rationale as an append-only audit/history subdocument for Azure DocumentDB was found. The builder could not find authoritative documentation on this pattern for DocumentDB.",
+      "where_searched": "Searched Microsoft Learn and installed skills (search string: 'Azure DocumentDB record LLM outputs rationale append-only'); discovered no useful public result.",
+      "effect_on_this_build": "Sample overwrote top-level clv fields (clv_score, clv_tier, clv_rationale) rather than writing an append-only history. This loses change history and makes audits harder.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Page title: 'Recording model outputs and audit history in Azure DocumentDB'. Outline: (1) Motivation and audit requirements; (2) Recommended schema (clv_history array entries with timestamp, model, score, tier, rationale); (3) Example code: $push update pattern, idempotent append-only writes, retention strategies and compaction; (4) Example migration to backfill historic single-field writes into history subdocument; (5) Guidance on storing PII and sensitive rationale.",
+      "priority": "high"
+    },
+    {
+      "topic": "Sanitizing LLM outputs",
+      "what_was_missing": "No public guidance specific to Azure DocumentDB advising to sanitize/validate LLM-generated fields (enums, numeric ranges, lengths) before writes was found.",
+      "where_searched": "Searched Microsoft Learn and installed skills (search string: 'Azure DocumentDB sanitize LLM outputs validate before write'); no useful public result.",
+      "effect_on_this_build": "The sample writes LLM outputs back to customer documents without explicit validation; malformed LLM output could corrupt fields or violate types.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Page title: 'Validating and sanitizing model outputs before database writes'. Outline: (1) Why validate (integrity, safety); (2) Enumerated validation rules (allowed tiers, numeric bounds, length caps); (3) Example Python code validating/parsing JSON and rejecting/normalizing bad outputs; (4) Logging/audit guidance and recovery steps.",
+      "priority": "high"
+    },
+    {
+      "topic": "MCP management tool opt-in discoverability",
+      "what_was_missing": "The MCP tool returned an error indicating management tools are disabled by default (ToolExecutionException referencing ENABLE_MANAGEMENT_TOOLS). There was no prominent, discoverable guidance in the sample that told a developer the MCP server may require opt-in for management commands or how to fallback.",
+      "where_searched": "Events showed the tool failure; README and code did not document MCP opt-in. Searched the documentdb skills and Microsoft Learn for 'ENABLE_MANAGEMENT_TOOLS' references (no concise developer guidance surfaced in repo).",
+      "effect_on_this_build": "The index creation MCP tool failed during the run and the builder had to create the index via a pymongo workaround. This added friction and required a manual workaround.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Agent-kit rule or README note: 'If documentdb_create_index fails with management-tools disabled, set ENABLE_MANAGEMENT_TOOLS=true for MCP or fall back to pymongo client-based create_index. Example command and environment variable explanation.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Default LLM/model selection guidance",
+      "what_was_missing": "There is no single product-level recommendation for which hosted model/provider to use for small gallery samples (OpenAI vs Azure OpenAI vs local). The builder used a model_default to pick gpt-3.5-turbo.",
+      "where_searched": "Installed skills and project docs; no prescriptive guidance on default LLM choice for samples.",
+      "effect_on_this_build": "The builder chose gpt-3.5-turbo as a default; that choice is reasonable but leaves reproducibility and credential env-var naming to the builder. OPENAI_API_KEY was not set in this run so the LLM step did not execute.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Rule: 'Samples using an LLM must declare the provider and environment variable name (OPENAI_API_KEY or AZURE_OPENAI_KEY) in .env.example and README; prefer provider X for gallery samples and include a note how to switch providers.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests without a live cluster",
+      "what_was_missing": "No example test harness demonstrating how to run unit tests without connecting to a real DocumentDB cluster (mocking/mongomock) was found in the sample or product docs.",
+      "where_searched": "Repo test files and installed skills; general search for 'DocumentDB python tests mongomock' returned community patterns but no official sample.",
+      "effect_on_this_build": "The repo's unit tests require the DOCUMENTDB_URI and a reachable cluster; CI that cannot access the cluster will fail integration tests.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a 'Testing' quickstart showing (1) how to run integration tests against a dev cluster; (2) how to run unit tests locally with mongomock or by monkeypatching get_customers_collection; include example pytest fixtures.",
+      "priority": "high"
+    },
+    {
+      "topic": "Dependency pinning guidance",
+      "what_was_missing": "No sample-level guidance or template enforcing exact pinned dependencies for reproducible builds (requirements-lock.txt) was present.",
+      "where_searched": "Repo files; no lock file present.",
+      "effect_on_this_build": "requirements.txt uses >= ranges; different runs may resolve different upstream versions causing non-deterministic behavior.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: 'Gallery samples must include pinned dependency artifact (requirements-lock.txt or constraints) for reproducible CI; include instructions to regenerate with pip-compile.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Retry & bulk-write best-practices for examples",
+      "what_was_missing": "The sample and product docs do not include a short, copy-pasteable pattern showing a safe retry policy and a bulkWrite pattern for applying model outputs at scale.",
+      "where_searched": "Installed connection and connection-retry guidance exists in skills but there is no short example in the gallery template demonstrating retries + bulkWrite for CLV updates.",
+      "effect_on_this_build": "The sample lacks retries (risking transient failures) and lacks a bulk-write update path (inefficient for many customers).",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a 'Safe write patterns' quick snippet: (1) idempotent bulk_write example; (2) retry wrapper template with exponential backoff and idempotency notes; (3) when to use bulk_write vs per-customer updates.",
+      "priority": "high"
+    },
+    {
+      "topic": "Transactions naming/compatibility clarification",
+      "what_was_missing": "Public prior beliefs contradicted by the product docs on multi-document transactions. This mismatch risks a model or developer assuming transactions behave like another product.",
+      "where_searched": "DocumentDB product docs (compatibility) and installed skills; prior belief confusion between Cosmos DB RU model and DocumentDB vCore model was observed in readiness notes.",
+      "effect_on_this_build": "No transaction usage in this sample, but developers could be misled when designing multi-document updates for CLV across collections/partitions.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a short 'Transactions and compatibility' note to the quickstart clarifying that this vCore DocumentDB offering supports multi-document transactions and linking to the exact docs and examples.",
+      "priority": "medium"
+    }
+  ]
+}

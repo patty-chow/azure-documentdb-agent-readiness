@@ -1,3 +1,66 @@
 # Decision log
 
-No decisions were recorded.
+| Reason came from | Decisions |
+|---|---|
+| readiness_report | 2 |
+| model_default | 2 |
+| operator | 1 |
+| prompt | 1 |
+| tool_result | 1 |
+
+`model_default` means the agent had no prompt, skill, doc or tool result to go on. Each one is a candidate prompt or documentation gap.
+
+## D001 (readiness): I approved the build with readiness 'ready_with_gaps'
+
+- **Instead of:** Stop and fix gaps first
+- **Because:** Approved with --yes
+- **Reason came from:** `operator`
+- **When:** 2026-11-25T11:48:17+00:00
+
+## D002 (build): I chose Python 3.13 with a virtualenv and standard Python packaging (requirements.txt).
+
+- **Instead of:** JavaScript/Node.js; Python 3.13 with venv
+- **Because:** The sample prompt asked for a Python LangChain agent and the environment has Python 3.13 available per the readiness report.
+- **Reason came from:** `readiness_report`
+- **Evidence:** Assumption: 'Builder will target a modern Python 3.x (likely 3.10 or 3.11) and use a venv; tests and examples will assume Python >=3.10.'
+- **When:** 2026-11-25T11:48:36+00:00
+
+## D003 (build): I chose PyMongo (pymongo>=4.4).
+
+- **Instead of:** motor (async) MongoDB driver; PyMongo (pymongo)
+- **Because:** PyMongo is the standard synchronous MongoDB driver and aligns with documentdb-driver skill guidance and simplicity for sample scripts.
+- **Reason came from:** `prompt`
+- **Evidence:** Assumption from prompt review: 'Use PyMongo (pymongo>=4.0, pinned in requirements.txt) and the official MongoDB URI from DOCUMENTDB_URI; follow documentdb-driver guidance for singleton MongoClient.'
+- **When:** 2026-11-25T11:48:38+00:00
+
+## D004 (build): I chose to read the connection string from the DOCUMENTDB_URI environment variable and use it directly in pymongo.MongoClient.
+
+- **Instead of:** Environment variable-based auth using DOCUMENTDB_URI; Use Azure AD/RBAC
+- **Because:** The environment already exposes DOCUMENTDB_URI per skill_md and instructions forbid writing secrets; using the URI from env is simplest and matches guidance.
+- **Reason came from:** `readiness_report`
+- **Evidence:** Readiness report guidance: 'Read the DOCUMENTDB_URI environment variable verbatim and pass it to pymongo.MongoClient; do not assume the host suffix or port (SRV mongodb+srv:// forms are common for mongoClusters).'
+- **When:** 2026-11-25T11:48:51+00:00
+
+## D005 (build): I chose OpenAI gpt-3.5-turbo as the default LLM for the LangChain Chat model.
+
+- **Instead of:** Use gpt-3.5-turbo; Use gpt-4
+- **Because:** gpt-3.5-turbo is commonly available and least likely to require elevated permissions; safer for sample. Credentials loaded from OPENAI_API_KEY environment variable.
+- **Reason came from:** `model_default`
+- **Evidence:** Assumption from prompt review: 'Builder will pick a hosted LLM provider (commonly OpenAI) and use a chat/completion model (e.g., gpt-4 or gpt-4o)'; readiness report noted LLM provider unspecified.
+- **When:** 2026-11-25T11:48:56+00:00
+
+## D006 (build): I chose to create a multikey index on 'purchases.date' to accelerate aggregations that unwind purchases by date and compute tenure/recency.
+
+- **Instead of:** Create index on purchases.date; Create no extra indexes
+- **Because:** An index on purchases.date helps aggregation that filters by date ranges or sorts by purchase date; multikey array index is supported.
+- **Reason came from:** `model_default`
+- **Evidence:** Assumption from prompt review: 'Aggregation pipeline will use $unwind/$group/$avg/$count and $min/$max on order dates to compute tenure; builder will add sensible indexes (e.g., index on customer_id and on purchases.date or on top-level purchase date fields)'.
+- **When:** 2026-11-25T11:49:09+00:00
+
+## D007 (build): I chose to create the index using pymongo from a local script because documentdb_create_index MCP tool failed.
+
+- **Instead of:** Use documentdb_create_index MCP tool; Create index with pymongo client in script
+- **Because:** MCP tool returned an error, so using the local MongoClient via pymongo is a reliable workaround and follows the driver guidance for creating indexes programmatically.
+- **Reason came from:** `tool_result`
+- **Evidence:** documentdb_create_index call returned 'Error: Function failed.'
+- **When:** 2026-11-25T11:50:07+00:00
