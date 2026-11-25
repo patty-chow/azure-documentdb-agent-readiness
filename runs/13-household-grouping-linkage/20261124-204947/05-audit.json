@@ -1,0 +1,652 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested functionality (Mongoose models, household-linking, household documents with member refs, endpoints for household CLV and aggregated product holdings) and was exercised against a live Azure DocumentDB cluster. Key findings: (1) the CLV endpoint computes totals by populating members and summing in application code rather than using an aggregation pipeline as the reference requires; (2) connection options enable retryWrites=true while Azure guidance and some samples prefer retryWrites=false for certain workflows; (3) .env.example exists but does not list every runtime setting the app reads (e.g., PORT, MAX_POOL_SIZE); (4) seed script is idempotent for its own seed-tagged documents but does not create indexes idempotently; (5) no DB-level JSON Schema validators, no IaC for provisioning, and no offline unit tests were provided. I exercised the app (seed, link, verify) against the live cluster and used the MCP tools to inspect indexes and an explain plan. See requirement-by-requirement results, the practice checks, decision reviews and documentation gaps below.",
+  "requirement_results": [
+    {
+      "requirement": "The service is a Node.js application using Mongoose, with Mongoose models for customer documents and household group documents stored in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/models/customer.js lines 1-18 and app/src/models/household.js lines 3-7 show Mongoose schemas and models.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The service provides an operation that identifies household members by matching customer documents on shared address, phone and surname fields (e.g. an aggregation that groups customers by those field values).",
+      "status": "met",
+      "evidence": "app/src/link/link_households.js lines 27-51 implement grouping by normalizedAddress, phone, and surname+address and union logic to merge overlapping groups.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "For each identified household the service creates a household group document that holds references to its member customer documents (e.g. an array of member customer ObjectIds declared with a Mongoose `ref`).",
+      "status": "met",
+      "evidence": "app/src/models/household.js lines 3-6 define members: [{ type: Types.ObjectId, ref: 'Customer' }]; app/src/link/link_households.js lines 64-70 persist household documents with members.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "An HTTP endpoint computes household-level CLV for a given household by running a Mongoose aggregation pipeline on Azure DocumentDB that combines the CLV of all of that household's members (e.g. summing each member's CLV value).",
+      "status": "partly_met",
+      "evidence": "app/src/routes/households.js lines 8-13: GET /:id/clv is implemented, but it populates members and sums clv in application code rather than using an aggregation pipeline.",
+      "cause": "builder_error",
+      "smallest_fix": "Change the endpoint to use a server-side aggregation such as Customer.aggregate([ { $match: { _id: { $in: h.members } } }, { $group: { _id: null, clvTotal: { $sum: '$clv' } } } ]) and return the aggregated value."
+    },
+    {
+      "requirement": "An HTTP endpoint computes household-level product holdings for a given household by running an aggregation pipeline that combines the products held across all of that household's members (e.g. the distinct set of products with counts).",
+      "status": "met",
+      "evidence": "app/src/routes/households.js lines 26-31 implement Customer.aggregate with $match, $unwind, $group and $project to return product totals.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 4-5 read process.env.DOCUMENTDB_URI and process.env.DATABASE_NAME; app/.env.example exists but contains placeholders (app/.env.example lines 2-4). No credentials are committed.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI and DATABASE_NAME (app/.env.example lines 1-4) but does not list other env variables the app reads or supports (for example PORT, MAX_POOL_SIZE or optional MAX_POOL_SIZE/SEED_TAG). README references PORT as an environment override but the .env.example does not include it.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add PORT, MAX_POOL_SIZE (or MAX_POOL_SIZE example), and any seed-related env variables (SEED_TAG) to .env.example with placeholders."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not use vector embeddings or create vector indexes; vector features were intentionally not used (03-build.json verification notes).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is later added, include embedding model name and dimensionality in the index-creation code and README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index creation or README guidance; vector search not used.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding vector search, document chosen index type, dimensions, and tuning guidance in README."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js implements a singleton-style connect() (isConnected flag) and reuses mongoose.connection (lines 11-16 and 14-30).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/src/seed/seed.js deletes prior seed-tagged documents and inserts new docs (seed.js lines 19-24 and 43). The seed script is idempotent for seed-tagged documents, but it does not create indexes explicitly (indexes are declared in model schema rather than ensured by the seed script). Also note Mongoose index creation may be attempted by Mongoose at startup but explicit, idempotent createIndexes call in the seed would be clearer.",
+      "cause": "builder_error",
+      "smallest_fix": "Have the seed script call Customer.createIndexes() / Household.createIndexes() (idempotent) before inserting, or include an explicit idempotent index-creation step in the link/seed flow."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint or embedding usage exists in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If search is added, implement input validation returning 400 for empty queries and handle embedding/LLM errors with clear 5xx/4xx responses."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search endpoint or similarity scoring is implemented.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If search is added, return similarity/distance in the response alongside result documents."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "partly_met",
+      "evidence": "This is a Python-centric requirement. For Node.js the repository includes a package-lock.json (app/package-lock.json) and package.json uses semver ranges (app/package.json lines 19-24). A lockfile is present which pins installed dependency versions.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Keep package-lock.json in the repo (already present) and consider using exact dependency versions in package.json if the gallery policy requires explicit pinning."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No unit tests are present in the repository; verification used live scripts and MCP tools (03-build.json verification_done).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock Mongoose (e.g., using mongodb-memory-server or sinon to stub models) and document how to run them locally without a live cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/ARM/Terraform/azapi IaC files are present in the repo. The build intentionally used an existing cluster (decisions D005, 03-build.json lines 31-36).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep or Terraform/azapi example that uses Microsoft.DocumentDB/mongoClusters (or annotated az API call) as an optional provisioning script; document it in README as optional step."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes overview, prerequisites, quickstart (seed/link/run), endpoints, and cleanup notes (README.md lines 3-15, 26-30).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and summary text use the term 'Azure DocumentDB (MongoDB compatible)' (README.md line 3). package.json and other files use 'documentdb' consistently.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env from environment",
+      "practice": "Read the cluster connection string and any credentials from environment variables (e.g., DOCUMENTDB_URI / MONGODB_URI) and publish a .env.example placeholder rather than committing secrets to source control.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 4-5 read process.env.DOCUMENTDB_URI and app/.env.example lines 1-4 provide a placeholder.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Singleton client",
+      "practice": "Create and reuse a single MongoClient/Mongoose connection instance per process (singleton client pattern) rather than opening a client per request.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 11-16 implement a singleton connect() with isConnected flag and reuse mongoose.connection.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune connection-pool and timeout settings for your deployment pattern (serverless vs long-running): set sensible maxPoolSize/minPoolSize, serverSelectionTimeoutMS and socketTimeoutMS values and pick pool sizes based on expected concurrency and server capacity.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 17-26 set maxPoolSize:50, minPoolSize:10, serverSelectionTimeoutMS:5000, socketTimeoutMS:30000.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Require TLS",
+      "practice": "Always require TLS for client connections (tls=true) and do not disable certificate validation in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication",
+      "status": "followed",
+      "evidence": "app/.env.example line 2 includes an example connection string with tls=true. The app reads DOCUMENTDB_URI at runtime (app/src/db.js lines 4-5) so TLS is governed by that connection string.",
+      "source": "Connect to Azure DocumentDB using MongoDB Shell",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using MongoDB Shell",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "RetryWrites caution",
+      "practice": "Do not assume MongoDB driver's retryable-writes should be enabled by default for Azure DocumentDB; many Azure samples set retryWrites=false and some features (vector index workflows) require retryWrites=false.",
+      "category": "connection_handling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project",
+      "status": "violated",
+      "evidence": "app/src/db.js lines 21 and 25 set retryWrites: true and retryReads: true; discovery indicates some Azure guidance sets retryWrites=false.",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "Set retryWrites:false in connection options (or document why the sample must enable it). For vector workflows, set retryWrites=false.",
+      "sources": [],
+      "what_would_help": "A short note in README about when to set retryWrites=false and when retryWrites=true is acceptable (and that some DocumentDB features require retryWrites=false)."
+    },
+    {
+      "topic": "Retries & 429",
+      "practice": "Implement exponential backoff, respect Retry-After and specially handle 429 responses and transient 5xx errors; design idempotent operations before applying retries.",
+      "category": "retries_and_backoff",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "not_applicable",
+      "evidence": "The sample's scripts are small and not implementing a retry/backoff library; no retry logic is in app code.",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "If sample expands to long-running ingestion or batch jobs, add retry/backoff logic for 429/5xx and document idempotency patterns.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index ESR",
+      "practice": "Design indexes following the Equality → Sort → Range (ESR) rule and prefer a well-formed compound index over multiple single-field indexes for the common query patterns; keep an index budget and remove unused indexes.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-index",
+      "status": "followed",
+      "evidence": "app/src/models/customer.js line 20 declares CustomerSchema.index({ normalizedAddress: 1, phone: 1, surname: 1 }) and additional indexes for clv and products (lines 21-22).",
+      "source": "Scenario based guide to indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Scenario based guide to indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Denormalize for read-heavy",
+      "practice": "Denormalize for read-heavy workloads: persist household documents that reference member ids and precompute household-level aggregates when reads must be low-latency to avoid repeated $lookup and heavy aggregation at query time.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/modeling-data#denormalize-for-read-heavy-workloads",
+      "status": "followed",
+      "evidence": "app creates household documents that reference member _id values (app/src/models/household.js lines 3-6 and link_households.js lines 64-70).",
+      "source": "Data modeling in Azure Cosmos DB for NoSQL",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Data modeling in Azure Cosmos DB for NoSQL",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/modeling-data#denormalize-for-read-heavy-workloads"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid unbounded arrays",
+      "practice": "Avoid storing very large, unbounded arrays in a single document (cap array sizes or model relationships with referenced documents/collections and page through member lists) to prevent large document growth and RU spikes.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/modeling-data#when-to-embed",
+      "status": "violated",
+      "evidence": "HouseholdSchema (app/src/models/household.js lines 3-6) stores members as an unbounded array without size caps; no paging mechanism implemented for large households.",
+      "source": "Data modeling in Azure Cosmos DB for NoSQL",
+      "searched": "",
+      "fix": "Either cap members arrays or change design to store household-member relations in a separate collection and page through members for large households.",
+      "sources": [
+        {
+          "title": "Data modeling in Azure Cosmos DB for NoSQL",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/modeling-data#when-to-embed"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transactions",
+      "practice": "Multi-document transactions are limited: use transactions only within a single (nonsharded) collection; cross-collection multi-document transactions are not supported.",
+      "category": "consistency",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/feature-support-60#transactions",
+      "status": "followed",
+      "evidence": "The linking script writes Household documents but does not attempt cross-collection ACID transactions across customers and households (app/src/link/link_households.js lines 61-71).",
+      "source": "Supported features and syntax in Azure Cosmos DB for MongoDB 6.0 server version",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain & indexStats",
+      "practice": "Use explain(\"executionStats\") and the $indexStats stage to inspect query plans and index usage, detect COLLSCANs, and then create or hide/drop indexes safely based on that evidence.",
+      "category": "monitoring_and_diagnostics",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output",
+      "status": "followed",
+      "evidence": "Build verification used the documentdb MCP tool to run an explain which showed a COLLSCAN for a normalizedAddress find (03-build.json verification_done lines 28-29 and events.jsonl lines 41-43).",
+      "source": "Read query explain output in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Read query explain output in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Aggregation memory",
+      "practice": "When running aggregation pipelines over large datasets, paginate or process in batches and use server-side options (e.g., allowDiskUse / maxTimeMS) when supported to avoid memory / execution limits.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation",
+      "status": "not_applicable",
+      "evidence": "Pipelines in the sample operate on small seeded datasets; no allowDiskUse usage is needed for current seed sizes.",
+      "source": "Aggregation pipeline examples and limitations",
+      "searched": "",
+      "fix": "If the sample is used on large datasets, add allowDiskUse and pagination to aggregation code and document it in README.",
+      "sources": [
+        {
+          "title": "Aggregation pipeline examples and limitations",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "App-level validation",
+      "practice": "Enforce schema/field validation at the database by using collection-level JSON Schema ($jsonSchema) and also validate at the application layer (Mongoose schemas) so documents contain required linking keys and expected vector shapes.",
+      "category": "data_integrity",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema",
+      "status": "followed",
+      "evidence": "Mongoose schemas are defined for Customer and Household (app/src/models/*.js) providing app-layer validation; however, the repo does not create collection-level $jsonSchema validators.",
+      "source": "$jsonSchema",
+      "searched": "",
+      "fix": "Add an idempotent collection creation/validator step (e.g., a script that calls db.createCollection with validator) or document how to apply validators using MCP tooling.",
+      "sources": [
+        {
+          "title": "$jsonSchema",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index matching keys",
+      "practice": "Create single-field and compound indexes on the normalized matching keys your linking logic uses (for example normalizedAddress, normalized phone and surname) so equality/group-by operations use indexes instead of collection scans.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-index",
+      "status": "followed",
+      "evidence": "CustomerSchema declares a compound index on normalizedAddress, phone and surname (app/src/models/customer.js line 20). MCP index listing reported a compound index exists (03-build.json verification_done line 28).",
+      "source": "Scenario based guide to indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Scenario based guide to indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Project & paginate",
+      "practice": "Project only the fields needed by the client and paginate large result sets to reduce RU and network costs.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/well-architected/service-guides/cosmos-db#cost-optimization",
+      "status": "violated",
+      "evidence": "The CLV endpoint populates the full member documents (app/src/routes/households.js line 10) then reduces to clv; it should populate/select only the clv field to minimize RU and network costs.",
+      "source": "Architecture best practices for Azure Cosmos DB for NoSQL",
+      "searched": "",
+      "fix": "Change populate('members') to populate('members', 'clv') or use a server-side aggregation to only project clv.",
+      "sources": [
+        {
+          "title": "Architecture best practices for Azure Cosmos DB for NoSQL",
+          "url": "https://learn.microsoft.com/azure/well-architected/service-guides/cosmos-db#cost-optimization"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize matching keys",
+      "practice": "Persist normalized matching keys (lowercased/trimmed/canonicalized address, phone normalized to digits) at write time for matching and indexing rather than relying on runtime string transforms.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "Seed script writes normalizedAddress (app/src/seed/seed.js line 40 uses normalizeAddress() to set normalizedAddress).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Persist normalized phone as well (seed defines normalizePhone() but does not use it).",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring & alerts",
+      "practice": "Enable monitoring and diagnostics (diagnostic settings/slow-query logs), surface slow queries to Log Analytics and create alerts for RU consumption, throttling (429), and resource saturation.",
+      "category": "monitoring_and_diagnostics",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P28",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample is a small demo and contains no monitoring/diagnostic configuration.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a short README section showing how to enable diagnostic settings and a sample alert rule for RU/throttling.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk load planning",
+      "practice": "When migrating or seeding large datasets, measure and plan throughput/partitioning so ingestion is distributed across partitions (shuffle keys, increase RU to support parallel ingestion), and then reduce throughput afterward.",
+      "category": "provisioning_and_cost",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/scaling-provisioned-throughput-best-practices#how-to-optimize-ru-s-for-large-data-ingestion",
+      "status": "not_applicable",
+      "evidence": "Seed script seeds ~20 documents; no large-bulk ingestion performed.",
+      "source": "Best practices for scaling provisioned throughput",
+      "searched": "",
+      "fix": "If the sample adds large data ingestion, include throughput guidance in README and a script to ramp throughput during ingestion.",
+      "sources": [
+        {
+          "title": "Best practices for scaling provisioned throughput",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/scaling-provisioned-throughput-best-practices#how-to-optimize-ru-s-for-large-data-ingestion"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Single database",
+      "practice": "Keep the sample confined to a single dedicated database name (sample_customer_360_13) and avoid cross-database operations.",
+      "category": "operations",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P30",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.js uses process.env.DATABASE_NAME || 'sample_customer_360_13' (app/src/db.js lines 4-5).",
+      "source": "checklist only / prior knowledge",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver options",
+      "practice": "Verify current driver/Mongoose flags (useNewUrlParser/useUnifiedTopology) compatibility before changing them; driver options have evolved across versions.",
+      "category": "connection_handling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P23",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/db.js uses a set of options (maxPoolSize/minPoolSize/serverSelectionTimeoutMS/socketTimeoutMS) but does not set deprecated flags like useNewUrlParser; this practice is prior_knowledge_only and requires document confirmation.",
+      "source": "prior_knowledge",
+      "searched": "Searches for 'Azure DocumentDB useNewUrlParser useUnifiedTopology' returned no authoritative doc during discovery.",
+      "fix": "If driver-flag guidance exists, add it to the driver skill; otherwise document the tested driver version compatibility in README.",
+      "sources": [],
+      "what_would_help": "A short table in the driver quickstart listing recommended Mongoose/driver option differences per driver version."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator approval recorded; the event trace includes decision logging. This is an administrative choice."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice to use Node.js + Express + Mongoose follows the prompt; events.jsonl shows the decision logged (events lines 13 and 45)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choice of Mongoose 7.x is reasonable given Node 24 compatibility and the events show it was recorded (decisions D003/D012)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from env is implemented (app/src/db.js lines 4-5) and the decision is logged (events.jsonl)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Decision not to provision resources is consistent with run-environment and events; build used an existing cluster."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choice to create a separate households collection with ObjectId refs is implemented (app/src/models/household.js) and logged."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "questionable",
+      "comment": "The plan to create the compound index via MCP was logged and attempted, but events.jsonl show the documentdb_create_index tool threw a management-tools-disabled exception (events lines 41 and 43). The follow-up decision D009 to use Mongoose ensureIndexes was necessary. The initial plan was reasonable but did not succeed in this run."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Choice to use @faker-js/faker is supported by the npm errors observed and was logged (events lines that show npm error then change)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The tool trace shows documentdb_create_index failed (management tools disabled); the decision to create indexes via Mongoose (ensureIndexes/createIndexes) is recorded and the repository includes schema-declared indexes (events.jsonl lines 41-44)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Approval recorded again; this administrative decision is consistent with prior logs."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Duplicate logged decision to use Node.js+Mongoose; consistent with earlier D002 entry."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Logged choice for Mongoose 7.x; acceptable and consistent with package.json (app/package.json uses 'mongoose': '^7.6.0')."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Decision to use SCRAM-SHA-256 via DOCUMENTDB_URI is consistent with README and the run-environment; event trace shows the decision was logged."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Index choices are implemented in model schema and recorded in events; the decision matches the app implementation (customer.js indexes)."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Decision to switch faker package due to npm errors is supported by the events showing npm failures and updates to package.json."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Decision to use the documentdb MCP server tools for verification is supported by events that call documentdb_list_databases and documentdb_explain_operation (events.jsonl lines 42 and 41)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Complete .env.example",
+      "what_was_missing": "The .env.example includes DOCUMENTDB_URI and DATABASE_NAME but omits other environment variables the app reads or supports (PORT, MAX_POOL_SIZE, SEED_TAG).",
+      "where_searched": "Inspected app/.env.example, app/src/db.js, app/README.md and repository files.",
+      "effect_on_this_build": "User had to infer missing env variables (PORT) from README; missing config examples can cause runtime surprises and inconsistent local setups.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A .env.example that lists: DOCUMENTDB_URI (placeholder), DATABASE_NAME (sample_customer_360_13), PORT (3000), MAX_POOL_SIZE (example value 50), MIN_POOL_SIZE (example), SEED_TAG (sample13-v1). Include a short comment for each variable explaining when to change it and security note not to commit secrets.",
+      "priority": "medium"
+    },
+    {
+      "topic": "retryWrites guidance for DocumentDB",
+      "what_was_missing": "Prominent guidance in quickstarts explaining that some DocumentDB workflows and samples set retryWrites=false and when setting retryWrites=true may cause issues (vector index workflows or server features).",
+      "where_searched": "Microsoft Learn DocumentDB quickstarts and tutorial pages, and installed documentdb-connection/driver skills.",
+      "effect_on_this_build": "The sample set retryWrites:true in src/db.js, which contradicts many Azure examples that set retryWrites=false; this could silently break index-related or management workflows if users follow the sample without understanding implications.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short note to the Node.js quickstart and driver skill README: explain default retryWrites behavior, document cases that require retryWrites=false (with examples), and provide a one-line snippet showing how to set retryWrites=false in the connection URI or options.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index creation idempotency and MCP tooling opt-in",
+      "what_was_missing": "Create-index path: the MCP create_index tool attempted to run but failed because management tools are disabled by default in this environment. There is no documented fallback in the MCP docs for 'management tools disabled' wiring.",
+      "where_searched": "events.jsonl (documentdb_create_index exceptions), README and seed/link scripts.",
+      "effect_on_this_build": "Index creation via MCP failed; the builder used Mongoose ensureIndexes as a fallback. Without explicit guidance, other builders may retry MCP calls unnecessarily or be confused by the management-tools opt-in requirement.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: before calling documentdb_create_index, check ENABLE_MANAGEMENT_TOOLS env var or call listIndexes to detect management tool availability; fallback to model.createIndexes() if MCP management is disabled. Add a sample script that performs idempotent createIndexes() prior to seeding.",
+      "priority": "high"
+    },
+    {
+      "topic": "DB-level JSON Schema validator examples",
+      "what_was_missing": "A short example showing how to create collection-level JSON Schema validators that match the Mongoose schema (required linking keys like normalizedAddress/phone/surname) was not present in public quickstarts.",
+      "where_searched": "Microsoft Learn $jsonSchema docs and documentdb-data-modeling skill resources.",
+      "effect_on_this_build": "The app uses Mongoose schemas but does not apply server-side validators. This reduces data-integrity guarantees if other clients write documents to the same database.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A sample page: 'Applying collection validators for Node.js + Mongoose samples' with example db.createCollection({ validator: { $jsonSchema: ... } }) matching the Mongoose schema and an idempotent script to apply/upgrade validators.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Unit test guidance for DocumentDB samples",
+      "what_was_missing": "Concrete, sample-backed guidance / scaffolding demonstrating how to run unit tests for DocumentDB samples without a live cluster (e.g., using mongodb-memory-server, or a recommended mocking/stubbing pattern for Mongoose).",
+      "where_searched": "Installed skills and Microsoft Learn; no authoritative sample for this repository pattern found.",
+      "effect_on_this_build": "No unit tests were added; contributors may struggle to add offline tests and will rely on live-cluster verification, which is heavier and potentially flaky.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short 'Testing' quickstart showing how to add mocha/jest tests that use mongodb-memory-server or sinon to stub Mongoose models, with examples of asserting aggregation pipelines and route handlers without a live cluster.",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC example for DocumentDB mongoClusters",
+      "what_was_missing": "A minimal Bicep/ARM/Terraform snippet using Microsoft.DocumentDB/mongoClusters (vCore) for sample provisioning was not included in the repo; many docs are present but quickstarter examples for the agent-kit are scarce.",
+      "where_searched": "Microsoft Learn templates (mongoClusters) and readiness notes.",
+      "effect_on_this_build": "Builder used an existing cluster per policy; but gallery consumers may expect an optional IaC example to reproduce the environment.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Add a bicep/az cli example in the repo (example parameters: tier=M30, region, storage type) that creates Microsoft.DocumentDB/mongoClusters and documents that this is optional and may incur cost.",
+      "priority": "medium"
+    }
+  ]
+}
