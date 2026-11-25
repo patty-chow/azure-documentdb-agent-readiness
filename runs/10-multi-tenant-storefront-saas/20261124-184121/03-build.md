@@ -1,0 +1,57 @@
+# 3. Build report: 10-multi-tenant-storefront-saas
+
+**Status: completed**
+
+Built a small Node.js + Mongoose sample that demonstrates a shared-collections multi-tenant storefront on Azure DocumentDB. The sample enforces tenant isolation at the repository layer (with a safety Mongoose plugin), creates the requested compound indexes, includes an idempotent seed script, and verifies indexes and tenant isolation against the live cluster referenced by DOCUMENTDB_URI.
+
+## How to run
+
+1) Copy .env.example -> .env and set DOCUMENTDB_URI to your cluster connection string (do NOT commit secrets).
+2) npm install
+3) npm run seed            # creates indexes and seeds sample data into database `sample_retail_10`
+4) npm run verify-indexes  # prints the indexes found on products/inventories/orders
+5) npm test                # runs integration test demonstrating tenant isolation
+6) (optional) npm start    # starts minimal example express server at PORT (default 3000)
+
+Notes:
+- The app reads the cluster connection string from process.env.DOCUMENTDB_URI and uses the database `sample_retail_10`.
+- Do not write secrets into files. Use env vars as above.
+
+
+## Verified by running
+
+- npm install: completed (packages installed, exit code 0)
+- npm run seed: executed; output 'Seed complete' (exit code 0)
+- npm run verify-indexes: executed; printed index lists for products, inventories, orders (compound indexes present)
+- npm test (tests/isolation.test.js): executed; safety plugin prevented queries without tenantId and isolation test passed
+- documentdb.list_indexes (MCP): ran for collections products, inventories, orders in DB 'sample_retail_10' via connection_profile 'default' and returned the expected compound indexes
+
+## Not verified
+
+- Express endpoints were not exercised by an HTTP client in these automated runs (server file present but not tested via HTTP requests).
+- No cluster-level operations (provisioning, shard-key changes) were performed because Azure writes are disallowed by the run policy.
+- No performance or production-scale connection-pool tuning was validated; default connection settings were used. The documentdb-connection skill guidance was consulted but tuning requires workload context.
+
+## Open issues
+
+None.
+
+## Files
+
+- `package.json`
+- `.env.example`
+- `README.md`
+- `src/mongoose.js`
+- `src/models/tenantSafetyPlugin.js`
+- `src/models/product.js`
+- `src/models/inventory.js`
+- `src/models/order.js`
+- `src/models/index.js`
+- `src/repos/productRepo.js`
+- `src/repos/inventoryRepo.js`
+- `src/repos/orderRepo.js`
+- `src/seed.js`
+- `src/verify_indexes.js`
+- `src/server.js`
+- `tests/isolation.test.js`
+

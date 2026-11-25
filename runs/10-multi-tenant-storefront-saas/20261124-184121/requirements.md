@@ -8,17 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement the backend in Node.js and use the Mongoose ODM for all schema and DB interactions.
-- Connect Mongoose to Azure DocumentDB using a configurable connection string (e.g., environment variable) so the app runs against an Azure DocumentDB MongoDB-compatible endpoint.
-- Define Mongoose models/schemas for Product, Order, and Inventory that are stored in shared Azure DocumentDB collections (one collection per entity that contains documents for all tenants).
-- Require a tenantId field on every document (Product, Order, Inventory) at the schema level (tenantId must be present and non-null).
-- Include sku on the Product and Inventory schemas and include createdAt timestamps on schemas so createdAt is present on documents.
-- Declare Mongoose compound indexes index({ tenantId: 1, sku: 1 }) on the Product and Inventory schemas.
-- Declare Mongoose compound indexes index({ tenantId: 1, createdAt: 1 }) on the Product, Inventory, and Order schemas.
-- Implement a repository layer (repository classes or modules) that wraps all Mongoose access and requires a tenantId argument for every query/update/delete/aggregate operation; repository methods must inject tenantId into the Mongo filter and throw an error if tenantId is omitted.
-- Prevent direct model usage from business logic by exposing only the repository API; include at least one automated test or runtime check that attempts a query without tenantId and asserts the repository rejects it.
-- Provide repository methods that demonstrate tenant-scoped query patterns (e.g., find product by sku + tenantId, list orders for a tenant sorted by createdAt) and ensure those methods use the tenantId + sku and tenantId + createdAt compound index patterns so queries can use the tenant-scoped indexes.
-- Ensure index creation is performed/verified at runtime (e.g., Mongoose schema.index calls are applied and the running app can verify the required indexes exist on the Azure DocumentDB collections via the driver).
+- A Node.js application uses Mongoose as its ODM against Azure DocumentDB and stores merchant products, orders and inventory in collections shared by all merchants, one collection per resource (e.g. products, orders, inventory) holding every tenant's documents.
+- The Mongoose schemas for products, orders and inventory each define a tenantId field, and every document written through the application carries a tenantId value.
+- A compound index on (tenantId, sku), with tenantId as the leading key, is defined in application code (e.g. schema.index({ tenantId: 1, sku: 1 })) on the shared collection(s) that carry a sku field.
+- A compound index on (tenantId, createdAt), with tenantId as the leading key, is defined in application code (e.g. schema.index({ tenantId: 1, createdAt: 1 })) on the shared collection(s) that carry a createdAt field.
+- A repository layer sits between the rest of the application and the Mongoose models, and all reads and writes of products, orders and inventory go through it.
+- Every repository read method includes tenantId as an equality condition in the query filter it passes to Mongoose.
+- Every repository update and delete method includes tenantId in its filter alongside the document selector (e.g. { _id, tenantId }), so a write only touches documents of that tenant.
+- Repository methods take the tenant identity from a tenant context supplied to the repository (e.g. a constructor argument or per-call parameter) and add the tenantId condition to the filter themselves.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
