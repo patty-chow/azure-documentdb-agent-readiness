@@ -1,0 +1,803 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample is a functioning Node.js project that fetches segment documents from Azure DocumentDB, injects purchase_history and preferences into an LLM prompt, generates subject+body (via OpenAI or a deterministic fallback), and writes campaign drafts into a campaigns collection. The build follows many Azure DocumentDB best practices (singleton MongoClient, env-driven secrets, idempotent seed upserts, index creation) but it diverges from the starter prompt in one important way (the prompt asked for a LlamaIndex-based agent that registers a tool; the builder implemented a lightweight agent without LlamaIndex/tool registration). Several best-practice checks are either missing or incomplete (retry handling, explicit OIDC guidance, projection on read, upsert for campaign writes, index-before-seed ordering, monitoring and network-hardening guidance). The MCP/agent verification tools were inconsistent with the driver's view of the cluster in this run (MCP read/write calls returned empty or were disabled for writes), and OpenAI calls are opt-in (USE_OPENAI) so automated verification uses a deterministic fallback.",
+  "requirement_results": [
+    {
+      "requirement": "Implement a single LlamaIndex agent in Node.js that registers a tool which fetches customer segment profiles from Azure DocumentDB through a MongoDB-compatible driver (e.g. the `mongodb` Node.js driver).",
+      "status": "not_met",
+      "evidence": "No LlamaIndex library or agent/tool registration present. The generator is implemented as src/generate.js and performs DB lookups directly; there is no code that imports or registers LlamaIndex or a tool interface.",
+      "cause": "builder_error",
+      "smallest_fix": "Implement LlamaIndex integration or change the starter prompt to allow a lightweight agent. Smallest textual fix: add to the starter prompt 'Use the LlamaIndex Node.js library and register a tool named `fetch_segment` that queries DocumentDB for a segment by id or name.'"
+    },
+    {
+      "requirement": "The fetch tool reads the requested segment's profile, including its purchase history and preferences, from Azure DocumentDB and returns it to the agent.",
+      "status": "met",
+      "evidence": "src/generate.js lines 46-53: connect to DB, collection segments, and findOne({ segmentId }) to fetch the full profile (purchase_history and preferences) before prompt-building.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The agent calls the fetch tool to obtain the segment profile before generating any copy.",
+      "status": "met",
+      "evidence": "src/generate.js calls segments.findOne({ segmentId }) at line 52 and only then constructs the prompt (lines 58-59) and attempts generation (lines 62-74).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The agent injects the fetched purchase history and preferences into the prompt sent to the LLM (context engineering) so the generation is grounded in that segment's data.",
+      "status": "met",
+      "evidence": "src/generate.js lines 58-60 build a prompt that JSON.stringify's purchase_history and preferences into the instruction sent to the LLM.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "From that prompt the agent generates personalised email subject lines and body copy for the segment.",
+      "status": "met",
+      "evidence": "src/generate.js uses callOpenAI(...) and a fallbackGeneration(segment) to produce a subject and body (fallbackGeneration at lines 38-44; OpenAI invocation and parsing around lines 62-71).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The generated drafts are written back to a `campaigns` collection in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "src/generate.js constructs a document and inserts it into campaigns via campaigns.insertOne(doc) at line 85.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Each stored draft contains the generated subject line and body copy and identifies the segment it was generated for (e.g. the segment's id).",
+      "status": "met",
+      "evidence": "Inserted document fields at lines 76-83 include segmentId, segmentName, subject, body, rawOutput and createdAt.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "src/client.js reads process.env.DOCUMENTDB_URI (lines 5-8). .env.example contains placeholders (app/.env.example). OPENAI_API_KEY is read in src/generate.js line 8.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": ".env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_MODEL and DB_NAME but does not list USE_OPENAI which the code checks (src/generate.js line 10 USE_OPENAI = process.env.USE_OPENAI === '1').",
+      "cause": "builder_error",
+      "smallest_fix": "Add USE_OPENAI and any other env toggles to .env.example (e.g. USE_OPENAI=0)."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use vector indexes or embeddings (the generator uses direct context injection rather than embedding+vector retrieval).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexes are created by the sample (seed.js creates only scalar indexes).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "src/client.js implements a singleton MongoClient and clientPromise (lines 10-16) and exports getDb that reuses it (line 21).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "src/seed.js upserts segment docs with replaceOne(..., { upsert: true }) (line 30) and then creates indexes (lines 33-35); replacing/upserting prevents duplication.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample does not expose a /search endpoint.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "The sample does not perform embedding similarity search.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "This Node.js sample includes a package-lock.json (app/package-lock.json) which pins dependency versions.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No unit tests are present (package.json test script prints 'no tests').",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that use a mocked MongoDB driver (e.g., mongodb-memory-server or sinon mocks) so tests can run without a live cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep / ARM / Terraform) files are present in the repository; only application code and seed scripts exist.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small IaC snippet (Bicep / ARM / Terraform) that targets Microsoft.DocumentDB/mongoClusters and documents default low-cost tier parameters."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "README.md contains what the sample shows, prerequisites and setup steps and verify/run (lines 3-17 and 27-28) but lacks explicit clean-up steps for seeded data or instructions to remove created resources.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a 'Clean-up' section that explains how to delete seeded documents and (if applicable) resources or how to revert the database to its prior state (e.g., drop `segments` and `campaigns` or run a cleanup script)."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "Repository README and .env.example use 'Azure DocumentDB' and environment variables are named DOCUMENTDB_URI (README lines 1 and .env.example line 2).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Serverless client pooling",
+      "practice": "In serverless environments initialize the MongoClient outside the function handler so the single client and its pool are reused across warm invocations and use small pools (e.g., maxPoolSize 3–5, minPoolSize 0).",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/client.js lines 10-16: client created once, but maxPoolSize is set to 50 (line 13) rather than a small default appropriate for serverless environments.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Make pool-size configurable via env (e.g. DOCUMENTDB_MAX_POOL_SIZE) and default to a small pool (e.g. 5) for serverless deployments.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Entra ID auth",
+      "practice": "Prefer Microsoft Entra ID (OIDC) authentication with a token-callback (DefaultAzureCredential / managed identity) instead of long-lived DB passwords when possible, using the driver's OIDC callback interface to supply tokens.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-build-nodejs-console-app#configure-your-console-application",
+      "status": "violated",
+      "evidence": "app/.env.example (line 2) and src/generate.js/client.js expect a connection string with user:password; README does not document MONGODB-OIDC or managed identity usage.",
+      "source": "Build a Node.js console app with Azure DocumentDB (how-to-build-nodejs-console-app)",
+      "searched": "",
+      "fix": "Document how to use MONGODB-OIDC with managed identity (or provide an example connection string) and/or add code path that obtains tokens via DefaultAzureCredential and uses the driver's OIDC callback.",
+      "sources": [
+        {
+          "title": "Build a Node.js console app with Azure DocumentDB (how-to-build-nodejs-console-app)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-build-nodejs-console-app#configure-your-console-application"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Local gateway dev",
+      "practice": "For local development use the DocumentDB Gateway image (Mongo protocol on port 10260) and allow TLS relaxation (tlsAllowInvalidCertificates) only driven by environment variables and never defaulted in production code.",
+      "category": "local_development",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample's skill_md and README instruct to use a live reachable cluster; no local gateway setup is included.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "If local development is desired, add a small dev section and .env toggles to point at a DocumentDB local gateway container with tlsAllowInvalidCertificates controlled by env.",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index budget",
+      "practice": "Limit the number of indexes per collection (keep a modest budget, e.g., 5–15 indexes) and regularly review index usage (`$indexStats`) to drop unused indexes that add write cost.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "src/seed.js creates only two indexes (segments.segmentId and campaigns.segmentId) which is a modest index budget (lines 33-35).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection string encoding",
+      "practice": "Percent-encode reserved characters in usernames/passwords before inserting them into the connection URI and do not commit credentials in source control.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-web-app#test-the-mern-application-with-the-azure-documentdb-cluster",
+      "status": "not_applicable",
+      "evidence": ".env.example expects a full DOCUMENTDB_URI from the operator (app/.env.example line 2); the code does not build a connection string from raw username/password.",
+      "source": "Tutorial: Connect a Node.js web app with Azure DocumentDB",
+      "searched": "",
+      "fix": "Document that users should percent-encode credentials if constructing a URI programmatically; prefer providing a complete encoded DOCUMENTDB_URI.",
+      "sources": [
+        {
+          "title": "Tutorial: Connect a Node.js web app with Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-web-app#test-the-mern-application-with-the-azure-documentdb-cluster"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring & alerts",
+      "practice": "Enable diagnostic settings and slow-query logs and create alerts on CPU, memory, IOPS, storage, and connection saturation appropriate to your cluster tier for production monitoring.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "violated",
+      "evidence": "README and seed/generate scripts do not mention enabling diagnostic settings, slow-query logs or recommended alerts.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a short 'Production checklist' section in README that recommends enabling diagnostic settings, slow-query logging and sample alert thresholds for the default M30 tier.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "MongoClient reuse",
+      "practice": "Reuse a single MongoClient for the life of a Node.js process; do not create a new client per request.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "src/client.js implements a singleton client and exports getDb to reuse it (lines 10-16 and 21).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforced",
+      "practice": "Always connect with TLS (tls=true) and do not disable certificate validation in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example uses mongodb+srv with tls=true placeholder (line 2) and code reads DOCUMENTDB_URI from env (src/client.js line 5); no code disables TLS by default.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "No credentials in repo",
+      "practice": "Do not commit credentials into source control; use environment variables and prefer secrets stores (Key Vault) or managed identities for production secrets management.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": ".env.example contains placeholders and README instructs not to check .env into source control (README lines 24-25, app/.env.example).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Least-privilege DB users",
+      "practice": "Use least-privilege database identities (per-app users or Microsoft Entra RBAC) rather than admin/root credentials for application access.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "violated",
+      "evidence": "app/.env.example suggests a user:password in the connection string but README does not state or demonstrate creating a least-privilege app user or RBAC role for the sample.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Document recommended minimum privileges for the sample and show how to create an app user or configure MONGODB-OIDC with a managed identity for non-admin access.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Safe queries (no string building)",
+      "practice": "Avoid building query strings by concatenation; use driver filter objects or parameterized queries so the driver can safely and efficiently apply indexes.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples",
+      "status": "followed",
+      "evidence": "src/generate.js uses segments.findOne({ segmentId }) (line 52) and src/seed.js uses replaceOne({ segmentId: doc.segmentId }, doc, { upsert: true }) (line 30).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Lookup indexes",
+      "practice": "Create single-field indexes on fields frequently used in filters or sorts (e.g., segmentId, customerId, createdAt) before using the dataset.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "src/seed.js creates an index on segments.segmentId (unique) and campaigns.segmentId (lines 33-35).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries for transient errors",
+      "practice": "Implement retry logic for transient errors and 429 rate-limits with exponential backoff and honor Retry-After when provided.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "Code uses MongoClient with retryWrites: true (src/client.js line 14) but there is no application-level retry/backoff wrapper for transient network errors or 429s around DB operations (seed/generate do not implement retries).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add an exponential-backoff retry wrapper for DB operations and honor any Retry-After headers returned by the service (or use a supported library wrapper).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Billing model clarification (RUs vs vCores)",
+      "practice": "Azure DocumentDB uses compute tiers and per-shard IOPS/throughput characteristics rather than Cosmos DB-style RU accounting; monitor CPU/memory/IOPS and scale the compute/storage tier and alerts accordingly.",
+      "category": "provisioning",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/storage/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample README does not make RU-related assumptions; readiness findings flagged this as a broader service naming/behaviour issue rather than an app code issue.",
+      "source": "documentdb-storage",
+      "searched": "",
+      "fix": "Document team should make the vCore/pricing distinction prominent; for this sample add a short note in README saying 'Azure DocumentDB uses compute tiers (vCore) not RU/s'.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size",
+      "practice": "Keep documents well under the 16 MB BSON document limit and store large binary attachments in Blob storage referenced from documents.",
+      "category": "data_model",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "Seeded documents in src/seed.js are small JSON objects (lines 9-27) well under 16MB.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid skip pagination",
+      "practice": "Avoid large skip offsets for pagination; prefer keyset (range-based) pagination using a stable sort key (e.g., createdAt + _id bookmark) for efficient paging.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$skip",
+      "status": "not_applicable",
+      "evidence": "The sample does not implement pagination or large-skip queries.",
+      "source": "Pagination guidance and $skip considerations",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Pagination guidance and $skip considerations",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$skip"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create indexes before seeding",
+      "practice": "Create required indexes before seeding or significant reads, and verify indexes at deployment time (listIndexes/listIndexes check) in your provisioning/seed scripts.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "src/seed.js performs replaceOne/upsert for segments (line 29-31) and then creates indexes after those writes (lines 33-35). The recommended order is to create indexes before bulk seeding to avoid write amplification or unintended write costs.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Create indexes (createIndex) before running upserts/loads, and add a verification step that lists indexes and ensures they exist. Update src/seed.js to createIndex prior to replaceOne.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL for ephemeral docs",
+      "practice": "Use TTL indexes for ephemeral documents (createIndex with expireAfterSeconds) to automatically expire old campaign drafts or staging documents.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample writes campaigns but does not treat them as ephemeral in README or code; no TTL index is created.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "If campaign drafts should expire in your scenario, add a TTL index creation step in seed/provisioning and document the expiration policy.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "WriteConcern/readPreference",
+      "practice": "Design writeConcern and readPreference intentionally for cross-replica durability or latency needs, but verify Azure DocumentDB's default mapping and supported features first.",
+      "category": "consistency_and_durability",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P23",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "src/client.js does not explicitly set writeConcern or readPreference (lines 10-16); the public docs for how DocumentDB maps MongoDB writeConcern/readPreference are not present in the discovered sources used by the agent.",
+      "source": "prior_knowledge",
+      "searched": "Azure DocumentDB writeConcern readPreference (no useful results returned in earlier searches).",
+      "fix": "Publish a short page describing which writeConcern/readPreference combinations DocumentDB supports and the recommended default mapping for application code.",
+      "sources": [],
+      "what_would_help": "A single doc in the product docs that states the supported writeConcern levels, default mapping and sample driver options for Node.js."
+    },
+    {
+      "topic": "Idempotent writes / upsert",
+      "practice": "Make writes idempotent or use upsert (e.g., replaceOne / updateOne with upsert: true) so retries do not create duplicates.",
+      "category": "writes",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "violated",
+      "evidence": "src/seed.js uses upsert replaceOne (line 30) for segments, but src/generate.js inserts campaigns with campaigns.insertOne(doc) (line 85) which can create duplicates on retries.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "Use updateOne/replaceOne with an idempotency key or upsert for campaign writes (e.g. include a stable dedupe key or use updateOne({ segmentId, someUniqueKey }, { $set: doc }, { upsert: true })).",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Network access restrictions",
+      "practice": "Restrict network access to clusters with firewall rules, Private Link (private endpoints) or VNet integration and avoid exposing production cluster endpoints publicly.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#create-an-azure-documentdb-cluster",
+      "status": "violated",
+      "evidence": "README and scripts do not discuss firewall rules, private endpoints or network security (no guidance present).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "Add a security section to README recommending Private Link or firewall rules for production and link to quickstart steps.",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#create-an-azure-documentdb-cluster"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain & slow-query logging",
+      "practice": "Enable slow-query logging and use explain('executionStats') / indexStats to detect COLLSCANs and add appropriate indexes to avoid collection scans.",
+      "category": "performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "No slow-query logging, explain or indexStats verification steps are present in seed/provisioning or README.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Add a small 'verify indexes' step in seed.js that runs explain() on a representative query and logs executionStats, and add a README note on enabling slow-query logging.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection for prompt building",
+      "practice": "Use projection to fetch only needed fields (partial projection) when building prompts or assembling context to reduce bandwidth, I/O and cost.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "src/generate.js uses segments.findOne({ segmentId }) without projection (line 52) and then JSON.stringify's selected fields into the prompt (lines 58-59).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Use findOne(filter, { projection: { segmentId: 1, name: 1, purchase_history: 1, preferences: 1 } }) to limit returned fields.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Application-level retries",
+      "practice": "Implement application-level retries for transient faults but avoid retrying non-idempotent multi-document transactions unless you can guarantee idempotency or use a deduplication token.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P30",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "violated",
+      "evidence": "No retry/backoff wrapper is present; campaign writes use insertOne which is not idempotent (src/generate.js line 85).",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add an idempotent write pattern and application-level retry with exponential backoff; avoid retrying the insertOne path or change to upsert with idempotency key.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Provision & verification scripts",
+      "practice": "Include provisioning and verification scripts that create collections, desired indexes, and perform a short sample query (listCollections/listIndexes) as part of deployment.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P31",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "src/seed.js creates collections and indexes (lines 5-8, 33-35). However there is no explicit 'listIndexes' verification step.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "Add a verification step to seed.js that calls listIndexes and checks for expected index names, then print a short summary.",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Do not log connection strings",
+      "practice": "Never log or persist raw connection strings or SAS tokens; use Key Vault references or managed identities and rotate credentials regularly.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P32",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "No code writes DOCUMENTDB_URI to logs or files; README warns against checking .env into source control (README line 24-25).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "PII in LLM prompts",
+      "practice": "Avoid sending raw PII to LLMs or retaining it in logs; redact or minimize PII in prompts and encrypt or limit sensitive fields at rest.",
+      "category": "privacy",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P27",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "src/generate.js injects purchase_history into the prompt (lines 58-60). Whether this purchase_history contains PII depends on upstream data, and public guidance specific to Azure DocumentDB + LLM redaction was not discovered.",
+      "source": "prior_knowledge",
+      "searched": "azure documentdb pii lLM redaction (no useful results)",
+      "fix": "Publish a short 'PII & LLM' guideline for agent authors: fields to remove/redact and sample code that redacts or hashes PII before sending to LLM.",
+      "sources": [],
+      "what_would_help": "A one-paragraph policy on the sample README explaining which customer attributes are safe to send to LLMs and an example redaction helper."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "unverifiable",
+      "comment": "Decision D001 records readiness approval ('ready_with_gaps') with reason 'Approved with --yes' and reason_source 'operator'. The events trace contains no separate operator approval action or operator evidence; the recorded decision exists in decisions.jsonl but cannot be checked against other events for operator confirmation."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "D002 chose the official mongodb Node.js driver v5.x and a process-wide singleton MongoClient. Evidence: the driver is in package.json dependencies (app/package.json lines 14-18) and src/client.js implements a singleton client (lines 10-16). The build loaded the documentdb-driver skill (events lines 1, 21, 30) supporting this choice."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "wrong",
+      "comment": "D003 chose not to use LlamaIndex and instead implement a lightweight agent. This contradicts the explicit starter prompt which asked for a LlamaIndex agent that registers a tool. The events show the builder intentionally avoided LlamaIndex (events lines 25, 38/44 which record the decision and subsequent code writes) — that makes the decision wrong relative to the prompt requirement."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "D004 chose OpenAI as the LLM provider and env vars OPENAI_API_KEY/OPENAI_MODEL. Evidence: openai is a dependency in package.json (app/package.json line 17), .env.example contains OPENAI_API_KEY and OPENAI_MODEL (app/.env.example lines 2-4) and src/generate.js reads OPENAI_API_KEY/OPENAI_MODEL (lines 8-10)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "D005 chose simple context injection rather than embeddings/vector index. Evidence: src/generate.js directly JSON.stringifys purchase_history and preferences into the prompt (lines 58-60) and no embedding or vector-index code is present. The decision is defensible given the prompt and readiness gaps about embedding dimension mapping."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "D006 chose to read secrets from environment variables and include a .env.example. Evidence: src/client.js checks process.env.DOCUMENTDB_URI (line 5), .env.example exists (app/.env.example), and README instructs copying .env.example (README lines 13-16)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "D007 chose to create simple single-field indexes on segments.segmentId and campaigns.segmentId. Evidence: src/seed.js creates these indexes (lines 33-35) and the decision is logged (events line 31)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "D008 chose to use the existing reachable Azure DocumentDB cluster and not provision new resources. Evidence: skill_md and events show use of an environment-provided cluster and the run used DOCUMENTDB_URI (events lines 40 and subsequent seed run lines 41 and 51)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "D009 chose to prefer the deterministic fallback by default and gate OpenAI behind USE_OPENAI. Evidence: src/generate.js checks USE_OPENAI and uses fallbackGeneration when OpenAI is disabled (lines 10, 62-74). This choice is recorded and implemented (events lines 43 and 44)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "LlamaIndex integration guidance",
+      "what_was_missing": "The starter prompt explicitly asked for a LlamaIndex agent that registers a fetch tool, but no installed skill or public quickstart detailing 'how to wire LlamaIndex to Azure DocumentDB' was found. The builder defaulted to not using LlamaIndex.",
+      "where_searched": "Loaded installed skills (documentdb-*), searched Microsoft Learn for LlamaIndex + DocumentDB examples; no authoritative guide was discovered.",
+      "effect_on_this_build": "The builder implemented a lightweight agent instead of a LlamaIndex-based agent, causing the build to diverge from the prompt's explicit requirement (the missing item is the primary functional difference).",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add an agent-kit rule and short sample that shows how to integrate LlamaIndex Node.js with Azure DocumentDB: (1) install LlamaIndex, (2) implement a tool adapter named `fetch_segment` that calls the DocumentDB driver, (3) register the tool with the LlamaIndex agent, and (4) an end-to-end example that seeds segments and runs the LlamaIndex agent to generate a campaign.",
+      "priority": "high"
+    },
+    {
+      "topic": "Embedding model ↔ vector-index dimensionality mapping",
+      "what_was_missing": "Public guidance that maps specific embedding model outputs (e.g., OpenAI embeddings dims = 1536) to the vector-index 'dimensions' parameter for DocumentDB was not found in the skill set or Learn quickstarts.",
+      "where_searched": "documentdb-vector-search skill, Microsoft Learn vector search pages, quickstart vector docs.",
+      "effect_on_this_build": "The builder avoided using vector indexes and embeddings to keep the sample simple; without a published mapping agents cannot safely create vector indexes with the correct 'dimensions' setting.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short Learn page or a section in the vector-search quickstart titled 'Embedding models and DocumentDB index dimensions' that lists common embedding models and their dimensionality (e.g., model X -> 1536) and an example createIndexes JSON block with 'dimensions' set accordingly.",
+      "priority": "high"
+    },
+    {
+      "topic": "WriteConcern / readPreference mapping for Azure DocumentDB",
+      "what_was_missing": "Public guidance that states how Azure DocumentDB maps MongoDB writeConcern and readPreference semantics to the managed product and a recommended default for application code.",
+      "where_searched": "Searches for 'Azure DocumentDB writeConcern readPreference' returned no authoritative mapping.",
+      "effect_on_this_build": "The sample does not set explicit writeConcern/readPreference. An agent cannot confidently change defaults without knowing service behaviour—this could lead to surprising durability or latency mismatches in production.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page 'Consistency and durability: writeConcern/readPreference' describing supported values, defaults, and sample Node.js driver options to set them safely for typical app needs.",
+      "priority": "medium"
+    },
+    {
+      "topic": "LLM PII handling guidance for prompts",
+      "what_was_missing": "No public guidance was found that specifically tells agent authors which customer fields are acceptable to send to an LLM when building prompts from DocumentDB data, or sample redaction helpers for Node.js.",
+      "where_searched": "Searches for 'azure documentdb pii lLM redaction' and installed skills.",
+      "effect_on_this_build": "The sample injects purchase_history into the prompt; absent guidance, an agent may inadvertently send PII to the LLM. The auditor cannot say whether the seeded data contains PII in this sample, so the risk remains.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'PII & LLM' guideline for the agent kit and sample README: what fields to redact, sample redaction function (mask email/phone), and a statement recommending encrypting sensitive fields at rest.",
+      "priority": "high"
+    },
+    {
+      "topic": "Driver versions and supported combinations",
+      "what_was_missing": "A concise, discoverable list of recommended/pinned Node.js driver versions that are tested and supported against Azure DocumentDB clusters (e.g., supported mongodb Node driver versions).",
+      "where_searched": "Installed skills and Microsoft Learn quickstarts; no single 'supported driver versions' box found.",
+      "effect_on_this_build": "The sample used mongodb ^5.7.0 and package-lock.json to pin transiently. Agents may not know which driver minor versions are supported; this can cause runtime incompatibilities when new driver versions change behaviour.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Supported drivers' section to the quickstart listing tested driver versions per runtime and a recommendation to pin using a lockfile (or add a package.json example with exact versions).",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests without live cluster (mock patterns)",
+      "what_was_missing": "Example test harness or pattern that shows how to write unit tests for samples without requiring a live DocumentDB cluster (e.g., using mongodb-memory-server or mocking the MongoClient).",
+      "where_searched": "Installed skills and sample repo. No sample tests or test patterns were found.",
+      "effect_on_this_build": "The sample contains no tests and the package.json test is a noop; this increases friction for gallery acceptance and automated CI validation.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a short 'Testing' README subsection and an example test file using a mocked MongoClient or mongodb-memory-server showing unit tests for seed/generate functions that pass without a live cluster.",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC using Microsoft.DocumentDB/mongoClusters",
+      "what_was_missing": "A short IaC snippet for Bicep/ARM/Terraform that shows the correct resource type (Microsoft.DocumentDB/mongoClusters) to provision an Azure DocumentDB cluster and minimal safe defaults.",
+      "where_searched": "Learn samples and installed skills; documentation exists but a small ready-to-copy snippet in the sample template was missing.",
+      "effect_on_this_build": "The sample used an existing cluster (per prompt) so no provisioning was performed; new users may attempt az cosmosdb or azurerm_cosmosdb_account and target the wrong resource type.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Optional IaC' file (Bicep) in the sample that demonstrates creating a minimal mongoClusters resource and document the az documentdb mongocluster CLI commands. Link to the Learn template.",
+      "priority": "medium"
+    },
+    {
+      "topic": ".env.example completeness",
+      "what_was_missing": ".env.example omitted USE_OPENAI (the runtime toggle used by the code).",
+      "where_searched": "app/.env.example and src/generate.js",
+      "effect_on_this_build": "Operators may be confused why OpenAI is not called by default; small usability gap for developers following README steps.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Update .env.example to include USE_OPENAI=0 and optionally DOCUMENTDB_MAX_POOL_SIZE, ENABLE_WRITE_TOOLS, and any other runtime toggles used by the sample.",
+      "priority": "low"
+    },
+    {
+      "topic": "Model-default decisions recorded without source",
+      "what_was_missing": "Some build decisions (D003) were made by model default choices instead of following the prompt (LlamaIndex) and there was no skill or public source that would resolve the choice for an agent.",
+      "where_searched": "decisions.jsonl and the loaded skills; LlamaIndex integration guidance was missing.",
+      "effect_on_this_build": "The builder diverted from the explicit prompt requirement (no LlamaIndex).",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a rule to the agent-kit \"If the starter prompt requires a particular library (e.g., LlamaIndex) install and use it, or explicitly record and justify why it was not possible (and prefer to raise a build halt).\"",
+      "priority": "medium"
+    }
+  ]
+}
