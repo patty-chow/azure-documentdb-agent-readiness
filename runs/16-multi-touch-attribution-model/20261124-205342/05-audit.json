@@ -1,0 +1,550 @@
+{
+  "verdict": "fail",
+  "summary": "The sample is a runnable Python (FastAPI) service that seeds synthetic events, computes first-touch/last-touch/linear attribution, stores versioned attribution documents, and exposes a LangChain/OpenAI wrapper. Most gallery hygiene items (README, .env.example, tests, pinned requirements) are present. However a core functional requirement was not met: the reference required that attribution be computed by aggregation pipelines executed in Azure DocumentDB, but the implementation computes attribution client-side in Python. Because the sample therefore does not do what the starter prompt explicitly asked, the verdict is FAIL. The report lists file/line evidence, the cause for each unmet or partly-met requirement, smallest fixes, practice checks, decision reviews and documentation gaps the product team should address.",
+  "requirement_results": [
+    {
+      "requirement": "A Python service reads the customer journey event documents (time-ordered touchpoint events per customer) from an Azure DocumentDB collection through a MongoDB-compatible Python driver (e.g. PyMongo).",
+      "status": "met",
+      "evidence": "app/src/db.py:8-19 (get_client uses pymongo.MongoClient reading DOCUMENTDB_URI); app/src/attribution.py:71 (events = list(events_coll.find({\"customer_id\": cid}).sort(\"event_time\", 1)))",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Attribution is computed by aggregation pipelines that Azure DocumentDB executes over the journey event documents (e.g. $match, $sort and $group stages), grouping each customer's touchpoints in event-time order.",
+      "status": "not_met",
+      "evidence": "app/src/attribution.py:60-76 — run_attribution_for_all reads per-customer events into Python (events = list(...)) and calls compute_attribution_for_customer which performs logic in-process; no server-side aggregation pipelines are used.",
+      "cause": "builder_error",
+      "smallest_fix": "Replace the client-side grouping with a server-side aggregate: use events_coll.aggregate(...) with $match/$sort/$group (or an $group + $push-then-$unwind pipeline) so the DB computes per-customer attribution. For example, implement an aggregation pipeline that groups events per customer (preserving event_time order) and computes sums before writing results back."
+    },
+    {
+      "requirement": "A first-touch pipeline gives all of a customer's conversion credit (e.g. the conversion revenue) to the earliest touchpoint in that customer's journey.",
+      "status": "met",
+      "evidence": "app/src/attribution.py:17-21 (compute_attribution_for_customer takes the first event and assigns total_revenue to its channel).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A last-touch pipeline gives all of a customer's conversion credit (e.g. the conversion revenue) to the latest touchpoint in that customer's journey.",
+      "status": "met",
+      "evidence": "app/src/attribution.py:22-25 (compute_attribution_for_customer takes the last event and assigns total_revenue to its channel).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A linear pipeline splits a customer's conversion credit (e.g. the conversion revenue) equally across every touchpoint in that customer's journey.",
+      "status": "met",
+      "evidence": "app/src/attribution.py:27-37 (compute_attribution_for_customer computes counts per channel and divides total_revenue across touchpoints).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The attribution output of the models (e.g. an amount per touchpoint or channel under each model) is written back to Azure DocumentDB as a versioned document per customer: each run stores a new version carrying a version marker (e.g. a version number or run timestamp), and the previous versions of that customer's document remain stored.",
+      "status": "met",
+      "evidence": "app/src/attribution.py:41-57 (upsert_attribution_result finds the last version, sets new_version = last_version + 1 and insert_one the new document; run_attribution_for_all stores three model variants per customer lines 73-76).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A LangChain tool, implemented in Python, takes a marketer's natural-language question about attribution results, reads the stored attribution documents from Azure DocumentDB, and returns the answer; the tool is wired into a LangChain agent or chain so the question is answered by calling it.",
+      "status": "met",
+      "evidence": "app/src/langchain_tool.py:5-39 (answer_question_for_customer builds context from attribution_results and uses langchain.OpenAI to form a prompt); app/src/app.py:23-30 calls answer_question_for_customer in the /query endpoint.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.py:14-16 (get_client reads DOCUMENTDB_URI from environment and errors if not set); app/.env.example:2-3 provides placeholders for DOCUMENTDB_URI and OPENAI_API_KEY (placeholders, not secrets).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example:1-4 (DOCUMENTDB_URI, OPENAI_API_KEY, DATABASE_NAME placeholders present).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "No embedding ingestion, vector fields or index creation exist in the repository (search for 'embedding'/'vector' returned no matches).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vectors are to be used add an ingestion/seed step that stores 'embedding' arrays plus a schemaVersion and a createSearchIndexes JSON that records the chosen embedding model and dimensions."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index creation or vector parameters are present in the code or README.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search will be added, include an example createSearchIndexes JSON (from documentdb-vector-search) and a README section explaining which parameters to tune for larger data."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py:5-19 implements a thread-safe module-level singleton get_client() that instantiates MongoClient once and reuses it.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/scripts/seed.py:27-36 upserts events by _id so the seed is idempotent and can be run multiple times without duplicates. However the seed script does not create collection indexes; index creation happens in app/src/attribution.py:64-66 in run_attribution_for_all.",
+      "cause": "builder_error",
+      "smallest_fix": "Add index creation to the seed script (e.g., coll.create_index([('customer_id',1), ('event_time',1)], background=True) and results_coll.create_index([...]) before upserting) so seed both loads data and ensures required indexes."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint exists. The /query endpoint (app/src/app.py:23-30) calls answer_question_for_customer which will raise RuntimeError if OPENAI_API_KEY is missing (langchain_tool.py:29-33) but there is no explicit validation for empty question or structured error mapping for LLM/embedding failures.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add input validation in the /query handler (reject empty question with 400) and wrap LLM calls with try/except to return clear 4xx/5xx errors when embedding/LLM calls fail (and avoid raising raw RuntimeError)."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No vector search or similarity ranking is implemented in this sample; langchain_tool uses only context text + LLM prompt.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add vector search, ensure the endpoint returns similarity scores and document the response shape in the README."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt pins most dependencies exactly (pymongo==4.6.1, fastapi==0.95.2, uvicorn==0.22.0, python-dotenv==1.0.0, langchain==0.0.300, openai==1.0.0, pytest==7.4.2) but mongomock is loosened to mongomock>=4.2.0 (see events.log where pip refused an exact mongomock wheel).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "If exact pin is required, pick a mongomock version that is available for the target Python runtime and pin it; otherwise document why a looser spec is used (compatibility constraint) in requirements.txt or README."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/test_attribution.py uses mongomock and the test run succeeded (events.jsonl: run_command `pytest -q` exit code 0; tests passed).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No infra-as-code files (Bicep, ARM, Terraform) or examples exist in the repository. search for 'mongocluster', 'bicep' or 'terraform' returned no matches.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Add a Bicep / Terraform example that targets Microsoft.DocumentDB/mongoClusters (e.g., a minimal bicep file with parameters for tier, storage and region). If the run environment forbids provisioning, include the IaC files but do not execute them during the build."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains Overview, Prerequisites, Setup, Run, and Cleaning up sections (see lines 5-56, 67-69).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and other text use 'Azure DocumentDB' consistently (README lines 5, 73).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create and reuse a single MongoClient (process-wide singleton) instead of creating a client per request; initialize once (e.g., at startup) and reuse the connection pool.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.py:5-19 (thread-safe module-level singleton get_client using MongoClient).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection timeouts & tuning",
+      "practice": "Tune connection-pool parameters and timeouts to your environment: small pools and short maxIdleTimeMS for serverless, larger pools for long-running servers, and set connectTimeoutMS/socketTimeoutMS/serverSelectionTimeoutMS to avoid stuck requests.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.py:17-18 instantiates MongoClient(uri) with no explicit timeouts or pool tuning options.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Set sensible client options in get_client(), e.g. MongoClient(uri, serverSelectionTimeoutMS=5000, socketTimeoutMS=20000, maxPoolSize=100, retryWrites=False) or make them configurable via env vars.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Enforce TLS",
+      "practice": "Always require TLS on client connections to Azure DocumentDB and do not disable certificate validation in production",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example:2 includes tls=true in the example SRV URI and app/src/db.py relies on SRV-style URI; README warns not to disable TLS (README.md:13, 73).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Keep secrets out of source",
+      "practice": "Keep connection strings and API keys out of source control: read DOCUMENTDB_URI and other secrets from environment variables locally and use a secret store (Key Vault / managed identities) for production.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.py reads DOCUMENTDB_URI from environment, and .env.example contains placeholders (app/.env.example:2-3). README explicitly warns not to commit secrets (app/README.md:13).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index for per-customer scans",
+      "practice": "Create a compound index for common query shapes on event collections following the ESR rule (Equality → Sort → Range), e.g., a compound index on (customer_id ASC, event_time ASC).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/attribution.py:64-66 calls events_coll.create_index([('customer_id', 1), ('event_time', 1)]) before reading events.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL retention for raw events",
+      "practice": "Use TTL (expireAfterSeconds) indexes to implement retention policies for raw event collections so they don't grow unbounded.",
+      "category": "provisioning / retention",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "No TTL index created and retention policy is not part of this small sample; events collection in seed uses event_time but no TTL index.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "If retention is required, add events_coll.create_index([('event_time', 1)], expireAfterSeconds=...) with a configurable retention value.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index creation (audit trail)",
+      "practice": "When storing vectors, create a cosmosSearch vector index with the correct kind (DiskANN/HNSW/IVF), explicit dimensions, and similarity metric.",
+      "category": "vector search",
+      "availability": "discovered_not_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample does not store vectors or create any vector indexes (no 'embedding' or 'vector' fields found).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain heavy queries",
+      "practice": "Validate heavy queries and index usage using explain('executionStats') (or MCP explain_operation) and iterate indexes based on explain plans and index-stats before deploying changes.",
+      "category": "monitoring / query planning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "No heavy DB-side aggregation pipelines are created by the app; run_attribution_for_all reads entire per-customer event sets and does not capture explain() plans. The MCP/Explain tools were used by the builder to inspect stored results (events.jsonl: documentdb_aggregate calls), but explain-based validation is not implemented.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "When moving to DB-side aggregation, run explain('executionStats') and include a small verification script or CI step that compares executionStats to a threshold before merging index changes.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Local gateway advice",
+      "practice": "For local development use the DocumentDB Gateway image (MongoDB on 10260) and drive TLS relaxation from env vars.",
+      "category": "local development",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "README.md (app/README.md:73-74) notes local dev and TLS, and .env.example gives placeholders; the run environment guidance also referenced the gateway. No local Docker compose is included, which is acceptable per the run environment that targeted a live cluster.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "Optionally include a small docker-compose snippet in README for local development using the Gateway image.",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "SchemaVersion on results",
+      "practice": "Record schemaVersion on documents to support lazy schema migration and safe forward evolution of attribution/result documents.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/attribution.py:53-55 sets 'computed_at' and 'schemaVersion': 1 on result documents.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent ingestion (unique index)",
+      "practice": "Enforce idempotency at ingestion with a unique index on the ingestion identifier (e.g., event_id or customer_id+event_id) so repeated ingestion attempts don't create duplicates.",
+      "category": "data integrity",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py:35-36 uses replace_one({'_id': ev['_id']}, ev, upsert=True) — the seed uses a deterministic _id and thus enforces idempotency by design (no duplicates on rerun).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side pagination for large reads",
+      "practice": "When reading large event sets, use server-side pagination (cursors + limit+sort) and reasonable batchSize rather than loading entire collections into memory.",
+      "category": "performance / queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/attribution.py:71 reads events = list(events_coll.find({'customer_id': cid}).sort('event_time', 1)) which loads the whole per-customer resultset into memory rather than streaming/batching.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Use a cursor with batch_size or an aggregate with $group on the server to avoid loading all events into application memory (e.g., iterate cursor with for doc in events_coll.find(...).batch_size(1000):).",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index lifecycle & budget",
+      "practice": "Maintain an index budget (keep the number of indexes modest, e.g., 5–15), review $indexStats and drop or hide unused indexes using a hide→verify→drop lifecycle.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "This small sample creates only two indexes (events and results). The index-life-cycle management is a production concern not exercised here.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Upsert/version atomicity (audit trail)",
+      "practice": "If you need atomic version increments, prefer single-document atomic updates where possible.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/src/attribution.py:41-56 determines last_version by a read (find().sort(...).limit(1)), computes new_version and then insert_one the new doc. This read-then-insert approach is not atomic and can lead to race conditions under concurrent runs.",
+      "source": "audit trail",
+      "searched": "",
+      "fix": "Use a single-document atomic update pattern or a transaction if you need to ensure monotonic version assignment under concurrency (e.g., maintain a per-customer 'latest_version' counter document and use findOneAndUpdate with $inc, or use a transaction that reads-and-writes safely).",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "LangChain/OpenAI API handling",
+      "practice": "Protect the LangChain/OpenAI integration: require OPENAI_API_KEY in env, validate presence at startup, never log the key, and implement rate-limiting and per-user quota controls for marketer-facing natural-language queries.",
+      "category": "third-party integrations",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P36",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/langchain_tool.py:29-33 checks OPENAI_API_KEY presence and raises RuntimeError if missing; README notes OPENAI_API_KEY usage (app/README.md:11,74). However rate-limiting and quota controls are not implemented.",
+      "source": "prior_knowledge",
+      "searched": "searches for LangChain/OpenAI integration security guidance returned no service-specific docs",
+      "fix": "Add guidance and optional rate-limiting middleware or mention in README that production deployments should enforce per-user quotas/rate limits and not expose raw LLM access.",
+      "sources": [],
+      "what_would_help": "A short README section with recommended environment variables and a sample rate-limiter snippet or a LangChain wrapper that enforces quota."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator-approved readiness 'ready_with_gaps' is an operator action; no contradiction found. decisions.jsonl records the decision."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python + FastAPI matches the run environment and the repository (files are Python/FastAPI). Evidence in events.jsonl shows Python commands and files created."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Decision to use existing cluster and not provision resources is supported by the run policy and events: the build used DOCUMENTDB_URI and did not attempt control-plane writes. events.jsonl shows no infra provisioning attempts and lists the cluster operations performed."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from environment is implemented in app/src/db.py:14-16 and .env.example provides placeholders; events.jsonl shows this code was written and used."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Storing attribution output in a separate collection with version field is implemented (app/src/attribution.py:41-56 and run_attribution_for_all stores three model variants)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Small synthetic seed dataset (20 customers, ~500 events) is implemented in scripts/seed.py constants NUM_CUSTOMERS=20, EVENTS_PER_CUSTOMER=25 and the seed run printed 'Seeded 500 events' per events.jsonl."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Decision to use LangChain with OpenAI (OPENAI_API_KEY) is implemented: app/src/langchain_tool.py imports langchain.OpenAI and reads OPENAI_API_KEY. The decision's reason_source is 'model_default' (a default choice); the implementation matches that choice. Note: because this was a model-default choice, the product team should consider documenting the provider choice in sample guidance (see doc_gaps)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "questionable",
+      "comment": "The builder intended to pin dependencies (decision made), and most packages are pinned. However events.jsonl shows mongomock was loosened from an exact pin due to a packaging availability issue (see D009). The decision to pin is reasonable but the final state is a mixed pin/loose spec; that nuance is recorded in events.jsonl."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Event trace shows pip install failed for the exact mongomock wheel, and the log_decision D009 documents loosening mongomock to >=4.2.0.post1; the events.jsonl run_command and log_decision entries corroborate the stated reason."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Atomic version increments / safe versioning pattern",
+      "what_was_missing": "Public Azure DocumentDB guidance that prescribes a canonical approach for atomic per-customer version increments or recommended multi-version document patterns (findOneAndUpdate + $inc vs read-last-then-insert).",
+      "where_searched": "documentdb skills (documentdb-data-modeling, documentdb-indexing) and general Microsoft Learn pages; search terms included 'azure documentdb versioned write atomic increment findOneAndUpdate'.",
+      "effect_on_this_build": "The builder implemented a read-last-then-insert pattern (app/src/attribution.py:41-56). Under concurrent runs this pattern can produce version collisions or race conditions. The lack of explicit service guidance led the builder to implement a simple but non-atomic approach.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short guidance page titled 'Versioned documents and atomic increments' describing recommended patterns: (1) per-customer counter document + findOneAndUpdate($inc) to allocate monotonic version numbers, (2) using transactions when multi-document atomicity is required, (3) examples in Python showing find_one_and_update with upsert and $inc, and tradeoffs re: concurrency and cost.",
+      "priority": "high"
+    },
+    {
+      "topic": "Transaction & single-document preference",
+      "what_was_missing": "Clear provider-level guidance comparing multi-document transactions vs single-document atomic updates for versioned writes and their cost/latency trade-offs for Azure DocumentDB.",
+      "where_searched": "documentdb skills and Microsoft Learn; queries like 'azure documentdb multi-document transactions cost latency' yielded no definitive guidance.",
+      "effect_on_this_build": "The builder chose a simple non-transactional pattern for versioning; without explicit guidance builders may either overuse transactions (cost/latency) or under-protect data correctness.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "FAQ/short doc 'Transactions and versioned writes' with recommended default patterns for versioned documents, when to use transactions, and code examples for safe upserts and atomic increments in Python.",
+      "priority": "high"
+    },
+    {
+      "topic": "WriteConcern/readConcern tuning guidance",
+      "what_was_missing": "No clear service-level recommendation for tuning writeConcern/readConcern (w/wtimeoutMS) for application durability vs latency for the vCore DocumentDB offering.",
+      "where_searched": "documentdb skill materials and Microsoft Learn; searches for 'azure documentdb writeConcern w=majority guidance' returned no concise recommendation.",
+      "effect_on_this_build": "The sample uses the driver defaults; teams with stricter durability requirements may be unsure how to set w/wtimeoutMS appropriately for DocumentDB vCore clusters.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A short note on the connection/driver guidance page that explains writeConcern/readConcern support, recommended defaults for analytics vs transactional workloads, and example MongoClient URIs showing how to set w/wtimeoutMS.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Testing guidance: mongomock vs dedicated test DB",
+      "what_was_missing": "No explicit service recommendation advising whether to use mongomock for unit tests versus a dedicated test database (and how to get parity with DocumentDB-specific features).",
+      "where_searched": "documentdb skills and general repo docs; search 'azure documentdb testing recommendations mongomock' returned no clear service-level instruction.",
+      "effect_on_this_build": "The builder used mongomock for unit tests and it passed locally. Without guidance other builders might use the wrong local emulator and miss service-specific features (e.g., cosmosSearch).",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A 'Testing' page giving recommended strategies: unit tests with mongomock for pure-logic tests, integration tests against a versioned test cluster or the local DocumentDB Gateway image (docker) for feature parity, and sample pytest fixtures for both approaches.",
+      "priority": "medium"
+    },
+    {
+      "topic": "PII logging & redaction guidance",
+      "what_was_missing": "No service-specific best-practice doc that tells sample authors to avoid logging or to redact customer identifiers / PII for DocumentDB apps.",
+      "where_searched": "documentdb security skills and Microsoft Learn; searches for 'azure documentdb logging PII redaction' returned no service-specific guidance.",
+      "effect_on_this_build": "Sample does not log PII, but there is no explicit note in README advising redaction; absence of guidance risks sample authors logging sensitive identifiers in other samples.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short security note or checklist entry for sample authors: 'Avoid logging customer PII; if needed, hash or mask identifiers in logs; show code snippets demonstrating redaction before logging.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "LangChain/OpenAI integration controls",
+      "what_was_missing": "No service-level guidance on LLM/embedding provider selection, credential handling, rate-limiting and per-user quota controls for a marketer-facing LangChain tool integrated with DocumentDB.",
+      "where_searched": "documentdb skills, LangChain docs and Microsoft Learn; searches for 'azure documentdb openai integration best practices' had no service-specific prescriptions.",
+      "effect_on_this_build": "The builder used a model-default choice (OpenAI) and checks OPENAI_API_KEY presence but did not implement rate-limiting or quota enforcement. This is a recurring operational gap for samples that surface LLM access.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "An agent-kit rule or sample README section titled 'LLM integration safety' recommending: require API key via env, do not echo keys, provide example configuration for Azure OpenAI and OpenAI, and include a small rate-limiter middleware snippet and guidance to add auditing/quotas in production.",
+      "priority": "high"
+    },
+    {
+      "topic": "Seed should create indexes (discoverability)",
+      "what_was_missing": "The checklist expects seed scripts to both load data and ensure required indexes; the sample's seed is idempotent but doesn't create indexes (index creation occurs in run_attribution).",
+      "where_searched": "Repo files and skills (indexing, local-deployment); no single canonical place in the repo clarifies the expected location for index creation.",
+      "effect_on_this_build": "Users who run only the seed may not have the necessary indexes before running queries; the builder placed index creation in run_attribution, which works, but the mismatch can surprise users.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "A small guidance note in the sample template: 'Seed scripts should be idempotent and ensure indexes exist (create_index) so a fresh environment is usable after seeding alone.' Provide a 2-line example to add to seed scripts.",
+      "priority": "medium"
+    }
+  ]
+}

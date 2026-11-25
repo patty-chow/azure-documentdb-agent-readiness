@@ -1,0 +1,53 @@
+# 3. Build report: 16-multi-touch-attribution-model
+
+**Status: completed**
+
+Sample app created: a small Python (FastAPI) service and CLI scripts that seed synthetic events into an existing Azure DocumentDB (MongoDB-compatible) cluster, compute first-touch / last-touch / linear attribution per customer, and store versioned attribution documents. A LangChain/OpenAI wrapper is included to let marketers ask natural-language questions about attribution results; the LangChain tool requires OPENAI_API_KEY to be set and was not exercised during verification because the key was not present. Unit tests (mongomock) passed. The live cluster was used for seeding and running the pipelines; collections and counts were inspected via the documentdb MCP tools.
+
+## How to run
+
+1) Create and activate a virtual env: python -m venv .venv; source .venv/bin/activate (Windows: .\.venv\Scripts\activate)
+2) Install dependencies: pip install -r requirements.txt
+3) Create .env from .env.example and set DOCUMENTDB_URI and (optionally) OPENAI_API_KEY and DATABASE_NAME
+   - DOCUMENTDB_URI must point to the existing DocumentDB cluster (SRV-style mongodb+srv URI)
+   - DATABASE_NAME defaults to sample_customer_360_16
+4) Seed sample events: python -c "import sys; sys.path.insert(0,'.'); from scripts import seed; seed.seed()"
+5) Run attribution pipelines and store results: python -c "import sys; sys.path.insert(0,'.'); from scripts import run_attribution; run_attribution.main()"
+6) Start HTTP API (optional): uvicorn src.app:app --reload
+   - POST /run-attribution triggers pipelines
+   - POST /query accepts JSON {"customer_id":"cust_000","question":"..."} and returns {"answer": "..."} (requires OPENAI_API_KEY)
+7) Run tests locally: pytest -q
+
+## Verified by running
+
+- pip install -r requirements.txt: completed (packages installed)
+- pytest: 2 passed, 2 warnings
+- Seed script: python -c "... scripts.seed.seed()": seeded 500 events across 20 customers (script printed confirmation)
+- Attribution run: python -c "... run_attribution.main()": processed 20 customers (script printed confirmation)
+- documentdb_list_databases(db_name='sample_customer_360_16'): showed collections events (count: 510) and attribution_results (count: 60)
+- documentdb_aggregate on attribution_results for customer 'cust_000' returned 1 sample document (verified stored attribution_result structure)
+
+## Not verified
+
+- LangChain/OpenAI end-to-end question answering: not executed because OPENAI_API_KEY was not present in the environment. The LangChain tool is implemented (src/langchain_tool.py) and will work when OPENAI_API_KEY is set; running it would have sent prompts to OpenAI which is not allowed in this verification step without the key.
+- Any control-plane provisioning (creating clusters or resource groups) was intentionally not attempted because the run policy forbids Azure resource writes.
+
+## Open issues
+
+None.
+
+## Files
+
+- `README.md`
+- `.env.example`
+- `requirements.txt`
+- `.gitignore`
+- `src/__init__.py`
+- `src/db.py`
+- `src/attribution.py`
+- `src/langchain_tool.py`
+- `src/app.py`
+- `scripts/seed.py`
+- `scripts/run_attribution.py`
+- `tests/test_attribution.py`
+
