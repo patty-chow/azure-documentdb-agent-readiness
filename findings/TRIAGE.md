@@ -1748,7 +1748,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 07-lab-results-aggregator | `runs/07-lab-results-aggregator/20261124-194018` | 3 | 0 | 10 | 87 | 1 |
 | 07-mortgage-application-multi-agent | `runs/07-mortgage-application-multi-agent/20261124-201025` | 3 | 0 | 16 | 63 | 3 |
 | 07-multi-currency-ledger | `runs/07-multi-currency-ledger/20261124-190814` | 0 | 0 | 8 | 46 | 3 |
-| 07-voice-of-customer-sentiment-hub | `runs/07-voice-of-customer-sentiment-hub/20261124-204049` | 1 | 0 | 22 | 130 | 2 |
+| 07-voice-of-customer-sentiment-hub | `runs/07-voice-of-customer-sentiment-hub/20261124-204049` | 1 | 0 | 25 | 130 | 2 |
 | 08-dynamic-segmentation-engine | `runs/08-dynamic-segmentation-engine/20261124-204222` | 6 | 0 | 36 | 79 | 4 |
 | 08-insurance-pre-auth-multi-agent | `runs/08-insurance-pre-auth-multi-agent/20261124-194215` | 0 | 0 | 11 | 28 | 0 |
 | 08-interest-rate-scenario-modeler | `runs/08-interest-rate-scenario-modeler/20261124-201113` | 1 | 0 | 22 | 69 | 4 |
@@ -1757,7 +1757,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 09-clinical-notes-de-identification | `runs/09-clinical-notes-de-identification/20261124-194349` | 6 | 0 | 12 | 90 | 5 |
 | 09-crypto-wallet-activity-analyzer | `runs/09-crypto-wallet-activity-analyzer/20261124-191004` | 2 | 0 | 32 | 86 | 1 |
 | 09-inventory-reorder-multi-agent-system | `runs/09-inventory-reorder-multi-agent-system/20261124-184020` | 0 | 0 | 15 | 38 | 3 |
-| 09-lead-scoring-agent | `runs/09-lead-scoring-agent/20261124-204408` | 0 | 0 | 9 | 46 | 0 |
+| 09-lead-scoring-agent | `runs/09-lead-scoring-agent/20261124-204408` | 0 | 0 | 9 | 47 | 0 |
 | 09-trade-settlement-tracker | `runs/09-trade-settlement-tracker/20261124-201323` | 3 | 0 | 19 | 61 | 2 |
 | 10-drug-formulary-semantic-search | `runs/10-drug-formulary-semantic-search/20261124-194440` | 1 | 0 | 11 | 81 | 5 |
 | 10-expense-report-auto-categorizer | `runs/10-expense-report-auto-categorizer/20261124-191257` | 4 | 0 | 10 | 114 | 2 |
