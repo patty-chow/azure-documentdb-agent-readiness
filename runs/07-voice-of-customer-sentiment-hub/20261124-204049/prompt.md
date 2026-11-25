@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent using Beanie ODM that ingests customer feedback from multiple channels, uses prompt engineering to extract sentiment, key topics, and a verbatim quote, embeds the text, and stores the enriched document in DocumentDB. Build aggregation pipelines that surface net sentiment trends by channel, topic, and time period.

@@ -1,0 +1,124 @@
+{
+  "answers": [
+    {
+      "question_id": "Q01",
+      "question": "What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster?",
+      "answer": "Provider namespace: Microsoft.DocumentDB. Resource type: databaseAccounts (i.e. Microsoft.DocumentDB/databaseAccounts).",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q02",
+      "question": "Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension?",
+      "answer": "Use the built-in Azure CLI group az cosmosdb. Example to create a Mongo-compatible account: az cosmosdb create --name MyDocDbAccount --resource-group MyRG --kind MongoDB --locations regionName=westus2 --default-consistency-level Session",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q03",
+      "question": "Which Bicep and Terraform resource types deploy a cluster?",
+      "answer": "Bicep: resource of type Microsoft.DocumentDB/databaseAccounts. Example snippet:\nresource docdb 'Microsoft.DocumentDB/databaseAccounts@2021-04-15' = {\n  name: 'myDocDbAccount'\n  location: 'westus2'\n  kind: 'MongoDB'\n  properties: { ... }\n}\nTerraform (azurerm provider): azurerm_cosmosdb_account for the account; ancillary resources include azurerm_cosmosdb_mongo_database and azurerm_cosmosdb_mongo_collection for DB/collection objects.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q04",
+      "question": "What does a connection string look like: scheme, host suffix, port, and the options it must carry?",
+      "answer": "Use standard MongoDB URI forms. Host suffix: <account>.mongo.cosmos.azure.com (or SRV: <account>.mongo.cosmos.azure.com). Port for direct (non-SRV) TLS connections: 10255. Examples:\n- SRV form: mongodb+srv://<username>:<password>@<account>.mongo.cosmos.azure.com/?ssl=true&replicaSet=globaldb&retryWrites=false\n- Standard form: mongodb://<username>:<password>@<account>.mongo.cosmos.azure.com:10255/<dbname>?ssl=true&replicaSet=globaldb&retryWrites=false&maxIdleTimeMS=120000\nNotes: username is typically in the form <db>@<account> when using the account primary key as password; TLS/SSL must be true; retryWrites is typically set to false for Cosmos Mongo endpoints; replicaSet=globaldb is commonly required.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q05",
+      "question": "How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else?",
+      "answer": "Capacity is primarily billed as Request Units per second (RU/s) for Cosmos DB accounts (including Mongo API). You can provision fixed RU/s, use autoscale RU, and some regions/accounts support serverless or consumption options. There are also newer vCore-based or dedicated offerings for certain APIs in preview/GA in some regions, but standard approach is RU/s (provisioned or autoscale) and billed accordingly.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q06",
+      "question": "Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID?",
+      "answer": "MongoDB API on Azure Cosmos DB primarily uses SCRAM-style username/password authentication where the username is the database user (often <db>@<account>) and the password is the account key (primary/secondary key). Historically Microsoft Entra ID (Azure AD) auth is not supported for the MongoDB wire API (AAD is supported for some Cosmos DB management and other APIs but not the MongoDB protocol). So the driver authenticates with SCRAM using the account key; managed identity / AAD token auth is not a normal path for the MongoDB API.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q07",
+      "question": "Which client library should an application use? Is there a service-specific SDK?",
+      "answer": "Use standard MongoDB drivers (e.g. pymongo or motor for Python). There is no separate service-specific MongoDB driver — the official MongoDB drivers are used because the service speaks the MongoDB wire protocol. For Cosmos DB-specific APIs (SQL/Core) you'd use the azure-cosmos SDK, but for Mongo API use pymongo/motor and an ODM like Beanie (which runs on motor) for Python async ODM.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q08",
+      "question": "Which vector index types are supported, and what does the command that creates one look like?",
+      "answer": "Vector support in the Mongo-compatible Cosmos DB is newer and when present can expose multiple index types such as HNSW, IVF and DiskANN (the sample cluster you described includes DiskANN, HNSW and IVF). A typical Mongo-shell style command to create a vector index (example form you would run immediately) would look like:\n\ndb.customer_feedback.createIndex(\n  { embedding: 'vector' },\n  {\n    algorithm: 'hnsw',\n    metric: 'cosine',\n    dimensions: 1536,\n    M: 16,\n    efConstruction: 200,\n    name: 'embedding_hnsw'\n  }\n)\n\n(Notes: the exact option names vary by provider; use the cluster's createIndex behaviour or the provider portal to confirm exact index option keys. This is the concrete command I would try first.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q09",
+      "question": "How are full-text search and hybrid search done?",
+      "answer": "For simple full-text you can use MongoDB text indexes and the $text operator where supported by the Mongo API. For richer semantic or hybrid (text + vector) search, integrate with Azure Cognitive Search (Azure Search) or the cluster's vector search features (if the Mongo API build exposes vector search). In practice you either: 1) add text indexes and use $text for basic search, or 2) push documents (or a sync pipeline) into Azure Cognitive Search to run hybrid semantic + vector searches or use the provider/exposed vector search APIs if available.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q10",
+      "question": "Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not?",
+      "answer": "Azure's Mongo-compatible service supports specific MongoDB wire protocol versions and typically lags behind the latest community server versions; common supported compatibility tags have been 3.6, 4.0, 4.2, 4.4, 5.0 and newer in later releases (check account configuration for the exact API version). Some features that are commonly restricted or behave differently: server-side JavaScript ($where), some aggregation stages/operators may be missing or have different performance characteristics, certain transaction/replica-set behaviors are limited, and administrative commands (like some serverStatus internals) may be unavailable. Verify the account's declared MongoDB API version before relying on very new server features.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q11",
+      "question": "How do you run the database locally for development and tests: which image or emulator, and which port?",
+      "answer": "There is a Cosmos DB emulator for core APIs on Windows and a Linux container image for the emulator in some setups, but the MongoDB compatibility surface in the emulator has historically been limited. For local development against a Mongo-compatible API I would run the official MongoDB Docker image (e.g. mongo:7.0) on port 27017 and test there. For testing against the real Azure cluster use the provided DOCUMENTDB_URI and the live service.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q12",
+      "question": "Are change streams supported, and does anything have to be enabled first?",
+      "answer": "Change Feed is a Cosmos DB native capability (primarily for the Core/SQL API). Support for MongoDB-style change streams depends on the MongoDB compatibility level/version of the account; historically MongoDB change streams were not supported on all compatibility versions. If you need change notifications reliably on Cosmos, use the Cosmos DB Change Feed (Core API) or verify that the Mongo API account explicitly advertises change stream support. No global switch in the portal typically toggles Mongo change streams — support is by API/version.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q13",
+      "question": "Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it?",
+      "answer": "The documentdb MCP server (named 'documentdb' in the environment) provides data-plane inspection tools for Cosmos DB / DocumentDB resources. The general azure MCP server covers general Azure control-plane tasks but the specialized 'documentdb' MCP server is the one with collection/index inspectors and query plan tools for this service.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q14",
+      "question": "What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project?",
+      "answer": "Microsoft originally called its NoSQL service DocumentDB; it evolved into and was rebranded/merged into Azure Cosmos DB (DocumentDB API became Cosmos DB's Core/SQL and other APIs). Microsoft DocumentDB/Cosmos DB is distinct from any unrelated open-source project named DocumentDB. Also, be careful not to confuse Microsoft DocumentDB/Cosmos DB with Amazon DocumentDB (AWS), which is a different managed Mongo-compatible service.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q15",
+      "question": "What engine is underneath, and does that change anything in application code?",
+      "answer": "Under the MongoDB API the service is backed by Azure Cosmos DB's own storage and query engine which implements the MongoDB wire protocol rather than running the upstream MongoDB server. That means you use standard MongoDB drivers and most client code unchanged, but you must expect some server-side differences/limitations (missing or altered commands, different performance characteristics, differences in transactions, indexing and operator support). Test against the target account and consult compatibility docs for any advanced Mongo features you depend on.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S01",
+      "question": "Which database name should the sample use?",
+      "answer": "Use the database named sample_customer_360_07 for all sample-created collections and operations.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S02",
+      "question": "How should the sample read the cluster connection string and which client and ODM will it use?",
+      "answer": "Read the connection string from the environment variable DOCUMENTDB_URI at runtime. Use an async Mongo client (motor) as the driver and Beanie ODM (which is built on motor and pydantic) for document modelling and persistence in the Python LangChain agent.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S03",
+      "question": "What collection and index plan will the sample create for storing enriched documents and embeddings?",
+      "answer": "Create a collection named customer_feedback in sample_customer_360_07. Store embeddings in a field named embedding (array of floats). Create a vector index on embedding (algorithm e.g. hnsw, metric cosine) plus a standard text index on the feedback/text field for fast text filtering. Example index commands I would run first:\n- db.customer_feedback.createIndex({ feedback_text: 'text' }, { name: 'text_feedback' })\n- db.customer_feedback.createIndex({ embedding: 'vector' }, { algorithm: 'hnsw', metric: 'cosine', dimensions: 1536, name: 'embedding_hnsw' })",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "S04",
+      "question": "What aggregation pipelines will surface net sentiment trends by channel, topic, and time?",
+      "answer": "Example aggregation pipelines:\n- Net sentiment by channel (monthly):\n  [{ $match: { created_at: { $gte: ISODate('2024-01-01') } } },\n   { $group: { _id: { channel: '$channel', month: { $dateToString: { format: '%Y-%m', date: '$created_at' } } }, avgSentiment: { $avg: '$sentiment_score' }, count: { $sum: 1 } } },\n   { $sort: { '_id.month': 1, '_id.channel': 1 } }]\n- Net sentiment by topic: group by topic or extracted topic tags and compute average sentiment and top quotes.\nThese are the concrete pipelines I would run against the customer_feedback collection using motor/pymongo aggregate().",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S05",
+      "question": "What MCP/documentdb tooling will the sample use to verify collections, indexes and query plans?",
+      "answer": "Use the documentdb MCP server (connection profile 'default') CLI/tools to inspect collections and indexes and to run explain plans on queries the sample creates. Use the MCP server to confirm the index definitions and to capture explain output for the sample build report.",
+      "confidence": "medium"
+    }
+  ]
+}
