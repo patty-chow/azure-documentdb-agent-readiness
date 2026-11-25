@@ -1,0 +1,790 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample is runnable, connects to a live Azure DocumentDB cluster (DOCUMENTDB_URI), seeds idempotent demo transactions, creates the compound index {wallet_address:1, timestamp:1}, runs the server-side aggregation grouping by day, computes daily totals and counts, detects outliers (z-score) and returns a plain-language summary (local fallback or optional OpenAI). Key build choices (singleton client, serverSelectionTimeoutMS, index name) were logged and verified with the DocumentDB MCP explain/list-index tools. Major gaps: the builder did not implement the requested LangChain 'agent' and did not move statistical outlier detection into the DocumentDB aggregation tool as the starter prompt asked; transient-retry handling and bulk batched seeding are missing; dependencies are ranged not fully pinned; there are no offline unit tests; infrastructure-as-code for cluster provisioning is absent. These shortcomings do not make the sample incorrect or insecure, but they are practical and discoverability gaps for the product team to consider.",
+  "requirement_results": [
+    {
+      "requirement": "A Python LangChain agent (a single agent) that accepts a wallet address as its input and returns a plain-language summary as its output.",
+      "status": "partly_met",
+      "evidence": "src/sample_fintech_09/analyze.py lines 54-75: analyze_wallet(wallet) runs aggregation and returns a plain-language summary via LocalSummarizer or OpenAI (if OPENAI_API_KEY present).",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap the existing analyze_wallet flow in a LangChain Agent: create a LangChain Tool that calls run_aggregation_and_index and call initialize_agent(...) with that Tool and the chosen LLM (or DummyLLM) so the project contains an explicit LangChain agent entrypoint."
+    },
+    {
+      "requirement": "A DocumentDB aggregation tool exposed to the LangChain agent as a tool; it runs an Azure DocumentDB aggregation pipeline over the wallet transaction documents through a MongoDB driver (e.g. PyMongo).",
+      "status": "partly_met",
+      "evidence": "src/sample_fintech_09/tools.py defines aggregation_tool and run_aggregation_and_index (ensure_indexes + aggregation_tool) which run a PyMongo aggregation pipeline (lines 15-44 and 47-49). The tool is not wrapped as a LangChain Tool object (no initialize_agent usage).",
+      "cause": "builder_error",
+      "smallest_fix": "Expose run_aggregation_and_index as a LangChain Tool in code (e.g., from langchain.agents import Tool) and pass that Tool into initialize_agent in a small agent wrapper file."
+    },
+    {
+      "requirement": "The aggregation pipeline selects the given wallet's transactions and groups them by day, treating each transaction as a time-series document (e.g. a $match stage on the wallet followed by a $group stage keyed on the transaction's date).",
+      "status": "met",
+      "evidence": "src/sample_fintech_09/tools.py: match stage (line 21), $project producing date via $dateToString (line 25) then $group by $date (lines 29-34) and $sort (line 36).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "For each day, the pipeline computes volume and frequency metrics (e.g. summed amount and transaction count per day).",
+      "status": "met",
+      "evidence": "src/sample_fintech_09/tools.py $group: 'total': {$sum: '$amount'} and 'count': {$sum: 1} (lines 32-33). Output converted to float/int in line 43.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The tool flags statistical outliers among the daily metrics (e.g. days whose volume or frequency deviates from the wallet's own norm by a z-score or similar threshold) and returns the flagged days alongside the per-day metrics.",
+      "status": "partly_met",
+      "evidence": "src/sample_fintech_09/tools.py returns per-day metrics (lines 38-44). Statistical outlier detection happens client-side in src/sample_fintech_09/analyze.py (z-score detection lines 24-29) rather than inside the aggregation tool.",
+      "cause": "builder_error",
+      "smallest_fix": "Either (A) implement the z-score detection server-side (use $group/$stdDevSamp and then join or a two-pass aggregation) inside aggregation_tool, or (B) update README and function names to state that aggregation_tool returns daily metrics and that outlier detection is performed client-side."
+    },
+    {
+      "requirement": "When given a wallet address, the agent invokes the aggregation tool through LangChain tool use and builds its answer from the tool's returned results.",
+      "status": "partly_met",
+      "evidence": "analyze_wallet calls run_aggregation_and_index(db, wallet_address) directly (src/sample_fintech_09/analyze.py line 56) and then summarizes results. There is no LangChain initialize_agent tool invocation wired in the code.",
+      "cause": "builder_error",
+      "smallest_fix": "Create a LangChain Tool wrapper around run_aggregation_and_index and drive the summarize step via an agent.initialize_agent call; minimal change in analyze entrypoint to use LangChain if langchain is available."
+    },
+    {
+      "requirement": "The agent's response is a plain-language summary that describes the wallet's activity patterns over time and names any anomalies the analysis detected.",
+      "status": "met",
+      "evidence": "src/sample_fintech_09/analyze.py LocalSummarizer.summarize builds plain-language lines including mean daily volume, mean tx count and lists anomalies (lines 31-38). analyze_wallet returns that summary (lines 70-74).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "src/sample_fintech_09/db.py reads DOCUMENTDB_URI from env (lines 11-13). src/sample_fintech_09/analyze.py reads OPENAI_API_KEY from env (lines 58-66). .env.example contains placeholder variables (app/.env.example lines 1-4).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI and OPENAI_API_KEY as placeholders (lines 1-4).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not use vector indexes or embeddings; there is no embedding model chosen in the repo.",
+      "cause": "could_not_determine",
+      "smallest_fix": "N/A for this sample; if vector search is added, document the embedding model and pin the vector dimension used by index creation."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index is created or referenced in the code or README.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If/when vector indexes are added include index-parameter defaults in README and a short note on tuning for larger datasets."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "src/sample_fintech_09/db.py implements a module-level singleton _client and get_client()/get_db() that reuse it (lines 5-16 and 19-21).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "src/sample_fintech_09/seed.py creates the compound index (line 14) and performs per-document replace_one(..., upsert=True) keyed by tx_id to be idempotent (lines 34-37). scripts/run_seed.py calls that module (scripts/run_seed.py created and used in events).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "This sample does not implement a /search HTTP endpoint or embedding pipeline.",
+      "cause": "could_not_determine",
+      "smallest_fix": "N/A for this sample; if an HTTP search endpoint is added, add explicit input validation and error handling for empty queries and failed embedding calls."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search/vector functionality is implemented in this sample.",
+      "cause": "could_not_determine",
+      "smallest_fix": "N/A for this sample; if search is added, return similarity scores with results."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt pins ranges (e.g. pymongo>=4.3,<5.0, langchain>=0.0.300) rather than exact (==) pins (requirements.txt lines 1-4).",
+      "cause": "builder_error",
+      "smallest_fix": "Pin concrete tested versions in requirements.txt (e.g. pymongo==4.20.1, python-dotenv==1.2.4, openai==3.59.0, langchain==1.5.2) or add a constraints file."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No tests folder or test files are present in the repository; README does not describe tests.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock get_db() (e.g., monkeypatch get_db to return a mongomock or a local fake) and a CI step; alternatively add tests that use the DocumentDB local gateway image and document how to run them offline."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep/ARM/Terraform) are present in the repository; the builder intentionally used an existing cluster per decisions (decisions.jsonl D006).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an 'infra' folder with a Bicep or Terraform example that targets Microsoft.DocumentDB/mongoClusters (or an AzAPI snippet) with parameters for tier/storage/region and a small default that keeps cost low (e.g., free tier or minimal M-tier)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes 'What this sample shows', 'Prerequisites', 'How to run' and 'Cleanup' sections (README.md lines 3-11, 12-19, 26-42, 44-45).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md header and body use 'Azure DocumentDB' (README.md lines 1 and 3). Code comments refer to DocumentDB as appropriate; no Cosmos DB or Amazon DocumentDB names are used.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env secrets",
+      "practice": "Read the cluster connection string from an environment variable at runtime and do not hard-code or write full connection strings or credentials into source, logs, or checked-in files.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "src/sample_fintech_09/db.py lines 11-15 read DOCUMENTDB_URI from environment and raise if missing.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection client reuse",
+      "practice": "Reuse a single MongoClient instance per process (singleton) so the driver's connection pool is shared and not recreated for each operation.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/persist-agent-state#get-started-install-dependencies",
+      "status": "followed",
+      "evidence": "src/sample_fintech_09/db.py implements a module-level _client and get_client() that reuses it (lines 5-16).",
+      "source": "Use LangGraph with Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use LangGraph with Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/persist-agent-state#get-started-install-dependencies"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Fail-fast timeout",
+      "practice": "Set a conservative serverSelectionTimeoutMS (fail-fast) / connect timeout in the MongoClient configuration to avoid long blocking waits when the cluster is unreachable.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "src/sample_fintech_09/db.py creates MongoClient(uri, serverSelectionTimeoutMS=5000) (line 15).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Enforce TLS for all connections (use tls=true / ssl=true in the connection string) and do not disable server certificate verification in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": ".env.example shows mongodb+srv URI with ssl=true (app/.env.example lines 2) and README cautions about not writing secrets (README.md lines 14-18).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent seeding",
+      "practice": "Make seed scripts idempotent by using upserts or replace_one with upsert=True (or otherwise detect existing unique keys) so re-running a seed does not create duplicates.",
+      "category": "seeding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "src/sample_fintech_09/seed.py uses coll.replace_one({'tx_id': doc['tx_id']}, doc, upsert=True) (lines 34-37) to ensure idempotence.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index for time scans",
+      "practice": "Create a compound index on { wallet_address: 1, timestamp: 1 } to support equality on wallet_address combined with range/time scans on timestamp for time-based analytics queries.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field",
+      "status": "followed",
+      "evidence": "Index created in seed.py and tools.ensure_indexes: coll.create_index([('wallet_address', ASCENDING), ('timestamp', ASCENDING)], name='idx_wallet_time') (seed.py line 14, tools.py line 12). documentdb_list_indexes response shows idx_wallet_time present (events.jsonl documentdb_list_indexes result).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Date bucketing",
+      "practice": "When grouping by day in an aggregation, use server-side date operators such as $dateToString or $dateTrunc (or store a precomputed date-bucket at write time) so grouping keys are efficient and deterministic.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/date-expression/$datetrunc",
+      "status": "followed",
+      "evidence": "tools.py projects 'date' using $dateToString (line 25) before grouping (lines 29-34).",
+      "source": "$dateTrunc",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "$dateTrunc",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/date-expression/$datetrunc"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Match-first aggregation",
+      "practice": "Place a $match that filters by wallet_address and a time range as the first stage of aggregation pipelines so the engine can use indexes and reduce the documents examined before $group and other heavy stages.",
+      "category": "queries_and_aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation",
+      "status": "followed",
+      "evidence": "tools.py pipeline places $match as the first stage (line 21) filtering by wallet_address.",
+      "source": "Aggregation pipeline examples and limitations",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Aggregation pipeline examples and limitations",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain index usage",
+      "practice": "Run explain() (explain('executionStats')) on representative find/aggregate queries to verify index usage and measure documentsExamined vs documentsReturned when tuning pipelines and indexes.",
+      "category": "monitoring_and_debugging",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output",
+      "status": "followed",
+      "evidence": "events.jsonl shows a call to documentdb_explain_operation for the aggregate pipeline and a returned explain result showing IXSCAN and the index being used (events.jsonl documentdb_explain_operation result).",
+      "source": "Read query explain output in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Read query explain output in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "allowDiskUse for heavy aggregations",
+      "practice": "Enable allowDiskUse (allowDiskUse=True) on aggregation cursors for heavy group/sort operations and be aware of per-tier memory limits so queries don't fail for working-set size reasons.",
+      "category": "queries_and_aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/query/commands/aggregation/aggregate",
+      "status": "not_assessable",
+      "evidence": "tools.py calls coll.aggregate(pipeline) without passing allowDiskUse; the sample's dataset is small in demo runs and the builder verified execution against the live cluster. No explicit allowDiskUse is used (tools.py line 39).",
+      "source": "aggregate",
+      "searched": "",
+      "fix": "For larger datasets, set coll.aggregate(pipeline, allowDiskUse=True) or paginate by time range. Add a comment in ensure_indexes/aggregation_tool explaining when to enable allowDiskUse.",
+      "sources": [
+        {
+          "title": "aggregate",
+          "url": "https://learn.microsoft.com/azure/documentdb/query/commands/aggregation/aggregate"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregates",
+      "practice": "Compute statistical aggregates (sum, count, avg, stdDev) server-side using aggregation operators such as $group, $avg and $stdDevSamp to reduce network transfer and get exact server-side aggregates.",
+      "category": "queries_and_aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/",
+      "status": "followed",
+      "evidence": "tools.py computes daily sum and counts inside the aggregation pipeline (group_stage lines 29-34).",
+      "source": "Aggregation - operators",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Aggregation - operators",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection minimal fields",
+      "practice": "Project only required fields in queries/aggregations ($project) to minimize network payload — for wallet-day aggregations typically only wallet_address, timestamp, and amount are required.",
+      "category": "performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation",
+      "status": "followed",
+      "evidence": "tools.py uses $project to project only date and amount (project_stage lines 23-27) before $group.",
+      "source": "Aggregation pipeline examples and limitations",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Aggregation pipeline examples and limitations",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transient error retries",
+      "practice": "Handle transient faults with retries that use exponential backoff and jitter, and design writes to be idempotent so retries are safe.",
+      "category": "retries_and_error_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "violated",
+      "evidence": "Code does not implement retry logic for aggregation or reads/writes; get_client and aggregation code call pymongo directly (db.py line 15, tools.py line 39) and seed.py loops replace_one without backoff (seed.py lines 36-37).",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add retry wrappers (e.g., tenacity or built-in retry logic) with exponential backoff and jitter around transient operations (aggregation, replace_one). For writes keep idempotence (tx_id) which already helps.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Interactive pagination",
+      "practice": "For interactive analysis, limit queries with server-side limits ($limit) and paginate by time-range so analyzers do not scan multi-year wallets in a single request.",
+      "category": "queries_and_aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation",
+      "status": "not_assessable",
+      "evidence": "tools.py aggregation accepts no time-range or limit argument; aggregation_tool has an unused 'days' parameter but does not implement a server-side time-range filter (aggregation_tool signature line 15).",
+      "source": "Aggregation pipeline examples and limitations",
+      "searched": "",
+      "fix": "Add optional time-range filters (start_date/end_date) and pagination options to aggregation_tool and document how to use them for large wallets.",
+      "sources": [
+        {
+          "title": "Aggregation pipeline examples and limitations",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Capture explain & metrics",
+      "practice": "Capture query metrics, diagnostic logs, and explain-based execution stats (documentsExamined/documentsReturned, durations, 429s) via Azure Monitor and Log Analytics so you can tune indexes and cluster sizing from observed behavior.",
+      "category": "monitoring_and_debugging",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/monitor-metrics",
+      "status": "violated",
+      "evidence": "Builder invoked documentdb_explain_operation during verification (events.jsonl) but the app does not capture or expose explain metrics in production code or README instructions for enabling diagnostics/monitoring (no logging of explain output persisted).",
+      "source": "Explore Azure Monitor in Azure DocumentDB",
+      "searched": "",
+      "fix": "Record explain output and export key metrics to logs or README instructions (e.g., add a debug flag that writes explain results to a diagnostics file and document how to connect the cluster to Azure Monitor / Log Analytics).",
+      "sources": [
+        {
+          "title": "Explore Azure Monitor in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/monitor-metrics"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation idempotence",
+      "practice": "Create indexes with explicit names and use non-blocking/background index builds for existing data; ensure index creation is idempotent in deployment scripts.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field",
+      "status": "followed",
+      "evidence": "Index is created with explicit name 'idx_wallet_time' in seed.py and tools.py (seed.py line 14, tools.py line 12). The seed/index calls are idempotent (create_index is safe) and the index build was verified via documentdb_list_indexes (events.jsonl).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index minimization",
+      "practice": "Index only fields that are queryable and avoid indexing all fields by default to reduce write overhead; consider creating indexes after bulk ingest to speed ingestion.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-index",
+      "status": "followed",
+      "evidence": "The sample only creates the single compound index for the query pattern (tools.py line 12), avoiding wildcard or excessive indexes.",
+      "source": "Manage indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Operator compatibility",
+      "practice": "Aggregation pipelines and most MongoDB operators (including $dateToString, $dateTrunc, $group, $avg, $stdDevSamp) are supported by Azure DocumentDB — verify operator support for your chosen wire-protocol version in the compatibility docs.",
+      "category": "compatibility",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#operators",
+      "status": "followed",
+      "evidence": "tools.py uses $dateToString and $group (tools.py lines 23-34). The operator set is documented in the Azure DocumentDB compatibility docs (P22).",
+      "source": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#operators"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "maxTimeMS",
+      "practice": "Use maxTimeMS on long-running queries to bound execution and detect runaway queries; the service has default execution limits but clients should set per-query maxTimeMS when appropriate.",
+      "category": "monitoring_and_debugging",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/limitations",
+      "status": "violated",
+      "evidence": "tools.py aggregate call does not pass maxTimeMS (tools.py line 39). No client-side per-query timeout is set other than serverSelectionTimeoutMS in MongoClient.",
+      "source": "Azure DocumentDB service limits and quotas reference",
+      "searched": "",
+      "fix": "Add a maxTimeMS parameter to aggregation_tool and pass it to coll.aggregate(..., maxTimeMS=...) and document defaults in README.",
+      "sources": [
+        {
+          "title": "Azure DocumentDB service limits and quotas reference",
+          "url": "https://learn.microsoft.com/azure/documentdb/limitations"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Non-blocking index builds",
+      "practice": "When adding indexes on large existing data sets, issue non-blocking createIndex commands and monitor progress (db.currentOp).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field",
+      "status": "followed",
+      "evidence": "Sample uses create_index which on managed clusters builds indexes asynchronously; the build was verified with documentdb_list_indexes in build trace (events.jsonl).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compatibility matrix",
+      "practice": "Verify operator and aggregation-stage compatibility for your cluster wire-protocol version using the compatibility matrix before migrating or using advanced operators.",
+      "category": "compatibility",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P30",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language",
+      "status": "followed",
+      "evidence": "Builder used supported operators and the readiness discovery included compatibility checks (events.jsonl readiness learn_microsoft_docs_search queries).",
+      "source": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection pool tuning (prior)",
+      "practice": "Create the Mongo/PyMongo client with explicit connection-tuning options: set a reasonable maxPoolSize, minPoolSize, serverSelectionTimeoutMS and socketTimeoutMS to avoid long blocking on network failures.",
+      "category": "connection_handling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P31",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/sample_fintech_09/db.py sets serverSelectionTimeoutMS=5000 (line 15). It does not explicitly set maxPoolSize/minPoolSize/socketTimeoutMS.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "If needed, set pool options in MongoClient(...) (e.g. maxPoolSize=50, minPoolSize=0, socketTimeoutMS) and document tradeoffs in the repo's README.",
+      "sources": [],
+      "what_would_help": "A short 'connection tuning' paragraph in the driver best-practices page listing recommended numeric defaults for common scenarios."
+    },
+    {
+      "topic": "Aggregation z-score pattern (prior)",
+      "practice": "The two-step z-score outlier pattern (compute mean/stdDev in a sub-pipeline then join to per-day buckets) is a valid MongoDB design pattern, but there is no Azure DocumentDB-specific public document that prescribes this exact implementation; treat it as a generic MongoDB technique rather than an Azure DocumentDB-specific guidance.",
+      "category": "analytics",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P32",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "The sample computes z-scores client-side in analyze.py (lines 24-29) rather than implementing a two-pass server-side pipeline. The pattern itself is not documented in Azure DocumentDB docs per discovery.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "Document a server-side option and provide a sample aggregation that computes mean/stdDev and then annotates daily buckets (two-stage pipeline) as an advanced example.",
+      "sources": [],
+      "what_would_help": "A short example page under 'Analytics patterns' showing a two-pass aggregation that computes mean/stdDev in one sub-pipeline and then joins back to daily buckets."
+    },
+    {
+      "topic": "LLM summarizer guards (prior)",
+      "practice": "Use server-side summarization or optional LLM call only after local rule-based summarization fallback: ensure the pipeline returns a compact summary payload to the summarizer, and guard LLM calls with token/length limits and API key checks.",
+      "category": "application_logic",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P33",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "analyze.py checks for OPENAI_API_KEY and uses a local DummyLLM fallback if not present (lines 58-74). The code uses a compact JSON payload in the prompt (lines 65 and 73).",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "Document token-size considerations and add a max-agg-size guard before calling OpenAI; optionally add a local summarizer fallback (already present) and document it.",
+      "sources": [],
+      "what_would_help": "A short 'LLM integration' doc describing token budgeting, local fallback, and safe defaults for summmarizer inputs."
+    },
+    {
+      "topic": "Audit trail: index name",
+      "practice": "Choice: index named 'idx_wallet_time' created in code.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "tools.py and seed.py create index with name='idx_wallet_time' (tools.py line 12, seed.py line 14).",
+      "source": "code",
+      "searched": "",
+      "fix": "Consider logging index naming decisions in decisions.jsonl in future runs so choice is recorded.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: z-score threshold",
+      "practice": "Choice: z-score threshold of 3.0 used for anomaly detection.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "analyze.py uses threshold abs(z) >= 3 (line 28). There is no recorded decision specifying this numeric choice.",
+      "source": "code",
+      "searched": "",
+      "fix": "Record the threshold choice in decisions.jsonl or README rationale; allow making it configurable via env var or CLI flag.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: LLM model choice",
+      "practice": "Choice: OpenAI model gpt-3.5-turbo used when OPENAI_API_KEY is present.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "analyze.py calls openai.ChatCompletion.create(model='gpt-3.5-turbo', ...) (line 66). No decision in decisions.jsonl recorded the model choice.",
+      "source": "code",
+      "searched": "",
+      "fix": "Either document model choice in README and decisions.jsonl, or allow model selection via environment variables so it's explicit/configurable.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: client timeout numeric choice",
+      "practice": "Choice: serverSelectionTimeoutMS set to 5000ms in MongoClient configuration.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/sample_fintech_09/db.py sets serverSelectionTimeoutMS=5000 when creating the MongoClient (line 15). Decision D003 mentioned timeouts but did not record the numeric value.",
+      "source": "code",
+      "searched": "",
+      "fix": "Document numeric defaults and rationale in README or decisions.jsonl; consider making the timeout configurable via env var.",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval of readiness 'ready_with_gaps' is an operator action; it is consistent with the build-report that indicates completion with gaps."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python 3.x matches the prompt and the run environment (use of python in run traces) and is justified by the prompt."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "The decision text says the builder pinned PyMongo to a recent 4.x release. The repository uses a constrained range (pymongo>=4.3,<5.0) rather than an exact pinned version. The choice of PyMongo is sensible, but the 'pinned' wording is imprecise."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "The code implements optional OpenAI summarization if OPENAI_API_KEY is set and otherwise uses a local summarizer (analyze.py lines 58-75), matching the decision."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "The code reads DOCUMENTDB_URI from the environment (db.py lines 11-15) as recorded in the decision."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "The build avoided provisioning new Azure resources and used the existing cluster; events.jsonl and the README confirm the sample expects an existing cluster."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "The app uses a single collection with schema {wallet_address, timestamp, amount, currency, tx_id} and the builder did not implement any sharding. This matches the decision."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "The run_command refused an env-prefix invocation (events.jsonl shows REFUSED for PYTHONPATH=src) and the builder created scripts/run_seed.py as the recorded decision states. Events show the script being created and used."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The decision to call documentdb_explain_operation was executed and is present in the event trace (events.jsonl shows the explain call and its returned explain JSON)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "documentdb_list_indexes was called and returned the expected index list (events.jsonl documents the call and result)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Driver pinning guidance",
+      "what_was_missing": "The checklist expects samples to pin driver versions exactly. Microsoft Learn/docs do not provide a single canonical 'pin these exact driver versions' statement for PyMongo and LangChain integration; guidance shows tested versions in examples but not a pinned default for samples.",
+      "where_searched": "Microsoft Learn quickstarts and compatibility pages (Quickstart: Use Azure DocumentDB with MongoDB driver for Python, Django quickstart), repo readme and requirements.txt.",
+      "effect_on_this_build": "The builder elected to use ranged version constraints (pymongo>=4.3,<5.0) instead of exact pins. This leaves reproducibility and exact compatibility ambiguous and was flagged in decisions (D003) as 'pinned' although code shows ranges.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Supported client versions' subsection on the DocumentDB Python quickstart that lists a tested-and-recommended set of exact driver versions for samples (e.g., PyMongo 4.20.1) and a suggested constraints file content. Example content: title 'Supported driver versions' and a short table mapping Python versions to tested PyMongo versions and pinned requirement lines to copy.",
+      "priority": "medium"
+    },
+    {
+      "topic": "LangChain agent examples and wiring",
+      "what_was_missing": "The developer prompt asked for a LangChain agent, but public docs and the installed skills did not provide a minimal, copy-paste LangChain 'Tool' + 'initialize_agent' example that integrates a DocumentDB aggregation function.",
+      "where_searched": "Installed skills (documentdb-natural-language-querying and documentdb-driver), Microsoft Learn quickstarts, and LangChain docs checked by the builder.",
+      "effect_on_this_build": "Builder implemented the core analysis and a local/optional-OpenAI summarizer but did not wire a LangChain Agent. This left the sample functionally correct but not matching the starter prompt's 'LangChain agent' deliverable.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Provide a short agent-kit snippet under DocumentDB samples: 'LangChain agent + PyMongo Tool' showing how to create a langchain Tool wrapping a function like run_aggregation_and_index and how to call initialize_agent(tools, llm, agent='zero-shot-react-description'). Include a tiny example file 'agent_wrapper.py' that samples can adopt.",
+      "priority": "high"
+    },
+    {
+      "topic": "Server-side z-score example",
+      "what_was_missing": "There is no Azure-DocumentDB-specific example that shows how to perform z-score outlier detection entirely server-side using aggregation operators (the two-pass compute mean/stdDev then join pattern).",
+      "where_searched": "Microsoft Learn aggregation docs and operator pages; search for '$stdDevSamp' and aggregation patterns.",
+      "effect_on_this_build": "The builder computed outliers client-side; an explicit server-side example would let agents implement outlier detection inside aggregation_tool (meeting the starter prompt's wording exactly).",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a short 'Analytics Patterns' page that includes a 'z-score outlier detection' aggregation example: a pipeline that computes mean/stdDev via $group or $setWindowFields and then $lookup/$set to compute z-scores per-day, with note on allowDiskUse and memory considerations.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Retry/backoff recipe for aggregations and writes",
+      "what_was_missing": "The public docs describe reliability principles, but a concrete small recipe for wrapping PyMongo aggregation and write calls with retries/backoff+jitter (and example code) is not present as a one-paragraph sample.",
+      "where_searched": "Reliability docs, quickstarts and driver best-practices in installed skills.",
+      "effect_on_this_build": "No retry/backoff implementation was added to the sample; network/transient faults could cause sample runs to fail on less-reliable networks.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Retry patterns for PyMongo' page with sample code using tenacity or a simple retry loop showing exponential backoff and jitter for aggregates and writes, along with guidance to keep writes idempotent.",
+      "priority": "high"
+    },
+    {
+      "topic": "Tests-without-live-cluster guidance",
+      "what_was_missing": "The team expects samples to include unit tests that run without a live cluster, but Microsoft docs do not have a short, discoverable how-to for mocking DocumentDB access in Python samples (e.g., using mongomock or monkeypatching get_db).",
+      "where_searched": "Quickstarts, install docs, repository samples and installed skills.",
+      "effect_on_this_build": "No tests were added; builders must create test harnesses themselves or follow a standardized example.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a 'Testing DocumentDB samples' page showing two approaches: (1) use mongomock to emulate collection APIs for unit tests; (2) run tests against the local DocumentDB gateway Docker image (port 10260) with instructions and a Docker Compose example; include a sample pytest file.",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC mapping: which resource to use for vCore MongoDB clusters",
+      "what_was_missing": "Agents and builders often confuse older 'databaseAccounts' resource types with the vCore 'mongoClusters' resource type. The docs provide this information but cross-links and a short explicit decision table are not as discoverable as they should be.",
+      "where_searched": "Cloud quickstarts and IaC reference pages; readiness notes flagged this confusion (readiness_findings Q01-Q03).",
+      "effect_on_this_build": "Builder chose not to provision resources (per run policy). However, if an agent had attempted to add IaC it could have used the wrong resource type.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a short 'Which resource to use' table on the top-level quickstart that maps product scenarios to the exact ARM/Bicep/Terraform resource types (vCore MongoDB -> Microsoft.DocumentDB/mongoClusters; RU-based Cosmos -> Microsoft.DocumentDB/databaseAccounts) and provide a minimal AzAPI/Terraform snippet for a small test cluster.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Prior-knowledge contradictions (billing / RU model)",
+      "what_was_missing": "A clear, prominent note that Azure DocumentDB vCore MongoDB clusters are billed by compute tier (vCores / M-tier) and storage, and not by RUs, to prevent confusion with Cosmos RU-based offerings.",
+      "where_searched": "Product overview and pricing pages; readiness findings show agents are likely to confuse the models.",
+      "effect_on_this_build": "No direct effect on this sample, but mistaken assumptions about RU-based controls would mislead builders attempting to provision or scale clusters.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Billing and scaling' blurb in the quickstart clearly contrasting vCore/compute-tier vs RU-based Cosmos accounts, with pointers to the pricing page and example CLI/Bicep flags.",
+      "priority": "high"
+    }
+  ]
+}
