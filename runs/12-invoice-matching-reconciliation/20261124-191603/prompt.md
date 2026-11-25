@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain agent using Mongoose that reads unmatched invoices from DocumentDB, extracts structured fields using an LLM tool, searches DocumentDB for candidate PO matches by amount and vendor, scores each candidate, and writes the reconciliation result back. Use agent memory to learn from manual corrections within a session.
