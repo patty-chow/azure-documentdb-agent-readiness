@@ -1,0 +1,44 @@
+# 3. Build report: 12-abandoned-cart-recovery-orchestration
+
+**Status: completed**
+
+Built a Node.js sample CLI orchestrator that queries an Azure DocumentDB (MongoDB-compatible) cluster for carts abandoned >2 hours, generates personalized recovery copy via OpenAI (LLM call is optional and falls back to a stub if OPENAI_API_KEY is not provided), hands off to channel stubs (email/SMS) based on customer preference, and logs outcomes back to DocumentDB. The sample includes an idempotent seed script, index creation, and uses a singleton MongoClient with driver tuning per DocumentDB guidance. I verified the app by installing dependencies, seeding data, running the orchestrator (it processed abandoned carts), and inspecting the database and indexes via the documentdb MCP server.
+
+## How to run
+
+1) Copy .env.example to .env and set DOCUMENTDB_URI (required). Optionally set OPENAI_API_KEY and OPENAI_MODEL to enable real LLM-generated copy. 2) npm install 3) npm run seed   # idempotent: creates sample_retail_12.customers and sample_retail_12.carts and creates indexes 4) npm start    # runs one-shot orchestrator that finds abandoned carts, generates messages, calls channel stubs, and logs results to DocumentDB. 5) To clean up, drop the sample_retail_12 database or the customers/carts collections in your cluster.
+
+## Verified by running
+
+- npm install --no-audit --no-fund: exited 0, dependencies installed
+- npm run seed (node src/seed.js): exited 0, 'Seeding complete.' printed, collections and sample docs inserted
+- npm start (node src/index.js): exited 0, orchestrator printed 'Found 2 abandoned carts to process.' and processed carts; channel stubs printed send messages and/or simulated sends
+- documentdb MCP list_databases (connection_profile 'default'): sample_retail_12 present
+- documentdb MCP sample_documents for collection 'carts' in sample_retail_12: showed seeded carts and deliveryLog entries for processed carts
+- documentdb MCP list_indexes for collection 'carts': indexes present - _id_, customer_updated_processed_idx (compound), processed_sparse_idx (sparse)
+
+## Not verified
+
+- Real OpenAI LLM outputs using OPENAI_API_KEY: the orchestrator falls back to non-LLM stub copy when OPENAI_API_KEY was not present in this run environment, so actual OpenAI API integration was not observed end-to-end.
+- LangChain-based orchestration: I did not install or run the 'langchain' npm package in this sample because of uncertainty about a single compatible LangChain JS version for this environment; instead the sample contains a lightweight orchestration that follows LangChain-like patterns using the OpenAI SDK directly (decision logged).
+- External live delivery (SendGrid/Twilio): the sample uses stubbed sendEmail/sendSMS functions and does not integrate with real delivery providers. Replacing the stubs with real providers and verifying live sends was not performed here.
+- DocumentDB-specific search or vector indexes (createSearchIndexes, vector index types): the sample does not create or use full-text/search or vector indexes; those DocumentDB-specific APIs were not exercised in this sample run.
+
+## Open issues
+
+- If you want a LangChain-native implementation, update package.json to include a specific langchain version known to your environment and adapt copyGenerator to use LangChain LLM wrappers (current sample uses OpenAI SDK directly).
+- To test real LLM outputs, set OPENAI_API_KEY and optionally OPENAI_MODEL in your .env before running the orchestrator. The sample will call the OpenAI Chat completions API if OPENAI_API_KEY is provided.
+- For production-grade sending, replace channelAgent stubs with provider integrations (SendGrid/Twilio) and add safe credential handling and error/retry logic.
+
+## Files
+
+- `package.json`
+- `.env.example`
+- `README.md`
+- `src/db.js`
+- `src/seed.js`
+- `src/index.js`
+- `src/agents/copyGenerator.js`
+- `src/agents/channelAgent.js`
+- `src/test-runner.js`
+
