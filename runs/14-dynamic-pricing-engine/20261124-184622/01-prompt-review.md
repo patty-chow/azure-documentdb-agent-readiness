@@ -1,0 +1,60 @@
+# 1. Prompt review: 14-dynamic-pricing-engine
+
+**Verdict: sufficient_with_assumptions**
+
+The starter prompt clearly defines the goal (a Python LangChain single-agent that reads three DocumentDB sources and atomically writes a new price) and some important constraints (atomic write, step-by-step reasoning). The provided skill.md supplies runtime/environment constraints (live cluster, DB name, env var for connection) and several installed documentdb skills cover connection, driver, indexing and best practices. Several implementation details are left to the builder (Python version, driver version, explicit data model, exact prompt template shape, LLM/embedding model, index shapes, seed data). The build can start, but the implementer will make concrete choices for those gaps; several reference requirements are therefore at risk.
+
+## Where each answer will come from
+
+| Source | Rubric items |
+|---|---|
+| In the prompt | 3: Goal and scenario, Workflow type, Target service and tier |
+| Covered by a skill | 3: Authentication and secrets, Provisioning and deployment, Repository conventions |
+| Ambiguous: builder will guess | 3: Language and runtime, Driver and version, Queries and indexes |
+| Missing: builder will guess | 7: Data model, Sample data, AI components, App surface, Run and test instructions, Definition of done, Constraints and non-goals |
+| Not applicable | 0: - |
+
+## Reference requirements at risk
+
+- Demand-metrics tool must compute demand signals using an aggregation pipeline visible in the code — the prompt says 'demand metrics' but does not require an explicit aggregation pipeline be shown; the builder may implement a simple query instead.
+- Competitor-prices tool must return the most recent timestamped prices for the requested SKU — the prompt does not require 'most recent' or mention timestamp handling.
+- Margin-rules tool must expose specific rule fields (cost, min_margin, max_margin) — not named in the prompt, so the builder must invent fields; risk of mismatch with the reference expectation.
+- Prompt template must require a machine-readable final output (JSON) that the agent parses programmatically — the prompt asks for step-by-step reasoning but does not explicitly demand a machine-readable final JSON, so the builder might only produce a textual recommendation.
+- The agent must call the three query Tools during its reasoning run (not bypass them) — the prompt intends this but does not enforce runtime invocation; the builder could implement the logic offline or mock some data.
+- The agent must validate and adjust/reject the recommended price against margin rule documents before the atomic write — the prompt does not mention validation logic explicitly, so this may be omitted.
+- A seed script that loads sample data and creates indexes and can be run twice without duplicating data — starter prompt does not mention a seed script or idempotency.
+- A .env.example listing every required setting — skill_md suggests using .env.example but the prompt does not explicitly require it to list every setting.
+- Vector index dimensions must match the embedding model's output, and index parameters and README guidance — the prompt does not mention embeddings, vector index dims, or README guidance about scaling parameters.
+- One database client created and reused across requests (singleton pattern) — driver best-practices are not enforced by the prompt; rely on documentdb-driver skill but not guaranteed to be implemented.
+- Dependencies pinned in requirements.txt — prompt doesn't require pinned versions.
+- Unit tests that run without a live cluster — prompt doesn't request tests; sample may omit tests or require live cluster for tests.
+
+## Questions for the prompt author
+
+- Which chat model(s) and embedding provider (and corresponding environment variable names) should the LangChain agent use for this sample? This changes the prompt template and any vector-index dimensions.
+- What app surface do you want for the sample (CLI script demonstrating a run, an HTTP API endpoint, or a small web UI)? This changes structure and the minimal run instructions.
+
+## Contradictions and missing references
+
+None.
+
+## Rubric
+
+| Item | Status | Blocking | In the prompt | Skill | Assumed if unanswered | Note |
+|---|---|---|---|---|---|---|
+| Goal and scenario | specified | no | "build a Python LangChain agent ... query DocumentDB for current demand metrics, competitor price documents, and margin rule documents ... write the updated price back to the product document atomically." | - | - | Business problem and what's demonstrated are explicit: dynamic pricing using DocumentDB reads and an atomic update. |
+| Workflow type | specified | no | "build a Python LangChain agent" | - | - | Single-agent LangChain is requested explicitly. |
+| Language and runtime | ambiguous | no | "Python LangChain agent" | documentdb-local-deployment (skill_md also notes python available in the run environment) | Builder will use a recent Python 3.x runtime (assume Python 3.11 or 3.10) and a virtualenv; tests and requirements will target that runtime. | Prompt specifies Python but not a precise version. skill_md implies a Python environment exists on the machine. |
+| Driver and version | ambiguous | no | - | documentdb-driver | Use the official pymongo driver (pymongo >= 4.4) compatible with MongoDB 7.0; use synchronous pymongo client with singleton MongoClient pattern. | The prompt does not name which MongoDB driver or version to use. documentdb-driver covers best practices but not an exact pinned version. |
+| Target service and tier | specified | no | - | - | Use the live Azure DocumentDB cluster described in the skill_md. | skill_md explicitly states a vector-capable Azure DocumentDB cluster (compute tier M30, MongoDB 7.0 wire protocol) is reachable and that the sample must use database `sample_retail_14`. |
+| Authentication and secrets | covered_by_skill | no | - | documentdb-mcp-setup | Connection string read from environment variable DOCUMENTDB_URI; use MCP connection profile `default` for inspections. | skill_md requires DOCUMENTDB_URI env var and forbids writing secrets into files or logs; documentdb-mcp-setup skill is also available for MCP interactions. |
+| Data model | missing | no | - | documentdb-data-modeling | Builder will create collections: products, demand_metrics, competitor_prices, margin_rules. Products have fields: { _id, sku, price, cost, updated_at, ... }; competitor_prices have { sku, price, source, timestamp }; margin_rules have { sku_or_category, cost, min_margin, max_margin }. No sharding by default. | Prompt does not define collection names or document shapes. documentdb-data-modeling can guide decisions but doesn't supply the exact schema the sample must implement. |
+| Sample data | missing | no | - | documentdb-local-deployment (covers sample-data management) | Builder will add a small idempotent seed script that inserts a few product, competitor_prices and margin_rules documents; no large dataset is provided. | Starter prompt doesn't request a seed script or sample documents; skill_md suggests sample data is expected but not provided. |
+| Queries and indexes | ambiguous | no | "query DocumentDB for current demand metrics, competitor price documents, and margin rule documents" | documentdb-indexing, documentdb-natural-language-querying | Demand metrics will be computed by an aggregation pipeline in code (e.g., grouping by SKU and recent time window) and indexes will include an index on sku and timestamp for competitor_prices and a helpful index on products.sku. No explicit vector or full-text index is required unless the sample adds semantic search. | Prompt requires demand metrics queries and an atomic update, but does not specify concrete pipelines or index shapes. documentdb-indexing can advise index choices, but builder will choose exact shapes. |
+| AI components | missing | no | "LangChain agent ... instruct the LLM to reason step-by-step" | - | Builder will use a commonly-available LLM via LangChain (e.g., OpenAI GPT-4/4o or a configurable model via environment variables). No embeddings are strictly required for the pricing logic unless the sample includes vector search; if embeddings are used, the builder will select a small dimensional model and ensure vector index dims match it. | Prompt requires a LangChain agent and step-by-step reasoning instructions, but does not name the chat model or embedding provider/dimensions. |
+| App surface | missing | no | - | - | Sample will expose a runnable CLI (e.g., main.py) demonstrating the agent for a given SKU, and possibly an example script that runs the pricing agent for a sample product. No web UI unless the builder explicitly adds one. | Prompt doesn't state whether to provide an API, CLI or UI; builder will pick a simple CLI or script entrypoint. |
+| Provisioning and deployment | covered_by_skill | no | - | documentdb-azure-deployment | The run should not provision a new cluster; skill_md explicitly requires using the existing live cluster. documentdb-azure-deployment is available if infra-as-code is later requested. | skill_md states the cluster is already provisioned and reachable, and az is available; the prompt doesn't ask to provision new resources. |
+| Run and test instructions | missing | no | - | documentdb-local-deployment | Builder will add README run instructions: pip install -r requirements.txt, set DOCUMENTDB_URI and MODEL env vars, run seed script, then run main.py with a SKU argument. Tests may be limited or manual. | Prompt does not specify the exact commands or how to run the sample; skill_md hints at what to verify but not run commands. |
+| Definition of done | missing | no | - | - | Definition of done will be implemented as: the agent runs for a sample SKU, calls the three DocumentDB tools, produces a JSON final output containing recommended_price, and performs a single atomic find_one_and_update that records price and updated_at. Tests or logs should show the validation against margin rules. | Prompt lacks explicit acceptance criteria; the reference file contains those but the prompt doesn't. |
+| Constraints and non-goals | missing | no | - | documentdb-security | Sample will avoid production-grade network configuration and will not provision new clusters; secrets remain in env vars and sample usage warns about cost. No CMK or enterprise security features will be implemented in the sample. | No cost, compliance, or non-goal constraints are stated in the prompt. |
+| Repository conventions | covered_by_skill | no | - | documentdb-local-deployment | Use a .env.example for placeholders (do not commit real secrets). Use a README describing sample, and keep code in top-level python package or src/ with a seed script and requirements.txt. | skill_md explicitly instructs not to write the connection string into files and to use a .env.example; that covers important repo conventions required by gallery samples. |
