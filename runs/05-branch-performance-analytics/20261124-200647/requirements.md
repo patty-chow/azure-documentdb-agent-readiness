@@ -11,7 +11,6 @@
 - A Python FastAPI service exposes HTTP endpoints for a branch performance dashboard, and the dashboard metrics it serves are computed by aggregation pipelines run in Azure DocumentDB through a MongoDB driver (e.g. PyMongo).
 - The aggregation pipeline contains a $facet stage whose sub-pipelines compute transaction volume, average ticket size and product mix, each broken down per branch.
 - The per-branch roll-ups produced by the $facet aggregation are written to Azure DocumentDB as cached summary documents (e.g. one document per branch in a summaries collection).
-- Dashboard requests for a branch's metrics are served by reading its cached summary document from Azure DocumentDB, with the $facet aggregation run to produce or refresh the summaries.
 - A LangChain tool (Python LangChain) takes an analyst's natural-language question and queries the cached summary documents in Azure DocumentDB to answer it.
 - The tool is attached to a LangChain agent or chain so that an analyst can submit a natural-language question (e.g. through a FastAPI endpoint) and receive a natural-language answer derived from the cached summaries.
 
