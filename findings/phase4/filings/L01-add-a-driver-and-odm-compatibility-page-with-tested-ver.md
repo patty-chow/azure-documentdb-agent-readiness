@@ -10,7 +10,7 @@ member_drafts:
   - 075-tested-driver-and-odm-version-matrix-with-copyable-pins-per-.md
   - 044-learn-compatibility-page-lacks-a-tested-driver-odm-version-m.md
   - 126-driver-compatibility-matrix-connection-options-and-read-writ.md
-open_questions: 6
+open_questions: 5
 ---
 
 # Add a driver and ODM compatibility page with tested versions and client options, linked from every quickstart
@@ -31,7 +31,7 @@ Nothing ties these together or covers other stacks:
 - `how-to-connect-role-based-access-control` shows `MONGODB-OIDC` code but no minimum driver version.
 - The FAQ lists supported wire protocol versions (5.0 to 8.0) but no per-language driver table. The *Compatibility* TOC node has no drivers page; `/compatibility` and `/driver-compatibility` return 404.
 - No page maps `writeConcern`, `readConcern` and `readPreference` to service behaviour, gives pool and timeout recommendations, or says that `useNewUrlParser` / `useUnifiedTopology` do nothing in current drivers. The `high-availability` page says primary and standby shards use synchronous replication with zero data loss on failover, but does not tie that to concern values. The Mongoose tutorial uses `maxPoolSize: 10` and `serverSelectionTimeoutMS: 30000` without explaining them; other quickstarts show a bare client.
-- Pages disagree on retryable writes: the portal connection string and quickstarts include `retrywrites=false`, while the Mongoose tutorial says that value is "a sample", not a requirement.
+- Pages are inconsistent on retryable writes. The portal connection string and every quickstart include `retrywrites=false`, which is required because Azure DocumentDB does not support retryable writes, but the Mongoose tutorial calls the value "a sample" rather than a requirement, and no Learn page (limitations, compatibility, connect) explains why the setting is required.
 
 ## Why it matters
 
@@ -55,7 +55,7 @@ The reviewer notes that sample counts in this experiment are unstable and should
 - **Sync or async (Python)**: `MongoClient` for scripts and WSGI; `pymongo.AsyncMongoClient` for FastAPI and asyncio code. It was beta from PyMongo 4.9 and generally available from 4.13, so pin 4.13 or later for async code. MongoDB's migration guide dates Motor's deprecation to May 14, 2026; do not start new code on it. Add a short Motor-to-`AsyncMongoClient` before/after.
 - **Known-bad combinations** with their exact error strings (above), including importing `ChatOpenAI` from `@langchain/openai`, not `langchain/chat_models/openai`.
 - **Canonical client options** per language, matching the quickstarts and the portal connection string: `tls=true`, `authMechanism=SCRAM-SHA-256`, `retrywrites=false`, `maxIdleTimeMS=120000`, one client per process. Note that `useNewUrlParser` and `useUnifiedTopology` have no effect in Node driver 4+ and were removed in Mongoose 6.
-- **Retryable writes statement**: say plainly whether retryable writes are supported and whether `retrywrites=false` is required, recommended or optional, and what happens if a client sends `true`, so the quickstarts, the Mongoose tutorial and the Agent Kit say the same thing [needs SME confirmation; see open question 3].
+- **Retryable writes statement**: state that retryable writes are not supported and that `retrywrites=false` is required, and explain why with the de-duplication reason. Suggested text: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." Correct the Mongoose tutorial's "a sample" wording to match, so the quickstarts, the Mongoose tutorial and the Agent Kit say the same thing. Do not claim that `retryWrites=true` causes connection errors; that is not established.
 - **Beanie on Azure DocumentDB**: `init_beanie` creates indexes declared in `Settings.indexes` and `Indexed()` fields; TTL via `IndexModel([("expiresAt", 1)], expireAfterSeconds=0)`; atomic `find_one(...).update({"$push": ..., "$set": ...}, response_type=UpdateResponse.NEW_DOCUMENT)`; optimistic concurrency with a `version` field in the filter and `$inc` in the update; idempotent fallback `create_index(...)` when init runs without index permission.
 - **Mongoose production configuration**: `autoIndex: false`, `autoCreate: false`, `bufferCommands: false`, then `Model.createCollection()` / `Model.createIndexes()` in a seed or migration script, with a sentence on why (the Mongoose quickstart already does this).
 - **Consistency table**: each `writeConcern` (`w: 1`, `w: "majority"`, `j`), `readConcern` and `readPreference` value, and what the service does with it (honored, accepted and ignored, or rejected), with and without in-region HA and on replica clusters [needs SME confirmation]. Cover `readConcern` `local`, `majority`, and `linearizable` / `snapshot` if applicable, and link the synchronous-replication statement on the `high-availability` page.
@@ -74,7 +74,7 @@ The reviewer notes that sample counts in this experiment are unstable and should
 
 - `skills/connection/SKILL.md` (Python async note, lines 45-49) says "PyMongo 4.9+" and that "MongoDB announced Motor's deprecation in May 2024"; the async API was beta in 4.9 and GA in 4.13, and MongoDB's migration guide gives May 14, 2026. It also has a pool-sizing table that should agree with the Learn pool table.
 - `skills/driver/SKILL.md` (13 lines) has the singleton rule only and no versions.
-- Retryable writes: `skills/connection/SKILL.md` line 60 has `retryWrites=true`, as do `skills/driver/driver-singleton-client.md` line 26 and `skills/security/security-tls-required.md` line 26, while `skills/azure-deployment/SKILL.md` line 291 says retryable writes are not supported. Align these once Learn settles open question 3 [needs SME confirmation].
+- Retryable writes: `skills/connection/SKILL.md` line 60 has `retryWrites=true`, as do `skills/driver/driver-singleton-client.md` line 26 and `skills/security/security-tls-required.md` line 26, while `skills/azure-deployment/SKILL.md` line 291 correctly says retryable writes are not supported. Change the three `true` values to `retryWrites=false` and use the one-liner above as the rationale; drop any wording that says `retryWrites=true` causes connection errors, which is not established.
 
 ## Evidence
 
@@ -89,14 +89,17 @@ The reviewer notes that sample counts in this experiment are unstable and should
 - `runs/17-ai-survey-response-analyzer/20261124-205518`: readiness gap "Beanie + Async driver compatibility matrix"; Beanie 1.24.0 + Motor 3.1.1 + PyMongo 4.6.0.
 - `runs/17-rare-disease-literature-search/20261124-195633`: LlamaIndex pinned `>=0.9.0` with `pymongo>=4.5`.
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. [needs SME confirmation] Minimum PyMongo and Node driver versions for `MONGODB-OIDC` (drafts suggest PyMongo 4.7 and Node 6.7; no Learn page states them) and the Java and .NET floors.
 2. [needs SME confirmation] Minimum supported driver version per language for each wire protocol version (5.0 to 8.0), and whether Node 24 is tested.
-3. [needs SME confirmation] Retryable writes. The quickstarts and portal string use `retrywrites=false`, and parts of the Agent Kit say retryable writes are not supported; the Mongoose tutorial says the value is only a sample and not a requirement. Which is correct: is `retrywrites=false` required, recommended, or optional, and what happens if a client sends `true`?
-4. [needs SME confirmation] How the service treats each `writeConcern`, `readConcern` and `readPreference` value, with and without HA.
-5. [needs SME confirmation] Recommended pool and timeout values per hosting model.
-6. [needs SME confirmation] Tested versions for the LlamaIndex page (`llama-index`, `pymongo`) and the Java, .NET, Go and Rust quickstarts.
+3. [needs SME confirmation] How the service treats each `writeConcern`, `readConcern` and `readPreference` value, with and without HA.
+4. [needs SME confirmation] Recommended pool and timeout values per hosting model.
+5. [needs SME confirmation] Tested versions for the LlamaIndex page (`llama-index`, `pymongo`) and the Java, .NET, Go and Rust quickstarts.
 
 ## Source drafts
 

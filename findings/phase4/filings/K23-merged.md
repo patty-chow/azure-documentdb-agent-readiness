@@ -18,7 +18,7 @@ merged_from:
   - K09
   - K08
   - K26
-open_questions: 13
+open_questions: 12
 ---
 
 # local-deployment skill: steer agents away from the Cosmos DB Emulator, add a gateway quick start, offline test tiers, and an idempotent seed and bulk-load rule
@@ -365,8 +365,8 @@ print('users: ' + users.countDocuments());   // 2 on every run
 > 1. Give every document a deterministic natural key (or a stable string `_id`), never `Math.random()` or `uuid4()`.
 > 2. Create a unique index on that key **before** the load. It keeps the upsert filter fast and turns a stray plain insert or a concurrent rerun into E11000 instead of a duplicate row.
 > 3. Write in chunks (about 1,000) with unordered `bulkWrite` upserts.
-> 4. Read `writeErrors`. Treat 11000 as "already present" and retry the other errors with backoff. The Azure DocumentDB connection string sets `retrywrites=false`, so the driver does not retry writes and the script must retry for itself. [needs SME confirmation: the reason for `retrywrites=false`, see Open question 7]
-> 5. Create secondary, text and `cosmosSearch` vector indexes **after** the load [needs SME confirmation for each vector kind, see Open question 9]. Give every index an explicit name; `createIndex` is a no-op when the same definition already exists, so the script stays re-runnable. Store embeddings as `number[]`.
+> 4. Read `writeErrors`. Treat 11000 as "already present" and retry the other errors with backoff. Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). The keyed upserts in this rule are that idempotent retry: with `retrywrites=false` the driver does not retry writes, so the script retries for itself.
+> 5. Create secondary, text and `cosmosSearch` vector indexes **after** the load [needs SME confirmation for each vector kind, see Open question 8]. Give every index an explicit name; `createIndex` is a no-op when the same definition already exists, so the script stays re-runnable. Store embeddings as `number[]`.
 > 6. Never drop by default. Use an opt-in `--reset` flag (or `SEED_RESET=true`), and refuse non-`sample_` databases unless `--confirm` is passed.
 > 7. Finish with a count check and exit non-zero on a mismatch.
 > 8. For chunked RAG ingestion, upsert on `chunk_id = sha1(source_id + ":" + chunk_index)`.
@@ -421,7 +421,7 @@ try {
 } finally { await client.close(); }
 ```
 
-The HNSW values above (`m: 16`, `efConstruction: 64`) are placeholders. [needs SME confirmation: supported HNSW and IVF limits, see Open question 10]
+The HNSW values above (`m: 16`, `efConstruction: 64`) are placeholders. [needs SME confirmation: supported HNSW and IVF limits, see Open question 9]
 
 **Correct: `seed.py`**
 
@@ -444,7 +444,7 @@ def run_bulk(coll, ops, attempt=0):
             return e.details
         if attempt >= 2:
             raise
-        time.sleep(0.5 * 2 ** attempt)        # retrywrites=false: retry here
+        time.sleep(0.5 * 2 ** attempt)        # retryable writes unsupported: retry here
         return run_bulk(coll, [ops[w["index"]] for w in failed], attempt + 1)
 
 with MongoClient(os.environ["DOCUMENTDB_URI"]) as client:
@@ -462,7 +462,7 @@ with MongoClient(os.environ["DOCUMENTDB_URI"]) as client:
     sys.exit(0 if n == len(docs) else 1)
 ```
 
-> **Batch and nightly jobs.** Iterate with `find(filter).sort("_id", 1).batch_size(500)`. Save the last `_id` so that a restart resumes from `{"_id": {"$gt": marker}}`. Cap concurrency (`asyncio.Semaphore(8)` or `p-limit`). Pass `allowDiskUse=True` to `$group`, `$facet` or `$sort` over unbounded input. Retry on transient network, failover and timeout errors. Do not copy the request-unit throttling logic (16500 / 429) from Cosmos DB RU guidance. [needs SME confirmation: whether vCore can return 16500 or 429, see Open question 8]
+> **Batch and nightly jobs.** Iterate with `find(filter).sort("_id", 1).batch_size(500)`. Save the last `_id` so that a restart resumes from `{"_id": {"$gt": marker}}`. Cap concurrency (`asyncio.Semaphore(8)` or `p-limit`). Pass `allowDiskUse=True` to `$group`, `$facet` or `$sort` over unbounded input. Retry on transient network, failover and timeout errors. Do not copy the request-unit throttling logic (16500 / 429) from Cosmos DB RU guidance. [needs SME confirmation: whether vCore can return 16500 or 429, see Open question 7]
 >
 > **Local and Azure.** The same script runs against the local Gateway container (see `local-deployment` Quick start) and an Azure DocumentDB cluster; only `DOCUMENTDB_URI` changes (see `local-env-driven-config`). The local URI carries the TLS relaxation for the self-signed certificate; the Azure URI uses `tls=true` with SCRAM-SHA-256 or Entra ID.
 >
@@ -480,7 +480,7 @@ Append to the front-matter `description`: "…bulk loading, seed scripts, import
 
 ### 9. `skills/connection/SKILL.md` (no edit in this PR)
 
-The `retryWrites=true` example (line 60) and the RU-code `withRetry` helper (lines 224-230) contradict the bulk-load rule's retry guidance, but they belong to the K07 connection-string PR. This PR only cross-links; land K07 first or in the same release so the retry story is consistent (see Open question 7). The missing local-target mention noted under "What happens today" is covered by the `mcp-setup` and `AGENTS.md` changes below; K07 may add a one-line link to the local-deployment quick start.
+The `retryWrites=true` example (line 60) and the RU-code `withRetry` helper (lines 224-230) contradict the bulk-load rule's retry guidance and the decided position (retryable writes are not supported by Azure DocumentDB; `retrywrites=false` is required; see Resolved), but they belong to the K07 connection-string PR. This PR only cross-links; land K07 first or in the same release so the retry story is consistent and K07 uses the same rationale sentence as the bulk-load rule. The missing local-target mention noted under "What happens today" is covered by the `mcp-setup` and `AGENTS.md` changes below; K07 may add a one-line link to the local-deployment quick start.
 
 ### 10. `skills/mcp-setup/SKILL.md` (K26 and K23)
 
@@ -552,6 +552,10 @@ Further run folders cited by the members:
 - K09: `runs/08-regulatory-compliance-rag-checker/20261124-190949/doc-gaps.md`, `runs/10-multi-tenant-storefront-saas/20261124-184121/doc-gaps.md`, `runs/01-anti-money-laundering-pattern-detector/20261124-200112/app/tests/test_seed_and_analysis.py`, `runs/18-adverse-event-reporting-pipeline/20261124-195726/05-audit.json`, `runs/13-basel-iii-capital-ratio-calculator/20261124-201926/05-audit.json`, `runs/03-next-best-action-multi-agent/20261124-203319/02-readiness.json`, `runs/20-identity-resolution-multi-agent/20261124-210002/02-readiness.json`; also raised in `04-customer-journey-mapper`, `05-churn-prediction-pipeline`, `05-appointment-scheduling-assistant`, `06-symptom-triage-chatbot-rag`, `07-voice-of-customer-sentiment-hub`, `15-digital-onboarding-orchestration` and `17-seasonal-trend-spotter-agent`
 - K08: `runs/10-multi-tenant-storefront-saas/20261124-184121/05-audit.json`, `runs/02-real-time-event-stream-ingestion/20261124-203233/doc-gaps.md`, `runs/16-atm-network-status-monitor/20261124-202405/doc-gaps.md`, `runs/04-earnings-call-rag-assistant/20261124-190247/doc-gaps.md`
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. Should the install-script and README edits in section 12 stay in this PR or move to a follow-up? They change user-facing default example URIs. (Maintainer preference.)
@@ -560,13 +564,12 @@ Further run folders cited by the members:
 4. Part of the "gateway not running" missed-accelerator signal comes from the experiment harness (local tools such as documentdb-local were reported as missed even where the harness did not let the agent use them). The doc gap stands on the file evidence, but K26's 15-sample figure, and therefore part of the 55, should be treated as indicative until a rerun after the harness fixes.
 5. [needs SME confirmation] Does the local Gateway image support `cosmosSearch` vector indexes (vector-ivf, vector-hnsw, vector-diskann) and `createSearchIndexes` / `$search`, so the integration tier can exercise them? If not, `local-test-tiers` and the quick-start parity caveats should name which features need a real Azure DocumentDB cluster.
 6. [needs SME confirmation] Is full-text search (`$search`) generally available, or still in preview? The rules should not imply that a preview feature is GA.
-7. [needs SME confirmation] **retryWrites.** The Azure DocumentDB connection string sets `retrywrites=false`, and the drafts disagree on why. One reading is that retryable writes are not supported by the service and cause write errors; the other is that Learn does not say they are unsupported and they are only switched off in the documented string, so the kit's rationale should be softened. `local-test-tiers` deliberately states no value; `driver-bulk-load-idempotent-seed` tells scripts to retry in application code. Please give the engineering answer, say whether application-level retry is right in either case, and align the connection-string rules (K07) with it.
-8. [needs SME confirmation] Can vCore return 16500 or 429? The bulk-load rule tells readers not to copy RU throttling logic.
-9. [needs SME confirmation] Does creating `cosmosSearch` indexes after the load matter for each kind? In particular, does `vector-ivf` need data before it builds, and can HNSW be built on an empty collection?
-10. [needs SME confirmation] Are the HNSW options in the seed skeleton (`m: 16`, `efConstruction: 64`) within the supported limits? Are binary (non-`number[]`) vectors ignored by `cosmosSearch`?
-11. [needs SME confirmation] Should CI (the `docker-compose.test.yml` and the quick start's CI note) pin a versioned `documentdb-local` tag instead of `:latest`, and which tag?
-12. Should the bulk-load rule live in `driver`, as proposed, or in `local-deployment`? Do the demo-size numbers suit the maintainers?
-13. Sample counting: the 55 is the union of K23's 22 and K26's 15 (from finding-id lists), K09's 16 (finding-id lists of drafts 091 and 052, which share one sample) and K08's 15 (from evidence paths of drafts 103 and 053, which share one sample; their finding-id lists also include findings on unrelated topics such as cold-quiz naming). Members overlap on 13 samples. All counts come from one run and may change after the harness fixes; re-check before quoting them publicly.
+7. [needs SME confirmation] Can vCore return 16500 or 429? The bulk-load rule tells readers not to copy RU throttling logic.
+8. [needs SME confirmation] Does creating `cosmosSearch` indexes after the load matter for each kind? In particular, does `vector-ivf` need data before it builds, and can HNSW be built on an empty collection?
+9. [needs SME confirmation] Are the HNSW options in the seed skeleton (`m: 16`, `efConstruction: 64`) within the supported limits? Are binary (non-`number[]`) vectors ignored by `cosmosSearch`?
+10. [needs SME confirmation] Should CI (the `docker-compose.test.yml` and the quick start's CI note) pin a versioned `documentdb-local` tag instead of `:latest`, and which tag?
+11. Should the bulk-load rule live in `driver`, as proposed, or in `local-deployment`? Do the demo-size numbers suit the maintainers?
+12. Sample counting: the 55 is the union of K23's 22 and K26's 15 (from finding-id lists), K09's 16 (finding-id lists of drafts 091 and 052, which share one sample) and K08's 15 (from evidence paths of drafts 103 and 053, which share one sample; their finding-id lists also include findings on unrelated topics such as cold-quiz naming). Members overlap on 13 samples. All counts come from one run and may change after the harness fixes; re-check before quoting them publicly.
 
 ## Source drafts
 

@@ -17,7 +17,7 @@ member_drafts:
 merged_from:
   - K03
   - K35
-open_questions: 12
+open_questions: 11
 ---
 
 # security and connection skills: Microsoft Entra ID (MONGODB-OIDC) data-plane auth with runnable per-driver examples, and a rule for sensitive data in AI/LLM applications
@@ -140,7 +140,7 @@ Mongoose: pass the same options to `mongoose.connect(uri, options)`; they go thr
 
 **Fall back to SCRAM-SHA-256 only when** the cluster does not have Entra enabled, the runtime has no Azure identity (for example a CI machine outside Azure without `az login`), or the client is a third-party tool that cannot run an OIDC callback. Then use a least-privilege secondary user created by an admin, never the built-in admin. `DefaultAzureCredential` covers `az login` locally and managed identity in Azure, so the same Entra code runs in both places.
 
-Learn lists both host forms: `<cluster>.global.mongocluster.cosmos.azure.com` or `<cluster>.mongocluster.cosmos.azure.com` (see Open question 9 on when `.global.` is required). mongosh/Compass on an Azure host with a managed identity:
+Learn lists both host forms: `<cluster>.global.mongocluster.cosmos.azure.com` or `<cluster>.mongocluster.cosmos.azure.com` (see Open question 8 on when `.global.` is required). mongosh/Compass on an Azure host with a managed identity:
 `mongodb+srv://<client-id>@<cluster>.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=MONGODB-OIDC&retrywrites=false&maxIdleTimeMS=120000&authMechanismProperties=ENVIRONMENT:azure,TOKEN_RESOURCE:https://ossrdbms-aad.database.windows.net`
 
 Do not tell users Entra ID is "control-plane only" or unsupported on the MongoDB wire protocol; that was Azure Cosmos DB for MongoDB (RU), not Azure DocumentDB. Cluster setup, user registration, other drivers: `documentdb-security` › security-entra-rbac. Full walkthrough: https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control
@@ -292,7 +292,7 @@ Add a cross-link to `security-redact-logs.md`.
   > **Microsoft Entra ID auth** (recommended for production). New clusters allow native auth only. Run `az documentdb mongocluster update ... --auth-allowed-modes NativeAuth MicrosoftEntraID`, then register each identity as described in `documentdb-security` › security-entra-rbac. Azure role assignments never let a driver connect. Connection code: `documentdb-connection` › Authentication modes. CMK / diagnostics: `documentdb-security`, `documentdb-monitoring`.
 - **`SKILL.md` Step 6b:** add `"authConfig": { "allowedModes": ["NativeAuth"] }` to the `az resource create --properties` JSON, with a comment explaining how to add `MicrosoftEntraID`.
 - **`references/bicep-cluster-template.md`:** add `param authAllowedModes array = ['NativeAuth']` and `authConfig: { allowedModes: authAllowedModes }` under `properties`.
-- **`references/terraform-cluster-template.md`:** add the equivalent setting (Open question 7).
+- **`references/terraform-cluster-template.md`:** add the equivalent setting (Open question 6).
 
 ### 10. `skills/mcp-setup/SKILL.md`
 
@@ -318,20 +318,23 @@ Run folders from the experiment (one run). For the auth runs see `02-readiness.j
 - `runs/01-patient-record-summarizer-rag/20261124-192917/`: PHI logging and app-layer authorization.
 - `runs/02-transaction-categorization-agent/20261124-190028/`: PII sent to the LLM without redaction guidance.
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. [needs SME confirmation] **Minimum driver versions for MONGODB-OIDC.** Drafts cite Node `mongodb` 6.7.0 and PyMongo 4.7.0, from the driver release notes; PyMongo 4.9+ is needed for `AsyncMongoClient`; .NET and Java minimums are unverified. Should the skill state minimums at all?
 2. [needs SME confirmation] **Java callback.** The Java `OIDC_CALLBACK_KEY` callback is not on Learn. Should we add a verified Java example or leave Java out?
-3. [needs SME confirmation] **Drafts disagree on retryable writes.** Learn's connection string and every snippet here use `retrywrites=false`. Some drafts say retryable writes are unsupported and cause write errors; others say Learn makes no such claim and the setting is only a recommendation. What is the engineering position? This PR adds no rationale either way.
-4. [needs SME confirmation] **Roles for nonadministrative Entra identities.** The Entra page says `readWriteAnyDatabase` and `clusterAdmin` must be granted together. The secondary-users page lists them as separate roles, with a `validate ... repair` caveat for `readWriteAnyDatabase`. Which is current?
-5. [needs SME confirmation] **`--type` value for `microsoft-entra-user assign`.** Learn's example shows `User`. The drafts disagree on whether a managed identity or service principal takes `ServicePrincipal`. What are the accepted values?
-6. [needs SME confirmation] **`ALLOWED_HOSTS` value.** Learn uses `*.azure.com`, while microsoft/documentdb-mcp uses `*.mongocluster.cosmos.azure.com`. Which should the kit recommend?
-7. [needs SME confirmation] **Terraform `authConfig`.** What is the `azurerm_mongo_cluster` attribute for `authConfig.allowedModes`, and is it exposed in provider 4.x? If not, is `azapi_update_resource` the recommended route?
-8. [needs SME confirmation] **Learn TypeScript sample units.** Learn's sample computes `expiresInSeconds` as `expiresOnTimestamp - Date.now()/1000`, which subtracts seconds from milliseconds. The snippet here converts to seconds first. Is the Learn sample wrong? If so, it should get separate doc feedback.
-9. [needs SME confirmation] **When the `.global.` host is required.** Learn lists both host forms. Draft 041 says to use `<cluster>.global.mongocluster.cosmos.azure.com` when the cluster has a cross-region replica and that either works otherwise; draft 017 says the non-global host works for a single cluster. Is that the rule, and should the kit's default snippets use the non-global host to match the canonical connection string?
-10. [needs SME confirmation] **CSFLE and Queryable Encryption.** Are client-side field-level encryption (explicit and automatic) and Queryable Encryption supported on Azure DocumentDB? No public Learn page or `documentdb-mcp` source says either way; `security-ai-sensitive-data.md` leaves a maintainer placeholder rather than asserting one.
-11. [needs SME confirmation] **PHI endpoint wording.** Is pointing to an Azure OpenAI / Foundry deployment for PHI acceptable wording? The rule cites the Foundry data-privacy page but deliberately makes no compliance claim (for example HIPAA coverage); please confirm with the responsible team before merge.
-12. [needs SME confirmation] **Learn follow-up for CSFLE.** Should a short note on CSFLE support also go on the Learn [Secure your cluster](https://learn.microsoft.com/azure/documentdb/security) page, so builders outside the kit get the same answer?
+3. [needs SME confirmation] **Roles for nonadministrative Entra identities.** The Entra page says `readWriteAnyDatabase` and `clusterAdmin` must be granted together. The secondary-users page lists them as separate roles, with a `validate ... repair` caveat for `readWriteAnyDatabase`. Which is current?
+4. [needs SME confirmation] **`--type` value for `microsoft-entra-user assign`.** Learn's example shows `User`. The drafts disagree on whether a managed identity or service principal takes `ServicePrincipal`. What are the accepted values?
+5. [needs SME confirmation] **`ALLOWED_HOSTS` value.** Learn uses `*.azure.com`, while microsoft/documentdb-mcp uses `*.mongocluster.cosmos.azure.com`. Which should the kit recommend?
+6. [needs SME confirmation] **Terraform `authConfig`.** What is the `azurerm_mongo_cluster` attribute for `authConfig.allowedModes`, and is it exposed in provider 4.x? If not, is `azapi_update_resource` the recommended route?
+7. [needs SME confirmation] **Learn TypeScript sample units.** Learn's sample computes `expiresInSeconds` as `expiresOnTimestamp - Date.now()/1000`, which subtracts seconds from milliseconds. The snippet here converts to seconds first. Is the Learn sample wrong? If so, it should get separate doc feedback.
+8. [needs SME confirmation] **When the `.global.` host is required.** Learn lists both host forms. Draft 041 says to use `<cluster>.global.mongocluster.cosmos.azure.com` when the cluster has a cross-region replica and that either works otherwise; draft 017 says the non-global host works for a single cluster. Is that the rule, and should the kit's default snippets use the non-global host to match the canonical connection string?
+9. [needs SME confirmation] **CSFLE and Queryable Encryption.** Are client-side field-level encryption (explicit and automatic) and Queryable Encryption supported on Azure DocumentDB? No public Learn page or `documentdb-mcp` source says either way; `security-ai-sensitive-data.md` leaves a maintainer placeholder rather than asserting one.
+10. [needs SME confirmation] **PHI endpoint wording.** Is pointing to an Azure OpenAI / Foundry deployment for PHI acceptable wording? The rule cites the Foundry data-privacy page but deliberately makes no compliance claim (for example HIPAA coverage); please confirm with the responsible team before merge.
+11. [needs SME confirmation] **Learn follow-up for CSFLE.** Should a short note on CSFLE support also go on the Learn [Secure your cluster](https://learn.microsoft.com/azure/documentdb/security) page, so builders outside the kit get the same answer?
 
 ## Source drafts
 

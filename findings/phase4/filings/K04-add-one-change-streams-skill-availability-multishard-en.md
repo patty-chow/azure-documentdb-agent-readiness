@@ -13,7 +13,7 @@ member_drafts:
   - 034-believes-azure-documentdb-change-streams-have-full-mongodb-s.md
   - 035-believes-change-stream-availability-is-gated-by-the-cluster-.md
   - 093-durable-state-patterns-change-stream-resume-tokens-workflow-.md
-open_questions: 9
+open_questions: 8
 ---
 
 # Add one change-streams skill: availability, multishard enablement, limitations and a durable resume-token consumer
@@ -129,6 +129,7 @@ Notes in the rule:
 - Checkpoint after each event, or after each small batch when throughput is high.
 - Delivery is at-least-once, because events after the last checkpoint come again. Make handlers idempotent, for example by keying on the resume token or on `documentKey._id`.
 - Write the checkpoint as an ordinary acknowledged write, after the side effect.
+- Keep `retrywrites=false` in the connection string; it is required, not a sample choice. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Because the driver does not retry writes, a transient failure on the outbox or checkpoint write surfaces as an error; the loop reopens from the last checkpoint, and the upserts keyed on `change._id` make the replay safe. Do not set `retryWrites: true` to work around this.
 - Learn says cursors must be reopened after failover and that resume still works. The loop does exactly this.
 - If the stored token can no longer be resumed, fall back to `startAtOperationTime` from the stored `clusterTime`. This is a historical change stream; run large replays when traffic is low. Beyond the replay window, alert an operator.
 - A separate worker drains `outbox` with a concurrency limit (for example `p-limit(8)`), makes the webhook call, retries with its own backoff, and never blocks the stream.
@@ -172,6 +173,10 @@ Not in this PR: the workflow-run and agent-memory rules from draft 093 (a separa
 - `runs/12-invoice-matching-reconciliation/20261124-191603/02-readiness.json`
 - `runs/15-cohort-analysis-backend/20261124-205336/02-readiness.json`
 
+## Resolved
+
+retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. [needs SME confirmation] Is the active change log 400 MB, and is that the boundary past which `resumeAfter` stops working?
@@ -181,8 +186,7 @@ Not in this PR: the workflow-run and agent-memory rules from draft 093 (a separa
 5. [needs SME confirmation] Are single-shard clusters really without any enablement step? Learn shows only the multishard toggle.
 6. [needs SME confirmation] What error code or label does the service return when a resume token can no longer be resumed? The rule's `isTokenNotResumable()` needs it.
 7. [needs SME confirmation] Is there a CLI, ARM or Bicep property for the multishard toggle, or a way to read its state programmatically?
-8. [needs SME confirmation] Retryable writes: the documented connection string sets `retrywrites=false`. One member draft says writes are therefore retried only in application code, which makes idempotent handlers essential. Other drafts from the same experiment (outside this group) describe retryable writes as unsupported. Separately, the kit's `connection` skill shows `retryWrites=true`. What is the engineering position? This PR deliberately says nothing about retryWrites.
-9. [needs SME confirmation] Is the `updateDescription` exclusion limited to aggregation-pipeline updates, with update operators supported?
+8. [needs SME confirmation] Is the `updateDescription` exclusion limited to aggregation-pipeline updates, with update operators supported?
 
 ## Source drafts
 

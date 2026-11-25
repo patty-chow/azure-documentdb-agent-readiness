@@ -17,7 +17,7 @@ merged_from:
   - K12
   - K24
   - K28
-open_questions: 8
+open_questions: 7
 ---
 
 # mcp-setup skill: name the documentdb MCP server as the data-plane server, stop defaulting to a localhost URI, add an "already configured?" check, and document mongosh as optional with an MCP-tool fallback
@@ -145,8 +145,9 @@ brew install mongosh              # macOS (Homebrew)
 # Linux: MongoDB apt/yum repository, or download from https://www.mongodb.com/try/download/shell
 ```
 
-Connect to Azure DocumentDB with the cluster's SRV string and its required options.
-Leave the password out of the string so that mongosh prompts for it:
+Connect to Azure DocumentDB with the cluster's SRV string and its required options
+(`retrywrites=false` is required; the Step 2 note says why). Leave the password out of
+the string so that mongosh prompts for it:
 
 ```bash
 mongosh "mongodb+srv://<user>@<cluster>.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000"
@@ -179,9 +180,14 @@ TLS certificate and SCRAM-SHA-256. `tlsAllowInvalidCertificates=true` is only fo
 local certificate. Never put it in a cloud profile. A plain `mongo` image on 27017
 does not reproduce DocumentDB vector or text indexes, or its TLS/SCRAM behavior. See
 the `documentdb-local-deployment` skill for the container and docker-compose setup.
+
+Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support
+retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a
+non-idempotent write twice. Handle transient write failures in application code with idempotent
+operations (upserts, deterministic keys).
 ```
 
-Row A now uses the full Azure portal connection-string format, including `retrywrites=false&maxIdleTimeMS=120000` (the existing row leaves those out), matching the mongosh template in 1c.
+Row A now uses the full Azure portal connection-string format, including `retrywrites=false&maxIdleTimeMS=120000` (the existing row leaves those out), matching the mongosh template in 1c. `retrywrites=false` is required, not a sample choice (see Resolved below), so the note under the table carries the kit's canonical rationale sentence; the local gateway URI in row B is unchanged pending open question 1.
 
 **1e. Step 4 template: reconcile the server-entry spelling** (from K28). Either
 
@@ -194,7 +200,7 @@ The kit's `mcp.json` and Gemini extension register the same server as
 this one alongside it.
 ```
 
-The choice depends on open question 6.
+The choice depends on open question 5.
 
 **1f. Troubleshooting: add** (from K28):
 
@@ -212,7 +218,7 @@ In "Routing hints for agents", next to "Setting up the DocumentDB MCP server -> 
 - **Querying / inspecting / explaining against a live cluster** -> the `documentdb` MCP server tools (see `documentdb-mcp-setup`). The Azure MCP Server has no DocumentDB data-plane tools; its Cosmos DB tools are for Azure Cosmos DB (NoSQL) accounts, not DocumentDB clusters.
 ```
 
-(Line 105, which says the plugin bundles "`documentdb-mcp-server` on npm", is left unchanged pending open question 6.)
+(Line 105, which says the plugin bundles "`documentdb-mcp-server` on npm", is left unchanged pending open question 5.)
 
 ### 3. `README.md` (line 160)
 
@@ -291,7 +297,7 @@ interactive shell (`npm install -g mongosh`).
 
 ### Not changed
 
-- `mcp.json`: referenced by Step 0 and the Step 4 Option A template; no edit in this PR. Whether its `npx -y documentdb-mcp-server` launch target stays depends on open question 6.
+- `mcp.json`: referenced by Step 0 and the Step 4 Option A template; no edit in this PR. Whether its `npx -y documentdb-mcp-server` launch target stays depends on open question 5.
 
 ### Acceptance checks
 
@@ -326,16 +332,19 @@ Further run folders carried over from the member filings:
 
 Partly to blame for the duplicate-entry advice: the experiment harness lists the toolkit as "Entry `documentdb` in `mcp.json`", so its readiness reports phrase the ask that way. The duplicate-entry risk itself comes from the kit's mismatched spellings.
 
+## Resolved
+
+retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
-1. **`retrywrites=false`.** Row A and the mongosh template use `retrywrites=false`, as the Learn / Azure portal connection string does. Source drafts disagree on what it means: one position is that Learn does not say retryable writes are unsupported, so the option is a recommendation; the other is that retryable writes are unsupported and cause write errors if enabled. This PR adds no rationale. Can engineering confirm the actual behavior, and whether the local gateway URI (row B and the exports) also needs `retrywrites=false`? [needs SME confirmation]
-2. **Canonical local URI.** Should the local gateway URI set `authMechanism=SCRAM-SHA-256` explicitly? `local-env-driven-config.md:61` sets it; the Learn `development-loop` tutorial and the strings above do not. Please name one canonical local URI so every file in the kit uses it. [needs SME confirmation]
-3. **Sample count.** Before these figures are quoted externally, should they come from a clean re-run? The mongosh count (16) comes from extracted finding ids; a recount over all run folders, including runs finished after extraction, finds mongosh flagged in 19 samples, and the harness's `mongosh --version` probe inflates the number. The fifth K24 sample (a sample 06) is not named in its draft, so the merged 27 assumes it does not overlap another theme. [needs SME confirmation]
-4. **Node floor for mongosh.** The npm `mongosh` package lists `engines.node >=16.15.0`. Does the kit need to state that floor, or is the MCP server's Node 20+ requirement enough? [needs SME confirmation]
-5. **Azure MCP Server roadmap.** The Azure MCP Server has no Azure DocumentDB / `mongoClusters` namespace today (per its Learn tools page, updated 2026-10). Is one planned? If so, the "no DocumentDB tools" wording needs a date or softer phrasing. [needs SME confirmation]
-6. **Distribution and canonical entry.** The Learn MCP Toolkit page says there is no published npm package yet, while the kit's `mcp.json` runs `npx -y documentdb-mcp-server` and `AGENTS.md` line 105 says the plugin bundles "`documentdb-mcp-server` on npm". Which is current? [needs SME confirmation] The answer feeds a maintainer decision: which key and launch target are canonical (`documentdb` with the npm package, or `DocumentDB` with the GitHub source or a local build), which decides Option A vs B in Step 4 and which key `install.sh` writes when no entry exists.
-7. **Tool list stability.** The read / write / management split and tool names come from `documentdb-mcp/tool_list.md` and its README. Are they stable enough to list in a skill, or should the skill link to `tool_list.md` instead? [needs SME confirmation]
-8. **Product name.** Is "Azure DocumentDB MCP Toolkit" the canonical product name to use alongside `microsoft/documentdb-mcp`? [needs SME confirmation]
+1. **Canonical local URI.** Should the local gateway URI set `authMechanism=SCRAM-SHA-256` explicitly, and should it also carry `retrywrites=false` (required in the cloud string; row B and the exports above leave it out)? `local-env-driven-config.md:61` sets the auth mechanism; the Learn `development-loop` tutorial and the strings above do not. Please name one canonical local URI so every file in the kit uses it. [needs SME confirmation]
+2. **Sample count.** Before these figures are quoted externally, should they come from a clean re-run? The mongosh count (16) comes from extracted finding ids; a recount over all run folders, including runs finished after extraction, finds mongosh flagged in 19 samples, and the harness's `mongosh --version` probe inflates the number. The fifth K24 sample (a sample 06) is not named in its draft, so the merged 27 assumes it does not overlap another theme. [needs SME confirmation]
+3. **Node floor for mongosh.** The npm `mongosh` package lists `engines.node >=16.15.0`. Does the kit need to state that floor, or is the MCP server's Node 20+ requirement enough? [needs SME confirmation]
+4. **Azure MCP Server roadmap.** The Azure MCP Server has no Azure DocumentDB / `mongoClusters` namespace today (per its Learn tools page, updated 2026-10). Is one planned? If so, the "no DocumentDB tools" wording needs a date or softer phrasing. [needs SME confirmation]
+5. **Distribution and canonical entry.** The Learn MCP Toolkit page says there is no published npm package yet, while the kit's `mcp.json` runs `npx -y documentdb-mcp-server` and `AGENTS.md` line 105 says the plugin bundles "`documentdb-mcp-server` on npm". Which is current? [needs SME confirmation] The answer feeds a maintainer decision: which key and launch target are canonical (`documentdb` with the npm package, or `DocumentDB` with the GitHub source or a local build), which decides Option A vs B in Step 4 and which key `install.sh` writes when no entry exists.
+6. **Tool list stability.** The read / write / management split and tool names come from `documentdb-mcp/tool_list.md` and its README. Are they stable enough to list in a skill, or should the skill link to `tool_list.md` instead? [needs SME confirmation]
+7. **Product name.** Is "Azure DocumentDB MCP Toolkit" the canonical product name to use alongside `microsoft/documentdb-mcp`? [needs SME confirmation]
 
 ## Source drafts
 

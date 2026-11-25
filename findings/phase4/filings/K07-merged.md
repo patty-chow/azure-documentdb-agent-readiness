@@ -23,7 +23,7 @@ merged_from:
   - K29
   - K15
   - K16
-open_questions: 13
+open_questions: 12
 ---
 
 # connection and driver skills: `get_client()` factory with vCore-correct retry and bulk-write helpers, a "What differs from MongoDB" block, Beanie 2.x on `AsyncMongoClient`, transactions with sessions, a copy-paste PyMongo connect rule, and reproducible installs
@@ -55,7 +55,7 @@ One PR for the two skills an agent loads every time it writes code that creates 
 
 **Python async, Motor and Beanie (from K07, K37)**
 
-- The "Python async note" blockquote (lines 45-49) correctly says to use PyMongo's `AsyncMongoClient` (4.9+) and not Motor, but dates Motor's deprecation to "May 2024" and critical fixes to "through May 2026"; MongoDB's Motor page gives deprecation May 14, 2025, end of life May 14, 2026, critical fixes until May 14, 2027 [needs SME confirmation, open question 7]. It says nothing about ODMs: neither `skills/` nor `knowledge-base/` mentions Beanie, whose older docs taught agents that "Beanie requires an `AsyncIOMotorClient`". The agent reads the two as a conflict, hedges, and falls back to Motor.
+- The "Python async note" blockquote (lines 45-49) correctly says to use PyMongo's `AsyncMongoClient` (4.9+) and not Motor, but dates Motor's deprecation to "May 2024" and critical fixes to "through May 2026"; MongoDB's Motor page gives deprecation May 14, 2025, end of life May 14, 2026, critical fixes until May 14, 2027 [needs SME confirmation, open question 6]. It says nothing about ODMs: neither `skills/` nor `knowledge-base/` mentions Beanie, whose older docs taught agents that "Beanie requires an `AsyncIOMotorClient`". The agent reads the two as a conflict, hedges, and falls back to Motor.
 
 **Dependencies (from K29)**
 
@@ -65,7 +65,7 @@ The `retryWrites=true` examples (connection/SKILL.md:60, driver-singleton-client
 
 ## Why it matters
 
-In a 100-sample experiment (gpt-5-mini building sample apps with this kit plus the DocumentDB, Azure and Learn MCP servers; 221 run folders), **at least 85 of the 100 samples** had at least one finding in this merged group. All figures come from one experiment run with known harness artifacts and may shift on a re-run [needs SME confirmation, open question 8]. The 85 is the union K07 computed over its four drafts' finding ids. The other members add 42 sample-hits (24 + 11 + 3 + 3 + 1); their finding ids could not be mapped back to sample names from the drafts, so how many of them fall outside K07's 85 is unresolved: the distinct count is between 85 and 100, and `sample_count` records the confirmed floor. Per member:
+In a 100-sample experiment (gpt-5-mini building sample apps with this kit plus the DocumentDB, Azure and Learn MCP servers; 221 run folders), **at least 85 of the 100 samples** had at least one finding in this merged group. All figures come from one experiment run with known harness artifacts and may shift on a re-run [needs SME confirmation, open question 7]. The 85 is the union K07 computed over its four drafts' finding ids. The other members add 42 sample-hits (24 + 11 + 3 + 3 + 1); their finding ids could not be mapped back to sample names from the drafts, so how many of them fall outside K07's 85 is unresolved: the distinct count is between 85 and 100, and `sample_count` records the confirmed floor. Per member:
 
 - **Client factory, retry and bulk-write helpers (K07): 85 samples** (drafts 096: 85, 089: 12, 090: 14, 119: 1; the last three are inside the 85).
   - 53 runs (of the 221 run folders) constructed `MongoClient(uri)` / `AsyncIOMotorClient(uri)` with no options, one under a docstring claiming "driver best-practices". 38 never set any pool size or timeout.
@@ -100,7 +100,7 @@ File by file. Line numbers are against kit commit `4f41c15` (2026-11-23).
 
 ### 1. New `skills/connection/connection-client-factory.md` (K07, plus a startup `ping` from K16)
 
-Same layout as `driver-singleton-client.md`. Rules stated once: one client per process (in serverless, create it at module scope so warm invocations reuse it); read `DOCUMENTDB_URI`, fail fast if it is missing or lacks `tls=true`; pass options to the constructor and never string-append to the URI (if a user-supplied URI must be normalized, parse it, as below); set `retryWrites=False` to match the portal-issued connection string; pool and timeouts from env with two documented defaults; verify with `ping` at startup (see `driver/driver-python-connect.md`); close on shutdown. When no user is available to answer questions (samples, quickstarts, CLIs), use these defaults and comment them. (Draft 096 also proposed rejecting URIs that do not start with `mongodb+srv://`; that check is left out because the local-deployment skill connects with `mongodb://localhost:10260`.)
+Same layout as `driver-singleton-client.md`. Rules stated once: one client per process (in serverless, create it at module scope so warm invocations reuse it); read `DOCUMENTDB_URI`, fail fast if it is missing or lacks `tls=true`; pass options to the constructor and never string-append to the URI (if a user-supplied URI must be normalized, parse it, as below); set `retryWrites=False` (required: Azure DocumentDB does not support retryable writes, which is why the portal-issued connection string carries `retrywrites=false`; rationale in `connection-retry-helpers.md`); pool and timeouts from env with two documented defaults; verify with `ping` at startup (see `driver/driver-python-connect.md`); close on shutdown. When no user is available to answer questions (samples, quickstarts, CLIs), use these defaults and comment them. (Draft 096 also proposed rejecting URIs that do not start with `mongodb+srv://`; that check is left out because the local-deployment skill connects with `mongodb://localhost:10260`.)
 
 | Option | Long-running | Serverless | Env var |
 |---|---|---|---|
@@ -119,7 +119,7 @@ from pymongo import MongoClient, AsyncMongoClient
 def _opts() -> dict:
     sl = os.getenv("DOCUMENTDB_SERVERLESS", "false").lower() == "true"
     e = lambda k, d: int(os.getenv(k, d))
-    return dict(tls=True, retryWrites=False,   # matches the portal-issued connection string
+    return dict(tls=True, retryWrites=False,   # required: the service does not support retryable writes
         maxPoolSize=e("DOCUMENTDB_MAX_POOL_SIZE", 5 if sl else 50),
         minPoolSize=e("DOCUMENTDB_MIN_POOL_SIZE", 0 if sl else 5),
         maxIdleTimeMS=e("DOCUMENTDB_MAX_IDLE_TIME_MS", 30000 if sl else 120000),
@@ -153,7 +153,7 @@ def install_shutdown_handlers() -> None:
     for s in (signal.SIGINT, signal.SIGTERM):
         signal.signal(s, lambda *_: (close_client(), sys.exit(0)))
 
-# Async: PyMongo >= 4.9 AsyncMongoClient; Beanie >= 2.0 accepts it directly (version floors: open question 5).
+# Async: PyMongo >= 4.9 AsyncMongoClient; Beanie >= 2.0 accepts it directly (version floors: open question 4).
 # Do not add motor (deprecated May 14, 2025; end of life May 14, 2026).
 _aclient = None
 def get_async_client() -> AsyncMongoClient:
@@ -181,7 +181,7 @@ const { MongoClient } = require("mongodb");
 const sl = process.env.DOCUMENTDB_SERVERLESS === "true";
 const n = (k, d) => Number(process.env[k] ?? d);
 function clientOptions() {
-  return { tls: true, retryWrites: false,   // matches the portal-issued connection string
+  return { tls: true, retryWrites: false,   // required: the service does not support retryable writes
     maxPoolSize: n("DOCUMENTDB_MAX_POOL_SIZE", sl ? 5 : 50),
     minPoolSize: n("DOCUMENTDB_MIN_POOL_SIZE", sl ? 0 : 5),
     maxIdleTimeMS: n("DOCUMENTDB_MAX_IDLE_TIME_MS", sl ? 30000 : 120000),
@@ -240,7 +240,7 @@ test("options reach the driver", () => {
 
 ### 2. New `skills/connection/connection-retry-helpers.md` (K07, cross-linked to K15's transactions rule)
 
-Text: "Retry on what the driver reports: network and server-selection errors, the `TransientTransactionError` and `UnknownTransactionCommitResult` labels, `WriteConflict` (112) and primary stepdown (`NotWritablePrimary` 10107, `PrimarySteppedDown` 189). (With `retryWrites=false` the driver rarely attaches `RetryableWriteError`; the helpers check it because it is harmless.) Never retry `DuplicateKey` (11000) or validation errors. Because `retryWrites=false`, the driver does not retry writes for you; retry a write only if it is idempotent (upsert on a stable key, `$setOnInsert`, client-supplied `_id`). For multi-document work use `with_transaction` / `withTransaction`, which already retries on the transaction labels; do not wrap it in this helper (see `driver/driver-transactions-session.md`). Capacity is vCore tiers, not request units: sustained overload is fixed by scaling the tier (or adding shards), not by backing off. 429 + `Retry-After` comes from Azure OpenAI and other HTTP APIs [needs SME confirmation that the DocumentDB service never returns 16500/429; open question 1]; use the SDK's `maxRetries` or honor the header there."
+Text: "Retry on what the driver reports: network and server-selection errors, the `TransientTransactionError` and `UnknownTransactionCommitResult` labels, `WriteConflict` (112) and primary stepdown (`NotWritablePrimary` 10107, `PrimarySteppedDown` 189). (With `retryWrites=false` the driver rarely attaches `RetryableWriteError`; the helpers check it because it is harmless.) Never retry `DuplicateKey` (11000) or validation errors. Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). With `retrywrites=false` the driver does not retry writes for you; retry a write through this helper only if it is idempotent (upsert on a stable key, `$setOnInsert`, client-supplied `_id`). For multi-document work use `with_transaction` / `withTransaction`, which already retries on the transaction labels; do not wrap it in this helper (see `driver/driver-transactions-session.md`). Capacity is vCore tiers, not request units: sustained overload is fixed by scaling the tier (or adding shards), not by backing off. 429 + `Retry-After` comes from Azure OpenAI and other HTTP APIs [needs SME confirmation that the DocumentDB service never returns 16500/429; open question 1]; use the SDK's `maxRetries` or honor the header there."
 
 ```python
 # retry_util.py  (stdlib; tenacity is an acceptable drop-in)
@@ -310,7 +310,7 @@ Rules (one line each): set `maxTimeMS` on interactive `find`/`aggregate` (the se
 
 Edits in file order:
 
-- **"Python async note" blockquote (lines 45-49)** (K07 + K37): replace the existing date text with "Use PyMongo's `AsyncMongoClient` (4.9+) with Beanie 2.x. Motor was deprecated on May 14, 2025 (end of life May 14, 2026; critical fixes only until May 14, 2027)." [needs SME confirmation of the dates, open question 7], then append K37's ODM lines:
+- **"Python async note" blockquote (lines 45-49)** (K07 + K37): replace the existing date text with "Use PyMongo's `AsyncMongoClient` (4.9+) with Beanie 2.x. Motor was deprecated on May 14, 2025 (end of life May 14, 2026; critical fixes only until May 14, 2027)." [needs SME confirmation of the dates, open question 6], then append K37's ODM lines:
 
   ```markdown
   > **ODMs:** Beanie 2.x accepts PyMongo's `AsyncMongoClient` directly (Beanie 2.0
@@ -329,7 +329,7 @@ Edits in file order:
   > Reference: https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie
   ```
 
-  Merge note: K37's text said "Pin `beanie>=2` and `pymongo>=4.9`" and built `AsyncMongoClient(os.environ["DOCUMENTDB_URI"])` inline. Both conflict with other parts of this PR (exact pins from K07/K29; no bare constructor from K07), so the merged text points at the factory and the pinning rule. The version floor itself is open question 5 [needs SME confirmation].
+  Merge note: K37's text said "Pin `beanie>=2` and `pymongo>=4.9`" and built `AsyncMongoClient(os.environ["DOCUMENTDB_URI"])` inline. Both conflict with other parts of this PR (exact pins from K07/K29; no bare constructor from K07), so the merged text points at the factory and the pinning rule. The version floor itself is open question 4 [needs SME confirmation].
 
 - **New subsection under "Azure DocumentDB Connection Specifics", after "Authentication"** (K21):
 
@@ -375,11 +375,11 @@ Edits in file order:
   https://learn.microsoft.com/azure/documentdb/limitations
   ```
 
-  (The cross-link to `driver-transactions-session` in the transactions bullet is added by the merge.) Before merging, settle three claims in this block: transactions spanning shards (open question 9), the multi-shard change-stream enablement and limits (open question 10), and the "preview" labels on full-text search, multi-shard change streams and `updateDescription` (open question 11) [needs SME confirmation].
+  (The cross-link to `driver-transactions-session` in the transactions bullet is added by the merge.) Before merging, settle three claims in this block: transactions spanning shards (open question 8), the multi-shard change-stream enablement and limits (open question 9), and the "preview" labels on full-text search, multi-shard change streams and `updateDescription` (open question 10) [needs SME confirmation].
 
 - **Singleton example (around line 158)** (K07): replace the bare constructor with `getClient()` from `connection-client-factory.md`.
 
-- **"Retry Logic" (lines 209-241)** (K07): replace the `withRetry` block with the `retry.js` above, keep `retryReads: true`, and add: "Azure DocumentDB capacity is vCore tiers, not request units. Keep `retrywrites=false` as in the portal-issued string, so the driver does not retry writes; wrap idempotent writes in the helper. Retry on transient network, server-selection, stepdown and transaction-label errors. See `connection-retry-helpers.md` for bulk-write partitioning and timeouts."
+- **"Retry Logic" (lines 209-241)** (K07): replace the `withRetry` block with the `retry.js` above, keep `retryReads: true`, and add: "Azure DocumentDB capacity is vCore tiers, not request units. Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). Wrap idempotent writes in the helper. Retry on transient network, server-selection, stepdown and transaction-label errors. See `connection-retry-helpers.md` for bulk-write partitioning and timeouts."
 
 - **"When Creating Code" (around line 260)** (K07 + K29), add two lines:
   - "If you are generating a sample, quickstart or CLI and no user is available to answer, do not block on questions: use `connection-client-factory.md` and comment the defaults."
@@ -402,10 +402,12 @@ Azure DocumentDB (resource type `Microsoft.DocumentDB/mongoClusters`) always req
 |---|---|
 | `tls` | `true` |
 | `authMechanism` | `SCRAM-SHA-256` (native users; for Microsoft Entra ID see the `documentdb-connection` skill, Authentication section) |
-| `retrywrites` | `false` |
+| `retrywrites` | `false` (required; the service does not support retryable writes, see below) |
 | `maxIdleTimeMS` | `120000` |
 
 The portal string leaves out the password, so fill in the placeholder yourself. Legacy Azure Cosmos DB for MongoDB (RU) strings (`*.mongo.cosmos.azure.com`, port 10255, `replicaSet=globaldb`) belong to a different service and will not connect.
+
+Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). Learn's connection strings carry `retrywrites=false` but do not yet explain why; the reason above is the one to repeat.
 
 If an option is set in both the URI and a PyMongo keyword argument, the keyword argument wins. Keep the two consistent.
 
@@ -422,7 +424,7 @@ uri = os.environ["DOCUMENTDB_URI"]
 client = MongoClient(
     uri,
     tls=True,                       # TLS is always required
-    retryWrites=False,              # matches the published connection string
+    retryWrites=False,              # required: retryable writes are not supported
     maxIdleTimeMS=120000,           # matches the published connection string
     serverSelectionTimeoutMS=5000,  # fail fast instead of waiting 30 s
 )
@@ -435,7 +437,7 @@ Create this client once per process (see `driver-singleton-client`). `AsyncMongo
 
 ```python
 client = MongoClient(os.environ["DOCUMENTDB_URI"])           # works only if the URI carries every option
-client = MongoClient(uri, retryWrites=True)                  # contradicts the published connection string
+client = MongoClient(uri, retryWrites=True)                  # retryable writes are not supported; a retried write can be applied twice
 client = MongoClient(uri, tlsAllowInvalidCertificates=True)  # local emulator only, never the managed service
 ```
 
@@ -530,7 +532,7 @@ Rules of thumb:
 - https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb
 ````
 
-(The parenthetical pointing to `connection-retry-helpers` is added by the merge.) The rule deliberately repeats neither a retryWrites claim (open question 2) nor the cross-shard claim (open question 9) until confirmed.
+(The parenthetical pointing to `connection-retry-helpers` is added by the merge.) The rule deliberately does not repeat the cross-shard claim (open question 8) until confirmed; the retryWrites rationale is settled (see Resolved) and is carried by `connection-client-factory.md`, `connection-retry-helpers.md`, the connection `SKILL.md` Retry Logic edit and `driver-python-connect.md`, so this rule does not repeat it.
 
 ### 6. New `skills/driver/driver-reproducible-installs.md` (K29, plus K07's Learn supported-drivers check)
 
@@ -600,7 +602,7 @@ README: `Tested on Python 3.12 / pip 24.3 — regenerate pins with pip-compile r
 - `skills/connection/SKILL.md` (Python async note)
 ~~~
 
-Maintainers should replace each `<fill>` with versions actually exercised by `evals/` and `testing/`, so the table states fact. [needs SME confirmation] The driver version floors in this rule (PyMongo 4.9 for `AsyncMongoClient`, PyMongo 4.11 for Beanie 2.x) must be confirmed against what the kit has tested on Azure DocumentDB before merge (open question 5). The Beanie 2.x floor comes from PyPI metadata (2.0.0 requires `pymongo>=4.11.0,<5.0.0`, no Motor). (Merge note: the Learn supported-drivers check in rule 1 and "Never add `motor`" in rule 3 come from K07's dependency rules.)
+Maintainers should replace each `<fill>` with versions actually exercised by `evals/` and `testing/`, so the table states fact. [needs SME confirmation] The driver version floors in this rule (PyMongo 4.9 for `AsyncMongoClient`, PyMongo 4.11 for Beanie 2.x) must be confirmed against what the kit has tested on Azure DocumentDB before merge (open question 4). The Beanie 2.x floor comes from PyPI metadata (2.0.0 requires `pymongo>=4.11.0,<5.0.0`, no Motor). (Merge note: the Learn supported-drivers check in rule 1 and "Never add `motor`" in rule 3 come from K07's dependency rules.)
 
 ### 7. `skills/driver/SKILL.md` (K21, K37, K07, K16, K15, K29)
 
@@ -702,21 +704,24 @@ Run folders in the experiment harness (`runs/`):
 - `runs/10-wealth-management-rag-portal/20261124-201449/doc-gaps.md`: PII-redaction rule request; out of scope (K15).
 - `runs/19-care-coordination-multi-agent/20261124-195730/doc-gaps.md`: "[high] Explicit PyMongo connection examples for mongoClusters"; `05-audit.json` `doc_gaps[0]`; `app/app/db.py` line 27 is a bare `MongoClient(DOCUMENTDB_URI)`; `05a-practice-discovery.md` practice P02 (enforce TLS) found only in the Learn quickstart, not in the kit (K16).
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. [needs SME confirmation] Can Azure DocumentDB ever return error 16500 or HTTP-style 429 to a Mongo driver? Drafts 096 and 119 say these RU-API codes do not apply to vCore; draft 090 keeps them as harmless legacy codes. The helpers keep 16500 in a labeled set until this is answered; drop it if engineering confirms it cannot occur. (K07)
-2. [needs SME confirmation] retryWrites. The kit disagrees with itself: `skills/connection/SKILL.md`, `skills/security/security-tls-required.md` and `driver-singleton-client.md` show `retryWrites=true`, while `skills/azure-deployment/SKILL.md` and draft 090 say the service does not support retryable writes and that the driver default causes connection or write errors. Drafts 096, 089 and 120 only state that the portal-issued string and Learn quickstart use `retrywrites=false`, and that Learn lists it as a recommended setting (TLS is the only "must") with no retryable-writes limitation; the Learn Mongoose tutorial calls its `retryWrites=false` a sample choice. Which is correct, and does it affect `withTransaction` retries? The PR wording ("the driver does not retry writes for you"; `driver-python-connect` sets it "to match the published string") holds either way, but the rationale text in this PR, K01 and Learn should follow the engineering answer. (K07, K21, K15, K16)
-3. [needs SME confirmation] Are 10107 and 189 (stepdown) the codes a client sees during Azure DocumentDB HA or cross-region failover, or does failover surface only as network errors? (K07)
-4. Pool defaults: draft 096 proposes 50/5 (long-running) and 30 s socket timeout; draft 089 proposed 20/0 and 60 s, with `DB_*` env-var names instead of `DOCUMENTDB_*`. This PR uses 096's values and names. Maintainers may prefer the other set. (K07)
-5. [needs SME confirmation] Driver version floors: is Beanie 2.x plus `AsyncMongoClient` the pairing the kit should recommend, and should the `AsyncMongoClient` floor be PyMongo 4.9 (first release with the async API, as beta, as the kit's existing note says), the later 4.x release where it became GA (4.13 per draft 096), or 4.11 for Beanie 2.x (per Beanie 2.0.0's PyPI metadata)? Which versions of `mongodb`, `mongoose`, `pymongo` and `beanie` has the kit's CI actually verified against Azure DocumentDB, so every `<fill>` cell in the tested-stack table is a tested fact? (K07, K37, K29)
-6. [needs SME confirmation] Confirm the kit wants Beanie 2.x (PyMongo async client) as the recommended Python ODM path and Beanie 1.x + Motor marked "not recommended", consistent with the Motor guidance in `skills/connection/SKILL.md`. (K29)
-7. [needs SME confirmation] Motor dates. The kit's note says Motor was deprecated in May 2024 with critical fixes through May 2026; MongoDB's Motor page (cited by K07) gives deprecation May 14, 2025, end of life May 14, 2026, critical fixes until May 14, 2027. Confirm the dates before this PR repeats them. (K07, K37)
-8. [needs SME confirmation] Sample counts come from one experiment run with known harness artifacts; some Python install failures may be environment artifacts (for example interpreter-version issues) rather than pinning gaps. Recount after the harness re-run before quoting 85 (or any per-member figure) externally, and resolve the cross-member overlap, which the drafts' finding ids did not allow. (K07, K29, K37, K21)
-9. [needs SME confirmation] Cross-shard transactions: are multi-document transactions across shards supported on sharded clusters, with the same 30-second limit? Learn's how-to-transactions page does not itself say "across shards"; the compatibility block relies on `skills/sharding/sharding-logical-vs-physical.md` for that, and `driver-transactions-session` avoids the claim until confirmed. (K21, K15)
-10. [needs SME confirmation] Multi-shard change streams: confirm they are enabled per cluster under Features, cannot be combined with the multishard rebalancer, and what other change-stream limits (log retention, PITR window) an agent should know. (K21)
-11. [needs SME confirmation] Preview status: confirm whether full-text search (`createSearchIndexes` + `$search`), multi-shard change streams and `updateDescription` are still preview or now GA, so the compatibility block's labels are current. (K21)
-12. [needs SME confirmation] Does the engine return the standard `TransientTransactionError` and `UnknownTransactionCommitResult` error labels, so the drivers' `withTransaction` retry (and the `isTransient` helper) behaves as it does against MongoDB? (K15)
-13. [needs SME confirmation] Should every client set `maxIdleTimeMS=120000`, or is 120000 only the portal default? The factory uses 120000 long-running and 30000 serverless; `driver-python-connect` uses 120000 to match the published string. (K16)
+2. [needs SME confirmation] Are 10107 and 189 (stepdown) the codes a client sees during Azure DocumentDB HA or cross-region failover, or does failover surface only as network errors? (K07)
+3. Pool defaults: draft 096 proposes 50/5 (long-running) and 30 s socket timeout; draft 089 proposed 20/0 and 60 s, with `DB_*` env-var names instead of `DOCUMENTDB_*`. This PR uses 096's values and names. Maintainers may prefer the other set. (K07)
+4. [needs SME confirmation] Driver version floors: is Beanie 2.x plus `AsyncMongoClient` the pairing the kit should recommend, and should the `AsyncMongoClient` floor be PyMongo 4.9 (first release with the async API, as beta, as the kit's existing note says), the later 4.x release where it became GA (4.13 per draft 096), or 4.11 for Beanie 2.x (per Beanie 2.0.0's PyPI metadata)? Which versions of `mongodb`, `mongoose`, `pymongo` and `beanie` has the kit's CI actually verified against Azure DocumentDB, so every `<fill>` cell in the tested-stack table is a tested fact? (K07, K37, K29)
+5. [needs SME confirmation] Confirm the kit wants Beanie 2.x (PyMongo async client) as the recommended Python ODM path and Beanie 1.x + Motor marked "not recommended", consistent with the Motor guidance in `skills/connection/SKILL.md`. (K29)
+6. [needs SME confirmation] Motor dates. The kit's note says Motor was deprecated in May 2024 with critical fixes through May 2026; MongoDB's Motor page (cited by K07) gives deprecation May 14, 2025, end of life May 14, 2026, critical fixes until May 14, 2027. Confirm the dates before this PR repeats them. (K07, K37)
+7. [needs SME confirmation] Sample counts come from one experiment run with known harness artifacts; some Python install failures may be environment artifacts (for example interpreter-version issues) rather than pinning gaps. Recount after the harness re-run before quoting 85 (or any per-member figure) externally, and resolve the cross-member overlap, which the drafts' finding ids did not allow. (K07, K29, K37, K21)
+8. [needs SME confirmation] Cross-shard transactions: are multi-document transactions across shards supported on sharded clusters, with the same 30-second limit? Learn's how-to-transactions page does not itself say "across shards"; the compatibility block relies on `skills/sharding/sharding-logical-vs-physical.md` for that, and `driver-transactions-session` avoids the claim until confirmed. (K21, K15)
+9. [needs SME confirmation] Multi-shard change streams: confirm they are enabled per cluster under Features, cannot be combined with the multishard rebalancer, and what other change-stream limits (log retention, PITR window) an agent should know. (K21)
+10. [needs SME confirmation] Preview status: confirm whether full-text search (`createSearchIndexes` + `$search`), multi-shard change streams and `updateDescription` are still preview or now GA, so the compatibility block's labels are current. (K21)
+11. [needs SME confirmation] Does the engine return the standard `TransientTransactionError` and `UnknownTransactionCommitResult` error labels, so the drivers' `withTransaction` retry (and the `isTransient` helper) behaves as it does against MongoDB? (K15)
+12. [needs SME confirmation] Should every client set `maxIdleTimeMS=120000`, or is 120000 only the portal default? The factory uses 120000 long-running and 30000 serverless; `driver-python-connect` uses 120000 to match the published string. (K16)
 
 ## Source drafts
 

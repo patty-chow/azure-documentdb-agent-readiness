@@ -10,7 +10,7 @@ member_drafts:
   - 072-vector-search-cookbook-copy-paste-cosmossearch-createindexes.md
   - 043-vector-search-page-lacks-an-embedding-model-to-dimensions-ta.md
   - 125-vector-search-storage-and-operational-guidance-number-format.md
-open_questions: 6
+open_questions: 5
 ---
 
 # Vector search: copy-paste cosmosSearch index and query how-to, explicit number[] storage rule and embedding-dimensions table
@@ -49,7 +49,7 @@ Title: "Create a vector index and run a similarity query" (`ms.topic: how-to`). 
 
 - A short "How to store vectors" callout at the top (same text as the storage rule in section 2), plus: for `similarity: "COS"`, L2-normalize vectors at ingest if the model does not already return unit-length vectors; only one vector index per vector path; half-precision (`compression: "half"`, HNSW and IVF) and product quantization (DiskANN) are index options, not a storage format you choose in your documents.
 - A dimension probe and an `embed()` helper in Python and Node: call Azure OpenAI with keyless Microsoft Entra ID auth, assert `len(vector) == EMBEDDING_DIMENSIONS` once at startup, and insert the returned list unchanged (not wrapped in BSON Binary). Use the env names the quickstarts already use, and show them as a `.env` block with names only and no secrets: `AZURE_OPENAI_EMBEDDING_ENDPOINT`, `AZURE_OPENAI_EMBEDDING_MODEL`, `AZURE_OPENAI_EMBEDDING_API_VERSION`, `EMBEDDING_DIMENSIONS`.
-- An idempotent `ensure_vector_index` function. It reads `listIndexes`, returns if an index on the path already has the same `cosmosSearch.kind` and `dimensions`, raises an error if the spec differs (only one vector index per path is allowed), and otherwise runs `createIndexes` with `key: {embedding: "cosmosSearch"}` and `cosmosSearchOptions` for one of `vector-diskann`, `vector-hnsw` or `vector-ivf`. It needs only the driver and the standard connection string from the quickstarts, with no portal, CLI or MCP step. Also create an ordinary index on each pre-filter field (the page's existing prefiltering rule), and add: "If a workload only needs exact matches, ranges or sorting, it needs ordinary indexes, not a vector index."
+- An idempotent `ensure_vector_index` function. It reads `listIndexes`, returns if an index on the path already has the same `cosmosSearch.kind` and `dimensions`, raises an error if the spec differs (only one vector index per path is allowed), and otherwise runs `createIndexes` with `key: {embedding: "cosmosSearch"}` and `cosmosSearchOptions` for one of `vector-diskann`, `vector-hnsw` or `vector-ivf`. It needs only the driver and the standard connection string from the quickstarts (keep its `retrywrites=false`; retryable writes are not supported by Azure DocumentDB), with no portal, CLI or MCP step. Also create an ordinary index on each pre-filter field (the page's existing prefiltering rule), and add: "If a workload only needs exact matches, ranges or sorting, it needs ordinary indexes, not a vector index."
 - A query: `$search: {cosmosSearch: {path, vector, k, lSearch | efSearch | nProbes, filter}}`, then an inclusion `$project` of the needed fields plus `score: {$meta: "searchScore"}`. Note: "Don't project `$$ROOT`. It returns the full vector, about 12 KB per hit at 1,536 dimensions."
 - A starting-parameters table, based on the page's documented defaults, extending the existing vector-count/tier table. IVF on M10/M20: `numLists: 1` for demos, then `documentCount/1000`, `nProbes: 1`. HNSW on M30+: `m: 16`, `efConstruction: 64`, `efSearch: 40`. DiskANN on M30+: `maxDegree: 32`, `lBuild: 50`, `lSearch: 40` (and `lSearch` >= `k`). Add: "Raise query-time values before you rebuild; rebuilding is the expensive step. Verify with `explain()` that the `$search` stage uses the index. Size capacity by vCore tier and memory." Add "small production" and "production" columns only after the product team signs off.
 - An error table. `CommandNotSupported` 115 means `createSearchIndexes` was used, so use `createIndexes`. `BadValue` "expected an array type field" means a Binary or object vector, so pass an array. `knnBeta`/`$vectorSearch` is Atlas syntax, so use `cosmosSearch`. A document missing from results has a vector that isn't an array or has the wrong length. No results right after creation means the index may still be building, so retry instead of recreating [needs SME confirmation]. "Management tools are disabled by default" from the DocumentDB MCP server is that server's opt-in setting, not a service limit, so use the driver snippet.
@@ -90,14 +90,17 @@ Title: "Create a vector index and run a similarity query" (`ms.topic: how-to`). 
 - `runs/10-support-ticket-rag-assistant/20261124-204529/05-audit.json`: the agent asked what metadata to store per vector and how to reindex.
 - `runs/08-regulatory-compliance-rag-checker/20261124-190949/events.jsonl`: MCP management tools disabled; the agent needed a driver-only path.
 
+## Resolved
+
+retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. [needs SME confirmation] Is the behavior for non-array vectors as described: a document with a BSON Binary or typed-array vector is stored but silently not indexed, and a Binary query vector returns `BadValue`?
 2. [needs SME confirmation] What are the HNSW and IVF dimension limits and defaults? The quickstarts say 8,000 for HNSW. The concept and half-precision pages say 2,000 uncompressed and 4,000 with half-precision (HNSW/IVF), and 16,000 with product quantization (DiskANN). Please also confirm `efConstruction` >= 2*`m`, `nProbes` <= `numLists`, and the M10/M20 versus M30+ tier guidance.
 3. [needs SME confirmation] What values should the "small production" and "production" tuning columns use, if any?
 4. [needs SME confirmation] Is full-text search (`createSearchIndexes`, the `FullTextSearch` cluster feature) still in preview? The error-table wording depends on this.
-5. [needs SME confirmation] Retryable writes: draft 072 says the snippet needs `retryWrites=false` on the connection, and the canonical connection string sets it. Other drafts from this experiment disagree on why. Some say retryable writes are unsupported and cause write errors. Others say Learn makes no such claim. What should the docs say about whether retryable writes are supported and why `retryWrites=false` is set?
-6. [needs SME confirmation] Can a newly created vector index return empty results while it builds, and for how long?
+5. [needs SME confirmation] Can a newly created vector index return empty results while it builds, and for how long?
 
 ## Source drafts
 

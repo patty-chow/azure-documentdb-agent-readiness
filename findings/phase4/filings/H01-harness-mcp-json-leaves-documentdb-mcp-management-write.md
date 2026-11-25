@@ -3,7 +3,7 @@ id: H01
 title: "Harness mcp.json leaves documentdb-mcp management/write tools off, so vector-index requirements are scored as tool_unavailable"
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
-status: ready
+status: needs_sme
 hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P0
 sample_count: 36
@@ -96,7 +96,7 @@ else:
 2. Is turning on write and management tools against the shared experiment cluster acceptable to whoever owns that cluster?
 3. Every `documentdb_create_index` call was refused before validation, so it is untested whether the tool accepts a `cosmosSearch` vector index (`vector-ivf`, `vector-hnsw`, `vector-diskann`) end to end. [needs SME confirmation] Can a documentdb-mcp maintainer confirm, so the re-run is not blocked by a second failure?
 
-None of the reviewer's SME-flagged claims (change-stream limits, `$jsonSchema` enum support, 16500/429 behaviour, driver version floors, HNSW/IVF limits) or the retryWrites disagreement appear in this PR.
+None of the reviewer's SME-flagged claims (change-stream limits, `$jsonSchema` enum support, 16500/429 behaviour, driver version floors, HNSW/IVF limits) appear in this PR. The retryWrites question is answered (2026-11-25, see findings/phase4/DECISIONS.md: retryable writes are not supported and `retrywrites=false` is required) and does not touch this PR.
 
 ## Source drafts
 

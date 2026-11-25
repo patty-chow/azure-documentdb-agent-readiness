@@ -8,7 +8,7 @@ priority: P1
 sample_count: 58
 member_drafts:
   - 080-develop-and-test-documentdb-apps-without-a-live-cluster-loca.md
-open_questions: 5
+open_questions: 4
 ---
 
 # Add a "Test your Azure DocumentDB application" page
@@ -54,7 +54,7 @@ Its Learn searches for testing guidance found nothing.
    - A CI job with **no Azure secrets** for unit tests on every PR, and a second job running the pinned container as a service, with credentials from non-production CI variables.
    - README "Testing" template text, and a table of what still needs a live cluster: index verification, vector and text search parity, `explain()` plans, Microsoft Entra ID auth.
 
-For cloud connection strings, link the quickstarts' `mongodb+srv` format rather than restating it.
+For cloud connection strings, link the quickstarts' `mongodb+srv` format rather than restating it. Any connection string this page does show (Tier 2 local container, Tier 3 CI variables) must keep `retrywrites=false`, and the page should explain in one sentence why it is required, with the de-duplication reason: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." Link the connection-string reference for the full explanation rather than restating more than that. Test guidance must not enable `retryWrites` to "make flaky tests pass"; a retried insert can report a duplicate key for a write that succeeded, which a test suite would misread as a bug.
 
 Follow-ups outside this Learn item (separate repos, not part of this ask): the Agent Kit's `skills/local-deployment/local-prod-parity.md` should link this page, and the experiment harness's build and sample-prompt templates should reference it.
 
@@ -68,13 +68,16 @@ Follow-ups outside this Learn item (separate repos, not part of this ask): the A
 
 The run told the agent that no local gateway was running, which discouraged Tier 2. Most findings are Tier 1 failures that this did not cause.
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. Which `cosmosSearch` index kinds and options, and which features (transactions, change streams, `$search`), does the local container support compared with the managed service? [needs SME confirmation]
 2. Does `mongomock-motor` still work for Beanie releases built on PyMongo's async API? [needs SME confirmation]
 3. Which pinned `documentdb-local` tag should CI use? [needs SME confirmation]
-4. Retryable writes: other drafts from this experiment disagree. Some say they are unsupported and must be off; others say Learn makes no such claim. This page should only link the quickstart format, but please give the engineering answer before any testing guidance mentions retries. [needs SME confirmation]
-5. The 58-sample count comes from one run that had harness artifacts. Should it be re-checked before being quoted publicly? [needs SME confirmation]
+4. The 58-sample count comes from one run that had harness artifacts. Should it be re-checked before being quoted publicly? [needs SME confirmation]
 
 ## Source drafts
 

@@ -9,7 +9,7 @@ sample_count: 23
 member_drafts:
   - 074-connect-and-authenticate-canonical-srv-connection-string-exp.md
   - 046-entra-id-mongodb-oidc-and-cosmossearchoptions-how-to-pages-s.md
-open_questions: 6
+open_questions: 5
 ---
 
 # Quickstarts: explain the SRV connection string and add a "Choose an authentication method" section that surfaces the Entra ID samples
@@ -29,7 +29,7 @@ open_questions: 6
 
 ## Why it matters
 
-In one experiment run, gpt-5-mini built 100 sample apps (Node `mongodb`, Mongoose, PyMongo, Motor) with the DocumentDB Agent Kit and the Learn MCP server. All counts come from that run [needs SME confirmation] (see question 5).
+In one experiment run, gpt-5-mini built 100 sample apps (Node `mongodb`, Mongoose, PyMongo, Motor) with the DocumentDB Agent Kit and the Learn MCP server. All counts come from that run [needs SME confirmation] (see question 4).
 
 - **23 distinct samples (24 in-scope findings) filed this gap.** This is reconciled across both drafts: 20 samples from one draft and 4 from the other, with one sample in both. Two more bucketed findings are out of scope (a retry/backoff request, and the PyMongo `cosmosSearchOptions` ask handled in item 4).
 - **Cold answers before grounding** (latest readiness record for each of 101 samples; these reflect model priors, not page defects):
@@ -48,8 +48,9 @@ In one experiment run, gpt-5-mini built 100 sample apps (Node `mongodb`, Mongoos
   - Host: `<cluster>.mongocluster.cosmos.azure.com`.
   - `tls=true`: required.
   - `authMechanism=SCRAM-SHA-256`: native auth (`MONGODB-OIDC` for Entra ID).
-  - `retrywrites=false`: wording per question 1.
+  - `retrywrites=false`: required. Proposed text: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)."
   - `maxIdleTimeMS=120000`: recommended.
+- Explain why `retrywrites=false` is required, with the de-duplication reason (documentdb/documentdb#767). Every quickstart carries the setting today, but no Learn page explains it.
 - Add a Note: "Connection strings from Azure Cosmos DB for MongoDB (RU) do not work with Azure DocumentDB clusters." Tell readers to copy the string from the portal or the CLI, and link the RBAC how-to's "Get cluster credentials" option table.
 
 **2. Quickstarts, new H3 "Choose an authentication method":**
@@ -68,17 +69,17 @@ In one experiment run, gpt-5-mini built 100 sample apps (Node `mongodb`, Mongoos
   - Add the Python imports.
   - Fix TypeScript to `Math.floor((expiresOnTimestamp - Date.now()) / 1000)`.
   - Add JavaScript and Mongoose tabs, or a link to the tutorial.
-- Add Requirements (driver minimums [needs SME confirmation], see question 2), environment variables (`DOCUMENTDB_URI` without credentials, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`) and Troubleshooting:
+- Add Requirements (driver minimums [needs SME confirmation], see question 1), environment variables (`DOCUMENTDB_URI` without credentials, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`) and Troubleshooting:
   - `allowedModes` is missing `MicrosoftEntraID`.
   - The identity is unregistered.
   - The scope is wrong.
-  - `retryWrites` was dropped [needs SME confirmation] (see question 1).
+  - `retryWrites` was dropped or set to `true`: Azure DocumentDB does not support retryable writes; the server does not de-duplicate a retried write (documentdb/documentdb#767), so a retried non-idempotent write can be applied twice. Keep `retrywrites=false`.
   - `ALLOWED_HOSTS` is wrong.
 - Cross-link back to the quickstarts.
 
 **4. `vector-search`, Python coverage** (from 046; fold into the Learn vector-search filing if that lands first):
 - Under the HNSW and IVF tabs, add the Python `db.command({...})` form the DiskANN tab already has (same `createIndexes` document with `kind: "vector-hnsw"` or `"vector-ivf"`).
-- Add one sentence that PyMongo can also pass the spec through `collection.create_index([("<field>", "cosmosSearch")], name=..., cosmosSearchOptions={...})` [needs SME confirmation] (see question 6), and repeat that vectors must be `number[]` to be indexed.
+- Add one sentence that PyMongo can also pass the spec through `collection.create_index([("<field>", "cosmosSearch")], name=..., cosmosSearchOptions={...})` [needs SME confirmation] (see question 5), and repeat that vectors must be `number[]` to be indexed.
 
 Out of scope here:
 - The Agent Kit's OIDC placeholder and host suffix are tracked in Azure/documentdb-agent-kit.
@@ -91,22 +92,21 @@ Out of scope here:
 - `runs/12-cross-border-payment-audit-trail/20261124-201744/doc-gaps.md` ("Node.js Entra (Azure AD) auth snippet for Mongo driver")
 - `runs/16-subscription-billing-engine/20261124-192251/02-readiness.json` (which auth mode a README should lead with; Learn search returned the Bicep pivot)
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
-1. **retryWrites rationale** [needs SME confirmation]: `retrywrites=false` is in the canonical string, but the drafts disagree on why:
-   - One draft calls it required, says retryable writes are unsupported and says omitting it causes write errors.
-   - A related draft says Learn makes no such claim and calls it recommended.
-
-   Please give the engineering answer.
-2. **Driver minimums** [needs SME confirmation]:
+1. **Driver minimums** [needs SME confirmation]:
    - One draft proposes PyMongo 4.7+ (Motor 3.x running on PyMongo 4.7+) and Node.js driver 6.7+ (Mongoose 8.x).
    - `tutorial-nodejs-mongoose` lists tested versions 7.8.0 and 9.12.1.
 
    Which floors should Learn publish?
-3. **`ALLOWED_HOSTS`** [needs SME confirmation]: the RBAC page uses `['*.azure.com']` and the tutorial uses `['*.mongocluster.cosmos.azure.com']`. One draft keeps the first, the other tightens it. Which is correct?
-4. **`global` host** [needs SME confirmation]: when should a quickstart reader use the `global` host form rather than the plain cluster host?
-5. **Counts** [needs SME confirmation]: they come from one run that had harness artifacts. Confirm them before quoting externally.
-6. **PyMongo `create_index` pass-through** [needs SME confirmation]: does PyMongo's `create_index(..., cosmosSearchOptions=...)` produce a valid vector index on a cluster? The draft relies on PyMongo passing extra keyword arguments into the index spec and asks for verification before publishing.
+2. **`ALLOWED_HOSTS`** [needs SME confirmation]: the RBAC page uses `['*.azure.com']` and the tutorial uses `['*.mongocluster.cosmos.azure.com']`. One draft keeps the first, the other tightens it. Which is correct?
+3. **`global` host** [needs SME confirmation]: when should a quickstart reader use the `global` host form rather than the plain cluster host?
+4. **Counts** [needs SME confirmation]: they come from one run that had harness artifacts. Confirm them before quoting externally.
+5. **PyMongo `create_index` pass-through** [needs SME confirmation]: does PyMongo's `create_index(..., cosmosSearchOptions=...)` produce a valid vector index on a cluster? The draft relies on PyMongo passing extra keyword arguments into the index spec and asks for verification before publishing.
 
 ## Source drafts
 

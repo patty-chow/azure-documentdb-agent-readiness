@@ -9,7 +9,7 @@ sample_count: 43
 member_drafts:
   - 040-believes-the-service-is-ru-era-azure-cosmos-db-for-mongodb-p.md
   - 013-believes-the-ru-era-connection-options-apply-replicaset-glob.md
-open_questions: 3
+open_questions: 2
 ---
 
 # Fix retryWrites and the host suffix in the kit (one canonical connection string)
@@ -25,7 +25,7 @@ The kit disagrees with itself, and with the string the portal and Learn publish,
 | `skills/security/security-tls-required.md` | 26 | `retryWrites: true` in the **Correct** block | Same |
 | `skills/local-deployment/local-env-driven-config.md` | 68 | `<cluster>.mongocluster.documentdb.azure.com` | Suffix does not exist; real suffix is `.mongocluster.cosmos.azure.com` |
 | `skills/storage/storage-premium-ssdv2-limitations.md` | 28 | `az documentdb mongo-cluster restore` | CLI group is `az documentdb mongocluster` (no hyphen); fixed in K02, not here |
-| `skills/azure-deployment/SKILL.md` | 288-291 | `retrywrites=false&maxIdleTimeMS=120000`, plus a sentence that the service does not support retryable writes | Only file with the published value; its stated reason is disputed (see Open questions) |
+| `skills/azure-deployment/SKILL.md` | 288-291 | `retrywrites=false&maxIdleTimeMS=120000`, plus a sentence that the service does not support retryable writes | Only file with the published value; its rationale sentence also claims the driver default causes connection errors, which is not established (see Resolved) |
 
 No file names the legacy request-unit product (`*.mongo.cosmos.azure.com`, port `10255`, `ssl=true`, `replicaSet=globaldb`), so an agent that arrives with that prior is never told it belongs to a different service.
 
@@ -49,6 +49,8 @@ mongodb+srv://<username>:<password>@<cluster-name>.mongocluster.cosmos.azure.com
 
 > Copy this string unchanged from the portal (**cluster > Connection strings**) or from `az documentdb mongocluster list-connection-strings --resource-group <rg> --cluster-name <name>`, and pass it to the driver as-is (`new MongoClient(process.env.DOCUMENTDB_URI)`). Do not assemble it by hand and do not override its options (`retrywrites=false`, `maxIdleTimeMS=120000`) in driver options.
 >
+> Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys).
+>
 > **This is not Azure Cosmos DB for MongoDB (RU).** There is no explicit port (SRV) and no replica-set name. `replicaSet=globaldb`, `ssl=true`, port `10255`, `appName=@<account>@` and hosts ending in `.mongo.cosmos.azure.com` belong to that separate service and must not be carried over.
 >
 > Local Docker gateway: `mongodb://localhost:10260/?tls=true&tlsAllowInvalidCertificates=true` (see `documentdb-local-deployment`).
@@ -56,7 +58,7 @@ mongodb+srv://<username>:<password>@<cluster-name>.mongocluster.cosmos.azure.com
 **2. `skills/driver/driver-singleton-client.md` line 26:**
 
 ```js
-new MongoClient(uri, { maxPoolSize: 50, retryWrites: false }) // matches retrywrites=false in the published connection string
+new MongoClient(uri, { maxPoolSize: 50, retryWrites: false }) // required: Azure DocumentDB does not support retryable writes (see documentdb-connection)
 ```
 
 **3. `skills/security/security-tls-required.md` line 26:** `retryWrites: true` -> `retryWrites: false` (same comment).
@@ -67,7 +69,7 @@ new MongoClient(uri, { maxPoolSize: 50, retryWrites: false }) // matches retrywr
 DOCUMENTDB_URI=mongodb+srv://<user>:<password>@<cluster>.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000
 ```
 
-**5. `skills/azure-deployment/SKILL.md` line 291:** keep `retrywrites=false`; replace the rationale sentence with whichever wording engineering confirms (Open question 1). Until then, a neutral version: "This matches the string the portal emits; keep it unless you have verified a different retry configuration (see `documentdb-connection`)."
+**5. `skills/azure-deployment/SKILL.md` line 291:** keep `retrywrites=false`. Replace the rationale sentence with the canonical one-liner (findings/phase4/DECISIONS.md): "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." The current sentence's claim that leaving the driver default causes connection errors is not established and must be dropped.
 
 Not in this PR:
 - The `az documentdb mongo-cluster restore` typo in `skills/storage/storage-premium-ssdv2-limitations.md` line 28 (from draft 040). The reviewer merged the CLI-group fixes into draft 004, so it lands in K02, which replaces the whole restore block (including the stale trailing comment).
@@ -75,9 +77,9 @@ Not in this PR:
 - Adding `az documentdb mongocluster create` / `list-connection-strings` steps and an RU-contrast callout to `azure-deployment/SKILL.md` (draft 040, item 7) goes in the CLI-group PR (K02) and the naming PR (K14).
 - Renaming "Cosmos DB for MongoDB vCore" and the `learn.microsoft.com/azure/cosmos-db/mongodb/vcore/` links in `skills/data-modeling/` (draft 040 follow-up) goes in K14.
 - A kit CI check that rejects host suffixes and `retryWrites` values that disagree with the canonical string (reviewer's missing theme) would keep this from regressing; it is a separate change.
-- `benchmarks/documentdb-sdk-skills/tasks/orders-api-python/environment/reference/app.py` sets `retryWrites=True`; maintainers may want to align it.
+- `benchmarks/documentdb-sdk-skills/tasks/orders-api-python/environment/reference/app.py` sets `retryWrites=True`; it should be changed to `False` for the same reason (separate change).
 
-After this change every `retryWrites` value and every host suffix in connection strings and `MongoClient` options objects under `skills/` agrees with the published string (except `security-entra-rbac.md`, which PR #14 fixes). `azure-deployment/SKILL.md` keeps its `.global.` host form pending Open question 2.
+After this change every `retryWrites` value and every host suffix in connection strings and `MongoClient` options objects under `skills/` agrees with the published string (except `security-entra-rbac.md`, which PR #14 fixes). `azure-deployment/SKILL.md` keeps its `.global.` host form pending Open question 1.
 
 ## Evidence
 
@@ -88,11 +90,14 @@ After this change every `retryWrites` value and every host suffix in connection 
 - `runs/18-chargeback-dispute-multi-agent/20261124-192501/app/.env.example` (RU-style URI shipped, placeholder credentials)
 - `runs/11-preference-center-consent-store/20261124-204614/05-audit.md` (audit recommends `retryWrites=true`)
 
+## Resolved
+
+retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
-1. **Why is `retrywrites=false` in the published string?** [needs SME confirmation] The source drafts disagree. One position: the service does not support retryable writes, and leaving the driver default causes connection or write errors (the current kit sentence). The other: Learn does not present it as a service requirement (the Mongoose quickstart says to verify for your deployment), the open-source engine has retryable-write handling, and Learn's reliability page asks customers to configure driver retries. Please give the engineering answer so the kit states one rationale. The value change in items 1-4 is the same under either position. Draft 013 also proposed adding "Driver-level retries are not a substitute for idempotent application writes" under the connection string; include it only if engineering confirms the second position.
-2. **Host form.** [needs SME confirmation] Draft 040 reports Learn quickstarts show `<cluster>.global.mongocluster.cosmos.azure.com`, and the kit's own `skills/azure-deployment/SKILL.md` line 288 uses that form. Should the kit say both `.global.` and non-global hosts are valid and to keep whichever the portal gives (040's proposed wording), or only show `<cluster>.mongocluster.cosmos.azure.com`?
-3. **PR #14.** Should the `security-entra-rbac.md` suffix fix wait for #14 or land here?
+1. **Host form.** [needs SME confirmation] Draft 040 reports Learn quickstarts show `<cluster>.global.mongocluster.cosmos.azure.com`, and the kit's own `skills/azure-deployment/SKILL.md` line 288 uses that form. Should the kit say both `.global.` and non-global hosts are valid and to keep whichever the portal gives (040's proposed wording), or only show `<cluster>.mongocluster.cosmos.azure.com`?
+2. **PR #14.** Should the `security-entra-rbac.md` suffix fix wait for #14 or land here?
 
 ## Source drafts
 

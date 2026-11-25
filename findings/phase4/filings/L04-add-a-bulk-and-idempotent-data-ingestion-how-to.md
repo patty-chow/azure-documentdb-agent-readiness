@@ -9,7 +9,7 @@ sample_count: 17
 member_drafts:
   - 077-idempotent-seeding-bulk-writes-and-index-migration-cookbook-.md
   - 128-bulk-and-idempotent-ingestion-at-scale-bulkwrite-batching-de.md
-open_questions: 5
+open_questions: 4
 ---
 
 # Add a bulk and idempotent data ingestion how-to for Azure DocumentDB
@@ -38,7 +38,7 @@ We had an AI agent (gpt-5-mini, with the Azure DocumentDB Agent Kit and the Docu
 - Looped single-document upserts with no batching or backoff; called `bulk_write` from prior knowledge with no `BulkWriteError` handling.
 - Invented ad hoc canonical keys (parameter hashes, sorted pair keys, composite option-chain keys) and did not canonicalize identifiers at ingest.
 - Left index creation implicit in ODM startup; stored sessions without a TTL index; skipped a target-database check and a clean-up section.
-- Imported RU-based throttling ideas (request units, 429 handling) from Azure Cosmos DB for MongoDB pages. Azure DocumentDB has no request units; whether it ever returns 429/16500 is open question 2. [needs SME confirmation]
+- Imported RU-based throttling ideas (request units, 429 handling) from Azure Cosmos DB for MongoDB pages. Azure DocumentDB has no request units; whether it ever returns 429/16500 is open question 1. [needs SME confirmation]
 
 Seed scripts are the first code a developer runs against a new cluster and the most-copied code in any sample, so this gap spreads.
 
@@ -59,7 +59,7 @@ One page, about two screens, with PyMongo and Node.js snippets:
        except BulkWriteError as e:
            if [w for w in e.details['writeErrors'] if w['code'] != 11000]: raise
    ```
-6. **Retries and capacity.** The documented connection string sets `retrywrites=false`, so the driver does not retry writes for you. Show application-level retry with exponential backoff and jitter for transient errors (network errors, failover), safe only because the writes are idempotent. For large loads, watch CPU, memory and IOPS for the tier and scale the tier or storage if needed, rather than looking for request-unit throttling.
+6. **Retries and capacity.** Explain why `retrywrites=false` is required, with the de-duplication reason, since no Learn page states it today. Suggested text: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." Then show application-level retry with exponential backoff and jitter for transient errors (network errors, failover), safe only because the writes are idempotent. For large loads, watch CPU, memory and IOPS for the tier and scale the tier or storage if needed, rather than looking for request-unit throttling.
 7. **Index order.** Build the unique index that enforces idempotency first, on the empty collection with `blocking: true`; it fails if duplicates exist and blocks writes while it builds. Build other secondary and cosmosSearch vector indexes after a large initial load. In production, create indexes in a migration step, not implicitly at app startup.
 8. **TTL for ephemeral data.** `createIndex({createdAt:1}, {expireAfterSeconds: 3600})`; the index must be single-field and the field a BSON Date. Link the TTL entry in the compatibility table.
 9. **Embeddings during ingest.** Rate-limit and cache embedding-provider calls; store vectors as `number[]`, not BSON binary, so cosmosSearch indexes pick them up.
@@ -81,13 +81,16 @@ Also ask the owners of the RU-based Cosmos DB for MongoDB throttling pages to ad
 - `runs/18-returns-refund-workflow-orchestration/20261124-185415/doc-gaps.md` (no database-name check or confirm flag)
 - `runs/10-drug-formulary-semantic-search/20261124-194440/05-audit.json` (embedding provider rate limits)
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
-1. [needs SME confirmation] Why `retrywrites=false`. One position, held by source draft 128 and by several kit drafts, is that retryable writes are not supported and enabling them causes write errors (draft 077 states only that the string sets `retrywrites=false`). Another draft in this set says Learn does not claim they are unsupported. Which is correct, so the page can state the reason?
-2. [needs SME confirmation] Whether Azure DocumentDB ever returns error 16500 or HTTP 429 under load, so the page can say what transient errors to retry on.
-3. [needs SME confirmation] Recommended starting batch sizes per M-series tier. One draft suggested 500 to 1,000 operations; no published source supports a number.
-4. [needs SME confirmation] That client-level `MongoClient.bulk_write` / `client.bulkWrite` fail against the service while collection-level bulk APIs succeed, for the driver versions the quickstarts use.
-5. [needs SME confirmation] Whether the unique-index guidance (foreground build, blocks writes) and the `blocking: true` option are current for all supported server versions.
+1. [needs SME confirmation] Whether Azure DocumentDB ever returns error 16500 or HTTP 429 under load, so the page can say what transient errors to retry on.
+2. [needs SME confirmation] Recommended starting batch sizes per M-series tier. One draft suggested 500 to 1,000 operations; no published source supports a number.
+3. [needs SME confirmation] That client-level `MongoClient.bulk_write` / `client.bulkWrite` fail against the service while collection-level bulk APIs succeed, for the driver versions the quickstarts use.
+4. [needs SME confirmation] Whether the unique-index guidance (foreground build, blocks writes) and the `blocking: true` option are current for all supported server versions.
 
 ## Source drafts
 

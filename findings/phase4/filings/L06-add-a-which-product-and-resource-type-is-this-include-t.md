@@ -8,7 +8,7 @@ priority: P1
 sample_count: 49
 member_drafts:
   - 073-product-and-resource-type-disambiguation-microsoft-documentd.md
-open_questions: 4
+open_questions: 3
 ---
 
 # Add a "Which product and resource type is this?" include to the Azure DocumentDB overview and quickstarts
@@ -60,6 +60,10 @@ Insert it directly under the H1 intro paragraph of every page listed above. Sugg
 > | Authentication | Native (SCRAM-SHA-256) users or Microsoft Entra ID | Account keys or Entra ID |
 >
 > Copy your connection string from **Connection strings** in the portal, or from `az documentdb mongocluster list-connection-strings`, and pass it to your MongoDB driver unchanged. It uses the `mongodb+srv` scheme and includes `tls=true`, `authMechanism=SCRAM-SHA-256`, `retrywrites=false` and `maxIdleTimeMS=120000`. Don't split out the host and port, and don't add `replicaSet`.
+>
+> Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys).
+
+The last paragraph of the include is an explicit ask: explain why `retrywrites=false` is required, with the de-duplication reason. No Learn page (limitations, compatibility, connect, quickstarts) states the reason today, so keep this paragraph even if the comparison table is trimmed. Don't describe `retrywrites=false` as a recommendation or a sample choice, and don't claim that `retryWrites=true` causes connection errors; that isn't established.
 
 ### 2. Overview: move "Naming and history" up
 
@@ -98,12 +102,15 @@ Run folders from the experiment:
 - `runs/14-customer-complaint-classifier/20261124-201931/doc-gaps.md`: `.env.example` shipped with a Cosmos DB account host pattern
 - `runs/19-care-coordination-multi-agent/20261124-195730/doc-gaps.md`: legacy host, port 10255 and `replicaSet=globaldb` confusion
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
-1. **Retryable writes.** [needs SME confirmation] The connection string the portal generates includes `retrywrites=false`. Our draft set disagrees on why. Some drafts state retryable writes are unsupported and cause write errors if enabled. Another notes that Learn doesn't actually say they're unsupported. The include above only says "use the string as generated" and makes no claim either way. Could engineering confirm the actual behavior, so the include can state the reason accurately or stay silent?
-2. **Global read-write host.** [needs SME confirmation] Clusters with replicas also expose `<cluster>.global.mongocluster.cosmos.azure.com`. Should the table mention it, and is the wording "global read-write host for clusters with replicas" correct?
-3. **Production guidance in the Bicep/Terraform note.** [needs SME confirmation] Is "enable high availability" (for example `targetMode: 'ZoneRedundantPreferred'`) the recommended production default, and which tiers should be named as examples?
-4. **Authentication row.** [needs SME confirmation] Confirm that the RU-column authentication summary (account keys or Entra ID) is accurate enough for a comparison table, or drop the row.
+1. **Global read-write host.** [needs SME confirmation] Clusters with replicas also expose `<cluster>.global.mongocluster.cosmos.azure.com`. Should the table mention it, and is the wording "global read-write host for clusters with replicas" correct?
+2. **Production guidance in the Bicep/Terraform note.** [needs SME confirmation] Is "enable high availability" (for example `targetMode: 'ZoneRedundantPreferred'`) the recommended production default, and which tiers should be named as examples?
+3. **Authentication row.** [needs SME confirmation] Confirm that the RU-column authentication summary (account keys or Entra ID) is accurate enough for a comparison table, or drop the row.
 
 ## Source drafts
 

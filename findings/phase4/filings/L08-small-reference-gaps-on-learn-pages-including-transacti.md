@@ -42,6 +42,7 @@ The cost was the same each time:
 **A. `how-to-transactions.md`.** Add a "Limits and retry behavior" section after *Roll back a transaction*:
 - "A transaction must complete within 30 seconds of starting, or the server aborts it. See [Service limits](limitations#mongodb-execution-limitations)." List any other transaction limits, such as operations or documents per transaction, cross-shard behaviour or size. If the only limits are the lifetime and the 16 MB document limit, say so.
 - Explain the retry pattern the engine supports for transactions (see the open questions), and advise keeping transactions short: few documents, and no network calls inside the callback.
+- Explain why `retrywrites=false` is required, with the de-duplication reason, so readers do not expect driver-level retries to cover transactional or single-document writes. Suggested text: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." Link this from the limitations page as well.
 - State whether `withTransaction()` handles retries for the user. If it does, say that an explicit loop is only needed with `startTransaction()`/`commitTransaction()`.
 
 **A. `limitations.md`.** Give transactions their own `### Transactions` heading so that search finds it, and link it back to the how-to.
@@ -85,14 +86,14 @@ Optionally, cross-link the existing cumulative examples on `$stdDevPop` and `$co
 - `runs/13-algorithmic-trade-journal/20261124-191835/05-audit.json` and `app/app/aggregations.py` (client-side drawdown)
 - `runs/09-crypto-wallet-activity-analyzer/20261124-191004/doc-gaps.md` (server-side z-score gap)
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. [needs SME confirmation] Are there transaction limits beyond the 30-second lifetime, such as operations or documents per transaction, total size, or cross-shard transactions?
-2. [needs SME confirmation] Which retry behaviour should the transactions page recommend? Two things need an engineering answer before either is documented:
-   - whether the engine returns the `TransientTransactionError` and `UnknownTransactionCommitResult` error labels that drivers use to retry a transaction or its commit;
-   - how that interacts with retryable writes.
-
-   Other filings from this experiment disagree on retryable writes. One position is that the recommended `retrywrites=false` setting is required and that retryable writes cause errors. The other is that Learn does not state that retryable writes are unsupported.
+2. [needs SME confirmation] Which retry behaviour should the transactions page recommend? Specifically, whether the engine returns the `TransientTransactionError` and `UnknownTransactionCommitResult` error labels that drivers use to retry a transaction or its commit. (Retryable writes themselves are settled; see Resolved.)
 3. [needs SME confirmation] TTL semantics on Azure DocumentDB: is it limited to single-field indexes, are non-Date values ignored, how is a missing field handled, and how long can background deletion lag?
 4. [needs SME confirmation] Does the suggested `$setWindowFields` example run as written on Azure DocumentDB? In particular, are chained stages, `$last` in `$group` and the cumulative `documents` window on `$sum` and `$max` supported?
 5. [needs SME confirmation] Is `sortBy` required for every window other than `documents: ["unbounded","unbounded"]`? Is 120 seconds the default query execution limit that cost guidance should cite?

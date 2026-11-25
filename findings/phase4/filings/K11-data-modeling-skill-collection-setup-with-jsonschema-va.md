@@ -11,7 +11,7 @@ member_drafts:
   - 071-swift-message-sample-stores-monetary-amounts-as-float-withou.md
   - 123-data-modeling-document-design-conventions-and-query-patterns.md
   - 102-write-path-integrity-non-idempotent-and-non-atomic-writes-in.md
-open_questions: 3
+open_questions: 2
 ---
 
 # data-modeling skill: collection setup with $jsonSchema validators, Decimal128 money, BSON dates, and idempotent atomic writes
@@ -105,7 +105,7 @@ Use two collections. `raw_turns` holds one document per turn, with a validator, 
 
 ### 7. New `data-modeling/model-idempotent-atomic-writes.md` (HIGH)
 
-Use draft 102's rule text as is, with one change: replace its first sentence ("Azure DocumentDB does not support retryable writes ...") with "The documented connection string sets `retrywrites=false`, so do not count on the driver to retry writes. Every retry your application issues must be safe to repeat." Do not state whether the service supports retryable writes (see Open questions). Sections:
+Use draft 102's rule text as is. Its first sentence ("Azure DocumentDB does not support retryable writes ...") is correct; replace it with the canonical one-liner from `findings/phase4/DECISIONS.md`: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." Follow it with: "Every retry your application issues must be safe to repeat." Cite documentdb/documentdb#767 for the de-duplication gap. Do not claim that `retryWrites=true` causes connection errors; that is not established. Sections:
 
 - Unique index on the business key, partial when the key is optional, with a note to test partial unique indexes on your cluster.
 - Upsert with `$setOnInsert` for create-once fields such as `createdAt`.
@@ -132,7 +132,7 @@ Add one line: "TTL suits short-lived operational logs, not ledgers or compliance
 
 Add one Rules line pointing to `documentdb-data-modeling › model-idempotent-atomic-writes` for retry-safe and concurrent writes.
 
-Not in this PR: the `retryWrites` values in `connection/SKILL.md`, `driver/driver-singleton-client.md` and `security/security-tls-required.md` are handled in a separate connection-string PR. A suggested `query-optimization` rule on `$setWindowFields` support is also left for a follow-up. The suggestion that finance sample prompts require Decimal128 belongs to the experiment harness (abinav2307/azure-documentdb-agent-readiness), which is a colleague's repository; coordinate that with them rather than filing it here. The same applies to fixing the generated 02-swift sample itself (adopt Decimal128, or add a README precision caveat); re-running it after this rule lands should produce that without a manual edit.
+Not in this PR: the `retryWrites: true` values in `connection/SKILL.md`, `driver/driver-singleton-client.md` and `security/security-tls-required.md` must become `retrywrites=false` (retryable writes are not supported; see `findings/phase4/DECISIONS.md`) and are handled in a separate connection-string PR. A suggested `query-optimization` rule on `$setWindowFields` support is also left for a follow-up. The suggestion that finance sample prompts require Decimal128 belongs to the experiment harness (abinav2307/azure-documentdb-agent-readiness), which is a colleague's repository; coordinate that with them rather than filing it here. The same applies to fixing the generated 02-swift sample itself (adopt Decimal128, or add a README precision caveat); re-running it after this rule lands should produce that without a manual edit.
 
 ## Evidence
 
@@ -143,11 +143,14 @@ Not in this PR: the `retryWrites` values in `connection/SKILL.md`, `driver/drive
 - `runs/11-preference-center-consent-store/20261124-204614/05-audit.json`: find-mutate-save. The audit attributes optimistic concurrency to this skill.
 - `runs/08-dynamic-segmentation-engine/20261124-204222/05-audit.json`: `_etag`/`If-Match` recommended from the Cosmos DB NoSQL page.
 
+## Resolved
+
+retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. [needs SME confirmation] The Learn `$jsonSchema` page lists `enum` (and `additionalProperties`, `allOf`/`anyOf`/`oneOf`/`not`, `patternProperties`, `min/maxProperties`, `dependencies`) as unsupported. Is that current? The rule uses `pattern`, which works either way. If `enum` is supported, the rule should say so.
-2. [needs SME confirmation] Retryable writes. The documented connection string uses `retrywrites=false`. One source draft and part of the kit (`azure-deployment/SKILL.md`) say Azure DocumentDB does not support retryable writes. Other analysis from the same experiment notes that Learn does not clearly state this. What is the engineering answer, and why does the canonical string set `retrywrites=false`? This PR's wording deliberately avoids taking a position.
-3. [needs SME confirmation] Learn says partial indexes do not support `UNIQUE` "unless the filter qualifies". Is `{ unique: true, partialFilterExpression: { key: { $exists: true } } }` accepted? If it is not, the rule should tell agents to make the key required instead.
+2. [needs SME confirmation] Learn says partial indexes do not support `UNIQUE` "unless the filter qualifies". Is `{ unique: true, partialFilterExpression: { key: { $exists: true } } }` accepted? If it is not, the rule should tell agents to make the key required instead.
 
 ## Source drafts
 

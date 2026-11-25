@@ -10,7 +10,7 @@ member_drafts:
   - 081-agent-kit-sample-scaffold-conventions-complete-env-example-w.md
   - 012-believes-the-connection-string-is-the-legacy-cosmos-db-for-m.md
   - 087-sample-conventions-page-canonical-env-example-env-var-names-.md
-open_questions: 4
+open_questions: 3
 ---
 
 # Add a sample-scaffold conventions skill: canonical `.env.example` contract, README checklist and helpers
@@ -60,6 +60,7 @@ Body: a "Before you publish" checklist linking to the files below, and the core 
 ```dotenv
 # ---- Azure DocumentDB (required) ----
 # Copy from portal -> cluster -> Connection strings, or `az documentdb mongocluster list-connection-strings`.
+# Keep retrywrites=false: Azure DocumentDB does not support retryable writes (the server does not de-duplicate a retried write).
 DOCUMENTDB_URI=mongodb+srv://<user>:<pw>@<cluster>.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000
 DATABASE_NAME=sample_app
 # Local gateway container only; never true against a managed cluster
@@ -99,6 +100,7 @@ ENABLE_MANAGEMENT_TOOLS=false
 - Names in `env.example` are canonical; no `MODEL`, `MODEL_NAME`, `OPENAI_MODEL`, `EMBEDDING_DIM`, `DB_NAME`, `MONGODB_URI` drift.
 - Placeholders only; `.env` gitignored, `.env.example` committed; secrets never stored in documents.
 - **Connection placeholder rule:** use the shape above. Never write a cloud `mongodb://` URI with a port, `replicaSet=globaldb`, an account key, or a `.mongo.cosmos.azure.com` / `.documents.azure.com` host; those belong to Azure Cosmos DB RU-based accounts, a different service. Prefer `tls=true` over the legacy `ssl=true` alias. `localhost:10260` is the local gateway only.
+- **retryWrites rule:** Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). Helpers and samples never set `retryWrites: true` in client options (see documentdb/documentdb#767; decision in findings/phase4/DECISIONS.md).
 - Optional lint for a sample's test script:
   ```bash
   diff <(grep -rhoE 'process\.env\.[A-Z0-9_]+|os\.(getenv|environ(\.get)?)\(["'"'"'][A-Z0-9_]+' src scripts | grep -oE '[A-Z][A-Z0-9_]+' | sort -u) <(grep -oE '^#? ?[A-Z][A-Z0-9_]+=' .env.example | tr -d '# =' | sort -u)
@@ -154,12 +156,15 @@ Run folders in the experiment repository (`runs/`):
 - `runs/18-sanctions-list-screening-agent/20261124-202645/`: `dimensions` hard-coded in index creation (`05-audit.json`)
 - `runs/11-visual-similarity-search-image-embeddings/20261124-184225/`: MCP management-tools refusal in `events.jsonl`; flag absent from `.env.example`
 
+## Resolved
+
+retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
-1. **retryWrites.** The published connection string carries `retrywrites=false`, and this PR keeps it. The source drafts disagree on why: one says retryable writes are not supported and `retryWrites=true` causes write errors; another says Learn does not state they are unsupported. Which is correct, and what one-line reason should the kit give? [needs SME confirmation]
-2. **Global read-write host.** One draft proposed a template comment pointing clusters with cross-region replication to a `<cluster>.global.mongocluster.cosmos.azure.com` string for writes, taken from the kit's high-availability skill. It is left out here until the host form and guidance are confirmed. [needs SME confirmation]
-3. **Default models.** Are `gpt-4o-mini` and `text-embedding-3-small` / 1536 acceptable sample defaults for the kit, or should the kit name none and require `CHAT_MODEL` / `EMBEDDING_MODEL` to be set?
-4. **Variable names.** The drafts proposed `DATABASE_NAME` vs `DB_NAME`, `LLM_PROVIDER` vs `MODEL_PROVIDER`, and separate `AZURE_OPENAI_CHAT_DEPLOYMENT` / `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` vs reusing `CHAT_MODEL` / `EMBEDDING_MODEL` as deployment names. This PR picks `DATABASE_NAME`, `LLM_PROVIDER` and the reuse. Sibling PRs currently use other database-name variables (`DOCUMENTDB_DATABASE` in K07, `DB_NAME` in K08, K09 and K37); one name must be chosen and applied across all of them before filing. Do maintainers prefer otherwise?
+1. **Global read-write host.** One draft proposed a template comment pointing clusters with cross-region replication to a `<cluster>.global.mongocluster.cosmos.azure.com` string for writes, taken from the kit's high-availability skill. It is left out here until the host form and guidance are confirmed. [needs SME confirmation]
+2. **Default models.** Are `gpt-4o-mini` and `text-embedding-3-small` / 1536 acceptable sample defaults for the kit, or should the kit name none and require `CHAT_MODEL` / `EMBEDDING_MODEL` to be set?
+3. **Variable names.** The drafts proposed `DATABASE_NAME` vs `DB_NAME`, `LLM_PROVIDER` vs `MODEL_PROVIDER`, and separate `AZURE_OPENAI_CHAT_DEPLOYMENT` / `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` vs reusing `CHAT_MODEL` / `EMBEDDING_MODEL` as deployment names. This PR picks `DATABASE_NAME`, `LLM_PROVIDER` and the reuse. Sibling PRs currently use other database-name variables (`DOCUMENTDB_DATABASE` in K07, `DB_NAME` in K08, K09 and K37); one name must be chosen and applied across all of them before filing. Do maintainers prefer otherwise?
 
 ## Source drafts
 

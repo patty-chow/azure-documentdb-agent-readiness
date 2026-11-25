@@ -9,7 +9,7 @@ sample_count: 42
 member_drafts:
   - 076-reliability-and-write-semantics-on-azure-documentdb-retrywri.md
   - 124-transactions-concurrency-control-write-durability-and-idempo.md
-open_questions: 7
+open_questions: 6
 ---
 
 # Add a write semantics, transactions and concurrency page for Azure DocumentDB (retrywrites, write concern, idempotency)
@@ -18,7 +18,7 @@ open_questions: 7
 
 Learn covers pieces of this on separate pages, which disagree on retryable writes:
 
-- **Connection string.** Every quickstart (for example `quickstart-nodejs`) shows `retrywrites=false&maxIdleTimeMS=120000` with no explanation. `tutorial-nodejs-mongoose` has a "Why keep retryWrites=false?" section that calls it a sample choice, not a service requirement. `azure/reliability/reliability-documentdb` ("Resilience to transient faults") advises exponential backoff and idempotent writes, but also says to "use MongoDB drivers that support automatic retry handling". Readers cannot tell whether retryable writes are unsupported, discouraged or optional.
+- **Connection string.** Every quickstart (for example `quickstart-nodejs`) and the Entra ID page show `retrywrites=false&maxIdleTimeMS=120000` with no explanation. `tutorial-nodejs-mongoose` has a "Why keep retryWrites=false?" section that presents it as a sample choice rather than a service requirement, which is wrong: Azure DocumentDB does not support retryable writes, and `retrywrites=false` is required. `azure/reliability/reliability-documentdb` ("Resilience to transient faults") advises exponential backoff and idempotent writes, but also says to "use MongoDB drivers that support automatic retry handling". No Learn page (`limitations`, `compatibility-query-language`, the connect pages) states that retryable writes are unsupported or explains why: the server does not de-duplicate a retried write (documentdb/documentdb#767), so a driver retry can apply a non-idempotent write twice.
 - **Transactions.** `how-to-transactions` shows the Node.js `withTransaction()` pattern; Python and Java get only manual start/commit. `limitations` states a 30-second lifetime. Nothing says when to avoid a transaction, what it costs across shards, or how the driver's `withTransaction()` retry loop (120-second default) interacts with the 30-second lifetime and `retrywrites=false`.
 - **Write and read concern.** `high-availability` and the reliability page document synchronous in-region HA and asynchronous cross-region replicas. No page says which client `w`/`j`/`wtimeoutMS`, `readConcern` or `readPreference` values are honored, ignored or rejected. `compatibility-query-language` lists only `getDefaultRWConcern` (supported) and `setDefaultRWConcern` (not supported).
 - **Concurrency and bulk writes.** No page has an application retry sample, an optimistic-concurrency or job-lease recipe, or change-stream deduplication guidance. The compatibility page marks the `bulkWrite` command "No" while `limitations` allows 25,000 writes per batch.
@@ -27,7 +27,7 @@ Learn covers pieces of this on separate pages, which disagree on retryable write
 
 We ran 100 Azure DocumentDB sample prompts through a coding agent (gpt-5-mini) with the DocumentDB Agent Kit and the DocumentDB, Azure and Learn MCP servers. 64 audit findings from 42 of the 100 samples trace to this gap. Counts are from one experiment run. With no page to cite, the agent:
 
-- set `retryWrites=true` in at least 19 generated apps, unlike the documented connection string;
+- set `retryWrites=true` in at least 19 generated apps, unlike the documented connection string; because the server does not de-duplicate retried writes, those apps can apply a retried non-idempotent write twice;
 - shipped no application-level retry in most samples;
 - left write and read concern at driver defaults in ledger samples, and twice recorded "client writeConcern is ignored" as fact from a Cosmos DB (RU) page;
 - versioned records by reading the max and inserting max+1, and used unconditional `updateOne` calls, so concurrent writers overwrite each other;
@@ -39,7 +39,7 @@ We ran 100 Azure DocumentDB sample prompts through a coding agent (gpt-5-mini) w
 
 Add a page, suggested slug `azure/documentdb/write-semantics-transactions-concurrency`, that builds on the "Resilience to transient faults" section of `reliability-documentdb` and links to it rather than restating it. Link the new page from the quickstarts (`quickstart-nodejs`, `quickstart-python`, `quickstart-dotnet`), `how-to-connect-mongo-shell`, `tutorial-nodejs-mongoose`, `change-streams`, `how-to-transactions`, `compatibility-query-language`, `limitations`, `high-availability` and `reliability-documentdb`. Sections:
 
-1. **Retryable writes.** One engineering-confirmed statement of whether the service supports driver retryable writes, what happens if a client enables them, and why the connection string sets `retrywrites=false`; say what the driver does on a transient failure when they are off, and state the consequence (the application owns write retries, so make writes idempotent and wrap them in a bounded retry). Put the note directly under the connection string and mirror it in the quickstarts and the Mongoose tutorial. Reword the reliability page's "use MongoDB drivers that support automatic retry handling" line so it no longer appears to contradict `retrywrites=false` (for example: drivers may retry reads and server selection, but write retries belong in application code).
+1. **Retryable writes.** State that Azure DocumentDB does not support retryable writes and that `retrywrites=false` is required, and explain why, with the de-duplication reason: the server does not de-duplicate a retried write (documentdb/documentdb#767), so a driver with `retryWrites=true` gets no exactly-once protection and a retried non-idempotent write (for example `$inc`) can be applied twice, while a retried insert can report a duplicate key for a write that succeeded. Suggested wording: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." Do not claim that `retryWrites=true` causes connection errors; that is not established. Say what the driver does on a transient failure when retryable writes are off, and state the consequence (the application owns write retries, so make writes idempotent and wrap them in a bounded retry). Put the note directly under the connection string, mirror it in the quickstarts and the Entra ID page, add it to `limitations`, and replace the Mongoose tutorial's "sample choice" framing with it. Reword the reliability page's "use MongoDB drivers that support automatic retry handling" line so it no longer appears to contradict `retrywrites=false` (for example: drivers may retry reads and server selection, but write retries belong in application code).
 2. **Application retry recipes.** PyMongo (for example a tenacity decorator) and Node.js/Mongoose `withRetry()` helpers used at the repository layer: initial delay 100-250 ms, factor 2, full jitter, at most 4-5 attempts. What to retry (network/timeout errors, `TransientTransactionError`, `UnknownTransactionCommitResult`, write conflicts) and what never to retry blindly (duplicate key `11000`, validation, auth). Describe what clients see on a saturated cluster, and note that `429`/`Retry-After` handling belongs to the embedding and LLM endpoints that RAG samples call, not to the cluster, if engineering confirms the cluster does not return it. Pair retries with idempotency keys or unique indexes; for unordered `bulkWrite`, retry only the transient `writeErrors`.
 3. **Write concern, read concern, read preference.** Default values, which values are honored, and the durability each gives with and without in-region HA and with cross-region replicas. Tie it to the documented replication model (synchronous in-region HA; asynchronous cross-region replicas reached through a separate replica connection string). Add a decision table with recommended defaults for ledger writes versus analytics reads, a `db.adminCommand({ getDefaultRWConcern: 1 })` one-liner to show the cluster defaults, and a note that `setDefaultRWConcern` is not supported.
 4. **Transactions.** Scope (including cross-shard), cost and limits beyond the 30-second lifetime, how `withTransaction()` retries relate to that lifetime and to `retrywrites=false`, and when to prefer a single-document atomic update (`findOneAndUpdate` with `$inc`/`$set`, or an upsert), for example on high-throughput ingestion or read-heavy vector-search paths. Show the Node.js `withTransaction()` example with a note that every operation in the callback must receive `{ session }`, plus the Mongoose equivalent. Add Python `with_transaction()` and Java `withTransaction()` snippets to `how-to-transactions`.
@@ -47,7 +47,7 @@ Add a page, suggested slug `azure/documentdb/write-semantics-transactions-concur
 6. **Change-stream consumers and bulk loads.** Make consumers idempotent: persist the resume token to a checkpoint collection after each batch and resume with `resumeAfter`, deduplicate by event id (a unique index on an idempotency key with an upsert-based handler) instead of applying a blind `$inc`; link `change-streams`. Clarify the `bulkWrite: No` row, give a batch-size range per tier, and never exceed the documented 25,000 writes per batch, and advise building unique indexes in an idempotent deployment or migration script rather than at worker startup, since the build blocks writes.
 7. **Operator availability by server version.** Point to the compatibility table, give a detection one-liner (`db.version()` or `db.runCommand({ buildInfo: 1 })`), and show a worked server-side `$setWindowFields` running-max pipeline.
 
-Related: the Agent Kit contradicts itself on `retryWrites` (its deployment skill says `retrywrites=false` is required, while other skills use `retryWrites: true`). That fix is tracked separately against Azure/documentdb-agent-kit; once this page exists the kit can link to it.
+Related: the Agent Kit contradicts itself on `retryWrites` (its deployment skill says `retrywrites=false` is required, while three other skill files use `retryWrites: true`). That fix is tracked separately against Azure/documentdb-agent-kit using the same wording as above; once this page exists the kit can link to it.
 
 ## Evidence
 
@@ -62,15 +62,18 @@ Run folders in the experiment repository:
 - `runs/13-algorithmic-trade-journal/20261124-191835` (`$setWindowFields` availability not discoverable; drawdown computed client-side)
 - `runs/19-proactive-outreach-orchestration/20261124-205844` ("writeConcern ignored" recorded as fact; resume tokens not persisted)
 
+## Resolved
+
+retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
-1. [needs SME confirmation] Retryable writes. Two positions circulate: that the service does not support retryable writes and leaving them on causes errors (the Agent Kit's deployment skill), and that `retrywrites=false` is a sample choice the service does not require (the Mongoose tutorial). What is the engineering answer, and what happens if a client sets `retryWrites=true`?
-2. [needs SME confirmation] Which `w`/`j`/`wtimeoutMS`, `readConcern` and `readPreference` values are honored, and what are the defaults?
-3. [needs SME confirmation] Does the service ever return 429 or error 16500 under load, or only timeouts and latency?
-4. [needs SME confirmation] Are multi-document transactions supported across shards, at what cost, and with what size limits?
-5. [needs SME confirmation] Does the compatibility page's `bulkWrite: No` row refer only to the MongoDB 8.0 server command, with the driver's `collection.bulkWrite()` working?
-6. [needs SME confirmation] Is there any server-side `_etag` or equivalent concurrency token?
-7. [needs SME confirmation] What batch-size range fits each tier, and can change-stream events replay after a resume (including multishard streams, and are they GA)?
+1. [needs SME confirmation] Which `w`/`j`/`wtimeoutMS`, `readConcern` and `readPreference` values are honored, and what are the defaults?
+2. [needs SME confirmation] Does the service ever return 429 or error 16500 under load, or only timeouts and latency?
+3. [needs SME confirmation] Are multi-document transactions supported across shards, at what cost, and with what size limits?
+4. [needs SME confirmation] Does the compatibility page's `bulkWrite: No` row refer only to the MongoDB 8.0 server command, with the driver's `collection.bulkWrite()` working?
+5. [needs SME confirmation] Is there any server-side `_etag` or equivalent concurrency token?
+6. [needs SME confirmation] What batch-size range fits each tier, and can change-stream events replay after a resume (including multishard streams, and are they GA)?
 
 ## Source drafts
 

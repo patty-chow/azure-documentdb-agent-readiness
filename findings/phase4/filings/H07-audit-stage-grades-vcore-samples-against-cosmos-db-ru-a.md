@@ -9,7 +9,7 @@ priority: P1
 sample_count: 57
 member_drafts:
   - 107-pipeline-audit-rubric-imports-cosmos-db-nosql-ru-api-concept.md
-open_questions: 2
+open_questions: 1
 ---
 
 # Audit stage grades vCore samples against Cosmos DB RU-API practices and unrequested accelerators
@@ -24,7 +24,7 @@ The audit stage (`prompts/auditor.md`, `factory/agents/auditor.py::audit_app`) m
 2. **Readiness accelerators become hard requirements.** A sample that stores no embeddings and whose prompt asks for plain lookups plus an LLM is marked `violated` three times for missing vector-index fields, DiskANN/HNSW tuning and a semantic cache. Its own evidence text says "the repo does not store embeddings".
 3. **Conditional advice becomes a violation.** Practices worded "where appropriate" or "if you need JSON Schema enforcement" are graded `violated` on demo-scale samples.
 4. **Duplicates.** One run has two `violated` checks for the same $jsonSchema gap under two topics, citing the same URL.
-5. **Inconsistent retryWrites grading.** Some checks treat `retryWrites=false` as the standard, others only ask that `retryWrites=true` be logged as a decision, and some audits say both (5 audits assert both `retryWrites=true` and `retryWrites=false`).
+5. **Inconsistent retryWrites grading.** Some checks treat `retrywrites=false` as the standard, others only ask that `retryWrites=true` be logged as a decision, and some audits say both (5 audits assert both `retryWrites=true` and `retryWrites=false`). Only the first is right: Azure DocumentDB does not support retryable writes, so `retrywrites=false` is required, not a recommendation or a per-sample choice (see Resolved below).
 
 The existing prompt rules state the intent but nothing enforces it: `audit_app()` only rewrites URLs, with no status downgrade or de-duplication.
 
@@ -50,7 +50,7 @@ Add to **Step 2: check the app against each practice** (under "Practices: reconc
 > - Grade only practices tied to a feature the app implements or the starter prompt explicitly asks for. A practice about vector indexes, embeddings, semantic caching, TTL, change streams or transactions in an app that does not use them is `not_applicable`; put the suggestion in `fix` prefixed "Optional accelerator:" so the report lists it without counting it as a violation.
 > - A practice worded conditionally ("where appropriate", "if you need", "consider", "optionally") is advisory. It is never `violated`; use `not_applicable` with the suggestion in `fix`.
 > - Do not use RU, request charge, `_etag`, If-Match or Retry-After in a practice, evidence or fix; these are Azure Cosmos DB RU-API concepts, and a check that needs them is a sign the source is about that service.
-> - The canonical connection string for this service carries `retrywrites=false` (see the agent kit's `azure-deployment` skill). If a sample sets `retryWrites=true`, flag it once, under connection handling, as a deviation from the canonical string; do not also list it as an audit-trail gap, and do not state a reason for the setting.
+> - Every Azure DocumentDB connection string must carry `retrywrites=false`; this is a requirement, not a recommendation. If a sample sets `retryWrites=true` (or omits the option, since drivers default to true), mark it `violated` once, under connection handling, and do not also list it as an audit-trail or decision-logging gap. Use this reason in `fix`: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." Do not claim that `retryWrites=true` causes connection errors; that is not established.
 > - Before you return, merge checks that state the same recommendation under different topics; keep one and cite both discovery ids in `evidence`.
 
 ### `factory/agents/auditor.py` (`audit_app`, after the URL rewrite loop and before the `return`; add `import re`, and `PracticeCheck` to the `..models` import)
@@ -93,10 +93,13 @@ Add one unit test that feeds an `AuditReport` with a Cosmos-sourced `violated` c
 - `runs/14-dynamic-pricing-engine/20261124-184622/05-audit.json` (`_etag` concurrency `violated`; retryWrites graded only as an audit-trail gap)
 - `runs/13-household-grouping-linkage/20261124-204947/05-audit.json` ("RU spikes" check; retryWrites true and false in one audit)
 
+## Resolved
+
+retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. [needs SME confirmation] Does Azure DocumentDB ever return error 16500 / HTTP-429-style throttling to MongoDB clients (for example under connection or resource limits), or is it never returned? The draft assumed it is never returned; until engineering confirms, the proposal bans only RU-specific wording (`RequestRateTooLarge`, `Retry-After`), not a bare `429`.
-2. [needs SME confirmation] Why does the canonical connection string set `retrywrites=false`? Some drafts in this experiment say retryable writes are unsupported and cause write errors; others say Learn does not claim they are unsupported and the setting is a recommendation. The auditor rule above only enforces consistency with the canonical string and states no reason; please give the engineering answer so the rule (and the agent kit, whose `skills/connection/SKILL.md` example URI and `skills/driver/driver-singleton-client.md` show `retryWrites=true` while `skills/azure-deployment/SKILL.md` shows `retrywrites=false`) can cite it.
 
 ## Source drafts
 

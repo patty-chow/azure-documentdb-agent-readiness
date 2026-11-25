@@ -8,7 +8,7 @@ priority: P2
 sample_count: 4
 member_drafts:
   - 047-connection-docs-lack-one-canonical-placeholder-connection-st.md
-open_questions: 7
+open_questions: 6
 ---
 
 # Add a tool-agnostic connection-string reference and a credential-capabilities section
@@ -33,7 +33,7 @@ We had an AI coding agent build 100 Azure DocumentDB sample apps with the Docume
 
 - **4 of the 100 samples** stopped to record a "could not find" gap on exactly these points: the connection-string shape for the cluster, whether the supplied URI could create collections and indexes, recommended production driver retry and timeout values, and a default unordered-`bulkWrite` batch size for an M30 cluster. A fifth sample logged a "canonical connection-string form" gap in a separate 10-sample control run.
 - With no single reference to copy, the generated docs drifted: 48 generated README or `.env.example` files show an Azure DocumentDB host placeholder, and 40 of them omit `retrywrites=false`.
-- 19 samples set `retryWrites: true` in application code, which overrides the portal-issued URI in most drivers.
+- 19 samples set `retryWrites: true` in application code, which overrides the portal-issued URI in most drivers. Because the server does not de-duplicate a retried write, each of these apps can apply a non-idempotent write twice on a transient failure.
 
 (The 48, 40 and 19 were recounted over all 105 run folders of the 100 samples, including the five samples that were re-run after an empty first build.)
 - No generated app checked what its credentials could do before calling `createCollection` or `createIndex`; one agent's plan was simply to "attempt a safe index-list call".
@@ -54,13 +54,14 @@ mongodb+srv://<username>:<password>@<cluster-name>.mongocluster.cosmos.azure.com
 |---|---|---|
 | `tls` | `true` | TLS is required |
 | `authMechanism` | `SCRAM-SHA-256` | Native DocumentDB users; use `MONGODB-OIDC` for Microsoft Entra ID (link to the RBAC page) |
-| `retrywrites` | `false` | Product team to state the reason and what a driver left at its default will see |
+| `retrywrites` | `false` | Required. Azure DocumentDB does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice (documentdb/documentdb#767). Handle transient write failures in application code with idempotent operations (upserts, deterministic keys) |
 | `maxIdleTimeMS` | `120000` | Product team to state the idle-connection behavior this value matches |
 
 Also add:
 
 - A note on the `<cluster-name>.global.mongocluster.cosmos.azure.com` host for replica configurations, if confirmed.
-- One line: "Don't override these options in driver code (for example `retryWrites: true`); most drivers let client options take precedence over the URI."
+- Explain why `retrywrites=false` is required, with the de-duplication reason. No Learn page (limitations, compatibility, connect) says this today; the RBAC page calls it a "best practice" without a reason. Suggested text: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." Add the same statement to the limitations page.
+- One line: "Don't override these options in driver code (for example `retryWrites: true`); most drivers let client options take precedence over the URI, and with `retryWrites: true` a retried non-idempotent write can be applied twice."
 - The local DocumentDB (Docker) form, marked local-only: `mongodb://<username>:<password>@localhost:10260/?tls=true&tlsAllowInvalidCertificates=true`.
 
 ### 2. "Check what your credentials can do"
@@ -85,7 +86,7 @@ Next to it, add a table mapping roles to capabilities:
 
 Add this as a best-practices section, cross-linked from the limitations page:
 
-- Give one recommended option set per workload shape (long-running service, serverless, batch job), in both URI and driver-option form, covering `maxPoolSize`, `minPoolSize`, `maxIdleTimeMS`, `serverSelectionTimeoutMS`, `socketTimeoutMS` and `retryWrites` (consistent with the connection-string reference above). Values to come from the product team; the experiment has no measured numbers.
+- Give one recommended option set per workload shape (long-running service, serverless, batch job), in both URI and driver-option form, covering `maxPoolSize`, `minPoolSize`, `maxIdleTimeMS`, `serverSelectionTimeoutMS` and `socketTimeoutMS`, with `retryWrites` set to `false` in every variant (consistent with the connection-string reference above). Values to come from the product team; the experiment has no measured numbers.
 - Beside the 25,000 ceiling, give a per-tier starting point for unordered `bulkWrite`: operations per batch, concurrent batches per client, and when to split by `_id` range. Add a sentence on handling `writeErrors` rather than re-running whole batches.
 
 ## Evidence
@@ -97,15 +98,18 @@ Add this as a best-practices section, cross-linked from the limitations page:
 - `runs/03-core-banking-transaction-ledger/20261124-200452/app/src/db.js`: another `retryWrites: true` in code
 - `runs/11-preference-center-consent-store/20261125-064954/02-readiness.json` (control run): gap on the canonical connection-string form
 
+## Resolved
+
+retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
-1. [needs SME confirmation] Why is `retrywrites=false` required, and what happens when a driver leaves retryable writes on? Our internal drafts disagree. Some say retryable writes are not supported and cause write errors. Another notes that Learn does not say they are unsupported and calls the setting a best practice. We would like the engineering answer before either explanation goes into the table.
-2. [needs SME confirmation] What idle-connection behavior does `maxIdleTimeMS=120000` match?
-3. [needs SME confirmation] Can a non-administrative user run `connectionStatus` with `showPrivileges: true`, and `usersInfo` on itself?
-4. [needs SME confirmation] Is the role-capability table accurate, and are custom roles still in preview?
-5. [needs SME confirmation] When should the `.global.mongocluster.cosmos.azure.com` host be used?
-6. [needs SME confirmation] What are the recommended pool, idle and timeout values per workload shape?
-7. [needs SME confirmation] What are the per-tier starting points for unordered `bulkWrite` batch size and concurrency?
+1. [needs SME confirmation] What idle-connection behavior does `maxIdleTimeMS=120000` match?
+2. [needs SME confirmation] Can a non-administrative user run `connectionStatus` with `showPrivileges: true`, and `usersInfo` on itself?
+3. [needs SME confirmation] Is the role-capability table accurate, and are custom roles still in preview?
+4. [needs SME confirmation] When should the `.global.mongocluster.cosmos.azure.com` host be used?
+5. [needs SME confirmation] What are the recommended pool, idle and timeout values per workload shape?
+6. [needs SME confirmation] What are the per-tier starting points for unordered `bulkWrite` batch size and concurrency?
 
 ## Source drafts
 

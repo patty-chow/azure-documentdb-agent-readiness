@@ -15,7 +15,7 @@ member_drafts:
 merged_from:
   - K34
   - K02
-open_questions: 7
+open_questions: 6
 ---
 
 # azure-deployment skill: name `az documentdb mongocluster` as the CLI group with a tooling preflight, fix the `mongo-cluster` typo, and add an author-IaC-only (no deploy) path
@@ -147,7 +147,7 @@ az documentdb mongocluster firewall-rule create \
 **h. Step 7:** replace `az resource list` with
 `az documentdb mongocluster show -g <rg> -n <cluster> --query "{name:name, state:properties.provisioningState, tier:properties.compute.tier}"` and `az documentdb mongocluster list -g <rg> -o table`.
 
-**i. Step 8:** CLI first, portal second: `az documentdb mongocluster list-connection-strings --cluster-name <cluster> -g <rg>` (takes `--cluster-name`, no `-n`); do not echo the result into logs, pass it to the app through an environment variable. Keep the portal route as the second option. Leave the existing connection-string shape and its `retrywrites=false` note unchanged (see Open questions).
+**i. Step 8:** CLI first, portal second: `az documentdb mongocluster list-connection-strings --cluster-name <cluster> -g <rg>` (takes `--cluster-name`, no `-n`); do not echo the result into logs, pass it to the app through an environment variable. Keep the portal route as the second option. Keep the connection-string shape with `retrywrites=false`, and replace the existing rationale sentence (which says the setting avoids connection errors; that is not established) with the canonical one-liner from `findings/phase4/DECISIONS.md`: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." The same wording is being applied to the other kit files that still show `retryWrites: true` in the K01 PR; this PR touches only the azure-deployment sentence.
 
 **j. Step 9:** use `az documentdb mongocluster firewall-rule create` instead of `az resource create ... mongoClusters/firewallRules`.
 
@@ -203,15 +203,18 @@ Run folders in the experiment harness:
 - `runs/17-esg-scoring-pipeline/20261124-192259/events.jsonl`: `az documentdb mongodb cluster create` before grounding.
 - `runs/07-customer-review-sentiment-pipeline/20261124-183656/02-readiness.json`: bicep/terraform/azd reported missing while `az bicep` works.
 
+## Resolved
+
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+
 ## Open questions
 
 1. [needs SME confirmation] Is `az cosmosdb mongocluster` (cosmosdb-preview) deprecated or only superseded? Learn does not mark it deprecated. This PR calls it "older; do not use" and makes no deprecation claim.
 2. [needs SME confirmation] Is the `documentdb` extension still preview, and is 2.75.0 the right minimum CLI version? The callout says "preview".
 3. [needs SME confirmation] Does first-use dynamic install prompt in non-interactive shells by default? The explicit `az extension add` step rests on this.
 4. [needs SME confirmation] Should the kit pin a `--server-version`? The member drafts disagree: one used `8.0`, another removed it because Learn lists no accepted values and the flag defaults to latest. This PR omits it.
-5. [needs SME confirmation] retryWrites: Step 8 keeps the existing `retrywrites=false` note. Other drafts in this effort disagree on why. One position is that retryable writes are unsupported and must be disabled; the other is that Learn does not claim they are unsupported. This PR does not change that text. Engineering should settle it in the K01 PR.
-6. Step 8 ordering: this PR makes the CLI command the main route (for agents) with the portal as fallback. Reviewers should confirm that over keeping the portal first.
-7. Sample counts: the original IaC draft said 20 of 100 samples failed the IaC requirement; a recount of the audit files shows all 100 failed, and 20 is the number where the gap was raised as a kit finding. Most IaC misses were attributed to the build instructions, and the "missing bicep" reports partly come from the harness checking PATH (harness fix filed separately). These numbers should be re-measured after the experiment's build instructions and harness are fixed and before they are quoted outside the team.
+5. Step 8 ordering: this PR makes the CLI command the main route (for agents) with the portal as fallback. Reviewers should confirm that over keeping the portal first.
+6. Sample counts: the original IaC draft said 20 of 100 samples failed the IaC requirement; a recount of the audit files shows all 100 failed, and 20 is the number where the gap was raised as a kit finding. Most IaC misses were attributed to the build instructions, and the "missing bicep" reports partly come from the harness checking PATH (harness fix filed separately). These numbers should be re-measured after the experiment's build instructions and harness are fixed and before they are quoted outside the team.
 
 ## Source drafts
 
