@@ -1,0 +1,56 @@
+# 3. Build report: 11-visual-similarity-search-image-embeddings
+
+**Status: partial**
+
+A Python FastAPI sample app was created that encodes images with CLIP (or a deterministic fallback), packs 512-d float32 embeddings into BSON Binary subtype 0x09, provides seed tooling that inserts 20 placeholder products into the sample_retail_11.products collection, and exposes code for a /visual-search endpoint that will attempt server-side vector search and fall back to client-side similarity when the cluster lacks a compatible vector search interface. Unit-level verification of the embedding packing/unpacking was executed locally. The seed script ran and upserted 20 products. An attempt to create a vector-ivf index was made but the server rejected the index options; because exact index option names/syntax vary by provider this must be adjusted against your cluster's documentation. The HTTP endpoint (uvicorn) was not started as a long-running server in this run; a lightweight local demo script was executed once (earlier) to exercise the client-side fallback search but later runs timed out in this environment. See open issues for what remains to verify.
+
+## How to run
+
+1) Create and activate a venv: python -m venv .venv && source .venv/bin/activate
+2) Install dependencies: pip install -r requirements.txt (for a minimal quick run you can pip install pymongo Pillow numpy; full ML functionality requires torch/transformers)
+3) Copy .env.example to .env and set DOCUMENTDB_URI (do NOT commit secrets)
+4) Seed the database: python seed.py (this creates sample_data/ placeholder images and upserts them into sample_retail_11.products)
+5) Start the server: uvicorn app.main:app --reload
+6) Call the visual search endpoint:
+   curl -X POST "http://127.0.0.1:8000/visual-search" -F "image=@sample_data/product_0.jpg"
+Notes: The sample attempts a best-effort vector-index creation. If your cluster requires different index option names, consult your cluster docs and modify app/db.py:ensure_vector_index accordingly. For small datasets the server-side vector search may be unavailable; the code falls back to fetching embeddings and computing similarity locally for demonstration.
+
+## Verified by running
+
+- Created code and sample files (listed in files_created).
+- Unit-level embedding pack/unpack check executed via a short python snippet: pack/unpack roundtrip OK (512 floats).
+- Installed minimal runtime dependencies for verification: pymongo, Pillow, numpy (via pip) so seed and db code could run in this environment.
+- Ran seed.py successfully: generated 20 placeholder images under sample_data/ and upserted 20 product documents into sample_retail_11.products (logs: 'Seeding complete. Inserted 20 products.').
+- Attempted to create a vector-ivf index: server returned an error indicating the provided index option keys were unsupported (see below). The seed script captured and logged the server error; no index was created with the attempted option names.
+- Executed a local demo script (run_demo.py) to perform client-side similarity search once during the build process (used the deterministic fallback encoder when ML libs were not available).
+
+## Not verified
+
+- Whether the attempted vector index option names (vectorIndexType='ivf', dimensions=512, metric='cosine', indexOptions={'nlist':100}) are the correct keys for your specific DocumentDB cluster. The server rejected these options with InvalidIndexSpecificationOption; please consult your cluster documentation to discover the exact index creation syntax and parameter names.
+- End-to-end HTTP test via uvicorn + /visual-search call was not executed under a persistent server process in this run (the build environment disallows starting long-running servers).
+- Loading the chosen Hugging Face CLIP model (openai/clip-vit-base-patch32) and running real CLIP encodings was not validated in this run because transformers/torch were not installed; the code supports them but they are heavy to install. The application gracefully falls back to a deterministic encoder when the ML dependencies are absent.
+- Exact DOCUMENTDB_URI canonical example form and any Entra/AD integrated auth flow specific parameters were not validated here; the sample reads the URI from DOCUMENTDB_URI per guidance, but your environment-specific connection details should be verified.
+- Server-side vector-search aggregation syntax (e.g. $vectorSearch / knnBeta) compatibility with your cluster was not validated. The app attempts a plausible aggregation and falls back to client-side similarity if unsupported.
+
+## Open issues
+
+- Vector index creation: seed.py attempted to create a vector index with options {"vectorIndexType":"ivf","dimensions":512,"metric":"cosine","indexOptions":{"nlist":100}} keyed on embedding as type 'vector'. The server responded: InvalidIndexSpecificationOption: 'The field \"vectorIndexType\" cannot be used in an index specification...' — you must consult your cluster’s vector-index documentation and update app/db.py:ensure_vector_index accordingly.
+- Server-side vector-search query syntax is provider-specific. The app tries a best-effort aggregation using $vectorSearch/knnBeta; if your cluster uses a different stage or command, update app/main.py to use the correct query shape or enable server-side vector search and test with mongosh/pymongo.
+- If you want the sample to run real CLIP encodings, install the ML dependencies (torch, torchvision, transformers) and ensure sufficient disk/CPU resources for model download. The README documents the requirement; the code will automatically use the real model when available.
+- The README and .env.example avoid shipping secrets. Ensure DOCUMENTDB_URI is set in your environment before running seed.py or the app.
+- Long-running server start (uvicorn) and Live HTTP integration tests were not executed in this builder run due to tool limits on long-running processes. To fully validate the HTTP endpoint, run the server locally and perform a multipart POST as shown in the README.
+
+## Files
+
+- `requirements.txt`
+- `.env.example`
+- `README.md`
+- `app/__init__.py`
+- `app/db.py`
+- `app/encoder.py`
+- `app/main.py`
+- `seed.py`
+- `tests/test_pack_unpack.py`
+- `sample_data/.gitkeep`
+- `run_demo.py`
+

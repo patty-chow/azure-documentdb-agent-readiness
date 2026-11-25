@@ -1,0 +1,633 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested functionality and is runnable for small, local demonstrations: CLIP-based encoder (with a deterministic fallback), BSON float32 packing/subclassing (subtype 0x09), a seed script that upserts 20 placeholder products into sample_retail_11.products, and a /visual-search FastAPI endpoint that attempts server-side vector search and falls back to client-side cosine similarity. Key risks and gaps remain: the builder could not verify or create the vector-ivf index because the cluster rejected the attempted index option names; ML packages (transformers/torch) were not installed during the build run so real CLIP encoding was not exercised; the code creates a new MongoClient on each get_client() call (not a single shared client); and a few gallery best-practices (pinned dependency versions, retries, batched bulk load, explicit index verification/listing and more README guidance) are missing or only partially provided. See requirement_results, checks and doc_gaps below for details and recommended minimal fixes.",
+  "requirement_results": [
+    {
+      "requirement": "Build the app in Python and encode each product image with the CLIP model into a 512-dimensional embedding.",
+      "status": "partly_met",
+      "evidence": "app/encoder.py lines 19-39 (CLIPModel.from_pretrained and encode_image_pil) and lines 42-66 (fallback encoder).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Ensure transformers and torch are available in the build/CI environment used to verify the sample, or provide a lightweight mock for CI; document the heavy ML deps and make them optional for demo runs."
+    },
+    {
+      "requirement": "Store each product as a document in Azure DocumentDB whose image embedding is saved as a BSON binary vector with subtype 0x09.",
+      "status": "met",
+      "evidence": "app/db.py lines 19-23 (pack_embedding returns Binary(..., subtype=0x09)); seed.py lines 54-59 (emb_bin = pack_embedding(vec); coll.update_one(..., upsert=True)).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "In code, create a cosmosSearch index of kind vector-ivf on the embedding field, with dimensions set to 512.",
+      "status": "partly_met",
+      "evidence": "app/db.py lines 40-48 attempts create_index with vectorIndexType='ivf' and dimensions=512; seed.py calls ensure_vector_index (line 41). The seed run logged a server error and no index was created (events.jsonl shows server rejection).",
+      "cause": "could_not_determine",
+      "smallest_fix": "Make ensure_vector_index idempotent and adaptive: list the collection's indexes, attempt create only if absent, and try alternate vendor option keys or surface the server's accepted index syntax in logs (or ship an authoritative createIndex example in docs)."
+    },
+    {
+      "requirement": "Expose a /visual-search HTTP endpoint that accepts an uploaded image and encodes it with the same CLIP model into a 512-dimensional query embedding.",
+      "status": "met",
+      "evidence": "app/main.py lines 24-36 define POST /visual-search, read and validate the uploaded image, and lines 32-36 call encode_image_pil with fallback to encode_image_fallback.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The /visual-search handler runs the similarity search in Azure DocumentDB with a $search / cosmosSearch query over the vector-ivf index, passing the encoded query embedding.",
+      "status": "not_met",
+      "evidence": "app/main.py lines 51-55 attempt an aggregation using a $vectorSearch stage (pipeline = [{\"$vectorSearch\": {\"knnBeta\": { ... }}}]) rather than a $search/cosmosSearch $search stage.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Either: (A) change the starter prompt to explicitly require the $search/cosmosSearch API, or (B) update the code to attempt both the $vectorSearch aggregation and a $search/cosmosSearch form (catching server errors) so the sample demonstrates the recommended API when available."
+    },
+    {
+      "requirement": "The /visual-search endpoint returns the top 8 visually similar products from that query (k = 8).",
+      "status": "met",
+      "evidence": "app/main.py pipeline k:8 at line 52 and fallback sorting/results slicing at lines 81-82 ([:8]).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": ".env.example lines 1-4 show placeholder DOCUMENTDB_URI; app/db.py lines 13-17 read DOCUMENTDB_URI from the environment.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lines 1-4 list DOCUMENTDB_URI placeholder only.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add placeholders for any optional settings the sample supports (e.g. CLIP_MODEL, OPTIONAL flags to force fallback, or timeouts) to .env.example."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "app/db.py line 46 sets 'dimensions': 512 in attempted index options; encoder returns 512-d vectors (app/encoder.py uses 512-length).",
+      "cause": "could_not_determine",
+      "smallest_fix": "Ensure index creation succeeds (see ensure_vector_index idempotency/adaptation fix above) so the server-side index actually records the dimensions."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "app/db.py indexOptions includes nlist=100 (line 48) and README notes nlist=100 and suggests consulting cluster docs (README lines 20-22).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Expand README with explicit, short guidance: why nlist=100 was chosen for ~20 items and how to tune nlist/nprobe/other params for larger datasets."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "not_met",
+      "evidence": "app/db.py get_client() (lines 13-17) returns MongoClient(uri) on each call; app/main.py calls get_client() inside the /visual-search handler (line 40), creating a client per request.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Create a module-level client at import or during app startup and reuse it (e.g., create MongoClient once and return it from get_client() or expose a get_shared_client() wrapper)."
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "seed.py uses coll.update_one(..., upsert=True) to avoid duplicates (seed.py lines 56-59), and seed.py calls ensure_vector_index(db) (line 41) which is best-effort but the attempted create_index may be rejected by the server (events show a server error).",
+      "cause": "could_not_determine",
+      "smallest_fix": "Keep upsert for data (good). For index creation: make index creation idempotent by checking list_indexes and creating only if absent, and log explicit post-create verification."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "partly_met",
+      "evidence": "app/main.py validates the uploaded file and raises HTTPException(400) if Image.open fails (lines 24-31). On encoding failure the app currently falls back to a deterministic encoder (lines 32-36) rather than returning an explicit error.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Decide sample behavior: either return 5xx/4xx on encoder failure or make fallback explicit and document it. To meet the requirement, return a clear 5xx/4xx when the real model attempt fails (or make fallback optional via config)."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "Server-side pipeline projects score as $meta: 'searchScore' (app/main.py line 53). Fallback code app/main.py lines 75-81 computes 'score' and includes it in results.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "not_met",
+      "evidence": "app/requirements.txt uses >= version expressions rather than exact pinned versions (lines 1-10).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Pin exact dependency versions for reproducible gallery builds (e.g., pymongo==4.x.y, fastapi==x.y.z) or add a separate requirements-lock.txt for CI."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "tests/test_pack_unpack.py exists (app/tests/test_pack_unpack.py) and pack/unpack roundtrip was executed successfully without a cluster by installing pymongo locally in the build (events.jsonl run_command that printed OK).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep/Terraform/ARM) present in the repository root or app/ directory (list_files and read_files show no infra code).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an optional IaC snippet (Bicep or Terraform) in docs showing the correct resource type and minimal parameters; mark it optional in README because the run environment forbids provisioning during the build."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "README.md includes what the sample shows, prerequisites and setup/run steps (app/README.md lines 1-15) but does not include an explicit clean-up section or explicit instructions for verifying index creation.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a short 'clean-up' section and an explicit 'validate index' sub-section with commands (e.g., a pymongo snippet to list indexes and check vector index parameters)."
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md line 1 uses the phrasing 'Azure DocumentDB (MongoDB-wire-compatible)'.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "One client is created and reused for the life of the process.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/db.py lines 13-17 (get_client returns MongoClient(uri) per call); app/main.py line 40 calls get_client() inside request handler.",
+      "source": "app/db.py / app/main.py",
+      "searched": "",
+      "fix": "Create a single MongoClient at module import or app startup and return it from get_client().",
+      "sources": [
+        {
+          "title": "app/db.py / app/main.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Read connection string from env",
+      "practice": "Read the DocumentDB connection string from an environment variable (DOCUMENTDB_URI) and do not commit live credentials.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/db.py lines 13-17; app/.env.example lines 1-4; README.md lines 29-30.",
+      "source": "README.md / app/db.py / .env.example",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md / .env.example",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pack binary embedding",
+      "practice": "Pack float32 embeddings into BSON Binary subtype 0x09 and unpack with matching little-endian reader.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/db.py lines 19-23 (pack_embedding) and 25-29 (unpack_embedding); tests/test_pack_unpack.py validates roundtrip.",
+      "source": "app/db.py / tests/test_pack_unpack.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "app/db.py",
+          "url": ""
+        },
+        {
+          "title": "app/db.py",
+          "url": ""
+        },
+        {
+          "title": "tests/test_pack_unpack.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "L2 normalize embeddings",
+      "practice": "L2-normalize image embeddings in the encoder before storing and assume normalized vectors at query time.",
+      "category": "vector search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/encoder.py lines 35-39 normalize the vector before returning; fallback also normalizes (lines 62-66).",
+      "source": "app/encoder.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "app/encoder.py",
+          "url": ""
+        },
+        {
+          "title": "app/encoder.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Best-effort index creation",
+      "practice": "Attempt plausible create_index and catch/log server errors rather than failing startup (best-effort).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/db.py lines 32-55 show ensure_vector_index attempts create_index and catches exceptions; seed.py calls ensure_vector_index (line 41). events.jsonl shows a server rejection was logged.",
+      "source": "app/db.py / seed.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "app/db.py",
+          "url": ""
+        },
+        {
+          "title": "app/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefer server-side vector search",
+      "practice": "Prefer server-side vector search when available and fall back to client-side computation when unsupported.",
+      "category": "vector search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/main.py lines 48-61 attempt a server-side aggregation pipeline then fall back to fetching all embeddings and computing cosine locally (lines 62-82).",
+      "source": "app/main.py / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "app/main.py / README.md",
+          "url": ""
+        },
+        {
+          "title": "app/main.py",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed upsert idempotency",
+      "practice": "Seed demo data into a dedicated database and collection and use upsert operations so repeated runs are safe.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "seed.py lines 54-59 use coll.update_one({'image_path': p}, {'$set': doc}, upsert=True). DB name set to sample_retail_11 in app/db.py line 10.",
+      "source": "seed.py / app/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed.py / app/db.py",
+          "url": ""
+        },
+        {
+          "title": "seed.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pack/unpack tests",
+      "practice": "Include unit tests that verify embedding pack/unpack round-trips.",
+      "category": "testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "tests/test_pack_unpack.py exists and was exercised successfully during build (events.jsonl shows the pack/unpack check returned OK).",
+      "source": "tests/test_pack_unpack.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "tests/test_pack_unpack.py",
+          "url": ""
+        },
+        {
+          "title": "tests/test_pack_unpack.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Validate uploaded images",
+      "practice": "Validate uploaded images by trying to open them with PIL and return a 400 for invalid uploads.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/main.py lines 24-31 read the file and do Image.open(...).convert('RGB'), raising HTTPException(400) on failure.",
+      "source": "app/main.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "app/main.py",
+          "url": ""
+        },
+        {
+          "title": "app/main.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side knn aggregation",
+      "practice": "When attempting server-side vector search, use the vendor-supported aggregation stage and project only needed fields.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/main.py lines 51-55 build a pipeline with $vectorSearch / knnBeta and then $project only name, image_path and score.",
+      "source": "app/main.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "app/main.py",
+          "url": ""
+        },
+        {
+          "title": "app/main.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation idempotency",
+      "practice": "Check existing indexes with listIndexes before creating vector index (idempotent index creation).",
+      "category": "indexing",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/db.py lines 40-50 call coll.create_index(...) with guessed options and catch exceptions; there is no list_indexes/listIndexes check or post-create verification.",
+      "source": "app/db.py",
+      "searched": "",
+      "fix": "Call coll.list_indexes() to inspect existing indexes and create only if absent; after create, verify the created index's parameters with list_indexes.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embedding metadata",
+      "practice": "Store per-document metadata for embedding dimensionality and dtype (e.g., embedding_dim=512).",
+      "category": "data modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P11",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "No code writing embedding_dim or embedding_dtype metadata was found in the repository.",
+      "source": "prior_knowledge",
+      "searched": "searched repository; external docs unavailable in this run",
+      "fix": "Add embedding metadata fields to inserted documents or maintain a collection-level schema doc; add validation in the seed/insert path.",
+      "sources": [],
+      "what_would_help": "A short doc page stating whether DocumentDB vector indexes require per-document metadata (embedding_dim, dtype) or whether the index defines/validates dims."
+    },
+    {
+      "topic": "Retries/backoff",
+      "practice": "Wrap DB calls with exponential-backoff retries and make retry policy configurable.",
+      "category": "retries",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "No retry/backoff wrappers or driver-level retryReads/retryWrites configuration found in app/db.py or seed.py.",
+      "source": "prior_knowledge",
+      "searched": "searched repository; external docs unavailable in this run",
+      "fix": "Add a small retry decorator with jitter for transient errors and make retry parameters configurable; recommend enabling driver retry options where appropriate.",
+      "sources": [],
+      "what_would_help": "A short 'retries' page describing recommended retry settings for DocumentDB and examples for pymongo."
+    },
+    {
+      "topic": "Server feature detection",
+      "practice": "Detect server supported wire protocol and vector index algorithms (hello/buildInfo) and adapt index parameters accordingly.",
+      "category": "indexing",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/db.py attempts create_index with guessed options rather than querying server buildInfo/hello to determine supported features (no buildInfo/hello usage found).",
+      "source": "app/db.py",
+      "searched": "",
+      "fix": "On startup, call client.admin.command('hello') or buildInfo and adapt index creation parameters or choose fallbacks based on supported algorithms.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index presence verification",
+      "practice": "After index creation, verify that a vector-ivf index exists with expected parameters (use listIndexes).",
+      "category": "indexing",
+      "availability": "discovered_not_listed",
+      "discovery_id": "P18",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/db.py currently only logs create_index exceptions and does not call list_indexes to confirm the index exists with expected parameters.",
+      "source": "app/db.py",
+      "searched": "",
+      "fix": "Call list_indexes after creation and log or error if the index is absent or has unexpected parameters.",
+      "sources": [
+        {
+          "title": "app/db.py / seed.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Fallback brute-force caution",
+      "practice": "Avoid transferring all embeddings to the client for production; use an ANN service if server lacks vector search.",
+      "category": "vector search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/main.py falls back to fetching all embeddings and computing cosine similarity locally (lines 62-82). README notes this is suitable only for small datasets (README lines 21-22).",
+      "source": "app/main.py / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "app/main.py / seed.py",
+          "url": ""
+        },
+        {
+          "title": "app/main.py",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator decision (reason_source 'operator') and is recorded in decisions.jsonl. The build proceeded with known gaps; the events trace supports this."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of FastAPI is implemented in app/main.py and the events trace recorded the decision (events.jsonl entry 1). Evidence: app/main.py uses FastAPI (lines 11-13)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choosing pymongo >=4.3 is reflected in app/requirements.txt (line 3). The decision and its reason are recorded (events.jsonl)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Choosing Hugging Face transformers and the model 'openai/clip-vit-base-patch32' is implemented in app/encoder.py (lines 19-20). The decision's reason_source is 'model_default' (see decisions.jsonl) — this is a reasonable default but not grounded in repository or external docs available to this run."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Packing embeddings into BSON Binary subtype 0x09 is implemented (app/db.py lines 19-23) and matches the run environment requirement; the decision was logged and executed."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Attempting a plausible vector-ivf create_index and logging server errors is implemented (app/db.py ensure_vector_index). The events trace shows the server rejected the attempted options; the decision to best-effort and continue is justified and recorded."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from the environment is implemented in app/db.py lines 13-17 and is consistent with security guidance in README and .env.example."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision to generate placeholder images programmatically is implemented in seed.py (make_placeholder_images) and recorded. Reason_source is 'model_default'; the approach is reasonable for demo samples and avoids licensing issues."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The environment lacked pytest (events.jsonl shows 'NOT INSTALLED'), the decision to avoid installing heavy test deps during this run is recorded and traces show an alternate pack/unpack check was executed."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "The decision to install only pymongo for the local unit check is reflected in events.jsonl where pip install pymongo was run and pack/unpack verification succeeded."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Installing Pillow to run seed.py was necessary and recorded; events show pillow installed and seed.py executed."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Installing numpy to support fallback encoder and seed operations was recorded and necessary for local verification; events show numpy installed and subsequent runs succeeded."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Exact vector index creation syntax",
+      "what_was_missing": "An authoritative example of the exact createIndex/create_index call (JSON keys and option names) that this Azure DocumentDB cluster accepts for IVF/HNSW/DiskANN vector indexes.",
+      "where_searched": "Local repository files (app/db.py, seed.py, README.md) and the run environment; external documentation search was not available in this run.",
+      "effect_on_this_build": "The seed script attempted a plausible create_index but the server rejected the option names. No vector-ivf index could be programmatically created/verified during the build; server-side search could not be fully validated.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Ship a short 'How to create a vector index' page in the agent kit showing an exact pymongo/python snippet that creates an IVF index on field 'embedding' with dims=512 and a minimal set of vendor-accepted options. Include sample server responses for common errors and a snippet that lists indexes (list_indexes) to verify success. Also add an example CLI/mongosh snippet.",
+      "priority": "high"
+    },
+    {
+      "topic": "Aggregation API differences ($search vs $vectorSearch)",
+      "what_was_missing": "Public guidance distinguishing the supported aggregation stage(s) or command for server-side vector KNN queries in this DocumentDB product (e.g., whether to use $search/cosmosSearch, $vectorSearch, or vendor-specific stage names and the exact query shape).",
+      "where_searched": "Repository and run environment; external docs not reachable from this run.",
+      "effect_on_this_build": "The builder implemented $vectorSearch aggregation as a best-effort and logged server-side failures; without authoritative examples the sample cannot reliably demonstrate server-side visual search on all clusters.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Vector search query examples' doc that shows both the $search/cosmosSearch and $vectorSearch variants (with example pymongo aggregator pipeline payloads) and guidance on how to test them interactively (mongosh) and what error messages to expect.",
+      "priority": "high"
+    },
+    {
+      "topic": "DOCUMENTDB_URI canonical form & auth options",
+      "what_was_missing": "A canonical example of the DOCUMENTDB_URI string format (host suffix, port, required query params) and the supported authentication modes (connection-string SCRAM vs Microsoft Entra ID data-plane flows).",
+      "where_searched": "Local repo (.env.example and README) and run environment; external docs not available in this run.",
+      "effect_on_this_build": "The sample correctly reads DOCUMENTDB_URI from the environment, but builders may guess a legacy Cosmos-style connection string and get connection errors if the cluster expects a different format or Entra-based flow.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add an 'Auth & connection string' page to the agent kit with: (A) canonical DOCUMENTDB_URI examples with placeholders; (B) a note about Entra/AD options if supported and how to obtain tokens for pymongo if the product supports it; (C) example pymongo connect snippet.",
+      "priority": "high"
+    },
+    {
+      "topic": "Embedding metadata guidance",
+      "what_was_missing": "Advice on whether to store per-document metadata indicating embedding_dim and dtype (embedding_dim=512, embedding_dtype='float32') or where to store collection-level schema info.",
+      "where_searched": "Repository and run environment; no external docs reachable.",
+      "effect_on_this_build": "The sample omits per-document embedding metadata. This risks silent mismatches if multiple encoders or dimensionalities are used when seeding or later updating documents.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short note to the data-model docs recommending storing embedding_dim and embedding_dtype on documents or in a dedicated schema document and include a seed script check that validates vector length before insert/upsert.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Idempotent index creation & verification",
+      "what_was_missing": "A rule or example showing how to create vector indexes idempotently: check list_indexes, adapt to existing index params, and verify after creation.",
+      "where_searched": "app/db.py and seed.py; external docs not reachable.",
+      "effect_on_this_build": "ensure_vector_index attempts create_index with guessed keys and relies on catching exceptions. Because the server rejected the attempt, no verification path was available to adapt to the server's accepted syntax.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add an agent-kit rule: 'When creating vector indexes: call list_indexes, if desired index absent then attempt create_index with candidate option-sets, and after create call list_indexes again to verify. Log server error and the server's accepted option keys.' Include a short code snippet implementing the rule.",
+      "priority": "high"
+    },
+    {
+      "topic": "Retry/backoff best practices",
+      "what_was_missing": "Guidance and a small example for exponential-backoff retries with jitter for transient DocumentDB errors and recommended driver-level retry settings.",
+      "where_searched": "Repository (no retries found) and run environment; no external docs reachable.",
+      "effect_on_this_build": "The sample does not implement retries; transient network hiccups could cause operations to fail in the wild and the sample's seed and query code offer no guidance to builders.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Publish a short 'Retries & backoff' guidance page with code examples (a retry decorator with jitter, recommended pymongo options) and a note on idempotency considerations (which operations may be retried safely).",
+      "priority": "medium"
+    },
+    {
+      "topic": "Monitoring & index build guidance",
+      "what_was_missing": "Guidance or example instrumentation to emit vector-search-specific metrics (index size, index build time, ANN memory/IO, query latency) and notes about scheduling index builds during maintenance windows.",
+      "where_searched": "Repository and run environment; no external docs reachable.",
+      "effect_on_this_build": "No instrumentation is present in the sample. For production use, lack of monitoring guidance increases the risk of unobserved cost/latency issues during index builds or large queries.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short 'Monitoring & index-build' page describing what to monitor (index size, build time, query latency), example metrics to emit, and recommended scheduling/backoff for large index builds.",
+      "priority": "low"
+    },
+    {
+      "topic": "Decisions recorded from model defaults",
+      "what_was_missing": "When the builder used model-default assumptions (e.g., selecting a CLIP model or generating placeholder images) the run did not have authoritative local docs to confirm the choice.",
+      "where_searched": "decisions.jsonl and the repository; no external docs reachable.",
+      "effect_on_this_build": "These model-default choices are reasonable but should be surfaced in kit docs so future builders understand the rationale and alternatives (e.g., what CLIP variant to choose).",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "In the agent kit README, add a short 'default choices' section explaining the chosen CLIP model (openai/clip-vit-base-patch32), why placeholders were used, and where to change them. Mark these as defaults not requirements.",
+      "priority": "low"
+    }
+  ]
+}
