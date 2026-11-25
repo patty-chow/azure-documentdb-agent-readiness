@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain multi-agent system where an orchestrator reads a pre-auth request from DocumentDB, passes it to a medical-review agent that checks clinical necessity against stored criteria, then to an insurer-comms agent that drafts the submission letter. Store the final submission document and status back in DocumentDB.
