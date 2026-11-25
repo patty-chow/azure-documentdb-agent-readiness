@@ -1,0 +1,68 @@
+# 3. Build report: 11-visual-similarity-search-image-embeddings
+
+**Status: partial**
+
+I built a Python FastAPI sample that encodes images with CLIP (openai/clip-vit-base-patch32), stores 512-d float32 embeddings as BSON binary subtype 0x09 in the sample_retail_11.products collection, provides a seed script that inserts 20 example products (images from picsum.photos) with computed embeddings, and a /visual-search endpoint that encodes an uploaded image and issues a cosmosSearch vector query. I installed dependencies and ran the seed and index-creation scripts. I created a vector index using the PyMongo createIndexes command. Attempts to run the $search vector query from the app returned a server error ($search must appear as the initial stage) and therefore I could not demonstrate a successful end-to-end search returning ordered top-8 results; I captured the exact errors and steps in Verification Done and Not Verified below.
+
+## How to run
+
+1) Create and activate a virtualenv and install deps:
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+
+2) Copy .env.example to .env and set DOCUMENTDB_URI to your cluster connection string.
+
+3) Seed the sample data (idempotent — will exit if collection already populated):
+   python scripts/seed.py
+   This downloads 20 images, encodes them with CLIP and inserts documents into sample_retail_11.products.
+
+4) Create the vector index (option A uses the included script that calls createIndexes via PyMongo):
+   python scripts/create_index.py
+   (This runs a DB-level createIndexes command with cosmosSearchOptions for vector-ivf.)
+
+5) Run the API locally (not done in verification because uvicorn is a long-running process):
+   uvicorn app.main:app --reload --port 8000
+
+6) Call the endpoint (example):
+   curl -F "file=@query.jpg" http://localhost:8000/visual-search
+
+Notes:
+- The app reads DOCUMENTDB_URI from env and never logs secrets.
+- Embeddings are stored as float32 little-endian bytes wrapped in bson.Binary(..., subtype=0x09).
+
+
+## Verified by running
+
+- pip install -r requirements.txt: exit code 0 (dependencies installed successfully including torch and transformers).
+- scripts/seed.py: ran successfully and inserted 20 documents into sample_retail_11.products (Inserted 20 documents).
+- scripts/create_index.py (PyMongo createIndexes): ran successfully; createIndexes returned ok: 1 and reported index creation (createIndexes result: {'raw': {'defaultShard': {'numIndexesBefore': 1, 'numIndexesAfter': 2, 'createdCollectionAutomatically': False, 'ok': 1}}, 'ok': 1}).
+- scripts/test_search.py (TestClient against the FastAPI app): executed; the app returned a 500 error when performing the $search vector query and returned the server error message from the cluster (see not_verified).
+
+## Not verified
+
+- End-to-end successful $search vector query returning top-8 results: Not verified. The test client call produced a server-side error from the DocumentDB cluster: "$search must appear as the initial stage in the pipeline sequence." I attempted multiple aggregation variants (coll.aggregate, db.command('aggregate', ...)) and adjusted the payload format (queryVector as binary vs array) but the cluster returned the same server-side complaint. Because the cluster responded with that error, I could not confirm successful retrieval of top-8 results.
+- Using the documentdb MCP tool documentdb_create_index: attempted but the MCP create-index tool call failed in this environment (the tool returned a function failure). I instead created the index via PyMongo createIndexes; log recorded the decision to use the MCP tool first and why I switched (tool failure).
+- Programmatic listing of indexes via the documentdb MCP list-indexes tool: tool attempts returned a function failure, so index introspection via MCP tools could not be completed here.
+- Automated running of uvicorn server and manual curl verification: not executed in verification (the runner does not run long-lived servers).
+
+## Open issues
+
+- The app's $search vector query attempts returned a server error: "$search must appear as the initial stage in the pipeline sequence." I validated that $search was the first pipeline stage in several permutations (coll.aggregate with pipeline, db.command('aggregate', ...), and the sample pipeline matching the documentdb-vector-search examples). The root cause may be one of:
+  - a server-side requirement / cluster configuration detail that differs from the vector-search examples (e.g., the cluster's vector-search extension requires a different pipeline shape or a different top-level key),
+  - the Cosmos/DocumentDB cluster expecting the stored embedding field to be an array type rather than binary for that kind of $search invocation, or
+  - an internal server-side precondition (index not fully ready or an engine configuration mismatch) even though createIndexes returned success.
+  Next steps to resolve: (1) inspect listIndexes and index definition via mongosh or the documentdb MCP tools (they returned function failures in this environment) to confirm the index kind/options and the server's supported $search shape, (2) try an alternate $search payload matching the exact cluster's supported syntax (for example try vector under nested object vs top-level vector property, or try a prefilter-less pipeline), or (3) contact the cluster administrator / check the cluster documentation to confirm which $search/cosmosSearch syntax is supported and what data type is expected for stored vectors (binary vs array).
+- The documentdb MCP create-index/list-indexes tools returned 'Function failed' in this environment; because the MCP endpoint failed, I created the index using PyMongo's createIndexes command instead. If you prefer MCP-driven verification, investigate connectivity/permissions of the MCP 'documentdb' server and re-run the MCP calls.
+
+## Files
+
+- `requirements.txt`
+- `.env.example`
+- `README.md`
+- `app/db.py`
+- `app/main.py`
+- `scripts/seed.py`
+- `scripts/create_index.py`
+- `scripts/test_search.py`
+

@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the app in Python and expose an HTTP endpoint at /visual-search that accepts an uploaded image (multipart/form-data).
-- Use the CLIP model to encode images; both stored product images and incoming query images must be encoded with CLIP into 512-dimensional embeddings.
-- Include functionality (API or ingestion script) that encodes a product image with CLIP and writes a product document into Azure DocumentDB containing a product identifier, display metadata (e.g., name or image URL), and the embedding.
-- Store embeddings in Azure DocumentDB as BSON binary vectors with subtype 0x09, and ensure the stored binary represents a 512-dimensional embedding (stored length consistent with 512 components).
-- Create a vector-ivf index on the embedding field in Azure DocumentDB before running searches; the code or provisioning script must demonstrate index creation.
-- Execute searches using Azure DocumentDB’s vector-ivf index (server-side vector search) rather than performing full in-process brute-force nearest-neighbor computation.
-- The /visual-search handler must accept the uploaded image, encode it with CLIP, submit the query vector to Azure DocumentDB, and request nearest neighbors using the vector-ivf index.
-- Return the top 8 visually similar products for the query image, ordered by similarity (best match first).
-- Returned results must include each product’s identifier and display metadata (for example, name and/or image URL) so they can be shown to a shopper.
-- Provide sample product data or an ingestion script so a reviewer can populate Azure DocumentDB and verify that /visual-search returns non-empty results.
+- Build the app in Python and encode each product image with the CLIP model into a 512-dimensional embedding.
+- Store each product as a document in Azure DocumentDB (e.g. with PyMongo) whose image embedding is saved as a BSON binary vector with subtype 0x09 (e.g. in an "embedding" field) holding the 512-dimensional vector.
+- In code, create a cosmosSearch index of kind vector-ivf on the embedding field, with dimensions set to 512 to match the CLIP model's output.
+- Expose a /visual-search HTTP endpoint that accepts an uploaded image (e.g. as multipart/form-data) and encodes it with the same CLIP model into a 512-dimensional query embedding.
+- The /visual-search handler runs the similarity search in Azure DocumentDB with a $search / cosmosSearch query over the vector-ivf index, passing the encoded query embedding.
+- The /visual-search endpoint returns the top 8 visually similar products from that query (k = 8).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
