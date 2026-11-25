@@ -5,7 +5,7 @@ block lists the filings that cannot go public until it is answered. One answer p
 filing that cites it. Decisions that belong to a repository maintainer rather than a service SME are at
 the end.
 
-## 1. retryWrites (blocks 17 filings: K01, K03, K04, K07, K10, K11, K23, K27, K34, L01, L02, L03, L04, L05, L06, L07, L11, H07)
+## 1. retryWrites. ANSWERED 2026-11-25, see DECISIONS.md (was blocking 17 filings: K01, K03, K04, K07, K10, K11, K23, K27, K34, L01, L02, L03, L04, L05, L06, L07, L11, H07)
 
 The published connection string sets `retrywrites=false`. Two positions circulated in the drafts:
 (a) retryable writes are not supported and leaving the driver default on causes connection or write
