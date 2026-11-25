@@ -1,0 +1,613 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample is runnable, implements async Python ingestion with Beanie + Motor, provides a parser for MT103/MT202, bulk-writes parsed documents, seeds idempotently, creates indexes, and exposes the requested aggregation endpoint. Key functional requirements from the reference file are met (ingest endpoint, parser, bulk write, aggregation). Major findings that should be fixed before publishing: (1) required-field validation is incomplete (amount/currency/value_date are optional and records with missing fields are accepted), (2) monetary amounts are stored as floats rather than Decimal128/fixed-point, (3) connection tuning (operation timeouts) and retry/backoff for 429s are not implemented, (4) bulk writes do not use unordered writes / explicit batching and ingestion does not gracefully handle duplicate-key or partial errors, and (5) dependencies in the repository are not strictly pinned. I list requirement results, best-practice checks, decision reviews and documentation gaps below with precise file/line evidence and the smallest fixes to make next time.",
+  "requirement_results": [
+    {
+      "requirement": "Async Python service using Beanie ODM with typed fields for parsed SWIFT fields (sender, receiver, amount, currency, value date).",
+      "status": "met",
+      "evidence": "app/app/models.py:6-16 defines SwiftMessage with message_type, sender, receiver, amount, currency, value_date and raw_text.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Expose async ingestion entry point that accepts incoming SWIFT MT messages and runs parse/validate/bulk-write flow.",
+      "status": "met",
+      "evidence": "app/app/main.py:19-37 POST /ingest accepts messages, parses them, validates via Beanie model construction, and bulk-inserts.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Parser extracts MT103 and MT202 fields from raw text and maps them to Beanie documents.",
+      "status": "met",
+      "evidence": "app/app/parser.py:52-61 returns message_type,message_id,amount,currency,value_date and parsed tags; app/app/main.py:25-28 uses parse_swift output to construct SwiftMessage.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Each parsed message is checked for its required fields before storage; missing required fields are not written.",
+      "status": "partly_met",
+      "evidence": "app/app/models.py:6-16 marks amount/currency/value_date as Optional; app/app/main.py:26-36 constructs SwiftMessage(**parsed) and will accept messages that have None for those optional fields.",
+      "cause": "builder_error",
+      "smallest_fix": "Make amount/currency/value_date required in the Pydantic/Beanie model or add an explicit check in /ingest to skip/return an error for messages missing required fields (e.g. if any of amount/currency/value_date is None: record validation error and do not include in bulk insert)."
+    },
+    {
+      "requirement": "Collect parsed documents into batches and write each batch in a single async bulk-write call.",
+      "status": "met",
+      "evidence": "app/app/main.py:33-36 uses coll.insert_many(docs) to perform a bulk write.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Async aggregation endpoint runs an aggregation pipeline grouping stored messages by day and message type.",
+      "status": "met",
+      "evidence": "app/app/main.py:41-56 defines /aggregations/daily-summary, builds a pipeline with $group and $dateToString, and returns results from coll.aggregate(pipeline).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Aggregation result reports number of messages and total transaction values per day and message type.",
+      "status": "met",
+      "evidence": "app/app/main.py:44-48 the $group produces 'count' and 'total_amount' and /aggregations returns these fields (projected at lines 49-50).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Connection string and credentials come from environment variables; none appear in repository.",
+      "status": "met",
+      "evidence": "app/app/db.py:12 reads os.getenv('DOCUMENTDB_URI'); app/.env.example exists and contains only placeholder (no secret values committed).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": ".env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example contains only DOCUMENTDB_URI (app/.env.example:1). The code uses DATABASE_NAME fixed to 'sample_banking_02' and other settings (timeouts, optional flags) are not listed in .env.example.",
+      "cause": "builder_error",
+      "smallest_fix": "Extend .env.example to list all runtime-configurable settings used or intended (e.g. DOCUMENTDB_URI, DATABASE_NAME, LOG_LEVEL, BATCH_SIZE, TIMEOUT_MS), each with a placeholder and short comment."
+    },
+    {
+      "requirement": "Vector-index related requirements (dimensions, parameters, README instructions).",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use any vector index; vector-capable cluster is referenced in run environment but not used by this sample.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If vector search is added, add documented dimension and index-parameter fields and README guidance."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/app/db.py:8-16 defines module-level _mongo_client and init_db() assigns AsyncIOMotorClient once; SwiftMessage.get_motor_collection() / coll usage relies on that shared client.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Seed script loads sample data and creates indexes, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/create_indexes.py creates unique index on message_id and compound index; app/seed.py:29-46 checks coll.find_one({'message_id': parsed.message_id}) before inserting (idempotent).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for empty query and when embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "No /search endpoint or embedding logic implemented in the sample.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If /search is added, ensure it returns 400 for empty queries and 503/5xx or structured error on embedding failures with clear messages."
+    },
+    {
+      "requirement": "Search results include a similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search / vector search implemented in the sample.",
+      "cause": "could_not_determine",
+      "smallest_fix": "When implementing search, include and surface similarity scores in the response."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "not_met",
+      "evidence": "app/requirements.txt shows range constraints (e.g. beanie>=1.0.0,<2.0.0 motor>=3.0.0,<4.0.0 pymongo>=4.0.0,<5.0.0), not exact pins.",
+      "cause": "builder_error",
+      "smallest_fix": "Pin tested exact package versions in requirements.txt (e.g. beanie==1.22.1 motor==3.1.1 pymongo==4.4.0) or include a pip-tools/constraints file and document the tested matrix in README."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/test_parser.py exists and was executed in CI/build: events.jsonl shows pytest passing (events lines showing '2 passed'). The tests exercise parsing only and do not require a live cluster.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository contains no Bicep, ARM, Terraform or Azure CLI IaC that declares Microsoft.DocumentDB/mongoClusters resources.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal Bicep or Terraform example using Microsoft.DocumentDB/mongoClusters (or a link to the documentdb-azure-deployment skill) showing sensible defaults (tier M30, region, RG) and how to obtain the connection string."
+    },
+    {
+      "requirement": "README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md:11-18 lists files and explains setup; lines 21-36 include Quickstart and cleanup guidance.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Sample uses the name 'Azure DocumentDB' and not former/neighbouring product names.",
+      "status": "met",
+      "evidence": "app/README.md title and text use 'Azure DocumentDB' (app/README.md:1,3).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton client reuse",
+      "practice": "Create one MongoClient / AsyncMongoClient per process and reuse it (singleton) rather than creating a new client per request, and cache it across warm serverless invocations.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "app/app/db.py:8-16 defines module-level _mongo_client and init_db() sets AsyncIOMotorClient once.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforced",
+      "practice": "Always connect with TLS (e.g., include tls=true in the connection string) and do not disable certificate validation in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": ".env.example includes tls=true in the example URI (app/.env.example:1) and app/app/db.py reads DOCUMENTDB_URI (so TLS is up to the provided URI).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "Document explicitly that production URIs must include tls=true and avoid tlsAllowInvalidCertificates; optionally validate in init_db() and fail if TLS appears disabled.",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets from env",
+      "practice": "Do not store DOCUMENTDB_URI or credentials in source control; load credentials from environment variables or Key Vault / managed identity.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/app/db.py:12 reads DOCUMENTDB_URI from environment; app/.env.example contains only a placeholder (no real credentials).",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use Entra ID when available",
+      "practice": "Prefer Microsoft Entra ID (Azure AD) + RBAC / managed identities for app authentication rather than long-lived DB passwords; create least-privilege secondary users if SCRAM is necessary.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "violated",
+      "evidence": "app/README.md and app/app/db.py use DOCUMENTDB_URI and do not document or demonstrate Microsoft Entra ID flows or explain why Entra ID was not used (app/README.md lines 7-9, app/app/db.py:12-16).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Add a README section explaining authentication options and why the sample uses connection-string auth for simplicity; or add an example showing how to enable and connect with Microsoft Entra ID (OIDC) and a note in docdb-mcp-setup skill.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explicit indexing",
+      "practice": "Create explicit indexes that match your query patterns, and add a compound index for common group-by queries (e.g., message_type + value_date).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/indexing",
+      "status": "followed",
+      "evidence": "app/create_indexes.py:16-23 creates unique index on message_id and compound index on ('message_type', 'value_date'); app/create_indexes.py is idempotent (lines 16-24).",
+      "source": "Manage indexing in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/indexing"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain queries",
+      "practice": "Run explain()/explain('executionStats') on queries and aggregation pipelines to verify index usage and to tune pipelines.",
+      "category": "queries/monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-migrate-ordered-indexes#migrate-to-ordered-indexes",
+      "status": "violated",
+      "evidence": "No code calls explain() or uses MCP explain tools on the aggregation pipeline; scripts/aggregate_test.py runs the aggregation but does not call explain (app/scripts/aggregate_test.py:13-24).",
+      "source": "Migrate to ordered indexes in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add an example script (or an extra CLI/seed step) that runs db.collection.explain('executionStats') on the aggregation pipeline and record the output. Or use the DocumentDB MCP tool (documentdb_explain) in the repo's verification scripts.",
+      "sources": [
+        {
+          "title": "Migrate to ordered indexes in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-migrate-ordered-indexes#migrate-to-ordered-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Respect backpressure (429)",
+      "practice": "On HTTP 429 read Retry-After and apply exponential backoff with jitter; enqueue retries rather than blocking and limit retry counts.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/en-us/azure/well-architected/design-guides/throttling#[tp-5]-respect-backpressure",
+      "status": "violated",
+      "evidence": "app/app/main.py and seed.py do not implement retry/backoff or inspect Retry-After; coll.insert_many() calls are not wrapped with retry logic.",
+      "source": "Design throttling to improve resilience",
+      "searched": "",
+      "fix": "Wrap insert_many and other bulk operations with a retry loop that honours Retry-After header when present and otherwise uses exponential backoff with jitter; prefer unordered writes and enqueue retries rather than blocking the API worker.",
+      "sources": [
+        {
+          "title": "Design throttling to improve resilience",
+          "url": "https://learn.microsoft.com/en-us/azure/well-architected/design-guides/throttling#[tp-5]-respect-backpressure"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk/unordered writes",
+      "practice": "For high-throughput ingestion use bulk/unordered writes and tune batch sizes (commonly up to ~1,000 documents per batch per process).",
+      "category": "bulk writes",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes",
+      "status": "violated",
+      "evidence": "app/app/main.py uses coll.insert_many(docs) without ordered=False and without batching; app/seed.py uses insert_many for small lists but no ordered=False.",
+      "source": "Optimize write performance in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "Use insert_many(docs, ordered=False) and implement configurable batching (e.g., chunk parsed_docs into batches of 500) to reduce tail latencies and allow partial success handling.",
+      "sources": [
+        {
+          "title": "Optimize write performance in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monetary amounts type",
+      "practice": "Store monetary amounts using fixed-point or BSON Decimal128 rather than binary float to avoid precision errors when summing.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/feature-support-70#data-types",
+      "status": "violated",
+      "evidence": "app/app/models.py:12 defines amount: Optional[float]; seed and parser produce float values (app/app/parser.py:42-45), and aggregation sums those floats (app/app/main.py:64-67).",
+      "source": "Supported features and syntax in Azure Cosmos DB for MongoDB 7.0 server version",
+      "searched": "",
+      "fix": "Change model amount to use Decimal, map to BSON Decimal128 on insert (use bson.decimal128.Decimal128 or PyMongo's Decimal128 wrapper) and update parser to return Decimal; document the rationale in README.",
+      "sources": [
+        {
+          "title": "Supported features and syntax in Azure Cosmos DB for MongoDB 7.0 server version",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/feature-support-70#data-types"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Daily-group key",
+      "practice": "Keep a date-truncated field for daily aggregations so grouping is efficient and indexable.",
+      "category": "data modeling/aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/date-expression/$datetrunc",
+      "status": "violated",
+      "evidence": "app/app/main.py groups by a formatted value_date via $dateToString in aggregation but the stored documents do not include a truncated day field; create_indexes.py indexes (message_type, value_date) but not a truncated day field.",
+      "source": "$dateTrunc",
+      "searched": "",
+      "fix": "Compute and store a message_date_day (YYYY-MM-DD) at insert time (in seed.py and /ingest) and add a compound index on (message_type, message_date_day) to make daily grouping use the index.",
+      "sources": [
+        {
+          "title": "$dateTrunc",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/date-expression/$datetrunc"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Operation timeouts",
+      "practice": "Configure per-operation timeouts and serverSelection/socket timeouts to avoid indefinite hangs.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/app/db.py creates AsyncIOMotorClient(uri) without explicit serverSelectionTimeoutMS/socketTimeoutMS/connectTimeoutMS (app/app/db.py:15).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Pass serverSelectionTimeoutMS (e.g., 5000) and socketTimeoutMS appropriate for bulk ops to AsyncIOMotorClient or add them to the connection URI; document recommended values in README.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotency and unique message_id",
+      "practice": "Record a unique message identifier and use unique indexes / upserts to avoid duplicate ingestion.",
+      "category": "ingestion/retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/indexing#index-properties",
+      "status": "followed",
+      "evidence": "app/create_indexes.py:16-18 creates a unique index named ux_message_id on message_id and seed.py checks for existing message_id before insert.",
+      "source": "Manage indexing in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "Handle duplicate-key errors during /ingest for concurrent ingestion (use ordered=False and catch DuplicateKeyError or use upsert semantics), so the API returns partial success rather than failing the whole batch.",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/indexing#index-properties"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Test aggregation and index changes",
+      "practice": "Test aggregation and index changes in staging with seeded data and use MCP/explain tools to verify plans before production.",
+      "category": "testing/verification",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-python-beanie#already-using-beanie",
+      "status": "followed",
+      "evidence": "The build ran app/scripts/aggregate_test.py against the live cluster and used MCP tools to list indexes and find documents (events.jsonl shows documentdb_list_indexes and documentdb_find_documents were called).",
+      "source": "Use Beanie with Azure DocumentDB: Build a Python inventory API",
+      "searched": "",
+      "fix": "Add an explain step in the aggregate_test script to explicitly collect executionStats, and document that step in README.",
+      "sources": [
+        {
+          "title": "Use Beanie with Azure DocumentDB: Build a Python inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-python-beanie#already-using-beanie"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": ".env.example present",
+      "practice": "Do not commit .env files with secrets; commit a .env.example with placeholders.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/.env.example exists and contains placeholder DOCUMENTDB_URI (app/.env.example:1).",
+      "source": ".env.example / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example / README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS validation default",
+      "practice": "Ensure TLS validation is enabled by default and validate server certificates; do not disable TLS in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": ".env.example shows tls=true and code reads DOCUMENTDB_URI (app/.env.example:1, app/app/db.py:12-16); sample does not set TLS-disable flags.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Add an explicit check in init_db() to fail if connection URI contains tlsAllowInvalidCertificates or similar unsafe flags in production.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Observability",
+      "practice": "Instrument the ingest pipeline with tracing and metrics (requests/sec, errors, avg latency, RU consumption, 429 counts).",
+      "category": "monitoring/observability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "violated",
+      "evidence": "No metrics/tracing (Prometheus/OpenTelemetry) or RU consumption logging is present in app code or README.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add basic instrumentation (timers, counters) and an example Prometheus / OpenTelemetry snippet in README. Instrument insert_many calls, failed inserts, and 429 events.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator approval recorded; events.jsonl contains the log entry at build time."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python + FastAPI + Beanie matches the prompt and is implemented (see app/app/main.py, app/app/models.py)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "D003 records a choice to use permissive version constraints; the repository contains app/requirements.txt with range constraints (evidence) but the build also used a pinned requirements file at runtime (events show pip install using pinned file). This decision is defensible, but the repository state is ambiguous; prefer explicit single source of truth (pinned requirements.txt)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Duplicate operator approval; logged and present."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Reiterates D002; consistent with code."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "questionable",
+      "comment": "D006's reason_source is 'model_default' and it says the builder chose to pin specific recent package versions. Events show pinned versions were used for pip install, but the committed app/requirements.txt contains looser ranges. Because the decision relies on a model-default preference and the repository content is inconsistent, call this 'questionable' and add a documentation gap (pinning and tested matrix)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from env is implemented (app/app/db.py:12)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Single collection 'swift_messages' decision is implemented (SwiftMessage.Settings.name)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Decision to create explicit indexes is implemented via create_indexes.py and app/app/db.py startup index creation; events show index creation and MCP calls verified index list."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Operator approval logged."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Choosing Python 3.13 is consistent with the run environment; this is a model_default but grounded in the environment used during the build."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Using Beanie + Motor is implemented and matches prompt; events show documentdb-driver and documentdb-connection skills were loaded."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Reading connection string from env is implemented and matches the code (app/app/db.py)."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Single-collection decision repeated; implemented."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Idempotent create_indexes.py and seed script are present and were run during verification (events show 'Inserted 2 sample messages')."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Implementing a small regex-based parser and documenting it as non-production is consistent with the README and parser code."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Using Motor.insert_many for bulk writes is implemented (app/app/main.py:34-36) and was used in seed/aggregate tests."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Pin versions for Beanie/Motor/PyMongo",
+      "what_was_missing": "Authoritative, tested package-version matrix for Beanie + Motor + PyMongo targeting Azure DocumentDB (MongoDB 7.0 wire version). The build used pinned packages in the execution environment but the committed requirements file uses ranges; there is no documentation saying which exact versions were validated against the cluster.",
+      "where_searched": "Inspected project requirements and run logs; searched installed skills and Microsoft Learn (events.jsonl queries around MongoDB 7.0 compatibility).",
+      "effect_on_this_build": "Led to ambiguity: pip install during the build used pinned versions, but the repo's requirements file allows ranges. This means future reproductions may install incompatible versions and fail or behave differently.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a short 'Supported packages' section to the README and commit a requirements.txt with pinned, tested versions (example: beanie==1.22.1, motor==3.1.1, pymongo==4.4.0). Also add a constraints.txt for CI and a note explaining which versions were validated against MongoDB 7.0.",
+      "priority": "high"
+    },
+    {
+      "topic": "WriteConcern semantics (client writeConcern ignored)",
+      "what_was_missing": "Clear, prominent documentation that Azure DocumentDB (vCore mongoClusters) ignores client-specified MongoDB writeConcern settings and that platform replication/consistency semantics should be relied upon.",
+      "where_searched": "Microsoft Learn docs and installed skills; readiness_findings flagged that prior belief about writeConcern was contradicted by Azure docs (events.jsonl search results).",
+      "effect_on_this_build": "If a developer attempted to tune durability via client writeConcern they would be misled; sample does not set writeConcern, but other samples might attempt to tune it incorrectly.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "A short note in documentdb-driver (and the sample README) titled 'Write concern and durability' that states: 'Azure DocumentDB ignores client-specified writeConcern (w/wtimeout). Rely on the cluster's tier and platform durability guarantees. Do not expect client writeConcern to change server durability.' Include a link to the authoritative Learn page.",
+      "priority": "high"
+    },
+    {
+      "topic": "Enable Microsoft Entra ID (OIDC) examples",
+      "what_was_missing": "A short how-to and an example connection string showing how to enable Microsoft Entra ID authentication on a cluster and how a Python client connects using OIDC / MONGODB-OIDC.",
+      "where_searched": "Installed documentdb-security skill and Microsoft Learn; the skill documents Entra ID but the sample and README do not mention it.",
+      "effect_on_this_build": "Users will default to connection-string auth; the sample does not explain whether Entra ID is available or how to use it. This leads to weaker samples that encourage long-lived credentials for TLS endpoints.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short page or README section 'Authentication options' describing (1) native SCRAM username/password, (2) Microsoft Entra ID / OIDC support including CLI/Bicep flags to enable it, and (3) example connection strings and Python snippet for OIDC-enabled clusters.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Connection tuning and retry/backoff examples",
+      "what_was_missing": "Concrete, copy-paste code showing how to set serverSelectionTimeoutMS/socketTimeoutMS and how to implement exponential backoff with jitter on 429/TransientNetworkError for Motor/AsyncIOMotorClient.",
+      "where_searched": "documentdb-connection skill and Microsoft Learn; the skill exists but the sample does not include practical code snippets demonstrating those settings.",
+      "effect_on_this_build": "The sample currently uses the default client configuration and lacks retry/backoff, increasing the chance of transient failures or blocked calls in production-like conditions.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a short code snippet to documentdb-connection and the sample's db.init_db showing AsyncIOMotorClient(..., serverSelectionTimeoutMS=5000, socketTimeoutMS=120000) and a helper retry decorator that respects Retry-After, with an example of wrapping insert_many calls. Include recommended default values and a note about ordered=False for bulk writes.",
+      "priority": "high"
+    },
+    {
+      "topic": "Make daily aggregation indexable",
+      "what_was_missing": "Recommendation and example to store a pre-computed truncated date field (e.g., message_date_day) at insert time and index it, so daily grouping/aggregation is index-friendly and fast.",
+      "where_searched": "documentdb-data-modeling skill and $dateTrunc docs; the skill suggests this pattern but the sample did not implement it.",
+      "effect_on_this_build": "Aggregation works but may not use an optimal index shape; for larger datasets this will cause full-collection work and slower pipelines.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short 'Time-series aggregation' snippet to the data-modeling skill and the sample README: compute message_date_day at ingest and seed time (YYYY-MM-DD) and add compound index (message_type, message_date_day). Show how to migrate existing data to include the new field idempotently.",
+      "priority": "medium"
+    },
+    {
+      "topic": "IaC resource type and CLI group clarity (mongoClusters vs databaseAccounts / az documentdb vs az cosmosdb)",
+      "what_was_missing": "A single prominent note clarifying the correct resource type and CLI group to use for vCore-managed Mongo clusters: Microsoft.DocumentDB/mongoClusters and az documentdb mongocluster. Many older docs and examples reference databaseAccounts / az cosmosdb which is the RU-based Cosmos model.",
+      "where_searched": "Readiness findings and Microsoft Learn; searches found the correct pages but the confusion is common.",
+      "effect_on_this_build": "If a developer attempted to write IaC using Microsoft.DocumentDB/databaseAccounts or az cosmosdb they would create or target the wrong control-plane resource and fail to provision the intended vCore mongoCluster.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a 'Resource type decision' note to the documentdb-azure-deployment skill, and a short 'Do not use az cosmosdb for vCore mongo clusters' callout in README. Include a minimal Bicep snippet showing Microsoft.DocumentDB/mongoClusters and example az documentdb mongocluster CLI commands.",
+      "priority": "high"
+    },
+    {
+      "topic": "Repository decision audit: storing amounts as floats",
+      "what_was_missing": "There is no logged decision documenting the deliberate choice to store amounts as floats for simplicity, nor an explicit 'temporary/educational' flag in the README about the financial precision trade-offs.",
+      "where_searched": "decisions.jsonl and repository files; decisions.jsonl does not contain an entry explaining the choice to use float for amount.",
+      "effect_on_this_build": "The lack of an explicit decision makes it easier for maintainers to overlook the precision problem when publishing; a reviewer may assume the sample is production-ready with floats.",
+      "proposed_fix_type": "other",
+      "proposed_content": "Add an explicit decision entry in decisions.jsonl or README: 'Amounts stored as float in sample for simplicity; production systems must use Decimal128 or integer cents; migration guidance provided.'",
+      "priority": "medium"
+    }
+  ]
+}
