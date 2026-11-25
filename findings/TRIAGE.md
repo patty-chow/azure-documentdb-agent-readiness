@@ -1422,7 +1422,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 10-multi-tenant-storefront-saas | `runs/10-multi-tenant-storefront-saas/20261124-184121` | 3 | 0 | 12 | 75 | 0 |
 | 10-support-ticket-rag-assistant | `runs/10-support-ticket-rag-assistant/20261124-204529` | 0 | 0 | 11 | 5 | 0 |
 | 10-wealth-management-rag-portal | `runs/10-wealth-management-rag-portal/20261124-201449` | 0 | 0 | 7 | 4 | 0 |
-| 11-care-gap-identification-pipeline | `runs/11-care-gap-identification-pipeline/20261124-194646` | 3 | 0 | 12 | 53 | 3 |
+| 11-care-gap-identification-pipeline | `runs/11-care-gap-identification-pipeline/20261124-194646` | 6 | 0 | 14 | 100 | 3 |
 | 11-correspondent-banking-risk-screener | `runs/11-correspondent-banking-risk-screener/20261124-201541` | 0 | 0 | 9 | 3 | 0 |
 | 11-market-news-sentiment-orchestration | `runs/11-market-news-sentiment-orchestration/20261124-191425` | 4 | 0 | 16 | 65 | 0 |
 | 11-preference-center-consent-store | `runs/11-preference-center-consent-store/20261124-204614` | 0 | 0 | 8 | 8 | 0 |
@@ -1430,11 +1430,11 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 12-abandoned-cart-recovery-orchestration | `runs/12-abandoned-cart-recovery-orchestration/20261124-184507` | 3 | 0 | 7 | 93 | 6 |
 | 12-clv-prediction-pipeline | `runs/12-clv-prediction-pipeline/20261124-204841` | 0 | 0 | 7 | 6 | 0 |
 | 12-cross-border-payment-audit-trail | `runs/12-cross-border-payment-audit-trail/20261124-201744` | 0 | 0 | 6 | 10 | 0 |
-| 12-hospital-bed-occupancy-tracker | `runs/12-hospital-bed-occupancy-tracker/20261124-194835` | 0 | 0 | 8 | 15 | 2 |
+| 12-hospital-bed-occupancy-tracker | `runs/12-hospital-bed-occupancy-tracker/20261124-194835` | 3 | 0 | 15 | 57 | 2 |
 | 12-invoice-matching-reconciliation | `runs/12-invoice-matching-reconciliation/20261124-191603` | 4 | 0 | 23 | 66 | 0 |
 | 13-algorithmic-trade-journal | `runs/13-algorithmic-trade-journal/20261124-191835` | 3 | 0 | 24 | 126 | 1 |
 | 13-basel-iii-capital-ratio-calculator | `runs/13-basel-iii-capital-ratio-calculator/20261124-201926` | 0 | 0 | 10 | 5 | 0 |
-| 13-chronic-disease-risk-predictor | `runs/13-chronic-disease-risk-predictor/20261124-194916` | 0 | 0 | 10 | 1 | 0 |
+| 13-chronic-disease-risk-predictor | `runs/13-chronic-disease-risk-predictor/20261124-194916` | 4 | 0 | 10 | 50 | 3 |
 | 13-household-grouping-linkage | `runs/13-household-grouping-linkage/20261124-204947` | 0 | 0 | 9 | 3 | 0 |
 | 13-product-q-a-chatbot-rag | `runs/13-product-q-a-chatbot-rag/20261124-184527` | 0 | 0 | 26 | 50 | 3 |
 | 14-customer-complaint-classifier | `runs/14-customer-complaint-classifier/20261124-201931` | 0 | 0 | 5 | 8 | 0 |
