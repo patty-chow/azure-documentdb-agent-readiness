@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex pipeline that ingests PubMed abstracts for rare diseases, chunks and embeds them, stores vectors in DocumentDB, and exposes a RAG agent that answers researcher questions with grounded citations. The agent should rank results by semantic relevance and include the PubMed ID and abstract year in each citation.
