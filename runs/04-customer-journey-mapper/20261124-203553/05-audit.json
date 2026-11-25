@@ -1,0 +1,496 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested customer-journey reconstruction and LLM prompt engineering in Node.js. Core features are present: a singleton MongoClient, an idempotent seed script that creates a compound index ({customerId:1, timestamp:1}) and inserts synthetic events, an aggregation helper that returns chronological timelines and channel groupings, and an agent module that formats a structured timeline into a prompt and calls an OpenAI-compatible client to summarize inflection points. Unit tests (prompt-builder) run without a live cluster. The LLM end-to-end step was not exercised because OPENAI_API_KEY was not provided during verification, but the code path is implemented.\n\nFindings that need attention before publishing: the aggregation work is done with a client-side group after a find().sort(...).toArray(), rather than with a server-side aggregation pipeline (no $group/$match pipeline or allowDiskUse), which makes the implementation memory-unsafe for large customers and misses opportunities for index-backed grouping in the DB. The sample does not implement pagination/streaming or request-retry/backoff handling for heavy or transient workloads. .env.example is present but omits a few optional env knobs the code reads (pool-sizing). There is no IaC (ARM/Bicep/Terraform) example using the correct Microsoft.DocumentDB/mongoClusters resource type. Several of these gaps were predicted in the prompt-review readiness flags; the builder addressed many (env variables, seed idempotency via a seed marker) but left others to be added in documentation or a follow-up change (IaC, more robust DB-side aggregation, retry/backoff and pagination).",
+  "requirement_results": [
+    {
+      "requirement": "Build the application in Node.js as a single LlamaIndex agent that owns the whole flow: it invokes the aggregation tool, formats the result into its prompt and produces the final summary.",
+      "status": "partly_met",
+      "evidence": "src/agent.js:34-46 (summarizeJourney builds prompt and calls LLM), src/aggregationTool.js:3-9 and src/server.js:9-15 (server invokes aggregation tool and then calls agent.summarizeJourney; the agent does not itself invoke the aggregation tool).",
+      "cause": "builder_error",
+      "smallest_fix": "Have the agent module import and call getCustomerJourney(customerId) (or expose a run(customerId) API) so the agent both invokes the aggregation tool and performs prompt construction + summarization in one place."
+    },
+    {
+      "requirement": "The agent takes the customer whose journey is to be mapped as its input (e.g. a customer identifier) and passes it to the aggregation tool.",
+      "status": "not_met",
+      "evidence": "src/server.js:9-15 (server reads req.query.customerId and calls getCustomerJourney(); agent.summarizeJourney receives only a journey object).",
+      "cause": "builder_error",
+      "smallest_fix": "Change agent.summarizeJourney to accept customerId, import getCustomerJourney, and call it internally, or add an agent.run(customerId) wrapper that performs both fetching and summarization."
+    },
+    {
+      "requirement": "Register a DocumentDB aggregation tool with the LlamaIndex agent that runs an aggregation pipeline (e.g. with the `mongodb` Node.js driver) over the touchpoint event documents stored in Azure DocumentDB for that customer.",
+      "status": "partly_met",
+      "evidence": "app/src/aggregationTool.js:3-9 (getCustomerJourney uses coll.find({customerId}).sort({timestamp:1}).toArray()), app/src/agent.js:13-31 (agent prompt expects structured timeline). No registration with a LlamaIndex tool API is present.",
+      "cause": "builder_error",
+      "smallest_fix": "Implement the aggregation as a server-side pipeline (coll.aggregate([...]) ), and either export the aggregation function as a tool the agent imports or register it using the agent-tooling convention you adopt (one-line change: replace find().sort().toArray() with an aggregate pipeline)."
+    },
+    {
+      "requirement": "The pipeline itself reconstructs the journey: it sorts the customer's events by timestamp and groups them by channel (e.g. a `$match` on the customer, a `$sort` on the timestamp and a `$group` by channel).",
+      "status": "partly_met",
+      "evidence": "app/src/aggregationTool.js:8-16 (the implementation sorts in the DB but performs grouping in JavaScript after fetching: timeline = coll.find(...).sort(...).toArray(); grouping is then done client-side).",
+      "cause": "builder_error",
+      "smallest_fix": "Use a pipeline like [{$match:{customerId}}, {$sort:{timestamp:1}}, {$group:{_id:'$channel', events:{$push:'$$ROOT'}}}] and return the pipeline result (or both timeline and grouped aggregates) instead of performing grouping client-side."
+    },
+    {
+      "requirement": "Apply context engineering to the tool's output: format the reconstructed journey as a structured timeline (e.g. events in chronological order, each labelled with its channel and timestamp) and place that formatted timeline in the prompt sent to the model.",
+      "status": "met",
+      "evidence": "app/src/agent.js:13-31 (buildPrompt constructs 'Structured timeline' lines and 'Groupings by channel' and places explicit Task instructions in the prompt).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The agent generates a plain-language summary of the customer's journey from the timeline in its prompt.",
+      "status": "met",
+      "evidence": "app/src/agent.js:34-73 (summarizeJourney uses buildPrompt and calls the configured OpenAI-compatible client, then parses returned JSON).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The summary highlights key inflection points in the journey (e.g. a first purchase, a long gap in activity or a switch between channels), marked so they stand out from the rest of the narrative.",
+      "status": "met",
+      "evidence": "app/src/agent.js:27-31 (buildPrompt instructs the model to treat gaps > 7 days as inflection points and to highlight purchases, cancels, support_contact, channel switches, etc.).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": ".env.example:3-7 (DOCUMENTDB_URI and OPENAI_API_KEY placeholders), src/db.js:21-23 (reads DOCUMENTDB_URI), src/agent.js:40-51 (reads OPENAI_API_KEY).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example:3-9 (DOCUMENTDB_URI, OPENAI_API_KEY, MODEL_NAME, DOCUMENTDB_DB_NAME are present). The code also reads optional env vars MAX_POOL_SIZE, MIN_POOL_SIZE, MAX_IDLE_MS but those are not in .env.example (src/db.js:10-16).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add optional environment entries (MAX_POOL_SIZE, MIN_POOL_SIZE, MAX_IDLE_MS) to .env.example with explanatory placeholders and comments."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "No vector-index creation or embedding model code exists in the repository to check dimensions against.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add vector search, require the embedding dimension as an env var and assert it in the index-creation script; document embedding model → dimension mapping in the README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create any vector index or include vector search parameters.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Only applicable if vector search is added; include index-creation parameters in scripts and document how to tune them for larger data sets."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js:4-24 (singleton _client; getClient creates and caches a MongoClient instance used by getDb()).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.js:26-33 (checks seed_metadata marker and skips if present), app/scripts/seed.js:34-36 (creates compound index), app/scripts/seed.js:60-63 (insertMany and then mark).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint exists; the sample exposes /journey only (app/src/server.js:9-16 and 22-29).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If a search endpoint is required for the gallery, implement /search with explicit validation for empty queries and robust error handling for embedding provider failures (return structured 4xx/5xx JSON responses)."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search-with-similarity feature is implemented in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If search is added, return similarity/score alongside results in the API response."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "This is a Node.js sample. package-lock.json is present in repository root (locks dependency tree) (listed by workspace), but there is no requirements.txt; package.json uses semver ranges (app/package.json:15-21).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Either provide a requirements-like file appropriate for Node (e.g., include package-lock.json and call out in README to run `npm ci`), or add a file documenting exact pinned versions. For Python-oriented gallery checks, clarify language, or provide an equivalent pinned manifest for Node (package-lock.json already serves this purpose)."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/agent.test.js (tests buildPrompt) and npm test passed in the run (events.jsonl run_command npm test: PASS).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository contains no IaC files (Bicep / ARM / Terraform) that create Microsoft.DocumentDB/mongoClusters; only application code, seed scripts and README are present. (list_files shows no templates).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an example Bicep/ARM/Terraform template that provisions Microsoft.DocumentDB/mongoClusters (example minimal template) and a short 'how to provision' note in README; prefer a sample that defaults to low-cost parameters and documents the resource type used."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md:5-20 (shows functionality, prerequisites and setup/run). The README does not show clean-up steps for removing seed data or rolling back resources.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a 'clean-up' section describing how to drop the sample DB/collections (or remove seed data and indexes) and how to stop the server; if IaC is added, include uninstall/teardown commands."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md:1 and other files use the name 'Azure DocumentDB'; package.json keywords include 'documentdb'.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env secret handling",
+      "practice": "Keep the DocumentDB/MongoDB connection URI only in an environment variable (e.g., DOCUMENTDB_URI) and never commit it; provide a .env.example with placeholders instead of real secrets.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": ".env.example:3, src/db.js:21-24",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Single client reuse",
+      "practice": "Create a single MongoClient/connection instance at app startup and reuse it across the process (do not open a new client per request); set pool-size parameters appropriate to your runtime (e.g., larger maxPoolSize for long-running servers, small pools for serverless).",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "src/db.js:4-24 (singleton _client and getClient/getDb pattern)",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS on the wire",
+      "practice": "Always connect with TLS (tls=true / ssl=true) and verify certificates; do not disable TLS in production or log connection strings that have TLS disabled.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication",
+      "status": "followed",
+      "evidence": ".env.example:3 (DOCUMENTDB_URI sample includes tls=true), README.md:13-14 (instructions to use connection string), src/db.js does not log connection string.",
+      "source": "Connect to Azure DocumentDB using MongoDB Shell",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using MongoDB Shell",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index for timeline",
+      "practice": "Create a compound index for the timeline query pattern, e.g., { customerId: 1, timestamp: 1 }, so per-customer sorting by timestamp can be served by an index.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "scripts/seed.js:34-36 (createIndex({ customerId: 1, timestamp: 1 }, { name: 'customer_timestamp_idx' })), events.jsonl documentdb_list_indexes result shows customer_timestamp_idx (events.jsonl:42).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregation",
+      "practice": "In aggregation pipelines, place $match and $sort as early as possible and ensure sort fields are covered by an index (follow ESR: Equality → Sort → Range when designing compound indexes).",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "src/aggregationTool.js:8-16 (coll.find({customerId}).sort({timestamp:1}).toArray() then grouping in JS rather than performing the $match/$sort/$group in a single server-side aggregation pipeline).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Replace the client-side grouping with a pipeline like: coll.aggregate([{ $match: { customerId } }, { $sort: { timestamp: 1 } }, { $group: { _id: '$channel', events: { $push: '$$ROOT' } } }], { allowDiskUse: true }).toArray()",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Project only required fields",
+      "practice": "Project only required fields in find() or aggregation to reduce RU consumption and network transfer (e.g., { timestamp:1, channel:1, eventType:1, metadata:1 }).",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "src/aggregationTool.js:8-9 (coll.find({ customerId }).sort({ timestamp: 1 }).toArray() with no projection specified).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Add projection to the find or use a $project stage in the aggregate pipeline: e.g., coll.find({ customerId }, { projection: { timestamp: 1, channel: 1, eventType: 1, metadata: 1 } }).sort({ timestamp: 1 }).toArray()",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Validate index usage (explain)",
+      "practice": "Validate index usage and query shape with explain('executionStats') for representative queries/pipelines and tune indexes or pipeline shape until the plan shows index scans rather than COLLSCAN.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "events.jsonl:46 (documentdb_explain_operation returned a winningPlan that uses indexName: \"customer_timestamp_idx\").",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry/backoff on transient errors",
+      "practice": "Implement retries with exponential backoff for transient errors and explicitly handle 429 (throttling) by honoring Retry-After and retrying after that delay.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "src/db.js:10-17 (clientOptions set retryWrites: true but there is no explicit retry/backoff wrapper for application-level operations or handling of 429/Retry-After).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add an operation wrapper that retries transient errors with exponential backoff and explicitly handles 429 by reading Retry-After (use a small retry helper or a library like promise-retry).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid unbounded memory",
+      "practice": "Avoid unbounded in-memory aggregation ($group that accumulates huge arrays); stream results, page by timestamp ranges, or use $limit and incremental aggregation to keep memory usage bounded.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "src/aggregationTool.js:8-9 (timeline = coll.find(...).sort(...).toArray() loads the whole result set into memory for a customer).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Use a cursor with a reasonable batchSize or implement timestamp-based paging (e.g., timestamp > lastSeen) and stream or paginate results instead of toArray().",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotency",
+      "practice": "When loading or seeding many documents, use bulk-write / insertMany (optionally unordered) or SDK bulk modes, and consider creating indexes after ingestion to improve throughput; use upserts or unique keys for idempotent seeds.",
+      "category": "seeding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/vector-search-performance-tips#tips-for-optimizing-insert-throughput",
+      "status": "followed",
+      "evidence": "scripts/seed.js:60-63 (uses insertMany to insert all docs and marks seed_metadata to avoid re-running).",
+      "source": "Tips for optimizing vector indexing & Insert multiple documents",
+      "searched": "",
+      "fix": "To improve idempotency further, either create a unique eventId and a unique index or use bulk upserts; also consider passing { ordered: false } to insertMany for faster ingestion.",
+      "sources": [
+        {
+          "title": "Tips for optimizing vector indexing & Insert multiple documents",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/vector-search-performance-tips#tips-for-optimizing-insert-throughput"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Protect secrets in logs",
+      "practice": "Protect secrets and telemetry: never log full connection strings or primary keys; mask or omit secrets in error messages and telemetry sent to logs or APM.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example contains placeholders (no secrets committed); code (src/db.js, src/agent.js, src/server.js) does not print DOCUMENTDB_URI. README warns not to commit .env (README.md:35-37).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring and RU awareness",
+      "practice": "Instrument and monitor RU/s consumption, latency, and throttling for typical aggregations and provision or autoscale throughput so heavy aggregations or vector searches are not routinely throttled.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "violated",
+      "evidence": "No instrumentation for RU/latency/429s is present in application code or README; agent and aggregation code do not record or surface RU metrics.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add basic diagnostics in the seed/aggregation paths (log duration, catch 429 and surface Retry-After), and document how to enable diagnostic settings in Azure / Log Analytics.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: index decision",
+      "practice": "Audit trail for key architecture decisions (index choices, driver pinning, auth method).",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "events.jsonl:26/21-23 show attempts to call log_decision for provisioning and index decisions that raised validation errors; some design choices (index creation arguments and some run_policy rationale) were attempted to be logged but were not recorded successfully (see events.jsonl entries with 'Invalid arguments for log_decision').",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "Fix the log_decision invocation to supply a valid reason_source literal (e.g., 'readiness_report' or 'documentdb-indexing') or fallback to a documented CHANGELOG entry in the repo. Ensure each index and major choice is recorded with a decision id.",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval decision recorded in decisions.jsonl. Reason source is 'operator' and does not require tool evidence in events.jsonl. No contradiction found."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Decision to use Node.js matches the prompt; events.jsonl:17 shows log_decision recorded successfully and the codebase is Node.js (app files)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Decision to use the 'mongodb' Node.js driver is recorded (events.jsonl:18) and package.json lists 'mongodb' as a dependency (app/package.json:18)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Decision to implement a LlamaIndex-style prompt wrapper and call OpenAI is recorded (events.jsonl:19). The repository implements a buildPrompt/summarizeJourney pattern (app/src/agent.js)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Decision to read secrets from environment variables was recorded (events.jsonl:20) and the code uses process.env for DOCUMENTDB_URI and OPENAI_API_KEY (src/db.js and src/agent.js)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choice of collection name 'touchpoints' is recorded (events.jsonl:24) and the code and seed script use 'touchpoints' (scripts/seed.js:34, src/aggregationTool.js:6)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "questionable",
+      "comment": "Decision to insert 1000 synthetic events was recorded (events.jsonl:25). The reason_source is 'model_default' (decisions.jsonl), which is acceptable but flagged in readiness as a model-derived default. The script did run and inserted 1000 events (events.jsonl:41 output). Consider documenting why 1000 events was chosen (README) so reviewers understand the choice."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Driver version compatibility and pinning",
+      "what_was_missing": "Authoritative guidance that lists supported Node driver major versions (e.g., mongodb 5.x vs 6.x), the minimum compatible versions for DocumentDB cluster serverVersion values, and a short rule for which version to pin in samples.",
+      "where_searched": "Searched installed skills (documentdb-driver, documentdb-connection) and Microsoft Learn quickstarts; no single concise 'which driver versions to pin' sentence was found for this new vCore DocumentDB offering.",
+      "effect_on_this_build": "The builder chose mongodb ^5.7.0 sensibly, but reviewers and future builders may pick an incompatible major version that exposes different client API shapes or breaks tests. The tests initially failed because of OpenAI SDK shape differences, illustrating how small SDK changes cause test breakage.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Driver compatibility' page or section in the DocumentDB quickstart: (1) recommended Node driver major version(s) for each advertised serverVersion; (2) sample package.json snippet showing pinned version and a 'why' paragraph; (3) a brief troubleshooting note explaining common errors when using other driver majors and how to update code for API changes.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness",
+      "what_was_missing": ".env.example does not enumerate optional pool-tuning environment variables (MAX_POOL_SIZE, MIN_POOL_SIZE, MAX_IDLE_MS) that the code reads/defaults to.",
+      "where_searched": "Repo files (.env.example) and src/db.js; reviewed documentdb-connection skill for recommended knobs.",
+      "effect_on_this_build": "Users copying .env.example may be unaware of tunable settings in src/db.js and will not know how to adjust pool sizing for their runtime environment.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add optional entries to .env.example with comments explaining intent, e.g.:\nMAX_POOL_SIZE=20 # increase for long-lived servers with high concurrency\nMIN_POOL_SIZE=0\nMAX_IDLE_MS=300000\nAlso add a 1-paragraph note in README explaining when to change them.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Server-side aggregation / safe timeline patterns",
+      "what_was_missing": "A short example page that shows how to implement an index-backed timeline aggregation pipeline with $match/$sort/$group and how to make it safe for large event histories (use allowDiskUse, ranged pagination, cursors).",
+      "where_searched": "documentdb-query-optimizer and aggregation docs; examples exist for $match/$sort but not a compact, sample-friendly 'customer timeline' pipeline plus pagination pattern.",
+      "effect_on_this_build": "The sample implemented grouping client-side which is unsafe for large timelines; a canonical example would have guided the builder to use a server-side pipeline and pagination from the start.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short 'Customer timeline' recipe page: (1) recommended compound index; (2) aggregation pipeline example for timeline + channel grouping; (3) variant for streaming/paged server-side results; (4) note about allowDiskUse and RU impact and a sample explain() showing index usage.",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC example for DocumentDB clusters",
+      "what_was_missing": "A minimal Bicep/ARM/Terraform example that provisions Microsoft.DocumentDB/mongoClusters (vCore DocumentDB), with defaults for low-cost tiers and clear comments distinguishing it from older databaseAccounts/azurerm_cosmosdb_account examples.",
+      "where_searched": "Microsoft Learn docs for mongoClusters and readiness notes; no sample IaC template was present in the repository to copy.",
+      "effect_on_this_build": "The sample omitted IaC because the run policy forbade provisioning; without an example, other builders may use older resource types (databaseAccounts) and fail to deploy the intended vCore cluster.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a 'deploy/mongoClusters.bicep' and 'deploy/terraform' example that declares Microsoft.DocumentDB/mongoClusters and exposes parameters for tier/region/storage. Include a README subsection: 'Note: use mongoClusters resource, not databaseAccounts — see link.'",
+      "priority": "high"
+    },
+    {
+      "topic": "README: clean-up and test guidance",
+      "what_was_missing": "Explicit clean-up instructions for removing seed data / indexes and guidance on running unit tests without a live cluster (use local DocumentDB gateway image or mock patterns).",
+      "where_searched": "Repo README and documentdb-local-deployment skill; README has setup/run but not teardown or local gateway usage instructions.",
+      "effect_on_this_build": "Users may be left with sample data in their cluster and may not be able to run integration tests locally with feature parity.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add sections: 'Clean up' (commands to drop the sample database or remove seed_metadata marker), and 'Run tests locally' (how to run the DocumentDB local gateway Docker image including port 10260, and how to run tests against it or how to mock the DB for unit tests).",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests without live cluster (mocking guidance)",
+      "what_was_missing": "Concrete guidance or a small helper for writing unit tests that do not require a live DocumentDB cluster (e.g., a lightweight mock of getDb/getClient or a test fixture that starts the local DocumentDB gateway).",
+      "where_searched": "documentdb-local-deployment skill and repository tests; the repo's tests cover only buildPrompt and do not demonstrate mocking DB calls.",
+      "effect_on_this_build": "Builder added a unit test for the prompt builder only; additional tests for aggregation/seed would require either a live cluster or a documented mocking approach.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Provide a test-utils module and README example showing how to stub getDb/getClient with an in-memory collection shim or how to run the DocumentDB local Docker image for integration tests. Include sample jest setup/teardown code.",
+      "priority": "medium"
+    }
+  ]
+}
