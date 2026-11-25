@@ -1,0 +1,124 @@
+{
+  "answers": [
+    {
+      "question_id": "Q01",
+      "question": "What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster?",
+      "answer": "Resource provider namespace: Microsoft.DocumentDB. Resource type for a managed MongoDB/DocumentDB cluster: Microsoft.DocumentDB/mongodbClusters (createable as a top-level resource under a resource group). Example ARM/Bicep type string: \"Microsoft.DocumentDB/mongodbClusters@2024-01-01\".",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q02",
+      "question": "Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension?",
+      "answer": "Azure CLI command group: az documentdb (extension). Install and use the documentdb extension: az extension add --name documentdb; then create a cluster with az documentdb mongodb cluster create --resource-group <rg> --name <clusterName> --sku M30 --location <loc> --node-count 3. (The core az cosmosdb group is for Cosmos DB; the new managed DocumentDB/Mongo service is exposed through the documentdb CLI extension.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q03",
+      "question": "Which Bicep and Terraform resource types deploy a cluster?",
+      "answer": "Bicep/ARM: resource type \"Microsoft.DocumentDB/mongodbClusters\" (example: resource docdb 'Microsoft.DocumentDB/mongodbClusters@2024-01-01' = { name: 'myCluster' properties: { sku: { name: 'M30' } } }).\nTerraform (azurerm provider): resource \"azurerm_mongodb_cluster\" \"example\" { name = \"myCluster\" resource_group_name = azurerm_resource_group.rg.name location = azurerm_resource_group.rg.location sku_name = \"M30\" node_count = 3 }",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q04",
+      "question": "What does a connection string look like: scheme, host suffix, port, and the options it must carry?",
+      "answer": "Use standard MongoDB connection URIs (mongodb or mongodb+srv). Example SRV: mongodb+srv://<username>:<password>@<clustername>.mongo.azure.com/<dbname>?authSource=admin&tls=true&retryWrites=true. Example non-SRV: mongodb://<username>:<password>@<host1>:27017,<host2>:27017/<dbname>?replicaSet=<rs>&authSource=admin&ssl=true. Required options: TLS/SSL enabled (tls=true or ssl=true), authSource=admin (or $external for token/X.509 flows), authMechanism=SCRAM-SHA-256 (default) if using username/password. Port: typical MongoDB port 27017 for direct connections (SRV hides port), sometimes managed endpoints use 10255 for older Cosmos Mongo endpoints but modern managed clusters use 27017.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q05",
+      "question": "How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else?",
+      "answer": "Provisioning is by compute SKU/tier (instance sizes like M10/M20/M30 etc or vCore-equivalent VM sizes). Choose a compute tier and node count (e.g. M30) and storage; billing is per-hour for the provisioned cluster instances and attached storage. This is not RU/s billing (those are Cosmos DB-specific); it's the instance-based (vCore/size) billing model.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q06",
+      "question": "Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID?",
+      "answer": "Supported auth methods: SCRAM-SHA-256 and SCRAM-SHA-1 for username/password, and X.509 certificate authentication. Microsoft Entra (Azure AD) token-based authentication is supported by obtaining an AAD access token and using it with SASL/PLAIN against authSource=\"$external\" (driver supplies the token as the password and the username is the AAD principal). Concretely: 1) Acquire access token via MSAL (scope for the DocumentDB resource). 2) Create MongoClient with authMechanism=PLAIN and authSource=$external, passing the token as the password and the full principal as username. Example connection string fragment: ?authMechanism=PLAIN&authSource=%24external&tls=true and in driver connect using username=\"<client-id>@<tenant-id>\" and password=\"<access_token>\" obtained from MSAL.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q07",
+      "question": "Which client library should an application use? Is there a service-specific SDK?",
+      "answer": "Use the standard MongoDB drivers for the language (for Python: pymongo). There is no separate custom data-plane SDK required for the MongoDB protocol; management tasks use Azure management SDKs (az cli, azure-mgmt) but application code should use pymongo (or the official MongoDB Node/PHP/etc drivers). Example: pip install pymongo and connect with pymongo.MongoClient(os.environ['DOCUMENTDB_URI']).",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q08",
+      "question": "Which vector index types are supported, and what does the command that creates one look like?",
+      "answer": "Supported vector index types: HNSW, IVF and DiskANN (service exposes HNSW and IVF options and a DiskANN option for disk-backed indexes). Example index creation (Mongo shell style): db.companies.createIndex( { embedding: 'vector' }, { name: 'embedding_vector_idx', vectorIndexType: 'hnsw', vectorIndexOptions: { dims:1536, m:32, efConstruction:200 } } ). (Alternatively use driver.create_index with the same options.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q09",
+      "question": "How are full-text search and hybrid search done?",
+      "answer": "Basic full-text: create MongoDB text indexes and use $text queries (db.coll.createIndex({description: 'text'})). For hybrid text+vector search use the service's vector search operators combined with text filters — i.e. create a vector index on the embedding field and use a compound query that applies a text filter ($text or textScore) and a $vectorSearch or $nearVector-like clause to score by vector similarity, then combine scores in the aggregation pipeline. If richer Lucene-style features are required, integrate with Azure Cognitive Search and combine results at the application layer.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q10",
+      "question": "Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not?",
+      "answer": "The managed clusters expose MongoDB server protocol compatible with MongoDB 7.0 (MongoDB 7 wire protocol). Commonly unsupported or restricted features: server-side eval() and arbitrary server-side JavaScript execution is disabled; certain low-level filesystem/OS operations and some enterprise-only storage engine plugins are not available. Most application-level features (transactions, change streams, aggregation) are supported, but double-check for any provider-specific limits on very large $lookup memory usage and server-side file operations.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q11",
+      "question": "How do you run the database locally for development and tests: which image or emulator, and which port?",
+      "answer": "There is no official local 'DocumentDB' emulator for the managed MongoDB cluster. For local development use the official MongoDB Docker image matching the server version (e.g. mongo:7). Run it on the standard MongoDB port 27017: docker run --rm -p 27017:27017 --name local-mongo -e MONGO_INITDB_ROOT_USERNAME=dev -e MONGO_INITDB_ROOT_PASSWORD=devpass mongo:7. Configure your app to connect to mongodb://dev:devpass@localhost:27017/ for tests.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q12",
+      "question": "Are change streams supported, and does anything have to be enabled first?",
+      "answer": "Yes — change streams are supported on managed clusters that expose replica-set/cluster topology. No additional runtime toggle is required for typical collections; just ensure you connect with a user that has the required privileges and that you target a replica-set-enabled deployment. Use the driver watch() API (pymongo.collection.Collection.watch()).",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q13",
+      "question": "Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it?",
+      "answer": "Use the service-specific MCP server called 'documentdb' for data-plane tools (the prompt even references a 'documentdb' MCP server connection profile). The general Azure MCP Server (for generic azure resources) does not include the documentdb-specific inspection/agent commands — use the documentdb MCP server to inspect collections, indexes and query plans.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q14",
+      "question": "What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project?",
+      "answer": "Historically 'DocumentDB' was the name of the original Microsoft NoSQL database that evolved into Azure Cosmos DB. That older DocumentDB API is distinct from the open-source 'DocumentDB' project name used elsewhere. The modern managed MongoDB-compatible Azure DocumentDB clusters are a separate managed MongoDB-compatible offering (not the Cosmos DB Mongo API) — they expose the MongoDB wire protocol and standard MongoDB tooling. In short: older Azure DocumentDB → renamed to Cosmos DB; this managed MongoDB service is a separate managed MongoDB offering that reuses the DocumentDB name in Azure branding.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q15",
+      "question": "What engine is underneath, and does that change anything in application code?",
+      "answer": "The engine underneath is a MongoDB server (WiredTiger storage engine for in-memory/disk-backed indexes) customized and operated by Azure. It speaks the MongoDB wire protocol, so application code uses standard MongoDB drivers without change. Only differences are operational: connection-string options (TLS/auth), cluster sizing, and provider-specific index/feature options (vector index parameters) — application logic and MongoDB queries remain unchanged.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S01",
+      "question": "What exact vector index definition will this sample create for storing rationale embeddings?",
+      "answer": "Create a vector index on the field rationale_embedding using HNSW with 1536 dims. Example (mongo shell): db.esg_docs.createIndex( { rationale_embedding: 'vector' }, { name: 'rationale_hnsw_idx', vectorIndexType: 'hnsw', vectorIndexOptions: { dims: 1536, m: 32, efConstruction: 200 } } ).",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "S02",
+      "question": "How will the sample open a connection to the cluster in Python (exact code to use DOCUMENTDB_URI)?",
+      "answer": "Code to connect with pymongo using the env var: from pymongo import MongoClient; import os; uri = os.environ['DOCUMENTDB_URI']; client = MongoClient(uri, tls=True); db = client['sample_fintech_17']",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S03",
+      "question": "What aggregation pipeline will rank companies by composite ESG score?",
+      "answer": "Aggregation pipeline (PyMongo/pipeline form): pipeline = [\n  { '$match': { /* optional filters */ } },\n  { '$addFields': {\n      'E_score': { '$toDouble': '$scores.E' },\n      'S_score': { '$toDouble': '$scores.S' },\n      'G_score': { '$toDouble': '$scores.G' }\n    }\n  },\n  { '$addFields': { 'composite': { '$divide': [ { '$add': [ '$E_score', '$S_score', '$G_score' ] }, 3 ] } } },\n  { '$sort': { 'composite': -1 } },\n  { '$project': { 'company': 1, 'scores':1, 'composite':1, 'rationale':1 } }\n]\nThen run db.esg_docs.aggregate(pipeline).",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S04",
+      "question": "How will the sample store embeddings and rationale to support semantic search?",
+      "answer": "Store embeddings as a numeric array field and also keep the textual rationale. Document schema example: {\n  _id: ObjectId(...),\n  company: 'ACME',\n  scores: { E: 8, S: 6, G: 7 },\n  rationale: 'LLM reasoning text here...',\n  rationale_embedding: [0.00123, -0.2345, ...],\n  updated_at: ISODate()\n}\nCreate a vector index on 'rationale_embedding' (see S01). Use that vector field for similarity queries and keep the textual rationale for explainability and retrieval.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S05",
+      "question": "Which Python libraries and exact pip command will the sample install?",
+      "answer": "pip install pymongo langchain openai python-dotenv sentence-transformers tiktoken\n(Example: pip install pymongo==4.5.0 langchain openai python-dotenv sentence-transformers tiktoken). Use pymongo for DB, langchain+openai (or your chosen LLM/embedding provider) for scoring and embeddings, and python-dotenv to load a .env file with placeholders (do not store DOCUMENTDB_URI in repo).",
+      "confidence": "high"
+    }
+  ]
+}

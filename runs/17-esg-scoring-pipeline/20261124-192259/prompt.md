@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent that reads company ESG data documents from DocumentDB, uses prompt engineering to instruct the LLM to score each pillar (E, S, G) on a 1-10 scale with reasoning, embeds the rationale for semantic search, and writes the scored document back. Add an aggregation pipeline that ranks companies by composite ESG score.
