@@ -1,0 +1,610 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample is a small, readable Python app that implements the core: it accepts a transcript and patientId, uses a context-engineered prompt to get a structured (chief_complaint, assessment, plan, follow_up) summary from an LLM or a deterministic fallback, and stores the structured document into an Azure DocumentDB collection using PyMongo. Key functional and safety items are implemented (singleton client, env-driven secrets, idempotent seeding, patientId index, README). Missing or partial items are mostly documentation, optional vector-index creation, test isolation, and a few production hardening items (retries, diagnostics). The build choices that deviated from the starter prompt (not using LlamaIndex APIs; not creating vector indexes by default) are recorded in decisions.jsonl and justified there; they are defensible but should be called out for the gallery owner. See requirement-by-requirement results, reconciled best-practice checks, decision reviews, and prioritized documentation gaps below.",
+  "requirement_results": [
+    {
+      "requirement": "Provide a Python LlamaIndex pipeline whose entry point accepts a telehealth session transcript together with the patientId of the patient it belongs to.",
+      "status": "partly_met",
+      "evidence": "src/summarizer.py: def summarize_transcript(transcript: str, patient_id: str) (lines 67-73) implements the entry point; however the implementation calls OpenAI directly and does not instantiate or use the LlamaIndex library APIs.",
+      "cause": "builder_error",
+      "smallest_fix": "Either (A) implement a thin LlamaIndex wrapper around the existing summarize_transcript flow, or (B) change the starter prompt to allow direct OpenAI usage; minimal code change: call LlamaIndex's SimpleDirectoryReader/LLMPredictor/PromptHelper and pass the engineered prompt instead of direct openai.ChatCompletion.create."
+    },
+    {
+      "requirement": "Apply context engineering when building the summarisation prompt: the prompt is assembled so that it structures the requested summary around the four sections chief complaint, assessment, plan and follow-up.",
+      "status": "met",
+      "evidence": "src/summarizer.py: system_prompt and user_prompt build a prompt that asks for keys chief_complaint, assessment, plan, follow_up (lines 30-39).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Generate the clinical summary by sending the engineered prompt to OpenAI as the LLM inside the LlamaIndex pipeline.",
+      "status": "partly_met",
+      "evidence": "src/summarizer.py: The engineered prompt is sent to OpenAI via openai.ChatCompletion.create (lines 41-49). The call is not performed inside a LlamaIndex pipeline or with LlamaIndex APIs.",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap the prompt/call with LlamaIndex SDK calls (small code change) or update the sample README/prompt to say the sample uses direct OpenAI calls rather than LlamaIndex."
+    },
+    {
+      "requirement": "Turn the OpenAI response into a structured clinical summary with one field per section (e.g. chief complaint, assessment, plan and follow-up as separate keys).",
+      "status": "met",
+      "evidence": "src/summarizer.py: parses ChatCompletion output as JSON (lines 50-64) and maps fields into a document with keys chief_complaint, assessment, plan, follow_up (lines 85-93).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Store the structured summary as a document in Azure DocumentDB with PyMongo (e.g. an insert into a clinical summaries collection), the document carrying the patientId field that links it to the patient record.",
+      "status": "met",
+      "evidence": "src/summarizer.py: clinical_col.insert_one(doc) (lines 95-96), doc includes patientId (line 86). src/db.py provides collection handles (lines 32-38).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "src/db.py reads DOCUMENTDB_URI = os.environ.get(\"DOCUMENTDB_URI\") (line 7). src/summarizer.py reads OPENAI_API_KEY from env (line 9). .env.example contains placeholders (app/.env.example lines 2-6).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_API_BASE, LLM_MODEL, EMBEDDING_MODEL, DATABASE_NAME (lines 2-7). README instructs copying .env.example (README.md lines 22-24).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "README suggests EMBEDDING_MODEL=text-embedding-3-small (1536 dims) (README.md line 34) and src/db.py notes vector indexes are omitted by default (line 45). The sample does not create a vector index to enforce matching dimensions by default.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vectors are to be used by default, add an index-creation step that specifies dimensions=1536 (or whatever EMBEDDING_MODEL reports), and validate embedding length at write time before inserting vectors."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "README advises a recommended index kind and embedding model (README.md line 34) but does not include tuneable algorithm parameters (m, efConstruction, numLists, etc.). src/db.py explicitly omits vector-index creation (line 45).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small section and an example JSON payload in README that shows a cosmosSearch vector index with parameters for small/medium/large datasets and an example create index helper in src/db.py."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "src/db.py implements a module-level _client and get_client() singleton pattern (lines 10-24).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "scripts/seed.py calls create_indexes() (line 14) and uses update_one(..., upsert=True) for patient and transcripts (lines 26 and 44).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint or search handler is implemented in the repository. README mentions a FastAPI endpoint but no FastAPI app is present (README.md line 6).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal /search HTTP handler (FastAPI) that validates input (return 400 for empty query) and handles embedding-generation errors by returning a 502/503 with an explanatory message; include unit tests for both failure modes."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search functionality / vector query is implemented. The stored clinical summaries do not include embeddings by default and no query returns similarity scores.",
+      "cause": "prompt_silent",
+      "smallest_fix": "When adding vector search, include the server-side score in the response (return the cosmosSearch score or projection in the aggregation result)."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt pins packages with ranges and minimums (e.g., pymongo>=4.3,<5) but does not use exact single-version pins (lines 1-8).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Pin dependencies to exact versions used during verification (e.g., pymongo==4.19.0, openai==0.27.0, llama-index==0.10.1) or add a constraints.txt produced from the lockfile; document how to update them."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "partly_met",
+      "evidence": "tests/test_smoke.py skips if DOCUMENTDB_URI is not set (lines 11-14). There are no mocked tests or in-process local gateway tests that exercise logic without a live cluster.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add tests that mock PyMongo (e.g., use mongomock or pytest fixtures) to run the summariser and insertion logic without a live cluster; keep the current smoke test for optional live verification."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/Terraform/ARM templates) is present. README specifically says the sample will not create resources (README.md and builder_report).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small Bicep or Terraform example using Microsoft.DocumentDB/mongoClusters (or the corresponding Terraform azapi/azurerm module) and a note in README that the snippet is optional and will create a paid resource."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes 'What the sample shows', Prerequisites, Quick start (setup/run/seed), and notes on security (lines 3-31).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README title and text use 'Azure DocumentDB' (README.md lines 1 and 3). .env.example uses a host example containing 'mongocluster.cosmos.azure.com' as an endpoint example (acceptable), but the product name references are 'Azure DocumentDB'.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create one process-wide MongoClient and reuse it (singleton) rather than creating a client per request; tune maxPoolSize to match expected concurrency.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "src/db.py: module-level _client and get_client() that initializes MongoClient once (lines 10-24).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection TLS requirement",
+      "practice": "Require TLS on all connections to the cluster and do not disable certificate verification in production.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": ".env.example includes tls=true in the DOCUMENTDB_URI example (app/.env.example line 2); client reads DOCUMENTDB_URI at runtime (src/db.py line 7).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune connection-pool and timeout parameters to the app context; initialize clients outside handlers for serverless so connections survive warm invocations.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "src/db.py passes retryWrites=True, serverSelectionTimeoutMS=5000, socketTimeoutMS=300000, maxPoolSize=20 when creating MongoClient (lines 19-23).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets in env",
+      "practice": "Read the Azure DocumentDB/MongoDB connection string from an environment variable at runtime and never commit or log the URI or credentials.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "src/db.py reads DOCUMENTDB_URI from the environment (line 7); README and .env.example instruct copying .env.example and not committing secrets (README.md lines 21-24, .env.example).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": ".env.example",
+      "practice": "Do not store secrets in source control; provide a .env.example with placeholders and load real secrets from environment variables or a secret store at runtime.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/.env.example includes placeholders for DOCUMENTDB_URI and OPENAI_API_KEY (lines 2-6); README instructs not to commit .env (README.md lines 21-24, 29-31).",
+      "source": "README.md / .env.example",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md / .env.example",
+          "url": ""
+        },
+        {
+          "title": "README.md / .env.example",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index patientId",
+      "practice": "Create a single-field index on patientId (and make index creation idempotent as part of seeding/migrations) to support lookups rather than relying on collection scans.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "src/db.py create_indexes creates idx_patientId (line 44). scripts/seed.py calls create_indexes() (line 14) and uses upsert for data (lines 26 and 44).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index for patient+time",
+      "practice": "When common lookups include patientId plus a sort or timestamp, create a compound index following the ESR rule (Equality → Sort → Range), e.g., { patientId: 1, createdAt: -1 }.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "src/db.py creates only a single-field patientId index (line 44); no compound index is created.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Add cols['clinical_summaries'].create_index([('patientId', 1), ('createdAt', -1)], name='idx_patientId_createdAt') in create_indexes(); include this in the idempotent seed script.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size limit",
+      "practice": "Keep individual documents well under the 16 MB BSON limit; split or chunk large transcripts into separate documents or a child collection to avoid failed writes and poor performance.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "Summaries are compact (src/summarizer.py builds a small typed doc, lines 85-93). Seed transcripts in scripts/seed.py are small (lines 33 and 39).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Typed summary document",
+      "practice": "Model a structured clinical summary as a compact typed document (patientId, chief_complaint, assessment, plan, follow_up, createdAt, schemaVersion, sourceTranscriptId) stored in its own collection rather than embedding large transcripts.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "src/summarizer.py constructs a compact typed document with patientId, chief_complaint, assessment, plan, follow_up, createdAt, schemaVersion (lines 85-93) and inserts into clinical_summaries (line 95).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retryable writes / application retries",
+      "practice": "Implement application-level retries with exponential backoff for transient errors, and optionally enable driver retryable-writes only if the account capability for retryable writes is enabled on the cluster.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/feature-support-50#retryable-writes",
+      "status": "violated",
+      "evidence": "src/db.py enables retryWrites=True on MongoClient (line 20) but no application-level retry/backoff is used around network calls or insert_one; OpenAI call has a single try/except fallback but no retries (src/summarizer.py lines 75-83).",
+      "source": "Azure Docs — Supported features and syntax (MongoDB) / Retryable writes",
+      "searched": "",
+      "fix": "Add an application-level retry wrapper with exponential backoff for transient errors around DB insert and OpenAI calls (e.g., 3 retries with backoff) and handle/record retry attempts in logs.",
+      "sources": [
+        {
+          "title": "Azure Docs — Supported features and syntax (MongoDB) / Retryable writes",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/feature-support-50#retryable-writes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Write concern mapping",
+      "practice": "Do not rely on client-specified MongoDB writeConcern to change durability on Azure DocumentDB: the service maps write durability to the account consistency and ignores client writeConcern parameters.",
+      "category": "provisioning_and_safety",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/feature-support-36#time-to-live-ttl",
+      "status": "followed",
+      "evidence": "Code does not attempt to set a custom writeConcern on writes; insert_one is used with default settings (src/summarizer.py line 95).",
+      "source": "Azure Docs — Supported features and syntax (MongoDB) / Write Concern",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Azure Docs — Supported features and syntax (MongoDB) / Write Concern",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/feature-support-36#time-to-live-ttl"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection of returned fields",
+      "practice": "Limit returned fields with projection (select only required fields) to reduce bandwidth and memory, and avoid returning raw transcript text in list endpoints.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample does not implement list endpoints that return multiple summaries; the CLI prints a single stored document (scripts/summarize_cli.py lines 16-18) and no projection logic is present.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "When adding list endpoints, ensure you project out raw transcript fields and only return summary metadata; add examples in README.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid unindexed queries",
+      "practice": "Avoid expensive unindexed queries in production; capture and inspect query plans with explain(\"executionStats\") and use index changes as part of deployable migration scripts.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "A patientId index is created (src/db.py line 44) to support lookups; seed creates it via create_indexes() (scripts/seed.py line 14).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring / diagnostic settings",
+      "practice": "Enable diagnostic settings and slow-query / operation logs and send them to Log Analytics so you can detect slow queries and alert on CPU, memory, IOPS, storage, and connection saturation.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "violated",
+      "evidence": "No instrumentation or guidance in code to enable diagnostic settings or wire metrics; README has no 'Monitoring' how-to steps.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a README section describing how to enable diagnostic settings for the cluster and a short sample az command or template to send logs to Log Analytics. Consider adding a small script or checklist to enable diagnostics before running production workloads.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "PHI handling",
+      "practice": "Treat patient-identifying data as sensitive: enforce network isolation (Private Endpoint / firewall), use Microsoft Entra ID + RBAC for operational access, and use customer-managed keys (CMK) for encryption-at-rest when required.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "README contains a Security & PHI section advising not to use real patient data and to keep secrets out of source control (README.md lines 29-31). The app reads secrets from env rather than committing them (src/db.py line 7).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotency",
+      "practice": "Make seed scripts idempotent (upserts / create-if-not-exists) and keep seed/index scripts versioned and in source control for dev/prod parity.",
+      "category": "testing_and_deployment",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "scripts/seed.py uses update_one(..., upsert=True) for patient and transcripts (lines 26 and 44) and calls create_indexes() (line 14).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Tests avoid prod data",
+      "practice": "In tests and CI avoid using production secrets or customer data; run tests against a dedicated test database (e.g., sample_healthcare_14) and clean up or isolate test artifacts.",
+      "category": "testing_and_deployment",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "tests/test_smoke.py will skip when DOCUMENTDB_URI is not set (lines 11-14). There is no mock-based unit test that runs without a live cluster.",
+      "source": "README.md / documentdb-local-deployment",
+      "searched": "",
+      "fix": "Add mocked unit tests (mongomock or pytest fixtures) to exercise summariser logic without live credentials; document how to run smoke tests against a dev cluster separately.",
+      "sources": [
+        {
+          "title": "README.md / documentdb-local-deployment",
+          "url": ""
+        },
+        {
+          "title": "README.md / documentdb-local-deployment",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefer service search operator",
+      "practice": "Prefer Azure DocumentDB's textSearch / $search capabilities for full-text search functionality rather than MongoDB's community $text index.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample does not implement full-text search or $search queries; README explains vector extension but no $search usage in code.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "If adding search, use createSearchIndexes / cosmosSearch and $search aggregation stage rather than community $text; show example in README.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator approved the build; the build proceeded. The events trace shows skill loads and build actions; nothing contradicts an operator sign-off."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python 3.10+ is reasonable and consistent with the run environment. The repo contains Python code and a virtualenv assumption; tests and README assume Python 3.10+."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "The builder chose PyMongo and the singleton pattern. The code implements MongoClient singleton (src/db.py lines 10-24) and the documentdb-driver skill was loaded (events.jsonl shows load_skill)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from the environment was applied (src/db.py line 7). The decision matches the README/.env.example and events trace."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "questionable",
+      "comment": "The decision to call OpenAI directly rather than use LlamaIndex is defensible (stability/simplicity), but it does deviate from the starter prompt's explicit 'LlamaIndex pipeline' instruction. events.jsonl shows many DocumentDB skills were loaded, but no LlamaIndex-specific skill; code uses openai.ChatCompletion.create (src/summarizer.py lines 41-49). This is a design trade-off; call 'questionable' because it changes the sample surface from the prompt."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choosing gpt-3.5-turbo as a default model is reasonable for a demo to reduce user friction; the code default LLM_MODEL is 'gpt-3.5-turbo' (src/summarizer.py line 10)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "text-embedding-3-small (1536 dims) was chosen as the embedding default and is reflected in README/.env.example (README.md line 34, .env.example line 6). The app does not create vector indices by default, which the decision also stated."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Choosing not to create a vector index by default is recorded in the code (src/db.py line 45) and README (README.md line 33-35); this avoids optional cluster changes during default runs and is consistent with the verification notes."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Not provisioning Azure resources during the build is consistent with the run policy and with the skill_md statement that a cluster is already provided. events.jsonl shows no az provisioning attempts."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "The builder used the documentdb MCP server tools for verification as recorded in the build report. events.jsonl shows documentdb-mcp-setup skill was loaded (events.jsonl entries)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "LlamaIndex pipeline examples for samples",
+      "what_was_missing": "The starter prompt required a 'Python LlamaIndex pipeline' but public guidance and the installed skills do not include a short, canonical example that shows exactly how to plug LlamaIndex into Azure DocumentDB vCore clusters for this demo (simple example: ingest transcript text, construct prompt context engineering, call LlamaIndex LLM predictor, parse JSON output, upsert to clinical_summaries).",
+      "where_searched": "Inspected installed skills and Microsoft Learn quickstarts; searched for LlamaIndex + Azure DocumentDB examples (learn search results include general LlamaIndex guidance but not a one-page sample for this pipeline).",
+      "effect_on_this_build": "Builder opted to call OpenAI directly rather than use LlamaIndex APIs. That made the sample simpler but deviated from the prompt; an agent following the prompt strictly might have implemented LlamaIndex instead.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Provide a short 'LlamaIndex + Azure DocumentDB' recipe in the agent kit: a code snippet showing how to create a LlamaIndex Document store backed by Azure DocumentDB, build a PromptHelper that enforces the four-section structure, call the LLM via LlamaIndex's LLMPredictor, and parse/validate the JSON. Include an example that uses text-embedding-3-small and how to wire optional vector indexes.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Vector-index creation examples and parameter defaults",
+      "what_was_missing": "The public guidance explains index kinds (DiskANN/HNSW/IVF) but a concise sample showing exact JSON createIndex/createSearchIndexes payloads with recommended defaults for small (<=1k), medium (~50k) and large (>100k) corpora was not discoverable as a one-line recipe in this repo.",
+      "where_searched": "Installed documentdb-vector-search skill and Microsoft Learn vector-search docs; README includes a short note but not parameter defaults.",
+      "effect_on_this_build": "Builder omitted vector-index creation by default to avoid misconfiguring a live cluster. Users will need clear examples to create appropriate indexes safely.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Ship a short 'vector-index quick recipe' page: example createSearchIndexes JSON for DiskANN/HNSW/IVF, mapping of dataset size -> recommended algorithm, example parameters (m, efConstruction, numLists, lBuild, lSearch), and a short snippet showing how to validate embedding dimensions and trigger index rebuilds when model/dimension changes.",
+      "priority": "high"
+    },
+    {
+      "topic": "Search endpoint error-handling guidance",
+      "what_was_missing": "The checklist expected /search to return specific error responses for empty queries and embedding failures; no small, public pattern page shows a recommended API signature and exact error codes/messages for embedding failures or empty queries in a DocumentDB sample.",
+      "where_searched": "Repo README, installed skills, and Microsoft Learn; did not find a single small example HTTP handler illustrating the exact failure modes and codes.",
+      "effect_on_this_build": "The sample does not include a /search endpoint; when authors add search they may omit clear, consistent error handling.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a minimal FastAPI 'search' quickstart: endpoint signature, JSON schema for request/response, 400 response for empty query with example body, 502/503 for embedding service failures, and an example of returning the similarity score along with results.",
+      "priority": "high"
+    },
+    {
+      "topic": "Test patterns for unit tests without a live cluster",
+      "what_was_missing": "A succinct example showing how to write unit tests for a DocumentDB-backed sample that run without a live cluster (e.g., using mongomock or pytest fixtures, or the local DocumentDB gateway image).",
+      "where_searched": "Repo and installed skills; while local gateway docs exist, there is no short recipe demonstrating the common pattern of mocking PyMongo calls for unit tests.",
+      "effect_on_this_build": "The provided tests skip when DOCUMENTDB_URI is absent; the sample lacks isolated unit tests that CI can run without secrets or live clusters.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a 'Testing' quickstart page that includes: (A) an example pytest fixture using mongomock to mock PyMongo, (B) an optional docker-compose for the DocumentDB local gateway for integration tests, and (C) guidance for CI (use mocked tests by default; run integration tests only when credentials are available).",
+      "priority": "high"
+    },
+    {
+      "topic": "Dependency pinning guidance for gallery samples",
+      "what_was_missing": "Gallery guidance asking for exact pinned dependency versions or a recommended constraints/pip-compile workflow. repos often use loose ranges which can cause reproducibility issues.",
+      "where_searched": "Repo requirements.txt and installed skills docs; no single page prescribes exact pinning policy for DocumentDB samples.",
+      "effect_on_this_build": "requirements.txt uses ranges (>= / <). This is workable but reduces reproducibility for gallery verification.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short README subsection: 'Pin dependencies for the gallery' that recommends either exact pins in requirements.txt or a secondary constraints.txt lockfile produced by pip-compile, plus commands to regenerate pinned constraints.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Index-migration and compound-index examples",
+      "what_was_missing": "A short migration pattern example that shows adding a compound index safely (create if not exists, background build considerations) and how to include such changes in a versioned seed/migration script.",
+      "where_searched": "doc indexing and local-deployment skills; no single migration snippet in this repo.",
+      "effect_on_this_build": "The sample creates a single-field patientId index; compound indexes expected for sorted queries are not included and authors may not know how to roll them out safely.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Provide an 'index migration' example describing idempotent index creation, background building, monitoring index build progress, and a sample script to add a compound patientId+createdAt index as a migration step.",
+      "priority": "medium"
+    }
+  ]
+}
