@@ -13,20 +13,20 @@ errors (the kit's `azure-deployment` skill says this); (b) Learn never states th
 the Mongoose tutorial calls the value a sample choice. Which is right? Is `retrywrites=false` required,
 recommended, or optional, and what one-line rationale should the kit and Learn give?
 
-## 2. Throttling and transient errors (K07, K23, K32, L03, L04, H07)
+## 2. Throttling and transient errors (K07, K23, K32, L03, L04, H07). RESEARCHED 2026-11-25: 7 sub-questions settled from sources, 4 open, see DECISIONS.md
 
 Does Azure DocumentDB ever return error 16500 or HTTP-429-style throttling to a MongoDB client, or only
 timeouts and latency? Which error codes does a client see during HA or cross-region failover (10107, 189
 stepdown, or network errors only)? Does the engine return the `TransientTransactionError` and
 `UnknownTransactionCommitResult` labels that drivers' `withTransaction` retry relies on (also L08)?
 
-## 3. Host forms (K01, K03, K10, L05, L06, L07)
+## 3. Host forms (K01, K03, K10, L05, L06, L07). RESEARCHED 2026-11-25: 9 sub-questions settled from sources, 3 open, see DECISIONS.md
 
 Learn shows both `<cluster>.mongocluster.cosmos.azure.com` and `<cluster>.global.mongocluster.cosmos.azure.com`.
 When is the `.global.` host required (clusters with a cross-region replica only?), and does the plain
 host work for a single cluster? Should guidance say "keep whichever the portal gives"?
 
-## 4. Driver and ODM version floors (K03, K07, K20, L01, L05, H11)
+## 4. Driver and ODM version floors (K03, K07, K20, L01, L05, H11). RESEARCHED 2026-11-25: 12 sub-questions settled from sources, 5 open, see DECISIONS.md
 
 Minimum driver versions for `MONGODB-OIDC` (drafts cite PyMongo 4.7 and Node `mongodb` 6.7; Java and
 .NET unknown). The PyMongo floor for `AsyncMongoClient` (4.9 beta, 4.11, or 4.13 GA). Whether the kit
@@ -35,7 +35,7 @@ correct Motor deprecation and end-of-life dates. Minimum driver version per lang
 versions 5.0 to 8.0, and whether Node 24 is tested. Tested pins for the LlamaIndex, Java, .NET, Go and
 Rust quickstarts. Should any skill state version minimums at all?
 
-## 5. Microsoft Entra ID specifics (K03, L05, L07)
+## 5. Microsoft Entra ID specifics (K03, L05, L07). RESEARCHED 2026-11-25: 10 sub-questions settled from sources, 2 open, see DECISIONS.md
 
 Must `readWriteAnyDatabase` and `clusterAdmin` be granted together for non-admin Entra identities, or
 are they separate roles? Accepted `--type` values for `az documentdb mongocluster microsoft-entra-user
@@ -68,7 +68,7 @@ on every tier with no SKU restriction? Learn's hybrid-search tuning text says a 
 arm while its example uses the smaller one: which is right? `compatibility-query-language` marks
 `$listSearchIndexes` unsupported while the search pages use it: which is correct?
 
-## 8. Change streams (K04, K07, K32, L03, L09)
+## 8. Change streams (K04, K07, K32, L03, L09). RESEARCHED 2026-11-25: 7 sub-questions settled from sources, 6 open, see DECISIONS.md
 
 Is the active change log 400 MB, and is that where `resumeAfter` stops working? Do historical streams
 reach back up to 35 days through point-in-time restore? Can multishard change streams still not be
@@ -77,7 +77,7 @@ still preview? Do single-shard clusters need no enablement step? What error does
 a token that can no longer be resumed? Is there a CLI, ARM or Bicep property for the multishard toggle?
 Is `fullDocument: 'updateLookup'` supported on all tiers?
 
-## 9. Transactions, write semantics and bulk operations (K07, L03, L04, L08)
+## 9. Transactions, write semantics and bulk operations (K07, L03, L04, L08). RESEARCHED 2026-11-25: 14 sub-questions settled from sources, 8 open, see DECISIONS.md
 
 Are multi-document transactions supported across shards, with the same 30-second lifetime, and are
 there limits on operations, documents or size per transaction? Which `w`, `j`, `wtimeoutMS`,
@@ -87,7 +87,7 @@ collection-level `bulkWrite()` working in current drivers? Is there any server-s
 concurrency token? Recommended starting batch sizes per M-series tier; are foreground unique-index
 builds and the `blocking: true` option current for all server versions?
 
-## 10. Schema validation, TTL, indexing and query behaviour (K11, K32, L08, L10)
+## 10. Schema validation, TTL, indexing and query behaviour (K11, K32, L08, L10). RESEARCHED 2026-11-25: 12 sub-questions settled from sources, 5 open, see DECISIONS.md
 
 Does `$jsonSchema` support `enum`, `additionalProperties`, `allOf`/`anyOf`/`oneOf`/`not`,
 `patternProperties` and `dependencies` today? Is `{ unique: true, partialFilterExpression: { key: { $exists: true } } }`
@@ -100,7 +100,7 @@ checking for `COLLSCAN` anywhere in explain output work with DocumentDB's explai
 monitoring facts: diagnostic logs unavailable on M30 and lower and free tiers; the `vCoreMongoRequests`
 category and table; metric names `CpuPercent`, `MemoryPercent`, `StoragePercent`, `IOPS`.
 
-## 11. CLI, IaC and server versions (K20, K34, X01, H09, H11)
+## 11. CLI, IaC and server versions (K20, K34, X01, H09, H11). RESEARCHED 2026-11-25: 17 sub-questions settled from sources, 5 open, see DECISIONS.md
 
 Is `az cosmosdb mongocluster` (cosmosdb-preview) deprecated or only superseded by `az documentdb
 mongocluster`, and is a deprecation redirect the owners' plan? Are both groups still preview, and is
@@ -113,7 +113,7 @@ mongocluster show` output for `serverVersion`, `compute.tier`, `sharding.shardCo
 Billing facts to confirm: per-shard, per-hour compute, storage grows but does not shrink, Free tier, M25
 burstable.
 
-## 12. Local gateway container (H03, K23, K27, L11)
+## 12. Local gateway container (H03, K23, K27, L11). RESEARCHED 2026-11-25: 10 sub-questions settled from sources, 3 open, see DECISIONS.md
 
 Does the `documentdb-local` image support `cosmosSearch` indexes (all three kinds), `createSearchIndexes`
 and `$search`, transactions, change streams and Entra ID like the managed service? Which versioned tag
@@ -121,7 +121,7 @@ should CI pin instead of `:latest`? Should the canonical local URI carry `authMe
 explicitly? Should the `microsoft/documentdb-mcp` README use the 10260 gateway example instead of
 localhost:27017?
 
-## 13. Encryption, compliance and framework integrations (K03, K27, K30)
+## 13. Encryption, compliance and framework integrations (K03, K27, K30). RESEARCHED 2026-11-25: 11 sub-questions settled from sources, 5 open (1 blocking), see DECISIONS.md
 
 Are client-side field-level encryption (explicit and automatic) and Queryable Encryption supported? Is
 pointing PHI workloads at an Azure OpenAI or Foundry deployment acceptable wording with no compliance
