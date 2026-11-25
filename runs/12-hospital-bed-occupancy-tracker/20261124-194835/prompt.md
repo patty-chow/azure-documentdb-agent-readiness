@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose service that stores bed status documents in DocumentDB. Open a change stream to detect status transitions (occupied, available, cleaning), maintain a live occupancy summary document per ward using atomic updates, and use TTL indexes to expire cleaning-state documents automatically after a configurable timeout.
