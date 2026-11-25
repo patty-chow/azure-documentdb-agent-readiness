@@ -1,0 +1,94 @@
+# 3. Build report: 04-earnings-call-rag-assistant
+
+**Status: partial**
+
+I built a small Python sample app that demonstrates a LlamaIndex-style RAG pipeline wired to Azure DocumentDB. The repo includes an ingest script, a query script, a DB helper, a README, requirements, and a sample transcript. I attempted to install dependencies and verify live-cluster index creation and document inserts via the DocumentDB MCP helpers, but installs failed in this environment (missing build deps) and calls to the MCP index/insert helpers also failed. Because of those failures I used design decisions and files that let a user run the sample locally against their cluster after installing Python deps and setting DOCUMENTDB_URI. The sample uses sentence-transformers 'all-MiniLM-L6-v2' (384 dims) as the chosen embedding model and documents the exact vector-index shape the cluster needs (vector-diskann, COS, dims=384).
+
+## How to run
+
+1) Create and activate a Python venv (Python 3.10+)
+
+  python -m venv .venv
+  source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+2) Install dependencies
+
+  pip install -r requirements.txt
+
+  NOTE: In this environment pip install failed because build-time tools were missing (see build report). If pip fails for you, install system build deps (e.g., python3-dev, build-essential) or use prebuilt wheels/wheelhouse. Alternatively install only the runtime deps you need (pymongo, numpy wheel) or use conda.
+
+3) Configure environment
+
+  cp .env.example .env
+  Edit .env to set DOCUMENTDB_URI to your DocumentDB cluster connection string. Optionally set OPENAI_API_KEY to use OpenAI for answer synthesis; otherwise the sample uses a simple fallback synthesizer.
+
+4) Ingest the sample transcript (creates local unique index and inserts chunks)
+
+  python src/ingest.py --source samples/earnings_call_sample.txt
+
+  This script chunks the transcript and inserts chunk documents (embedding field is computed with sentence-transformers locally when installed). The script also creates a unique index on chunk_id using the driver. The vector index (cosmosSearch vector index) must be created separately on the cluster to enable server-side KNN queries.
+
+5) Query and synthesize an answer
+
+  python src/query.py --query "What did management say about Q2 revenue?" --k 3
+
+  If OPENAI_API_KEY is set, the sample will call OpenAI to synthesize an answer; otherwise it prints a deterministic concatenation of retrieved passages with source/timestamps.
+
+6) Create the DocumentDB vector index (one-time, matching embedding dims)
+
+  The vector index must be created with cosmosSearchOptions matching the embedding model dims and similarity. Example (JavaScript/mongosh style):
+
+  db.earnings_chunks.createIndex(
+    { embedding: "cosmosSearch" },
+    {
+      name: "embedding_diskann_idx",
+      cosmosSearchOptions: {
+        kind: "vector-diskann",
+        dimensions: 384,
+        similarity: "COS",
+        maxDegree: 32,
+        lBuild: 50
+      }
+    }
+  );
+
+  If you prefer, use the documentdb MCP helper or the Azure portal to create the index. If you change embedding models you MUST rebuild the vector index with the new 'dimensions' value. See README for more details.
+
+7) Cleanup
+
+  Remove documents and/or drop the collection via your usual Mongo tooling or the portal when you are done (do not check secrets into repo).
+
+
+## Verified by running
+
+- Wrote project files: README.md, requirements.txt, .env.example, samples/earnings_call_sample.txt, src/db.py, src/ingest.py, src/query.py (verified write operations succeeded).
+- Loaded skills for design-time guidance: documentdb-vector-search and documentdb-indexing (used to choose vector index type and parameters).
+- Read skill resource 'vector-create-diskann-index.md' (used to pick index parameters: kind=vector-diskann, similarity=COS, dimensions must match embedding model).
+
+## Not verified
+
+- pip install -r requirements.txt: Failed in this environment (build-time error: missing distutils while building numpy). I could not complete local installation of sentence-transformers / numpy / related wheels here; see the pip error in the build log. Without these packages I could not compute real embeddings locally during verification.
+- src/ingest.py end-to-end run: Not executed because dependencies could not be installed. The script relies on sentence-transformers to compute embeddings; during verification I did not run it.
+- Creation of vector index on the live cluster using the MCP helper (documentdb_create_index): attempted but the agent helper failed in this environment; I could not verify the index creation on the cluster programmatically.
+- Insertion of documents into the cluster via documentdb_insert_documents (MCP): attempted but the agent helper failed in this environment; I could not programmatically insert and then verify the stored vectors on the live cluster.
+- Server-side vector KNN queries ($search + cosmosSearch): Not executed against the cluster because the vector index creation and inserts could not be completed programmatically here. The sample includes guidance on the pipeline and an example aggregation pipeline but it was not run in this environment.
+- LlamaIndex-based answer synthesis integration (LLMPredictor/ServiceContext): Not executed. The query script includes a simple OpenAI fallback path and a deterministic fallback; full LlamaIndex integration requires installing the Python deps and optionally setting OPENAI_API_KEY.
+
+## Open issues
+
+- Dependency installation failed in this environment: pip build failed while building numpy (ModuleNotFoundError: No module named 'distutils'). This prevents installing sentence-transformers and running the ingest pipeline locally here. Workarounds: install OS-level build packages (python-dev, build-essential), use prebuilt wheels, or use conda to install numpy and sentence-transformers before pip installing the rest.
+- DocumentDB MCP index/create/insert helpers failed during automated calls in this environment. I attempted to create the unique chunk_id index and create the vector index, and to insert demo documents via the MCP insertion helper; those calls returned errors here. Possible causes: network, profile permissions, or transient MCP helper issues. Because Azure writes were disallowed by run policy I did not attempt portal/CLI workarounds; please run the index creation (createIndex with cosmosSearchOptions) from your environment or portal where you have permissions.
+- Because I could not compute real embeddings here, I used design-time choices and documented the required index parameters (dimensions=384, similarity=COS, kind=vector-diskann). You must compute embeddings with the chosen model (all-MiniLM-L6-v2) locally (or with a hosted embedding service) and ingest them prior to creating/using the vector index. If you change embedding model, rebuild index with matching dimensions.
+- The sample currently supports ingesting plain-text transcripts out of the box. PDF parsing is not implemented in the minimal sample; add a small PDF-to-text step (pdfminer.six or PyPDF2) in src/ingest.py if you want to ingest PDFs directly.
+- I attempted several automated steps (index create, insert) that failed in this environment. The repository is ready-to-run locally: follow the README to create a venv, install dependencies (fixing the OS-level build deps if necessary), set DOCUMENTDB_URI, create the vector index (example provided), run ingest, then run query.
+
+## Files
+
+- `requirements.txt`
+- `.env.example`
+- `README.md`
+- `samples/earnings_call_sample.txt`
+- `src/db.py`
+- `src/ingest.py`
+- `src/query.py`
+
