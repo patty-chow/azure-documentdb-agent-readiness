@@ -65,7 +65,7 @@ Keep the body thin. It should link the five Learn pages above for full walkthrou
   - Call `create_index(kind=CosmosDBVectorSearchType.VECTOR_DISKANN | VECTOR_HNSW | VECTOR_IVF, dimensions=..., similarity=CosmosDBSimilarityType.COS)` once, then `as_retriever(...)`.
   - Add a `@tool` that wraps a pymongo aggregation, and build the agent with LangChain 1.x `create_agent` or LangGraph.
   - One paragraph: `initialize_agent` / `AgentExecutor` are legacy, and imports moved to `langchain_openai` / `langchain_core`.
-  - Incorrect: a hand-rolled loop; `$vectorSearch` (Atlas syntax); embeddings stored as BSON binary. Vectors must be `number[]` to be indexed.
+  - Incorrect: a hand-rolled loop; `$vectorSearch` (Atlas syntax); embeddings stored as BSON binary. Learn requires an array of numbers: a document whose vector is BSON binary (subtype 9 included) is stored but not indexed and is silently absent from results, and a binary query vector is rejected ("expected an array type field"). The rule file should name BSON binary explicitly rather than only saying "must be `number[]`".
 - **`framework-langchain-js.md`**:
   - Correct: `AzureDocumentDBVectorStore` with `indexOptions: { kind: "vector-ivf" | "vector-hnsw" | "vector-diskann", dimensions, similarity: AzureDocumentDBSimilarityType.COS }`, as in `quickstart-agent-nodejs`.
   - Methods: `fromDocuments` / `similaritySearchVectorWithScore`.
@@ -112,6 +112,11 @@ Add a CI job that installs each rule's pinned dependencies on Python 3.11–3.13
 - `runs/06-credit-risk-multi-agent-scorer/20261124-190546/` (`doc-gaps.md`): three-agent pipeline as plain functions
 
 Also affected: samples 08, 09, 14-telehealth and 15.
+
+## Resolved
+
+- Vector-index facts: settled 2026-11-25 from the Learn vector-search, half-precision, product-quantization and limitations pages and engine issue documentdb/documentdb#109, see findings/phase4/DECISIONS.md.
+  - BSON binary vectors are stored and returned intact but not indexed, so they are silently absent from vector results, and a binary query vector is rejected with "expected an array type field"; the `framework-*` rule files name BSON binary explicitly as the Incorrect form. Settled by the vector-search page (DiskANN field table and IVF Important box) and documentdb/documentdb#109.
 
 ## Open questions
 

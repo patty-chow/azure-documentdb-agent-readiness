@@ -83,3 +83,48 @@ https://learn.microsoft.com/en-us/azure/documentdb/compatibility-query-language.
 **Not an SME item.** The error returned for a same-name index with different options, and whether an
 identical `createIndexes` call is a no-op, are undocumented; filings describe the ensure-index helper as
 tolerant of both outcomes rather than asserting a code.
+
+## Full-text and hybrid search (SME topic 7): settled 2026-11-25, one item open
+
+**Settled.**
+
+- Status: preview, not GA. The overview (https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview,
+  dated 2026-11-04, updated 2026-11-17) says full-text search "remains in preview" while `$text` and
+  classic text indexes are GA; the DocumentDB blog post of 2026-11-17 (https://devblogs.microsoft.com/documentdb/?p=259)
+  says "currently in preview". Enablement is self-serve: portal Settings > Features > Full-text search >
+  Enable, or Azure CLI PATCH of `properties.previewFeatures` adding `FullTextSearch`, or Terraform (AzAPI)
+  or Bicep, all on the overview page. "Wait 10 minutes before creating a search index or running a
+  query." The release-notes line saying preview features need a support request
+  (https://learn.microsoft.com/en-us/azure/documentdb/release-notes) is stale.
+- `compound` is available with `must`, `should`, `mustNot` and `filter`
+  (https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-structured; overview "What's
+  available today"). Only `compound.minimumShouldMatch` is unsupported. The kit's statement that
+  `compound` is unavailable is wrong.
+- Cost and tiers: "Both full-text and vector search are included with your cluster at no extra cost"
+  (https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-hybrid); the blog post says no
+  separate feature charge. The limitations page lists no tier restriction for full-text search. HNSW and
+  DiskANN need M30 or higher (limitations page; release note 2025-07-15). The limitations page's free-tier
+  line saying HNSW needs M40 is stale.
+- RRF constant direction: the hybrid page's tuning bullet says "a larger k for the keyword query (for
+  example, k = 60 for vector and k = 10 for keyword) penalizes lower-ranked keyword hits more
+  aggressively." The example is right and the word "larger" is wrong: with score 1/(k+rank), a smaller k
+  penalizes lower ranks more (k=10: rank 1 scores about 5.5 times rank 50; k=60: about 1.8 times). Doc
+  fix, no SME needed.
+- `$listSearchIndexes` is supported. The keyword page
+  (https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-keyword), the structured page,
+  the limitations page ("Search-index management supports creation and listing") and the blog post all
+  use it to wait for `status: "READY"` and `queryable: true`. The compatibility table row marking it
+  unsupported (https://learn.microsoft.com/en-us/azure/documentdb/compatibility-query-language, dated
+  2025-11-05) is stale. Our runs never called it, so this rests on documentation only.
+- `CommandNotSupported`, code 115, "Search index creation is not supported yet": observed in
+  `runs/07-voice-of-customer-sentiment-hub/20261124-204049` when `createSearchIndexes` ran against a
+  cluster without the preview enabled. No Learn page documents it; filings may cite the observation and
+  ask Learn to document the error next to the enablement steps.
+
+**Still open for engineering.** Whether code 115 is also returned during the ten-minute activation
+window, or a different error. Not blocking: filings tell agents to wait ten minutes and to treat code
+115 as "feature not enabled yet".
+
+**Learn fixes this topic yields.** Release-notes "support request" sentence; free-tier HNSW tier
+(M40 vs M30); the k-direction sentence on the hybrid page; the `$listSearchIndexes` compatibility row;
+documenting code 115.

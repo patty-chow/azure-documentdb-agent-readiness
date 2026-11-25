@@ -54,7 +54,7 @@ Append after the existing bullets (deployment names must match ones that exist i
   - `AZURE_OPENAI_API_VERSION` (default `2024-10-21`)
   - `AZURE_OPENAI_CHAT_DEPLOYMENT` (default `<chat-deployment>`)
   - `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` (default `text-embedding-3-small`)
-  - `EMBEDDING_DIMENSIONS` (default `1536`; create the `cosmosSearch` vector index with this value and store embeddings as a plain array of numbers, not BSON binary, which is not indexed)
+  - `EMBEDDING_DIMENSIONS` (default `1536`, within the 2,000-dimension limit of an uncompressed vector index; create the `cosmosSearch` vector index with this value and store embeddings as a plain array of numbers, not BSON binary: a BSON binary vector is stored but not indexed and is silently absent from results, and a BSON binary query vector is rejected)
 - SDKs: `openai>=1` (`AzureOpenAI` / `AsyncAzureOpenAI`) in Python, `openai` v4 or later (`AzureOpenAI`) in Node; with LangChain use `langchain-openai` (`AzureChatOpenAI`, `AzureOpenAIEmbeddings`), with LlamaIndex `llama-index-llms-azure-openai` and `llama-index-embeddings-azure-openai`. Do not pin `openai<1` in Python.
 - Bound LLM concurrency (`asyncio.Semaphore` / `p-limit`, default 4, configurable via `LLM_CONCURRENCY`) and retry 429 and 5xx responses with exponential backoff.
 - LangChain agent memory: store chat history in an Azure DocumentDB collection (for example `MongoDBChatMessageHistory` from `langchain-mongodb`, or an equivalent collection-backed store), not only in process memory.
@@ -72,7 +72,7 @@ Append after the existing bullets (deployment names must match ones that exist i
 - If the sample calls a model: it runs end to end with a documented deterministic stub when no model credential is present, and the README says so.
 ```
 
-The same file's first section says "Embeddings are stored as BSON binary vectors." Azure DocumentDB vector indexes cover embeddings stored as number arrays, so that line should be corrected in the same pass (tracked separately). The starter prompt `samples/retail/01-product-catalog-with-vector-search.md` also asks to "store them as BSON binary vectors", which would conflict with the conventions block above; it needs the same correction.
+The same file's first section says "Embeddings are stored as BSON binary vectors." Azure DocumentDB vector indexes require an array of numbers: a BSON binary vector is stored and returned intact but is not indexed and is silently absent from vector-search results, and a BSON binary query vector is rejected (Learn vector-search page; engine issue documentdb/documentdb#109), so that line should be corrected in the same pass (tracked separately). The starter prompt `samples/retail/01-product-catalog-with-vector-search.md` also asks to "store them as BSON binary vectors", which would conflict with the conventions block above; it needs the same correction.
 
 Out of scope for this PR: copying the conventions block into the samples spreadsheet's Starter Prompt column (so `loop/import_samples.py` regenerates `samples/*.md`), and aligning env-var names in the Learn AI-integration tutorials.
 
@@ -83,6 +83,12 @@ Out of scope for this PR: copying the conventions block into the samples spreads
 - `runs/15-prescription-refill-agent/20261124-195253/04-decisions.md` (D006/D007/D011: LangChain replaced; memory backend changed back and forth)
 - `runs/06-credit-risk-multi-agent-scorer/20261124-190546/02-readiness.json` (`OPENAI_API_KEY` vs `AZURE_OPENAI_*` contract missing)
 - `runs/11-care-gap-identification-pipeline/20261124-194646/02-readiness.json` (provider affects embedding dimensions and the vector index)
+
+## Resolved
+
+- Vector-index facts: settled 2026-11-25 from the Learn vector-search, half-precision, product-quantization and limitations pages and engine issue documentdb/documentdb#109, see findings/phase4/DECISIONS.md.
+  - BSON binary vectors are stored and returned intact but are not indexed and are silently absent from results; a BSON binary query vector is rejected, so the conventions block requires a plain array of numbers (vector-search page, DiskANN field table and IVF Important box; documentdb/documentdb#109).
+  - The default `EMBEDDING_DIMENSIONS` of 1536 is within the documented limits: 2,000 uncompressed, 4,000 with half-precision on HNSW or IVF, 16,000 with product quantization on DiskANN (vector-search "Features and limitations", half-precision, product-quantization and limitations pages).
 
 ## Open questions
 

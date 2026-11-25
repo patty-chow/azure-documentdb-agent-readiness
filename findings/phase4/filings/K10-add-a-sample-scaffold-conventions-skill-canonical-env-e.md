@@ -83,7 +83,8 @@ AZURE_OPENAI_API_VERSION=2024-10-21
 # Example defaults; for azure-openai these hold deployment names
 CHAT_MODEL=gpt-4o-mini
 EMBEDDING_MODEL=text-embedding-3-small
-# Must equal the model's output size; the vector index is created from it
+# Must equal the model's output size; the vector index is created from it.
+# Limits: 2,000 dimensions; 4,000 with compression "half" (HNSW, IVF); 16,000 with product quantization (DiskANN)
 EMBEDDING_DIMS=1536
 # vector-diskann | vector-hnsw | vector-ivf
 VECTOR_INDEX_KIND=vector-hnsw
@@ -112,14 +113,14 @@ README sections in order: Prerequisites; Configuration (a table of every variabl
 
 ### 5. `skills/sample-scaffold/sample-db-helper.md` (+ `templates/db.py`, `templates/db.js`)
 
-Module-level `get_client()` / `get_db()` singletons that read `DOCUMENTDB_URI` and `DATABASE_NAME`, exit with a clear message when unset, apply `MAX_POOL_SIZE` from env, honor `DOCUMENTDB_ALLOW_INVALID_CERTS` only when explicitly `true`, do not override the options carried by the copied connection string, and export exactly the names other scripts import. The Python page shows, for Beanie samples, one `init_beanie(database=get_db(), document_models=[...])` call at startup (client type per K37) with explicit field types (`list[float]` for vectors, `float` for scores). Seed scripts are standalone, create collections and indexes through the driver first, upsert on a deterministic key, tag documents `seeded: true, seed_version`, are safe to re-run, and print counts; `--force` wipes and reseeds (bulk-write details in K08).
+Module-level `get_client()` / `get_db()` singletons that read `DOCUMENTDB_URI` and `DATABASE_NAME`, exit with a clear message when unset, apply `MAX_POOL_SIZE` from env, honor `DOCUMENTDB_ALLOW_INVALID_CERTS` only when explicitly `true`, do not override the options carried by the copied connection string, and export exactly the names other scripts import. The Python page shows, for Beanie samples, one `init_beanie(database=get_db(), document_models=[...])` call at startup (client type per K37) with explicit field types (`list[float]` for vectors, `float` for scores). Seed scripts are standalone, create collections and indexes through the driver first (an HNSW vector index can be created on an empty collection; an IVF index, whose `numLists` depends on the document count, and a product-quantization index are created after the data is loaded; a new vector index can return empty results for 2 to 3 minutes while it builds), upsert on a deterministic key, tag documents `seeded: true, seed_version`, are safe to re-run, and print counts; `--force` wipes and reseeds (bulk-write details in K08). What `createIndexes` returns for an existing index name is undocumented, so the ensure-index step tolerates both outcomes (a no-op and an options-conflict error) rather than asserting an error code (helper in K06).
 
 ### 6. `skills/sample-scaffold/sample-ai-conventions.md`
 
 - Defaults: `LLM_PROVIDER=stub` for tests; `openai` with `CHAT_MODEL` / `EMBEDDING_MODEL` / `EMBEDDING_DIMS` for live calls; `azure-openai` reuses the same two model variables as deployment names. These are sample defaults, not a service recommendation. When the chat model is retired, only `CHAT_MODEL` changes; the vector index depends only on `EMBEDDING_MODEL` / `EMBEDDING_DIMS`.
 - Stacks and dimensions: OpenAI or Azure OpenAI `text-embedding-3-small` -> 1536; for image prompts a local image model (for example CLIP ViT-B/32 -> 512) with `EMBEDDING_DIMS` set to match.
 - One `get_embedder()` / `get_chat()` factory switching on `LLM_PROVIDER`.
-- Create the `cosmosSearch` index from `EMBEDDING_DIMS`, never a literal; store vectors as plain `number[]`:
+- Create the `cosmosSearch` index from `EMBEDDING_DIMS`, never a literal, and keep `EMBEDDING_DIMS` within the documented limits: 2,000 dimensions; 4,000 with `compression: "half"` on HNSW or IVF; 16,000 with product quantization on DiskANN. Store vectors as a plain array of numbers (`number[]` / `list[float]`) and have the skill name BSON binary explicitly: a BSON binary vector is stored but not indexed and is silently absent from results, and a binary query vector is rejected (`expected an array type field`). One vector index per vector path:
   ```javascript
   const dims = Number(process.env.EMBEDDING_DIMS ?? 1536);
   await db.command({ createIndexes: 'docs', indexes: [{ name: 'embedding_idx',
@@ -127,7 +128,7 @@ Module-level `get_client()` / `get_db()` singletons that read `DOCUMENTDB_URI` a
     cosmosSearchOptions: { kind: process.env.VECTOR_INDEX_KIND ?? 'vector-hnsw',
       similarity: process.env.VECTOR_SIMILARITY ?? 'COS', dimensions: dims } }] });
   ```
-  Add the kind-specific build options from the vector-search skill (for `vector-hnsw`, for example `m: 16, efConstruction: 64`).
+  Add the kind-specific build options from the vector-search skill, quoting the documented ranges and defaults; for the default `vector-hnsw`: `m` 2 to 100 (default 16), `efConstruction` 4 to 1000 and at least `2m` (default 64), `efSearch` default 40 at query time. `listIndexes` reports these options under `cosmosSearch`, which the Verify step can check.
 - Before creating the index, embed one probe string and assert its length equals `EMBEDDING_DIMS`.
 - Stub mode: `embed()` returns a deterministic, L2-normalized `number[]` of length `EMBEDDING_DIMS` (not semantic); `chat()` returns a canned, schema-valid reply. Tests run with the stub; a `test:live` script sets `LLM_PROVIDER=openai` and is skipped when no key is set.
 - Keys: read from env only, never logged, echoed or stored with prompts. When a sample exposes LLM calls over HTTP, add a simple per-process rate limiter. Model-provider calls get exponential backoff on 429/5xx and bounded concurrency, both overridable by env (two lines; database retries are K07).
@@ -158,7 +159,14 @@ Run folders in the experiment repository (`runs/`):
 
 ## Resolved
 
-retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+- retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+- Vector-index facts: settled 2026-11-25 from the Learn vector-search, half-precision, product-quantization and limitations pages and engine issue documentdb/documentdb#109, see findings/phase4/DECISIONS.md.
+  - HNSW build options are quoted as the documented ranges and defaults: `m` 2 to 100 (default 16), `efConstruction` 4 to 1000 and at least `2m` (default 64), `efSearch` default 40 (vector-search page, HNSW tab).
+  - `EMBEDDING_DIMS` limits: 2,000; 4,000 with `compression: "half"` on HNSW or IVF; 16,000 with product quantization on DiskANN (vector-search "Features and limitations", half-precision, product-quantization and limitations pages).
+  - Vectors are stored as a plain array of numbers: a BSON binary vector is stored but not indexed and a binary query vector is rejected (vector-search DiskANN field table and IVF Important box; documentdb/documentdb#109).
+  - Build order for seed scripts: HNSW on an empty collection; IVF and product quantization after loading; empty results for 2 to 3 minutes while a new index builds (vector-search HNSW column; product-quantization page note; quickstart-nodejs-select-algorithm Troubleshooting).
+  - `listIndexes` reports vector options under `cosmosSearch` (vector-search, "Get vector index definitions").
+  - Same-name index behaviour is undocumented and not an SME item; the ensure-index step tolerates both outcomes (DECISIONS.md, "Not an SME item").
 
 ## Open questions
 

@@ -1,6 +1,6 @@
 # Phase 4 filings: consolidated issues and pull requests
 
-43 filings in `findings/phase4/filings/`, each merging the overlapping drafts the reviewer identified (see REVIEW.md); first-pass filings that were merged again are archived in `filings/merged/`. 35 carry status `needs_sme`: a claim in them needs an engineering or docs owner's answer before it goes public; the open questions are listed inside each file. Nothing has been filed. Sample counts come from one experiment run of 100 prompts and are stated as such in every filing.
+43 filings in `findings/phase4/filings/`, each merging the overlapping drafts the reviewer identified (see REVIEW.md); first-pass filings that were merged again are archived in `filings/merged/`. 34 carry status `needs_sme`: a claim in them needs an engineering or docs owner's answer before it goes public; the open questions are listed inside each file. Nothing has been filed. Sample counts come from one experiment run of 100 prompts and are stated as such in every filing.
 
 ## The readiness pipeline (abinav2307/azure-documentdb-agent-readiness): ON HOLD, nothing is filed against the harness for now (owner decision 2026-11-25); share with its owner informally
 
@@ -47,12 +47,12 @@
 | Id | Pri | Status | Type | Samples | Drafts merged | Open q. | Title |
 |---|---|---|---|---|---|---|---|
 | [L01](filings/L01-add-a-driver-and-odm-compatibility-page-with-tested-ver.md) | P0 | needs_sme | learn-feedback | 64 | 3 | 5 | Add a driver and ODM compatibility page with tested versions and client options, linked from every quickstart |
-| [L02](filings/L02-vector-search-copy-paste-cosmossearch-index-and-query-h.md) | P1 | needs_sme | learn-feedback | 71 | 3 | 5 | Vector search: copy-paste cosmosSearch index and query how-to, explicit number[] storage rule and embedding-dimensions table |
+| [L02](filings/L02-vector-search-copy-paste-cosmossearch-index-and-query-h.md) | P1 | needs_sme | learn-feedback | 71 | 3 | 4 | Vector search: copy-paste cosmosSearch index and query how-to, explicit number[] storage rule and embedding-dimensions table |
 | [L03](filings/L03-add-a-write-semantics-transactions-and-concurrency-page.md) | P1 | needs_sme | learn-feedback | 42 | 2 | 6 | Add a write semantics, transactions and concurrency page for Azure DocumentDB (retrywrites, write concern, idempotency) |
 | [L04](filings/L04-add-a-bulk-and-idempotent-data-ingestion-how-to.md) | P1 | needs_sme | learn-feedback | 17 | 2 | 4 | Add a bulk and idempotent data ingestion how-to for Azure DocumentDB |
 | [L05](filings/L05-quickstarts-explain-the-srv-connection-string-and-add-a.md) | P1 | needs_sme | learn-feedback | 23 | 2 | 5 | Quickstarts: explain the SRV connection string and add a 'Choose an authentication method' section that surfaces the Entra ID samples |
 | [L06](filings/L06-add-a-which-product-and-resource-type-is-this-include-t.md) | P1 | needs_sme | learn-feedback | 49 | 1 | 3 | Add a 'Which product and resource type is this?' include to the Azure DocumentDB overview and quickstarts |
-| [L09](filings/L09-add-modeling-and-query-pattern-recipes-for-applications.md) | P1 | needs_sme | learn-feedback | 26 | 1 | 5 | Add modeling and query pattern recipes for applications |
+| [L09](filings/L09-add-modeling-and-query-pattern-recipes-for-applications.md) | P1 | needs_sme | learn-feedback | 26 | 1 | 4 | Add modeling and query pattern recipes for applications |
 | [L10](filings/L10-add-an-application-data-protection-section-for-sensitiv.md) | P1 | needs_sme | learn-feedback | 20 | 1 | 3 | Add an application data protection section for sensitive data and LLM pipelines |
 | [L11](filings/L11-add-a-test-your-azure-documentdb-application-page.md) | P1 | needs_sme | learn-feedback | 58 | 1 | 4 | Add a 'Test your Azure DocumentDB application' page |
 | [L07](filings/L07-add-a-tool-agnostic-connection-string-reference-and-a-c.md) | P2 | needs_sme | learn-feedback | 4 | 1 | 6 | Add a tool-agnostic connection-string reference and a credential-capabilities section |
@@ -62,7 +62,7 @@
 
 | Id | Pri | Status | Type | Samples | Drafts merged | Open q. | Title |
 |---|---|---|---|---|---|---|---|
-| [M01](filings/M01-gated-write-management-tools-say-so-in-tool-description.md) | P0 | needs_sme | pr | 36 | 3 | 4 | Gated write/management tools: say so in tool descriptions and make the refusal actionable (opt-in location and driver fallback) |
+| [M01](filings/M01-gated-write-management-tools-say-so-in-tool-description.md) | P0 | ready | pr | 36 | 3 | 3 | Gated write/management tools: say so in tool descriptions and make the refusal actionable (opt-in location and driver fallback) |
 
 ## Azure/azure-cli-extensions
 

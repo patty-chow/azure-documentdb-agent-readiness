@@ -8,7 +8,7 @@ priority: P1
 sample_count: 26
 member_drafts:
   - 078-data-modeling-indexing-and-application-pattern-recipes-for-s.md
-open_questions: 5
+open_questions: 4
 ---
 
 # Add modeling and query pattern recipes for applications
@@ -44,7 +44,7 @@ Add a TOC node **"Modeling and query patterns"** under `azure/documentdb`, next 
 6. **Ledger design**: append-only collection, immutable audit fields, unique `idempotencyKey` (`createdAt`, `createdBy`, `transactionRef`, `source`; Mongoose `immutable: true`); never a TTL index on a ledger; expire derived data in a separate collection.
 7. **Fuzzy name matching without `$regex`** [`full-text-search-fuzzy`, `full-text-search-custom-analyzers`]: prerequisite that full-text search is in preview and must be enabled on the cluster [needs SME confirmation]; `createSearchIndexes` (`dynamic: false`) with `lowerCase` + `asciiFolding` + `edgeGram` on the index side and a `keyword` + `lowerCase` `searchAnalyzer`, queried with `$search` `text`; note that `autocomplete`, `regex` and `wildcard` operators inside `$search` are not supported, so use `edgeGram` for prefix matching; materialize `normalized_name` for exact hits; prefilter by country or shard key. Callout: "Do not run `{ $regex: ..., $options: 'i' }` over a whole collection in production. A case-insensitive, unanchored pattern cannot use an index selectively."
 8. **ODM notes** [both ODM quickstarts]: Mongoose `strict: true` default and `strict: "throw"`, `immutable: true`, enum fields, a pre-save hook for normalized keys, `.lean()` + projection, a tenant-safety plugin that rejects `find`/`update`/`delete` without `tenantId`; Beanie `set()`/`update()` do not re-validate the full model, so validate a DTO first [needs SME confirmation], and aggregation should use the Beanie-initialized collection (`get_pymongo_collection()` in 2.x, `get_motor_collection()` in 1.x) [needs SME confirmation].
-9. **RAG and agent patterns** [`vector-search`, `quickstart-python-vector-search`, `full-text-search-hybrid`]: vectors as `number[]` with `cosmosSearch` indexes (`vector-ivf`, `vector-hnsw`, `vector-diskann`) (the draft adds that BSON binary vectors are not indexed [needs SME confirmation]); batched `insert_many(..., ordered=False)` in batches of about 500–1000; detect index presence (`listIndexes` for the `cosmosSearch` index, `$listSearchIndexes` for text search indexes, see open question 1) and fall back to a server-side `$search` or hybrid query, not client-side substring scoring; `fetch_k` of 5–10× `k` for client-side rerank, otherwise the server `cosmosSearch` `k`; agent memory as `raw_turns` (TTL on `occurredAt`) plus `summaries` with `embedding: number[]` and `embedding_dim`; a minimal `/search` contract (400 on empty query, 502 on embedding failure, `similarity_score` in results); a short pymongo retry wrapper for transient errors; never pass connection strings or keys to the LLM, expose parameterized tools instead.
+9. **RAG and agent patterns** [`vector-search`, `quickstart-python-vector-search`, `full-text-search-hybrid`]: vectors as `number[]` with `cosmosSearch` indexes (`vector-ivf`, `vector-hnsw`, `vector-diskann`), dimension limits 2,000 uncompressed, 4,000 with `compression: "half"` on HNSW or IVF, 16,000 with product quantization on DiskANN; state that BSON binary vectors (subtype 9) are stored and returned but not indexed, are silently absent from `cosmosSearch` results, and that a binary query vector is rejected ("expected an array type field"), so the page should name BSON binary explicitly rather than only "array of numbers"; batched `insert_many(..., ordered=False)` in batches of about 500–1000; detect index presence (`listIndexes` for the `cosmosSearch` index, `$listSearchIndexes` for text search indexes, see open question 1) and fall back to a server-side `$search` or hybrid query, not client-side substring scoring; `fetch_k` of 5–10× `k` for client-side rerank, otherwise the server `cosmosSearch` `k`; agent memory as `raw_turns` (TTL on `occurredAt`) plus `summaries` with `embedding: number[]` and `embedding_dim`; a minimal `/search` contract (400 on empty query, 502 on embedding failure, `similarity_score` in results); a short pymongo retry wrapper for transient errors; never pass connection strings or keys to the LLM, expose parameterized tools instead.
 10. **Sharding in samples** [`partitioning`]: demos under about 100k documents stay single-shard; if a sample shards, show the shard key (`tenantId`, hashed `userId`) in code and in the `Microsoft.DocumentDB/mongoClusters` Bicep/ARM definition.
 
 Do not write up as gaps: durable resume tokens (already on `change-streams`) and `$bucket` version checks (supported on 5.0–8.0).
@@ -61,13 +61,19 @@ Related kit follow-up (not part of this Learn item): Azure/documentdb-agent-kit 
 - `runs/12-invoice-matching-reconciliation/20261124-191603/app/src/agent.js`
 - `runs/04-customer-journey-mapper/20261124-203553/doc-gaps.md`
 
+## Resolved
+
+- Vector-index facts: settled 2026-11-25 from the Learn vector-search, half-precision, product-quantization and limitations pages and engine issue documentdb/documentdb#109, see findings/phase4/DECISIONS.md.
+  - Dimension limits quoted in item 9: 2,000 uncompressed; 4,000 with `compression: "half"` on HNSW or IVF; 16,000 with product quantization on DiskANN (vector-search "Features and limitations", half-precision, product-quantization and limitations pages). The select-algorithm quickstarts' HNSW 8,000 figure is a documentation inconsistency still open with engineering and is not quoted here.
+  - BSON binary vectors are stored and returned intact but are not indexed by any `cosmosSearch` index kind, are silently absent from results, and a binary query vector is rejected; Learn requires an array of numbers (vector-search page, DiskANN field table and IVF Important box; engine issue documentdb/documentdb#109, closed completed 2026-04-28).
+  - `listIndexes` reports vector-index options under `cosmosSearch`, so item 9's index-presence check is the documented shape (vector-search page, "Get vector index definitions").
+
 ## Open questions
 
 1. [needs SME confirmation] `compatibility-query-language` marks `$listSearchIndexes` as unsupported, while the full-text-search pages use it to check index readiness. Which is correct? Item 9 depends on it.
 2. [needs SME confirmation] Full-text search and multishard change streams are labeled preview on Learn. Are they still preview, and should items 5 and 7 keep the prerequisite wording?
 3. [needs SME confirmation] Change-stream limits cited in item 5: the 35-day PITR historical-replay window, and the resumability behavior on single-shard to multi-shard transitions and after failover.
 4. [needs SME confirmation] Beanie behavior in item 8: that `set()`/`update()` skip full-model validation, and the collection accessor name per Beanie version.
-5. [needs SME confirmation] Item 9: are BSON binary vectors really excluded from `cosmosSearch` indexing, or only unsupported for some index kinds?
 
 ## Source drafts
 

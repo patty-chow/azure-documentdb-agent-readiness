@@ -58,7 +58,7 @@ return, and is an identical `createIndexes` a no-op? Can a new index return empt
 and for how long? Are BSON Binary vectors definitely not indexed, and is the "expected an array type
 field" error worth documenting? Is the MCP README's minimal `vector-hnsw` example valid as written?
 
-## 7. Full-text and hybrid search status (K05, K17, K22, K23, L02, L09)
+## 7. Full-text and hybrid search status (K05, K17, K22, K23, L02, L09). SETTLED 2026-11-25 except whether code 115 also appears during activation, see DECISIONS.md
 
 Is full-text search (`createSearchIndexes`, `$search`) still preview with the `FullTextSearch` preview
 feature and a roughly 10-minute activation, or GA? Is `CommandNotSupported` (code 115, "Search index

@@ -3,14 +3,14 @@ id: M01
 title: "Gated write/management tools: say so in tool descriptions and make the refusal actionable (opt-in location and driver fallback)"
 repo: microsoft/documentdb-mcp
 type: pr
-status: needs_sme
+status: ready
 priority: P0
 sample_count: 36
 member_drafts:
   - 108-documentdb-mcp-create-index-refused-with-management-tools-ar.md
   - 084-documentdb-mcp-server-document-that-management-and-write-too.md
   - 112-documentdb-create-index-and-other-management-write-tools-are.md
-open_questions: 4
+open_questions: 3
 ---
 
 # Gated write/management tools: say so in tool descriptions and make the refusal actionable (opt-in location and driver fallback)
@@ -36,7 +36,7 @@ These counts come from a single experiment run: an agent (gpt-5-mini, with the A
 - Even trivial steps are blocked: a plain unique index on `chunk_id` is management-tier.
 - One agent wrongly concluded that cosmosSearch indexes cannot be created through the standard driver `createIndexes`. In the traced case where an agent fell back to the driver (run 08), the index was created on the first try.
 
-The experiment harness did not set the flags (that is being fixed separately), so part of the hit rate is the harness's choice. The README quickstarts produce the same configuration, so any agent following them hits the same dead end. These counts come from one run and will be re-baselined after the harness fix; see Open question 4.
+The experiment harness did not set the flags (that is being fixed separately), so part of the hit rate is the harness's choice. The README quickstarts produce the same configuration, so any agent following them hits the same dead end. These counts come from one run and will be re-baselined after the harness fix; see Open question 3.
 
 ## Proposed change
 
@@ -72,7 +72,8 @@ export function assertCapabilityEnabled(requiredRole: ToolRole, toolName?: strin
             'rename_collection, drop_database and current_ops. ' + OPT_IN_WHERE +
             ' Alternatively, run the equivalent command from application code with a MongoDB driver connected with ' +
             'your own credentials ' +
-            '(for indexes: createIndexes, including cosmosSearchOptions for vector indexes, then wait for the build). ' +
+            '(for indexes: createIndexes, including cosmosSearchOptions for vector indexes, then wait for the build; ' +
+            'a new vector index can return empty results for 2 to 3 minutes while it builds). ' +
             'Read tools such as list_indexes, get_statistics and explain remain available to verify the result.',
         );
     }
@@ -120,7 +121,7 @@ This approach keeps every tool discoverable and tells the agent about the gate b
   - A note that on HTTP/SSE the caller also needs the matching Entra role, and that `TRUST_LOCAL_STDIO=true` skips the role check but not these flags.
   - The exact refusal text an agent will see, so it can be matched when searching the docs.
   - An `env` fragment for a trusted local/dev run, `"ENABLE_WRITE_TOOLS": "true", "ENABLE_MANAGEMENT_TOOLS": "true"`, with a note that the server must be restarted and that the flags stay off for shared or HTTP deployments.
-  - The driver fallback, noting that it uses the caller's own database credentials and is the normal data-plane path (no MCP server or Azure control plane needed), for example [needs SME confirmation: HNSW defaults, see Open question 1]:
+  - The driver fallback, noting that it uses the caller's own database credentials and is the normal data-plane path (no MCP server or Azure control plane needed), for example (an HNSW spec with only `similarity` and `dimensions` is valid; the build parameters fall back to the documented defaults `m` 16, `efConstruction` 64, `efSearch` 40, and 1,536 dimensions is within the 2,000 limit for an uncompressed index, 4,000 with `compression: "half"`):
     ```js
     await db.collection("docs").createIndexes([{
       name: "vec_idx",
@@ -136,7 +137,7 @@ The default stays off, consistent with `docs/design-doc.md` and `docs/permission
 ### 4. Follow-ups in Azure/documentdb-agent-kit (separate PR, not part of this one)
 
 - `skills/mcp-setup/SKILL.md`: the opt-in note is one line (154-155). Add a Troubleshooting bullet (section at line 191) keyed on the exact refusal text: add the flag to the server `env` and restart, or do the operation in app code with the driver (`createIndexes` with `cosmosSearchOptions` works there).
-- The `indexing` and `vector-search` skills: when the MCP tool is unavailable, fall back to driver `createIndexes` and wait for the build, then verify with `list_indexes`/`explain`.
+- The `indexing` and `vector-search` skills: when the MCP tool is unavailable, fall back to driver `createIndexes` and wait for the build (a new vector index can return empty results for 2 to 3 minutes), then verify with `list_indexes`/`explain`. Quote the documented HNSW parameters (`m` 2 to 100, default 16; `efConstruction` 4 to 1000 and at least 2m, default 64; `efSearch` default 40) and the dimension limits (2,000 uncompressed; 4,000 with `compression: "half"` on HNSW and IVF; 16,000 with product quantization on DiskANN).
 - The shipped `mcp.json` and `gemini-extension.json`: add a `_comment` explaining why `ENABLE_MANAGEMENT_TOOLS` is `"false"` and how to turn it on for a build session.
 
 ## Evidence
@@ -151,12 +152,19 @@ Paths are run folders from the experiment.
 - `runs/15-financial-advisor-chatbot-rag/20261124-192021/05-audit.json`: the vector-index requirement is `not_met` (`tool_unavailable`), and the sample fell back to client-side ranking.
 - `runs/14-hyper-personalized-content-engine/20261124-205043/doc-gaps.md`: after the refusal, the agent wrongly concluded that the driver cannot carry `cosmosSearchOptions`.
 
+## Resolved
+
+- Vector-index facts: settled 2026-11-25 from the Learn vector-search, half-precision, product-quantization and limitations pages and engine issue documentdb/documentdb#109, see findings/phase4/DECISIONS.md.
+  - The README driver-fallback example (`vector-hnsw` with only `similarity` and `dimensions`) is valid as written: `m`, `efConstruction` and `efSearch` are optional and default to 16, 64 and 40 (vector-search page, HNSW tab).
+  - HNSW parameter limits: `m` 2 to 100, `efConstruction` 4 to 1000 and at least 2m (vector-search page, HNSW tab).
+  - 1,536 dimensions is within the 2,000 limit for an uncompressed index; 4,000 with `compression: "half"` on HNSW or IVF; 16,000 with product quantization on DiskANN (vector-search "Features and limitations", half-precision, product-quantization and limitations pages).
+  - "Wait for the build" in the fallback text: a new vector index can return empty results for 2 to 3 minutes while it builds (quickstart-nodejs-select-algorithm, Troubleshooting).
+
 ## Open questions
 
-1. [needs SME confirmation] The README example uses `vector-hnsw` with only `similarity` and `dimensions` and leaves the HNSW build parameters at their defaults. Please confirm that this is valid as written, and confirm the HNSW parameter limits before quoting any other values.
-2. Maintainer decision: should `registerToolDefinitions` stop registering tools whose tier is off (with a startup log line listing the skipped tools), so that `tools/list` matches what will succeed? This PR adds a description note instead, because skipping registration hides the capability and would require clients to reconnect once a flag is enabled.
-3. Maintainer decision: would you move `create_index` to the `write` tier? It is the most common step when building a sample and is not destructive, yet it currently sits in the same tier as `drop_database`. Moving it would let a `["read","write"]` profile build a vector index while `drop_index`, `drop_*`, `rename_collection` and `current_ops` stay in `management`.
-4. Before filing: the sample counts (36, 32, 58, 13, 17) come from one run in which the harness left the flags off. The reviewer asks for a re-run after the harness fix before quoting counts externally; refresh or soften the numbers in *Why it matters* at that point.
+1. Maintainer decision: should `registerToolDefinitions` stop registering tools whose tier is off (with a startup log line listing the skipped tools), so that `tools/list` matches what will succeed? This PR adds a description note instead, because skipping registration hides the capability and would require clients to reconnect once a flag is enabled.
+2. Maintainer decision: would you move `create_index` to the `write` tier? It is the most common step when building a sample and is not destructive, yet it currently sits in the same tier as `drop_database`. Moving it would let a `["read","write"]` profile build a vector index while `drop_index`, `drop_*`, `rename_collection` and `current_ops` stay in `management`.
+3. Before filing: the sample counts (36, 32, 58, 13, 17) come from one run in which the harness left the flags off. The reviewer asks for a re-run after the harness fix before quoting counts externally; refresh or soften the numbers in *Why it matters* at that point.
 
 ## Source drafts
 
