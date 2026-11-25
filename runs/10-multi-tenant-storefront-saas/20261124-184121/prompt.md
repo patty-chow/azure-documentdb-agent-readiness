@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose app that stores all merchant products, orders, and inventory in shared DocumentDB collections. Use a tenantId field on every document, create compound indexes on (tenantId, sku) and (tenantId, createdAt), and enforce tenant isolation at the repository layer so no query can cross tenant boundaries.
