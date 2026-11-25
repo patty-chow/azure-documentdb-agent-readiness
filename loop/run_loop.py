@@ -75,6 +75,8 @@ SYSTEM_DATABASES = {"admin", "config", "local"}
 STAGE_ORDER = {"review": 1, "readiness": 2, "build": 3, None: 4}
 MODEL_FAILURE_EXIT = 7
 MAX_CONSECUTIVE_FAILURES = 3
+MODEL_RETRIES = 2                 # resumes after a model failure (exit 7), on top of the SDK's own retries
+RATE_LIMIT_BACKOFF_SECONDS = 90   # the deployment's limit is per minute, so wait out the window first
 
 _state_lock = threading.Lock()
 _print_lock = threading.Lock()
@@ -121,8 +123,9 @@ def complete_for(entry: dict, stop_after: str | None) -> bool:
 
 
 def resumable(entry: dict) -> bool:
+    """A run folder with saved stages can be continued, whether the run stopped at a gate or failed."""
     run_dir = entry.get("run_dir")
-    return bool(run_dir) and (PROJECT / run_dir).is_dir() and entry.get("exit_code") == 0
+    return bool(run_dir) and (PROJECT / run_dir).is_dir() and entry.get("exit_code") is not None
 
 
 # ------------------------------------------------------------ environment --
@@ -299,14 +302,21 @@ def run_one(sample: dict, args: argparse.Namespace, resume_from: str | None) -> 
     text = log_path.read_text(encoding="utf-8", errors="replace")
     m = re.findall(r"^Run folder: (.+)$", text, re.M)
     run_dir = Path(m[-1].strip()) if m else (PROJECT / resume_from if resume_from else None)
-    if code == MODEL_FAILURE_EXIT and args.auto_resume and run_dir and run_dir.is_dir():
-        say(f"[{sample['id']}] model call failed; resuming {run_dir.name} once")
+    attempts = 0
+    while code == MODEL_FAILURE_EXIT and args.auto_resume and attempts < MODEL_RETRIES and run_dir and run_dir.is_dir():
+        attempts += 1
         entry["retried"] = True
-        retry = [c for c in cmd if c not in (str(PROJECT / sample["prompt"]),)]
+        rate_limited = "429" in text[-3000:]
+        wait = RATE_LIMIT_BACKOFF_SECONDS * attempts if rate_limited else 15
+        say(f"[{sample['id']}] model call failed{' (rate limit)' if rate_limited else ''}; "
+            f"waiting {wait}s then resuming {run_dir.name} (attempt {attempts}/{MODEL_RETRIES})")
+        time.sleep(wait)
+        retry = [c for c in cmd if c != str(PROJECT / sample["prompt"])]
         if "--resume" not in retry:
             retry = retry[:3] + ["--resume", str(run_dir)] + retry[3:]
         retry = [c for i, c in enumerate(retry) if not (c == "--requirements" or (i and retry[i - 1] == "--requirements"))]
         code = run_pipeline(retry, env, log_path)
+        text = log_path.read_text(encoding="utf-8", errors="replace")
 
     entry["exit_code"] = code
     entry["finished"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
