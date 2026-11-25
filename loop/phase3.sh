@@ -36,9 +36,9 @@ EOF
 echo "== phase 3.2: control arm (no skills, no MCP servers) =="
 $PY loop/run_loop.py --arm control --parallel "$PAR" --ids $CONTROL_IDS
 echo "== phase 3.3: roll-up =="
-$PY main.py aggregate > /dev/null && echo "runs/gallery-insights.md written"
-$PY loop/phase_report.py
-$PY loop/phase_report.py --arm control && mv findings/PHASE-REPORT.md findings/PHASE-REPORT-control.md && $PY loop/phase_report.py
+$PY loop/aggregate_arm.py --arm default                       # default-arm runs only (see the script's docstring)
+$PY loop/phase_report.py --arm control && mv findings/PHASE-REPORT.md findings/PHASE-REPORT-control.md
+$PY loop/phase_report.py --arm default
 $PY loop/run_loop.py --triage-only
 git add runs/gallery-insights.md findings runs/loop-state.json && git commit -q -m "Phase 3: reruns, control arm, aggregate roll-up and reports" && git push -q && echo "roll-up committed and pushed"
 echo "PHASE 3 DONE"

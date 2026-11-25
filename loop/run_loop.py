@@ -404,6 +404,12 @@ def build_queue(args: argparse.Namespace) -> list[tuple[dict, str | None]]:
         if args.ids and s["id"] not in args.ids:
             continue
         history = entries_for(state, s["id"], args.arm)
+        if args.resume_latest:
+            # Continue the newest run folder whatever older runs say; used when a --rerun attempt failed part way.
+            latest = [e for e in history if resumable(e)]
+            if latest and not complete_for(latest[-1], args.stop_after):
+                queue.append((s, latest[-1]["run_dir"]))
+            continue
         if not args.rerun and any(complete_for(e, args.stop_after) for e in history):
             continue
         resume_from = None
@@ -435,6 +441,7 @@ def main() -> int:
     ap.add_argument("--arm", choices=sorted(ARMS), default="default")
     ap.add_argument("--stop-after", choices=["review", "readiness", "build"], help="omit to run through the audit")
     ap.add_argument("--rerun", action="store_true", help="start fresh runs even for samples that are complete or resumable")
+    ap.add_argument("--resume-latest", action="store_true", help="resume each sample's newest run folder even when an older run is complete")
     ap.add_argument("--no-force", dest="force", action="store_false", help="stop at an insufficient prompt instead of building on assumptions")
     ap.add_argument("--no-env-note", dest="env_note", action="store_false", help="do not pass loop/run-environment.md as shared context")
     ap.add_argument("--no-venv", dest="venv", action="store_false", help="do not give each run its own virtual environment")

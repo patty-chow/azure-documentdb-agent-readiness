@@ -14,6 +14,8 @@ loop/draft_requirements.py  drafts the missing requirements files with the model
 loop/run_loop.py            the queue runner
 loop/run-environment.md     what every agent is told about the live cluster (rendered per run)
 loop/findings.py            run folder -> findings; builds findings/TRIAGE.md
+loop/aggregate_arm.py       `main.py aggregate` over one arm's best runs (the control arm must not leak into gallery-insights.md)
+loop/phase3.sh              reruns, control arm and roll-up, run after phase 2
 loop/arms/                  skill and MCP configurations for the experiment arms
 loop/provision.sh           creates the Azure resources once; loop/teardown.sh deletes them
 runs/loop-state.json        every run: sample, arm, run folder, exit code, how far it went, verdicts, minutes
@@ -55,7 +57,7 @@ well inside that.
 
 State decides what runs. A sample is complete for a requested stop point when an earlier run
 with exit code 0 reached at least that far; a partial run is resumed from its folder;
-`--rerun` forces a fresh run. The loop exits with `PHASE DONE` when the queue is finished and
+`--rerun` forces a fresh run; `--resume-latest` continues a sample's newest folder even when an older run is complete (for a `--rerun` that failed part way). The loop exits with `PHASE DONE` when the queue is finished and
 with `STUCK` after three consecutive failures.
 
 ### What the loop does around each pipeline run
