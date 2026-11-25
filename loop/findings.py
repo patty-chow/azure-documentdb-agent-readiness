@@ -181,7 +181,8 @@ def mcp_usage(run_dir: Path) -> dict:
 
 
 def run_dirs(runs_root: Path) -> list[Path]:
-    return sorted(p for p in runs_root.glob("*/*") if p.is_dir() and (p / "run.json").is_file() or (p / "02-readiness.json").is_file())
+    return sorted(p for p in runs_root.glob("*/*")
+                  if p.is_dir() and ((p / "run.json").is_file() or (p / "02-readiness.json").is_file()))
 
 
 def _norm(text: str) -> str:
