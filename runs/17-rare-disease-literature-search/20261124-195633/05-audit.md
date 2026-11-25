@@ -1,0 +1,120 @@
+# 5. Best-practice audit: 17-rare-disease-literature-search
+
+**Verdict: pass_with_findings** (8 followed, 2 violated, 1 not assessable)
+
+The sample implements the core pipeline: PubMed ingestion, chunking, embedding, storage of chunk documents with embedding vectors, creation of a cosmosSearch vector-diskann index, and a simple HTTP /query endpoint that runs server-side cosmosSearch k-NN and returns an LLM-generated answer plus grounded citations (pmid + year). Automated tests and small-data verification (dummy embeddings) ran in the dev environment. Remaining issues are mostly hygiene, documentation, LlamaIndex integration for the RAG agent, error handling, and infra/dependency pinning; none of the discovered problems made the sample non-functional for the verified, limited end-to-end checks, but several checklist items and best-practice guidance are partly or not met and should be fixed before publishing.
+
+## Review of the builder's decisions
+
+| Decision | What was decided | Reason came from | Assessment | Comment |
+|---|---|---|---|---|
+| D001 | I approved the build with readiness 'ready_with_gaps' | operator | sound | Approval with operator reason and evidence 'Approved with --yes' is an operator action; the event is recorded (decisions.jsonl line 1) and is supported by the run log. |
+| D002 | I chose Python (system 'python' in the dev virtualenv) for the sample app and scripts. | prompt | sound | Choosing Python matches the sample prompt and the environment; events show Python tools used and code written in Python (events.jsonl records D002 and later Python files created). |
+| D003 | I chose PyMongo (pymongo >= 4.5) and will implement a singleton MongoClient for the sample. | prompt | sound | Choosing PyMongo and implementing a singleton MongoClient is documented and implemented (app/src/db.py); events show the documentdb-driver skill was loaded before this decision was logged. |
+| D004 | I chose OpenAI text-embedding-3-small for embeddings and will require OPENAI_API_KEY in env. | model_default | questionable | The decision to use OpenAI text-embedding-3-small is a 'model_default' choice (decisions.jsonl D004). It's defensible but not grounded in public DocumentDB guidance; the readiness report flagged model selection as an information gap. The code and .env.example use that default (app/.env.example and app/src/ingest.py), so the choice is internally consistent but should be reviewed by the owner for appropriateness in medical abstract retrieval. |
+| D005 | I chose OpenAI gpt-3.5-turbo for the answer-generation LLM. | model_default | questionable | Selecting gpt-3.5-turbo as the LLM is again a model_default decision (D005). Defensible for demonstrations, but it is not backed by product guidance and should be documented in README as an explicit default the user can change. |
+| D006 | I chose a single denormalized collection 'pubmed_chunks' in database 'sample_healthcare_17' with documents { _id, pmid, year, chunk_id, text, embedding, model, schemaVersion }. | prompt | sound | Data model choice (single denormalized 'pubmed_chunks' collection) matches the code (app/src/ingest.py upsert_chunks) and is consistent with the sample's access pattern. |
+| D007 | I chose vector-diskann (DiskANN) for the vector index. | skill | sound | Choosing vector-diskann is supported by the documentdb-vector-search skill and the index was created as vector-diskann in the run (events.jsonl shows index with kind 'vector-diskann'). |
+| D008 | I chose to require 'llama-index>=0.9.0' in requirements.txt rather than pinning to a single patch version. | model_default | wrong | The decision to avoid pinning llama-index (D008) contradicts the gallery checklist expectation that dependencies be pinned. The event log shows requirements.txt uses flexible minimums (events.jsonl write_file). This should be changed to pinned versions for reproducibility. |
+| D009 | I chose FastAPI for the HTTP API (POST /query). | model_default | sound | Choosing FastAPI is reasonable and implemented (app/src/app.py uses FastAPI). |
+| D010 | I chose to insert a few dummy documents with zero vectors for verification instead of running the full OpenAI-backed seed, to avoid requiring an OPENAI_API_KEY during automated verification. | model_default | sound | Inserting dummy zero vectors to verify DB/index creation without external keys is a pragmatic 'model_default' decision (D010); the run log shows dummy docs were inserted successfully (events.jsonl run_command inserting dummy docs). The decision is justified and recorded. |
+| D011 | I chose to use the documentdb MCP server's documentdb_create_index tool to create the cosmosSearch vector-diskann index for verification. | readiness_report | questionable | Using the MCP server to create the index is reasonable (D011 references the readiness_report). The documented MCP call failed during the run due to management tools being disabled by default (events.jsonl shows ToolExecutionException with 'Management tools are disabled by default'). The decision was a reasonable attempt but contingent on an opt-in configuration; the tool failure is recorded in events.jsonl. |
+| D012 | I chose to fallback to PyMongo db.command(createIndexes) because the MCP documentdb_create_index call failed. | tool_result | sound | Falling back to PyMongo db.command(createIndexes) after MCP failure is sensible; events.jsonl shows the runCommand created the index successfully and the index is visible via documentdb_list_indexes. |
+
+Documentation gaps: 9 (see `doc-gaps.md`).
+
+## Appendix
+
+### Sources that were reachable in this run
+
+| Source | Reachable | Detail |
+|---|---|---|
+| `learn` (documentation search) | yes | 3 tools |
+| Installed agent skills | 17 | 17 have a public address |
+
+### Public availability of best practices
+
+| Outcome | Count | What it means |
+|---|---|---|
+| On the checklist, no public source found | 0 | Not public, or not written down. A documentation gap. |
+| On the checklist, found only when searched for by name | 0 | Public but hard to find. A discoverability gap. |
+| Found publicly, not on the checklist | 0 | Add it to the checklist, or check that the public guidance is what the team intends. |
+| Known to the model, no public source, not on the checklist | 2 | Agents will act on it from memory. Decide whether it holds for this service, then document it either way. |
+| On the checklist and found by open discovery | 9 | Public and discoverable. |
+
+#### Known to the model, no public source, not on the checklist
+
+| Topic | Description | What would help |
+|---|---|---|
+| Chunk sizing guidance | Choose a chunk size tuned to your embedding model and record chunk length/token count in metadata for debugging. | A sentence in the sample README stating the recommended chunk_size for the chosen embedding model and how to change it, plus an example of recording token counts in metadata. |
+| Bulk writes batching | When ingesting many documents use batched bulk writes (driver bulk APIs) and moderate batch sizes. | A short note in README describing recommended batch sizes for small vs large corpora and a pointer to the DocumentDB vector-search skill for index-build considerations. |
+
+#### On the checklist and found by open discovery
+
+| Topic | Description | Sources |
+|---|---|---|
+| Client reuse | One client is created and reused for the life of the process. | [documentdb-connection](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md) |
+| Driver retry/backoff | Enable the driver's retry settings and implement application-level retries with exponential backoff. | [documentdb-connection](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md) |
+| Secrets handling | Never commit connection strings or keys to source control; read DOCUMENTDB_URI and other secrets from environment variables or a secrets store and ship a .env.example with placeholders. | [documentdb-mcp-setup](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/mcp-setup/SKILL.md) |
+| Chunk-per-document | Store each text chunk as a separate document with explicit metadata fields (pmid / source_year / chunk_id / chunk_text / embedding). | [documentdb-data-modeling](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md) |
+| Vector index creation | Create a native vector index whose parameters match your embeddings exactly (kind: vector-diskann / vector-hnsw / vector-ivf) and set dimensions and similarity. | [documentdb-vector-search](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md) |
+| Server-side k-NN | Run vector k-NN searches server-side with the $search aggregation stage and the cosmosSearch operator rather than scanning embeddings client-side. | [documentdb-vector-search](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md) |
+| Project searchScore & metadata | Project/return the metadata you need (pubmed_id, year, chunk_id, snippet/text and searchScore) so each hit can be presented as a grounded citation without extra DB round-trips. | [documentdb-vector-search](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md) |
+| Avoid N+1 reads | Avoid N+1 reads by returning vector-search hits and required metadata/text in a single DB operation. | [documentdb-query-optimizer](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md) |
+| Conventional indexes | Create conventional (B-tree) indexes on fields you filter or sort on (e.g., pubmed_id, source_year). | [documentdb-query-optimizer](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md) |
+
+### How the app measures up
+
+#### Violations
+
+| Practice | Category | Evidence | Fix | Source |
+|---|---|---|---|---|
+| Enable the driver's retry settings and implement application-level retries with exponential backoff. | retries | app/src/db.py sets MongoClient(..., retryWrites=True) (app/src/db.py line 18) but ingest and index creation do not implement application-level retries or exponential backoff (app/src/ingest.py embed_texts/upsert_chunks and app/src/create_index.py have no retry wrappers). | Wrap critical data-plane operations (embed_texts calls, upsert_chunks bulk_write, create_vector_index runCommand) with an idempotent retry loop and exponential backoff (or use a retry decorator) and ensure bulk operations are idempotent (they already use upsert). | [documentdb-connection](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md) |
+| Create conventional (B-tree) indexes on fields you filter or sort on (e.g., pubmed_id, source_year). | indexing | documentdb_list_indexes output shows only the default _id index and the embedding vector index; no index on 'pmid' or 'year' exists (events.jsonl documentdb_list_indexes result). | Create an index on 'pmid' and/or 'year' if the application will filter or sort by those fields. Example: db.command({'createIndexes':'pubmed_chunks','indexes':[{'key':{'pmid':1},'name':'idx_pmid'}]}) | [documentdb-query-optimizer](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md) |
+
+#### Could not be assessed
+
+| Practice | Category | What was searched and missing | Source |
+|---|---|---|---|
+| Choose a chunk size tuned to your embedding model and record chunk length/token count in metadata for debugging. | data_modeling | Searched installed skills and Microsoft docs for 'Azure DocumentDB chunk size tokens' (no specific guidance found). | prior_knowledge_only (no public address recorded) |
+
+#### Followed
+
+| Practice | Category | Evidence | Source |
+|---|---|---|---|
+| One client is created and reused for the life of the process. | connection_handling | app/src/db.py lines 12-20 implement a singleton MongoClient and get_db(); created via get_client(). | [documentdb-connection](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md) |
+| Never commit connection strings or keys to source control; read DOCUMENTDB_URI and other secrets from environment variables or a secrets store and ship a .env.example with placeholders. | authentication_and_secrets | app/.env.example lists placeholders (app/.env.example lines 2-7) and code reads DOCUMENTDB_URI from env (app/src/db.py lines 8-19); no connection string found in source. | [documentdb-mcp-setup](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/mcp-setup/SKILL.md) |
+| Store each text chunk as a separate document with explicit metadata fields (pmid / source_year / chunk_id / chunk_text / embedding). | data_modeling | app/src/ingest.py chunk_texts produces {'pmid','year','chunk_id','text'} and embed_texts/upsert_chunks persist these with 'embedding' and 'model' fields (app/src/ingest.py lines 90-106 and 111-121). | [documentdb-data-modeling](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md) |
+| Create a native vector index whose parameters match your embeddings exactly (kind: vector-diskann / vector-hnsw / vector-ivf) and set dimensions and similarity. | indexing | app/src/create_index.py uses createIndexes runCommand with cosmosSearchOptions.kind='vector-diskann', dimensions from OPENAI_EMBEDDING_DIMS, similarity='COS' (app/src/create_index.py lines 11-18). The index was created successfully in the run (events.jsonl createIndexes result and documentdb_list_indexes output). | [documentdb-vector-search](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md) |
+| Run vector k-NN searches server-side with the $search aggregation stage and the cosmosSearch operator rather than scanning embeddings client-side. | vector_search | app/src/app.py pipeline uses $search.cosmosSearch.knn with 'path':'embedding' and returns results server-side (app/src/app.py lines 41-56). | [documentdb-vector-search](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md) |
+| Project/return the metadata you need (pubmed_id, year, chunk_id, snippet/text and searchScore) so each hit can be presented as a grounded citation without extra DB round-trips. | queries | Aggregation pipeline projects pmid, year, chunk_id, text and score via {'$project': {'pmid':1,'year':1,'chunk_id':1,'text':1,'score':{'$meta':'searchScore'}}} (app/src/app.py line 54). | [documentdb-vector-search](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md) |
+| Avoid N+1 reads by returning vector-search hits and required metadata/text in a single DB operation. | queries | app/src/app.py uses a single aggregation pipeline to retrieve search hits with metadata and text (app/src/app.py lines 41-56). | [documentdb-query-optimizer](https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md) |
+| When ingesting many documents use batched bulk writes (driver bulk APIs) and moderate batch sizes. | provisioning_and_ingest | ingest.upsert_chunks uses coll.bulk_write(ops) to perform bulk upserts (app/src/ingest.py lines 111-121). | prior_knowledge_only (no public address recorded) |
+
+### Reference requirements
+
+13 of 20 met. The builder never saw these; this measures the starter prompt and the skills.
+
+| Requirement | Status | Cause | Evidence | Smallest fix |
+|---|---|---|---|---|
+| /search returns a clear error for an empty query and when the embedding call fails. | not_met | prompt_silent | app/src/app.py query handler performs no input validation (no empty-query check) and does not catch embedding or LLM exceptions (app/src/app.py lines 32-36 and 61-67). | Add input validation and error handling in src/app.py: return 400 for empty query, and wrap embedding/LLM calls in try/except to return clear 5xx/4xx errors with a short message. Example: if not req.query.strip(): raise HTTPException(400, 'query is required'). |
+| Dependencies are pinned in requirements.txt. | not_met | builder_error | app/requirements.txt uses flexible minimum versions (e.g., 'llama-index>=0.9.0', 'pymongo>=4.5') instead of exact pinned versions (app/requirements.txt). | Pin critical dependencies to exact tested versions (e.g., 'llama-index==0.14.26', 'pymongo==4.20.1', 'openai==3.59.0') in requirements.txt or provide a constraints file; document why pins were chosen. |
+| Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type. | not_met | prompt_silent | The repository has no IaC files (no Bicep/Terraform/ARM templates) to provision Microsoft.DocumentDB/mongoClusters; README assumes an existing cluster (app/README.md lines 11-15). | Add a small IaC example (Bicep or Terraform/AzAPI) that creates a minimal Microsoft.DocumentDB/mongoClusters resource with low-cost defaults, or include an explicit note that the run environment must supply a cluster and link to the product quickstart for provisioning. |
+| Generate an embedding for each chunk with LlamaIndex's embedding integration and store the chunks with their embedding vectors as fields on documents in Azure DocumentDB (through LlamaIndex's Azure DocumentDB vector store integration or a MongoDB-compatible Python driver such as PyMongo). | partly_met | builder_error | app/src/ingest.py lines 95-108 (embed_texts uses openai.Embedding.create and attaches 'embedding' and 'model' fields); app/src/ingest.py lines 111-121 (upsert_chunks uses bulk_write to store documents with embedding field in sample_healthcare_17.pubmed_chunks). | Either use LlamaIndex's OpenAIEmbedding (or LlamaIndex vector-store adapter) in embed_texts, or document in README why direct OpenAI calls were used; change the code to call LlamaIndex's embedding API when you want a full LlamaIndex integration. |
+| Expose a RAG agent built with LlamaIndex in Python that takes a researcher question, retrieves the semantically ranked chunks from Azure DocumentDB and generates an answer conditioned on those chunks. | partly_met | builder_error | app/src/app.py composes 'context' from retrieved chunks and calls OpenAI ChatCompletion to produce an answer (lines 61-67), but it does not instantiate or use LlamaIndex retrieval/response agent primitives; LlamaIndex is only used for chunking. | Either (A) wire the retrieval step + prompt/LLM call into a LlamaIndex ServiceContext/LLMPredictor + Retriever pipeline, or (B) change sample description/README to state that retrieval is via direct cosmosSearch+ChatCompletion rather than a LlamaIndex-managed RAG object. |
+| The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one. | partly_met | prompt_silent | create_index.py sets 'maxDegree' and 'lBuild' defaults in code (app/src/create_index.py lines 17-18), but README.md does not document how to tune these parameters for different data sizes (app/README.md has index creation notes but no tuning guidance). | Add a short section in README.md describing the chosen defaults (maxDegree/lBuild), why they suit the small sample, and instructions + example values for tuning them for larger corpora (refer to documentdb-vector-search skill docs). |
+| The README covers what the sample shows, prerequisites, setup, run, and clean-up. | partly_met | builder_error | README includes what the sample shows, prerequisites, setup, seeding and run instructions (app/README.md lines 3-26) but lacks explicit clean-up steps to drop the created collection or delete resources (no clean-up section). | Add a 'clean-up' section to README.md with commands to drop the collection and guidance on how to delete the sample DB or the cluster if the user provisioned one. |
+| Implement the pipeline in Python with LlamaIndex, including an ingestion step that fetches PubMed abstracts for rare diseases (e.g. through the PubMed E-utilities API) and keeps each abstract's text, PubMed ID and publication year. | met | - | app/src/ingest.py lines 24-35 (search_pubmed) and 38-61 (fetch_abstracts collects pmid, title, abstract, year). | n/a |
+| Split each ingested abstract into text chunks with LlamaIndex and carry the source abstract's PubMed ID and year on every chunk as metadata. | met | - | app/src/ingest.py lines 66-73 (attempt to use TokenTextSplitter) and lines 86-92 (chunk creation stores 'pmid' and 'year' and 'chunk_id'). | n/a |
+| Create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field in code, with dimensions matching the embedding model's output and a similarity of COS, L2 or IP. | met | - | app/src/create_index.py lines 11-18 (createIndexes runCommand with 'key': {'embedding':'cosmosSearch'} and cosmosSearchOptions: kind 'vector-diskann', dimensions from OPENAI_EMBEDDING_DIMS, similarity 'COS'). | n/a |
+| Answer a researcher question by embedding it and running the vector similarity search inside Azure DocumentDB with $search / cosmosSearch, ordering the retrieved chunks by the database's similarity score (semantic relevance). | met | - | app/src/app.py lines 34-36 (openai embedding of query) and lines 41-56 (aggregate pipeline with $search.cosmosSearch knn, projecting searchScore, and collecting results in order). | n/a |
+| Include a citation for each retrieved abstract the answer draws on, and give the PubMed ID and abstract year in every citation. | met | - | app/src/app.py lines 58-60 build Citation objects with pmid and year; the system prompt (line 63) instructs the LLM to cite PubMed IDs and years; QueryResponse includes citations (lines 27-29 and return at line 69). | n/a |
+| The connection string and model credentials come from environment variables; none appear in the repository. | met | - | app/.env.example contains DOCUMENTDB_URI and OPENAI_API_KEY placeholders (app/.env.example lines 2-7); app/src/db.py reads DOCUMENTDB_URI (lines 8-19); app/src/app.py and app/src/ingest.py read OPENAI_API_KEY and embedding/model environment variables (app/src/app.py lines 9-12; app/src/ingest.py lines 14-17). | n/a |
+| A .env.example lists every setting with placeholder values. | met | - | app/.env.example lists DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL, OPENAI_EMBEDDING_DIMS, OPENAI_LLM_MODEL (app/.env.example lines 2-7). | n/a |
+| The vector index dimensions match the embedding model's output. | met | - | Default embedding model and dims are set in .env.example and code: OPENAI_EMBEDDING_MODEL 'text-embedding-3-small' and OPENAI_EMBEDDING_DIMS=1536 (app/.env.example lines 6-7); create_index.py uses the OPENAI_EMBEDDING_DIMS default to set index dimensions (app/src/create_index.py line 33 and lines 13-16). | n/a |
+| One database client is created and reused across requests. | met | - | app/src/db.py implements a process-level singleton MongoClient with a thread Lock (lines 12-19 and get_client function lines 13-20). | n/a |
+| A seed script loads sample data and creates the index, and can be run twice without duplicating data. | met | - | scripts/seed.py runs src.ingest; ingest.upsert_chunks uses UpdateOne with upsert=True to avoid duplicates (app/src/ingest.py lines 111-121). create_index.py can be run as a module and sets index dimensions idempotently (app/src/create_index.py lines 4-24). | n/a |
+| Search results include the similarity score. | met | - | Aggregation pipeline projects {'score': {'$meta':'searchScore'}} and the Citation model includes score (app/src/app.py lines 54 and 20-25). | n/a |
+| Unit tests run without a live cluster. | met | - | tests/test_chunking.py uses only local code paths and pytest passed in the build run (events.jsonl: '1 passed'). The ingest module imports are arranged to avoid external calls during that unit test (events.jsonl lines showing pytest success). | n/a |
+| The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name. | met | - | README and code refer to 'Azure DocumentDB' and 'DocumentDB' (app/README.md lines 1 and 7; code comments consistent), no old Cosmos DB/RU naming appears in README text. | n/a |
+
