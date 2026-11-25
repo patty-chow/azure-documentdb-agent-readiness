@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain orchestration pipeline that queries DocumentDB for carts abandoned for over 2 hours, passes each cart to a copy-generation agent that writes a personalised recovery message, then hands off to a channel agent that sends email or SMS based on the customer's stored preference. Log outcomes back to DocumentDB.

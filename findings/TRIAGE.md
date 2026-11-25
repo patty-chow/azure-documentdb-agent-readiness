@@ -2004,7 +2004,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 06-order-history-timeline-agent | `runs/06-order-history-timeline-agent/20261124-183612` | 3 | 0 | 20 | 106 | 0 |
 | 06-symptom-triage-chatbot-rag | `runs/06-symptom-triage-chatbot-rag/20261124-193845` | 2 | 0 | 28 | 64 | 4 |
 | 07-customer-review-sentiment-pipeline | `runs/07-customer-review-sentiment-pipeline/20261124-183656` | 0 | 0 | 16 | 45 | 3 |
-| 07-customer-review-sentiment-pipeline | `runs/07-customer-review-sentiment-pipeline/20261125-054042` | 0 | 0 | 11 | 60 | 3 |
+| 07-customer-review-sentiment-pipeline | `runs/07-customer-review-sentiment-pipeline/20261125-054042` | 2 | 0 | 12 | 90 | 3 |
 | 07-lab-results-aggregator | `runs/07-lab-results-aggregator/20261124-194018` | 3 | 0 | 10 | 87 | 1 |
 | 07-mortgage-application-multi-agent | `runs/07-mortgage-application-multi-agent/20261124-201025` | 3 | 0 | 16 | 63 | 3 |
 | 07-multi-currency-ledger | `runs/07-multi-currency-ledger/20261124-190814` | 0 | 0 | 8 | 46 | 3 |
@@ -2031,7 +2031,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 11-preference-center-consent-store | `runs/11-preference-center-consent-store/20261124-204614` | 3 | 0 | 17 | 97 | 3 |
 | 11-visual-similarity-search-image-embeddings | `runs/11-visual-similarity-search-image-embeddings/20261124-184225` | 5 | 0 | 14 | 92 | 7 |
 | 12-abandoned-cart-recovery-orchestration | `runs/12-abandoned-cart-recovery-orchestration/20261124-184507` | 3 | 0 | 7 | 93 | 6 |
-| 12-abandoned-cart-recovery-orchestration | `runs/12-abandoned-cart-recovery-orchestration/20261125-054042` | 0 | 0 | 17 | 43 | 3 |
+| 12-abandoned-cart-recovery-orchestration | `runs/12-abandoned-cart-recovery-orchestration/20261125-054042` | 4 | 0 | 17 | 68 | 3 |
 | 12-clv-prediction-pipeline | `runs/12-clv-prediction-pipeline/20261124-204841` | 3 | 0 | 10 | 86 | 2 |
 | 12-cross-border-payment-audit-trail | `runs/12-cross-border-payment-audit-trail/20261124-201744` | 3 | 0 | 9 | 96 | 3 |
 | 12-hospital-bed-occupancy-tracker | `runs/12-hospital-bed-occupancy-tracker/20261124-194835` | 3 | 0 | 15 | 68 | 2 |
