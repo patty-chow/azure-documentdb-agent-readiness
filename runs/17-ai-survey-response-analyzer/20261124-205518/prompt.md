@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python pipeline using Beanie ODM that reads survey response documents from DocumentDB, uses prompt engineering to extract themes, sentiment, and a representative quote from each response, embeds the text, and writes the enriched document back. Build aggregation queries that surface the top themes and sentiment distribution per survey question.
