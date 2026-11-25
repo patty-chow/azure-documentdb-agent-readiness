@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python service that stores each trading signal, execution, and outcome as a separate immutable document in DocumentDB with a strategy ID and timestamp. Build aggregation pipelines that compute win rate, average P&L, and drawdown per strategy. Add a context engineering layer that formats the aggregated stats for LLM-driven strategy review.
