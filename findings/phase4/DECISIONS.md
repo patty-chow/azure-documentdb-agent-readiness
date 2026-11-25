@@ -81,6 +81,10 @@ github.com/Azure-Samples/documentdb-samples (line 12, the HNSW table row; line 2
 exceed 8,000 dimensions"; line 30, "supports embeddings up to 8,000 dimensions"), and the same repo's
 `.github/copilot-instructions.md` line 152 repeats "HNSW's 8,000". One PR to that repository fixes
 every language's quickstart at once.
+Engine test (reported by the team, 2026-11-25): creating a `vector-hnsw` index with
+`"compression": "half"` and `"dimensions": 4001` fails with "field cannot have more than 4000
+dimensions for vector index"; the same index with `"dimensions": 4000` is created. So the 4,000
+half-precision ceiling is enforced by the engine, not just documented.
 
 **Still open for engineering.**
 
