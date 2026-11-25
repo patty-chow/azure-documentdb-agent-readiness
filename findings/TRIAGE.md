@@ -1416,7 +1416,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 
 | Sample | Run | documentdb | azure | learn | local tools | failed calls |
 |---|---|---|---|---|---|---|
-| 01-anti-money-laundering-pattern-detector | `runs/01-anti-money-laundering-pattern-detector/20261124-200112` | 0 | 0 | 10 | 6 | 0 |
+| 01-anti-money-laundering-pattern-detector | `runs/01-anti-money-laundering-pattern-detector/20261124-200112` | 5 | 0 | 10 | 44 | 5 |
 | 01-fraud-detection-with-vector-similarity | `runs/01-fraud-detection-with-vector-similarity/20261124-185817` | 5 | 0 | 14 | 62 | 7 |
 | 01-patient-record-summarizer-rag | `runs/01-patient-record-summarizer-rag/20261124-192917` | 4 | 0 | 26 | 70 | 2 |
 | 01-product-catalog-with-vector-search | `runs/01-product-catalog-with-vector-search/20261124-174657` | 0 | 0 | 10 | 2 | 0 |
@@ -1507,7 +1507,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 18-chargeback-dispute-multi-agent | `runs/18-chargeback-dispute-multi-agent/20261124-192501` | 10 | 0 | 26 | 110 | 5 |
 | 18-returns-refund-workflow-orchestration | `runs/18-returns-refund-workflow-orchestration/20261124-185415` | 2 | 0 | 20 | 96 | 2 |
 | 18-sanctions-list-screening-agent | `runs/18-sanctions-list-screening-agent/20261124-202645` | 0 | 0 | 10 | 3 | 0 |
-| 19-care-coordination-multi-agent | `runs/19-care-coordination-multi-agent/20261124-195730` | 0 | 0 | 14 | 46 | 0 |
+| 19-care-coordination-multi-agent | `runs/19-care-coordination-multi-agent/20261124-195730` | 0 | 0 | 14 | 58 | 2 |
 | 19-cross-sell-recommendation-beanie | `runs/19-cross-sell-recommendation-beanie/20261124-185532` | 0 | 0 | 21 | 31 | 4 |
 | 19-insider-threat-detection-pipeline | `runs/19-insider-threat-detection-pipeline/20261124-202818` | 0 | 0 | 7 | 6 | 0 |
 | 19-option-chain-data-store | `runs/19-option-chain-data-store/20261124-192712` | 4 | 0 | 22 | 107 | 1 |
@@ -1515,7 +1515,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 20-identity-resolution-multi-agent | `runs/20-identity-resolution-multi-agent/20261124-210002` | 0 | 0 | 7 | 4 | 0 |
 | 20-interest-accrual-batch-processor | `runs/20-interest-accrual-batch-processor/20261124-202826` | 0 | 0 | 9 | 4 | 0 |
 | 20-open-banking-api-cache-layer | `runs/20-open-banking-api-cache-layer/20261124-192737` | 2 | 0 | 27 | 52 | 0 |
-| 20-provider-directory-semantic-search | `runs/20-provider-directory-semantic-search/20261124-200008` | 3 | 0 | 11 | 40 | 1 |
+| 20-provider-directory-semantic-search | `runs/20-provider-directory-semantic-search/20261124-200008` | 3 | 0 | 18 | 75 | 1 |
 | 20-store-locator-with-geospatial-search | `runs/20-store-locator-with-geospatial-search/20261124-185729` | 3 | 0 | 13 | 68 | 2 |
 | retail-semantic-search | `runs/retail-semantic-search/20261114-100613` | 0 | 1 | 18 | 28 | 1 |
 | retail-semantic-search | `runs/retail-semantic-search/20261115-153948` | 0 | 1 | 16 | 26 | 1 |
