@@ -1,0 +1,664 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample is runnable, exercised unit tests, seeds a live cluster idempotently, computes last visits via a server aggregation and implements care-gap detection, prioritisation and talking-point generation. Key correctness features are present: environment-driven connection and LLM credentials, an idempotent seed script, a single reused MongoClient, guideline injection, deterministic unit tests for rule logic, and both an LLM and a deterministic fallback path. Shortcomings that matter to the gallery review: (1) the care-gap classification itself runs in-process (Python) rather than fully in the DocumentDB aggregation pipeline requested by the starter prompt; (2) the sample does not construct provider-specific vector indexes or choose vector-dimension/parameter values tied to an embedding model; (3) the sample advertises LangChain in the prompt/readme and the decision log but the code does not implement a LangChain agent/tool wrapper (the LLM call is made directly via an OpenAI client). Documentation search was not available during this run (documentation_search_available=false), so any “not found” guidance reported below means “not discoverable from this machine” rather than authoritative absence on the web.",
+  "requirement_results": [
+    {
+      "requirement": "A single Python agent built with LangChain runs the whole pipeline: it calls the aggregation tool, then prioritises the resulting patient list and generates outreach talking points.",
+      "status": "partly_met",
+      "evidence": "src/pipeline.py lines 137-141 (run_end_to_end calls get_all_patients_with_last_visit -> detect_gaps -> prioritise_and_generate_messages). No LangChain agent or tool wrapper is imported or used in src/pipeline.py.",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap the pipeline orchestration in a LangChain Agent/Tool: e.g., add a LangChain Tool that calls get_all_patients_with_last_visit and register it with a LangChain Agent used by run_end_to_end, or update the README/prompt to not require LangChain."
+    },
+    {
+      "requirement": "The agent has a LangChain tool that runs an aggregation pipeline against Azure DocumentDB through the Python MongoDB driver (e.g. PyMongo) and returns the patients missing recommended screenings.",
+      "status": "partly_met",
+      "evidence": "src/db.py lines 80-104 implement get_all_patients_with_last_visit which uses a server-side aggregation to compute last_visit values; src/pipeline.py calls get_all_patients_with_last_visit. There is no LangChain Tool abstraction around that call.",
+      "cause": "builder_error",
+      "smallest_fix": "Create a LangChain Tool class/function that calls get_all_patients_with_last_visit and returns results, then register it with a LangChain Agent used by the pipeline."
+    },
+    {
+      "requirement": "The aggregation pipeline works out who is missing a screening inside Azure DocumentDB from the patients' age, diagnosis and last-visit documents (e.g. a $match on age and diagnosis criteria and a comparison of the last-visit date against the screening interval).",
+      "status": "not_met",
+      "evidence": "src/db.py lines 86-91: aggregation only computes per-patient last_visit via $sort/$group. The care-gap logic (age, diagnosis, interval checks) is implemented in Python in src/pipeline.py detect_gaps (lines 38-73).",
+      "cause": "builder_error",
+      "smallest_fix": "Move the screening-missing logic into the DB aggregation or add an aggregation stage that filters patients by age/diagnosis and computes whether last_visit exceeds the guideline interval; at minimum, implement a projection flag in the aggregation (e.g. computed last_visit and a boolean 'is_missing_mammogram' etc.)"
+    },
+    {
+      "requirement": "Care gap guidelines (which screenings are recommended for whom, and how often) are injected into the agent's prompt context before it prioritises patients or writes talking points.",
+      "status": "met",
+      "evidence": "src/pipeline.py lines 13-35 (CARE_GUIDELINES constant) and lines 100-108 build the user prompt embedding CARE_GUIDELINES into the messages sent to the LLM.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The agent prioritises the patient list returned by the tool using the LLM and the injected guidelines, producing an ordered list (e.g. with a priority level per patient).",
+      "status": "met",
+      "evidence": "src/pipeline.py lines 76-96 compute a heuristic priority_score and sort the list; lines 97-121 implement the LLM path which consumes CARE_GUIDELINES and patients and expects JSON output including priority_score.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The agent generates outreach talking points for each gap type found.",
+      "status": "met",
+      "evidence": "src/pipeline.py lines 125-134 create fallback templated talking points; the LLM path requests JSON with talking_points at lines 108-113 and lines 114-121 handle and parse LLM output.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "src/db.py lines 6-10 read DOCUMENTDB_URI from environment; src/pipeline.py lines 10-11 read OPENAI_API_KEY and OPENAI_MODEL; .env.example lists placeholders (app/.env.example). No secrets present in source.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lines 1-4 contain DOCUMENTDB_URI, OPENAI_API_KEY and OPENAI_MODEL placeholders.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_met",
+      "evidence": "The seed/index code intentionally omits vector-index creation (README Limitations and absence of any createIndex with 'vector' options in src/db.py).",
+      "cause": "skill_silent",
+      "smallest_fix": "Document the embedding model and its output dimension in README/.env.example and parameterise any vector-index creation in the seed script so dims are set from a variable (e.g. EMBEDDING_DIM). If you intend to create the index, add a verified, idempotent createIndex call using those parameters."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "README (app/README.md) Limitations states vector indexes are not created; no guidance on index parameters or tuning for larger data sets is provided.",
+      "cause": "skill_silent",
+      "smallest_fix": "Add a README section that documents recommended vector index algorithms/parameters for small/medium/large datasets and how to change the seed script to adjust those parameters."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "src/db.py lines 12-19 implement a singleton _client and get_client() that caches it.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "src/db.py lines 47-56 check existing documents and return if present; scripts/seed_data.py lines 1-3 call load_sample_data(). seed prints ensured indexes (lines 29-36) and inserted sample documents lines 65-77.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "No HTTP /search endpoint exists in this repository (no web server code).",
+      "cause": "could_not_determine",
+      "smallest_fix": "If a search API is added, ensure the endpoint validates empty queries and catches embedding/LLM exceptions returning structured errors and 4xx/5xx codes as appropriate."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No vector search or search endpoint implemented.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If search is added, include similarity scores in the result schema and document them in the README."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt pins version ranges (e.g. pymongo>=4.3,<5.0), not exact hashes or single-release pins.",
+      "cause": "builder_error",
+      "smallest_fix": "Pin exact versions (e.g. pymongo==4.20.1) or provide a constraints/lock file to make reproducible installs."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "tests/test_pipeline.py exercises detect_gaps in-memory; events.jsonl shows pytest passing (run_command/exit code 0) after fixing package layout.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/Terraform/ARM/az CLI templates) present in repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an 'infra/' folder with a simple example Bicep/Terraform snippet that declares the provider resource type for the targeted service (or explicitly state in README that the sample uses an existing cluster and will not provision infra)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md lines 5-36 include what it shows, prerequisites, quickstart steps and cleanup instructions (lines 23-36 and 35-36).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md line 3 uses 'DocumentDB (MongoDB-compatible)'; .env.example and code use DOCUMENTDB_URI. No code or text embeds a different product name as the sample title.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Cache and reuse a MongoClient instance (singleton) to share connection pools across the process rather than creating a new client per operation.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py lines 12-19 (get_client and _client singleton).",
+      "source": "src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py (get_client)",
+          "url": ""
+        },
+        {
+          "title": "src/db.py (get_client)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Env secrets",
+      "practice": "Read the cluster connection string from an environment variable (DOCUMENTDB_URI) and do not commit credentials to source control or logs.",
+      "category": "authentication/secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py lines 6-10 require DOCUMENTDB_URI; .env.example lists placeholder (app/.env.example).",
+      "source": ".env.example / src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example / README / src/db.py",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent seed",
+      "practice": "Make seed scripts idempotent: detect existing data and skip inserts (or support an overwrite flag) so seeding can be run safely multiple times.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py lines 47-56 (count_documents check) and scripts/seed_data.py lines 1-3 call load_sample_data().",
+      "source": "src/db.py (load_sample_data) / scripts/seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py (load_sample_data) / scripts/seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py (load_sample_data)",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Indexes for queries",
+      "practice": "Create explicit indexes for fields used by queries (e.g., diagnoses, patient_id + visit_date) so aggregation and sort stages can use indexes.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py lines 29-36 create an index on patients.diagnoses and visits (patient_id, visit_date).",
+      "source": "src/db.py (ensure_indexes)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py (ensure_indexes) / README",
+          "url": ""
+        },
+        {
+          "title": "src/db.py (ensure_indexes)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregation",
+      "practice": "Perform server-side aggregation (e.g., $sort then $group) to compute per-entity summary values (last visit) rather than pulling full result sets to the client.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py lines 86-91 perform an aggregation: $sort by visit_date then $group to compute last_visit per patient.",
+      "source": "src/db.py (get_all_patients_with_last_visit)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py (get_all_patients_with_last_visit) / README",
+          "url": ""
+        },
+        {
+          "title": "src/db.py (get_all_patients_with_last_visit)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index compound keys",
+      "practice": "Index compound keys that match sort/group shapes (e.g., patient_id + visit_date) so aggregation sort stages can use the index instead of scanning.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py line 34 creates compound index on (patient_id, visit_date).",
+      "source": "src/db.py (ensure_indexes)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py (ensure_indexes) / src/db.py (aggregation)",
+          "url": ""
+        },
+        {
+          "title": "src/db.py (ensure_indexes)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prompt context injection",
+      "practice": "Inject care-guideline context into the LLM prompt (context engineering) so the agent can apply domain rules when prioritising and generating messages.",
+      "category": "agent/prompting",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/pipeline.py lines 13-21 (CARE_GUIDELINES) and lines 100-108 include CARE_GUIDELINES in the LLM user content.",
+      "source": "src/pipeline.py (CARE_GUIDELINES usage)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/pipeline.py (CARE_GUIDELINES usage)",
+          "url": ""
+        },
+        {
+          "title": "src/pipeline.py (CARE_GUIDELINES usage)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "LLM fallback",
+      "practice": "Provide a deterministic fallback (templated messages) when an external LLM API key is not present or the LLM call fails.",
+      "category": "reliability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/pipeline.py lines 97-121 implement the LLM path and lines 125-134 provide fallback templated messages if OPENAI_API_KEY is missing or the LLM call fails.",
+      "source": "src/pipeline.py (fallback behavior)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/pipeline.py (fallback behavior)",
+          "url": ""
+        },
+        {
+          "title": "src/pipeline.py (fallback behavior)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unit testing rules",
+      "practice": "Include unit tests for core pipeline logic (e.g., detect_gaps) that exercise time-based scenarios so rule correctness is verified.",
+      "category": "testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "tests/test_pipeline.py lines 10-16 and 19-32 test detect_gaps for age/diabetes scenarios.",
+      "source": "tests/test_pipeline.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "tests/test_pipeline.py",
+          "url": ""
+        },
+        {
+          "title": "tests/test_pipeline.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Heuristic prioritisation",
+      "practice": "Use heuristic prioritisation in-process (e.g., gap counts, diagnosis flags, age adjustments) before calling an LLM to reduce LLM usage and cost.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/pipeline.py lines 81-96 compute priority: num_gaps*10, +5 for diabetes, +3 for age>=65, then sort.",
+      "source": "src/pipeline.py (heuristic priority calculation)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/pipeline.py (heuristic priority calculation)",
+          "url": ""
+        },
+        {
+          "title": "src/pipeline.py (heuristic priority calculation)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Deterministic rule model",
+      "practice": "Keep domain rules (care guidelines) encoded in a small, testable in-process structure so the pipeline and tests can share the same rule set.",
+      "category": "agent/prompting",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "CARE_GUIDELINES constant in src/pipeline.py (lines 13-35) and tests referencing detect_gaps.",
+      "source": "src/pipeline.py (CARE_GUIDELINES constant)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/pipeline.py (CARE_GUIDELINES constant)",
+          "url": ""
+        },
+        {
+          "title": "src/pipeline.py (CARE_GUIDELINES constant)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed/index logging",
+      "practice": "Log or print index and seeding actions during setup to make data provisioning visible during local runs.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py lines 35-36 and 75-77 print ensured indexes and inserted sample patients/visits; events.jsonl shows printed messages during seed.",
+      "source": "src/db.py (print statements in ensure_indexes and load_sample_data)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py (print statements in ensure_indexes and load_sample_data) / README",
+          "url": ""
+        },
+        {
+          "title": "src/db.py (ensure_indexes / load_sample_data)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Non-destructive seed",
+      "practice": "Document that the sample is non-destructive and provide cleanup instructions (drop collections) rather than embedding destructive cleanup logic in the seed script.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "README.md lines 35-36 note sample is non-destructive and instructs manual cleanup by dropping collections.",
+      "source": "README.md (Cleanup)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md (Cleanup)",
+          "url": ""
+        },
+        {
+          "title": "README.md (Cleanup)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use pymongo driver",
+      "practice": "Use the MongoDB driver (pymongo) to connect to Azure DocumentDB's MongoDB-compatible endpoint via the standard MongoDB connection string format.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P28",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py lines 2 and 18 use pymongo.MongoClient(DOCUMENTDB_URI).",
+      "source": "src/db.py (MongoClient usage)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py (MongoClient usage) / .env.example",
+          "url": ""
+        },
+        {
+          "title": "src/db.py (MongoClient usage)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "README quickstart",
+      "practice": "Write clear README quickstart instructions for setup: virtualenv, installing requirements, seeding data, and running the demo CLI (run_pipeline.py).",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "README.md lines 23-33 provide quickstart steps including venv, pip install, seed and run pipeline.",
+      "source": "README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Deterministic testing",
+      "practice": "Prefer deterministic testing of rule logic (unit tests) rather than end-to-end LLM-driven outputs for core correctness.",
+      "category": "testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P30",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "tests/test_pipeline.py implements deterministic unit tests for detect_gaps (lines 10-16, 19-31).",
+      "source": "tests/test_pipeline.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "tests/test_pipeline.py",
+          "url": ""
+        },
+        {
+          "title": "tests/test_pipeline.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Model visits as separate docs",
+      "practice": "Model visits as separate documents referencing patient_id when visits are many and queried independently (normalized visits collection vs patient collection).",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py patients and visits collections are separate: patients inserted lines 58-65; visits inserted lines 67-74; aggregation in get_all_patients_with_last_visit uses visits collection (lines 86-91).",
+      "source": "src/db.py (patients and visits collections)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py (patients and visits collections)",
+          "url": ""
+        },
+        {
+          "title": "src/db.py (patients and visits collections)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "D001 ('approved the build with readiness ready_with_gaps') is an operator action. The event log records the decision (events.jsonl entry 1). Nothing to contradict the statement."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "D002 ('chose Python 3.10+') is supported by the README and code. The events trace records the decision (events.jsonl entry 1) and the environment shows Python 3.13 availability noted in the reason. Evidence: README and tests use Python conventions and tests executed successfully."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "D003 indicates the author 'used the PyMongo driver pinned to pymongo>=4.3,<5.0' and reason_source is 'model_default'. The repository requirements.txt indeed lists pymongo>=4.3,<5.0 (events.jsonl write_file created requirements). However pinning to a range was implemented rather than an exact pin; the decision's implicit aim to pick a supported driver is defensible but the 'model_default' reason means it was chosen by habit rather than by an explicit confirmed compatibility check. Evidence: requirements.txt lines 1-2."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "D004 states use of LangChain for orchestration and OpenAI for LLM calls. The repo uses OpenAI client calls directly (src/pipeline.py lines 114-115) and does not import or instantiate LangChain constructs. The events.jsonl records the decision (D004) but the code does not follow through with a LangChain agent wrapper, so the decision was not implemented in code (builder error)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "questionable",
+      "comment": "D005 picks 'gpt-3.5-turbo' as default with reason_source 'model_default'. The code accepts OPENAI_MODEL from env and defaults to 'gpt-3.5-turbo' (src/pipeline.py line 11). The decision is implementationally present, but because it was selected by model_default rather than a documented availability check it is flagged 'questionable'."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "D006 chose to create only B-tree indexes and not provider-specific vector indexes; this is directly reflected in code (ensure_indexes creates conventional indexes lines 29-36) and README Limitations notes vector indexes are intentionally omitted. The events.jsonl includes the write_file and the decision mapping."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "D007 chose to read DOCUMENTDB_URI from the environment and use it verbatim; src/db.py lines 6-10 implement that and events.jsonl records the decision. This is the safe approach given uncertain provider host/options."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "D008 chose not to provision Azure resources and to use existing cluster; the README and skill.md consistent with that, and events.jsonl records the decision. The code and seed script assume a live cluster, consistent with the decision."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Vector index creation parameters",
+      "what_was_missing": "No authoritative, in-repo example of provider-specific createIndex syntax, required embedding dimension, algorithm and metric for DiskANN/HNSW/IVF on the provided cluster.",
+      "where_searched": "Local repository (README.md, src/db.py, skill.md, readiness notes). Documentation search was not available during this run (documentation_search_available=false).",
+      "effect_on_this_build": "The builder intentionally avoided creating any vector index and left vector-index creation out of the seed script; as a result, any embedding-based search examples are not runnable and there is no demonstration of how to set dims or algorithm to match an embedding model.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Ship a short 'Vector index creation' page in the agent-kit that: (1) states the supported index types (DiskANN/HNSW/IVF) for the target SKU, (2) provides a verified createIndex example including parameter names (algorithm, dims, metric) and an idempotent script snippet, and (3) documents how to set EMBEDDING_DIM to match an embedding model. Include a small verification script that queries server index metadata after creation.",
+      "priority": "high"
+    },
+    {
+      "topic": "Vector index tuning guidance",
+      "what_was_missing": "No README guidance describing how to choose vector-index parameters for larger datasets (e.g., recall vs latency trade-offs and how to change the seed script).",
+      "where_searched": "Local README.md and src code. No external docs available from this run.",
+      "effect_on_this_build": "Without tuning advice, users may create inappropriate indexes for production or be uncertain how to scale parameters.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a 'Vector index sizing' subsection in README: describe sample data size assumptions, give example params for small/medium/large datasets, and show how to edit seed script parameters or environment variables to tune them.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Aggregation-based screening logic",
+      "what_was_missing": "Guidance or example that shows how to translate time/diagnosis/age screening rules into a single server-side aggregation pipeline producing 'missing' flags.",
+      "where_searched": "Local src/db.py and src/pipeline.py. No external docs were reachable during this run.",
+      "effect_on_this_build": "The builder implemented rule evaluation in Python rather than inside an aggregation pipeline; this makes the sample simpler but misses the prompt's request to push screening detection to the DB and demonstrates less of the DB's aggregation capability.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Provide a small example aggregation pipeline in the repo that demonstrates $lookup/$sort/$group and computed fields to flag missing screenings (example: compute last_visit per patient, compute age from dob in aggregation, then $match where last_visit older than computed interval or last_visit is null). Include an idempotent script that can optionally swap to DB-side detection.",
+      "priority": "high"
+    },
+    {
+      "topic": "Embedding model specification for vector search",
+      "what_was_missing": "No explicit embedders/model name and the embedding output dimension in README/.env.example.",
+      "where_searched": "app/.env.example and app/README.md. No external docs were reachable.",
+      "effect_on_this_build": "Without model/dimension specified the sample cannot create a correctly-dimensioned vector index or demonstrate embedding-based retrieval.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add EMBEDDING_MODEL and EMBEDDING_DIM variables to .env.example and README, describe recommended embedder(s) and their output dimensions, and show how to pass EMBEDDING_DIM into the vector-index creation script.",
+      "priority": "high"
+    },
+    {
+      "topic": "Connection-options guidance (TLS, timeouts, pool settings)",
+      "what_was_missing": "No guidance in the repo on configuring connection pool sizes, timeouts, TLS options, or whether AAD token auth is supported for the cluster.",
+      "where_searched": "src/db.py and README.md; the run environment skill.md mentions cluster but gives no explicit driver option guidance. Documentation search not available.",
+      "effect_on_this_build": "The sample uses a default MongoClient which is acceptable for demos but lacks recommended production connection settings; users may not know to set pool sizes or timeouts for long-running agent processes.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a 'Connection configuration' section to README that explains safe defaults (connectTimeoutMS, socketTimeoutMS, maxPoolSize), whether TLS verification must be enabled and how to supply CA certs, and explicitly state that the sample reads DOCUMENTDB_URI verbatim and will not attempt AAD unless documented.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Infra-as-code example",
+      "what_was_missing": "No example IaC (Bicep/Terraform) showing the resource type for the managed MongoDB-compatible cluster.",
+      "where_searched": "Repo root and README. Documentation search unavailable in this run.",
+      "effect_on_this_build": "Users who expect an IaC example cannot refer to a validated snippet; the run policy forbade provisioning in this build so none was created.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a small 'infra/' folder with a comment-rich Bicep or Terraform snippet showing the resource type to create a compatible cluster (or explicitly state 'sample does not provision resources; use DOCUMENTDB_URI from an existing cluster').",
+      "priority": "low"
+    },
+    {
+      "topic": "Discoverability: documented environment variables for LLM",
+      "what_was_missing": "The run-time LLM env var names are present, but the prompt review highlighted a risk that the model credential env name would be unspecified. In this repo, OPENAI_API_KEY/OPENAI_MODEL are included but discoverability across agent tools is unknown because external docs were not searchable.",
+      "where_searched": ".env.example and README.md locally; no external doc search available.",
+      "effect_on_this_build": "Resolved within this repo (env names included). If an agent expects different env names, discovery could fail outside this repo.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a brief 'Configuration' table in README listing every environment variable required with a one-line description and example placeholder; ensure agent-kit docs reference the same variable names.",
+      "priority": "medium"
+    }
+  ]
+}

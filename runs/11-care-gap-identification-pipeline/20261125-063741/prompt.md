@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with a DocumentDB aggregation tool that identifies patients missing recommended screenings based on age, diagnosis, and last-visit documents. Use context engineering to inject care gap guidelines into the prompt, then have the agent prioritise the patient list and generate outreach talking points for each gap type.
