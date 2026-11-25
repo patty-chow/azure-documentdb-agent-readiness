@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Define a Beanie Document model (using Beanie) that represents a "state machine document" for a loan application persisted in Azure DocumentDB, including at minimum: unique id, current state (enum with values submitted, underwriting, compliance, approved, rejected), applicant payload, and a transitions log array/field.
-- Configure and connect Beanie (in Python) to Azure DocumentDB (the MongoDB-compatible service) via a connection URI or client settings; the sample must show the connection code/variables used to open the Beanie/Motor session.
-- Implement an orchestration pipeline in Python using LangChain that loads a loan application document and routes it to specialist agents based on the document's current state.
-- Implement three specialist agents (as LangChain agents/components) named underwriting, compliance, and applicant communication; each agent must accept the document context and return a structured result (decision/outcome and notes) consumed by the orchestrator.
-- Advance the application state only via an atomic update in Azure DocumentDB: perform a single atomic operation (e.g., find_one_and_update with a filter on the expected current state and $set/$push) or a multi-document transaction that simultaneously updates the state field and appends the transition log entry.
-- For every state transition, append a transition log entry to the document that includes at least: previous state, new state, agent name (which specialist agent performed the step), decision/outcome, and an ISO8601 timestamp generated at the moment of transition.
-- Enforce and validate the allowed state sequence in the orchestrator (submitted -> underwriting -> compliance -> approved/rejected) and fail/raise/log when an invalid transition is attempted.
-- Ensure that state advancement is driven by the specialist agents' returned results: the orchestrator must interpret the agent output to decide the next state (e.g., underwriting decision -> move to compliance or rejected) and persist that decision via the atomic update.
-- Provide a runnable end-to-end example (script or test) that creates a new loan application document in the submitted state in Azure DocumentDB, executes the LangChain orchestration through underwriting and compliance agents, and results in a terminal approved or rejected state with all transitions persisted.
-- Use Beanie’s document read/write APIs for standard operations (and if a raw MongoDB atomic operation is required for the combined update, call it in code with an inline comment justifying why Beanie was not sufficient), so the sample demonstrates Beanie as the primary ODM interacting with Azure DocumentDB.
+- A Beanie Document model in Python represents each loan application as a state-machine document in Azure DocumentDB, with a state field whose values are the workflow states (submitted, underwriting, compliance, approved/rejected).
+- A Python LangChain orchestration pipeline loads an application's document, reads its current state and advances it step by step through submitted, underwriting and compliance to a final approved or rejected state, in that order, stopping once a final state is reached.
+- Specialist LangChain agents exist for underwriting, compliance checking and applicant communication, and the orchestrator delegates each step of the flow to the matching specialist agent.
+- Each specialist agent returns a result the orchestrator uses to choose the application's next state, including whether it finishes as approved or rejected.
+- Each state advance writes the new value of the state field to the application document atomically through Beanie (e.g. a single find_one_and_update with $set, or a session transaction when several documents change together).
+- Every transition is logged with a timestamp taken at transition time (e.g. an entry holding the previous state, the new state and a UTC datetime, appended to a transitions list on the application document or emitted through a logger).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
