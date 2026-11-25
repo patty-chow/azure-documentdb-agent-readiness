@@ -3,7 +3,7 @@ id: H03
 title: "Readiness inventory: detect installed accelerators by code so the Agent Kit, MCP server and local container are not reported as missed"
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
-status: ready
+status: needs_sme
 hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P1
 sample_count: 59

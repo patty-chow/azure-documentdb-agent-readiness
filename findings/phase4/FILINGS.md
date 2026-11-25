@@ -1,6 +1,6 @@
 # Phase 4 filings: consolidated issues and pull requests
 
-43 filings in `findings/phase4/filings/`, each merging the overlapping drafts the reviewer identified (see REVIEW.md); first-pass filings that were merged again are archived in `filings/merged/`. 33 carry status `needs_sme`: a claim in them needs an engineering or docs owner's answer before it goes public; the open questions are listed inside each file. Nothing has been filed. Sample counts come from one experiment run of 100 prompts and are stated as such in every filing.
+43 filings in `findings/phase4/filings/`, each merging the overlapping drafts the reviewer identified (see REVIEW.md); first-pass filings that were merged again are archived in `filings/merged/`. 35 carry status `needs_sme`: a claim in them needs an engineering or docs owner's answer before it goes public; the open questions are listed inside each file. Nothing has been filed. Sample counts come from one experiment run of 100 prompts and are stated as such in every filing.
 
 ## The readiness pipeline (abinav2307/azure-documentdb-agent-readiness): ON HOLD, nothing is filed against the harness for now (owner decision 2026-11-25); share with its owner informally
 
@@ -9,11 +9,11 @@
 | [H01](filings/H01-harness-mcp-json-leaves-documentdb-mcp-management-write.md) | P0 | needs_sme | pr | 36 | 1 | 3 | Harness mcp.json leaves documentdb-mcp management/write tools off, so vector-index requirements are scored as tool_unavailable |
 | [H06](filings/H06-build-stage-can-return-partial-with-zero-files-and-the-.md) | P0 | ready | issue | 5 | 2 | 3 | Build stage can return partial with zero files and the audit still grades the empty tree |
 | [H02](filings/H02-harness-add-mongosh-to-the-build-image-mark-it-optional.md) | P1 | ready | pr | 98 | 3 | 1 | Harness: add mongosh to the build image, mark it optional in the readiness inventory, and ask for a 'Verify by hand' README section |
-| [H03](filings/H03-readiness-inventory-detect-installed-accelerators-by-co.md) | P1 | ready | pr | 59 | 3 | 4 | Readiness inventory: detect installed accelerators by code so the Agent Kit, MCP server and local container are not reported as missed |
+| [H03](filings/H03-readiness-inventory-detect-installed-accelerators-by-co.md) | P1 | needs_sme | pr | 59 | 3 | 4 | Readiness inventory: detect installed accelerators by code so the Agent Kit, MCP server and local container are not reported as missed |
 | [H04](filings/H04-readiness-stage-classify-application-design-choices-as-.md) | P1 | ready | pr | 35 | 2 | 3 | Readiness stage: classify application design choices as builder decisions, not learn-docs gaps |
 | [H05](filings/H05-starter-prompts-add-shared-schema-seed-deliverable-shap.md) | P1 | ready | issue | 81 | 4 | 3 | Starter prompts: add shared schema/seed, deliverable-shape and gallery-contract blocks, and pin down underspecified prompts |
 | [H07](filings/H07-audit-stage-grades-vcore-samples-against-cosmos-db-ru-a.md) | P1 | needs_sme | pr | 57 | 1 | 1 | Audit stage grades vCore samples against Cosmos DB RU-API practices and unrequested accelerators |
-| [H09](filings/H09-build-image-install-bicep-via-az-and-allow-local-az-bic.md) | P1 | ready | pr | 19 | 1 | 2 | Build image: install Bicep via az and allow local az bicep build/lint |
+| [H09](filings/H09-build-image-install-bicep-via-az-and-allow-local-az-bic.md) | P1 | needs_sme | pr | 19 | 1 | 2 | Build image: install Bicep via az and allow local az bicep build/lint |
 | [H10](filings/H10-tell-builders-which-llm-embedding-provider-deployments-.md) | P1 | ready | pr | 42 | 1 | 3 | Tell builders which LLM/embedding provider, deployments, env vars and no-key fallback to use |
 | [H12](filings/H12-build-prompt-and-audit-require-pinned-dependencies-with.md) | P1 | needs_sme | pr | 18 | 1 | 3 | Build prompt and audit: require pinned dependencies with a lockfile, a valid .env.example and offline tests |
 | [H08](filings/H08-harness-python-3-13-venv-breaks-langchain-llamaindex-in.md) | P2 | ready | issue | 8 | 1 | 2 | Harness: Python 3.13 venv breaks LangChain/LlamaIndex installs and the audit charges it to the sample |
