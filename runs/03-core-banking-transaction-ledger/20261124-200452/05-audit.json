@@ -1,0 +1,1219 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested Node.js + Mongoose immutable ledger, transactionality and idempotency and was exercised against the provided cluster. Core functional requirements are met (models, transactions-with-sessions, unique transactionRef, idempotent seed, singleton connection). Findings: numeric-money fields use JavaScript Number (risk of rounding); no automated retry logic for transient transaction errors; no unit tests or CI mocks; no monitoring/metrics instrumentation; package.json uses a permissive range for mongoose (package-lock.json present). Several discovered best practices are present and discoverable via the installed skills and Microsoft Learn; a few best-practices remain only in prior knowledge or are not documented well enough for an agent and are listed as documentation gaps below.",
+  "requirement_results": [
+    {
+      "requirement": "The ledger is a Node.js application that uses Mongoose as its ODM: accounts and transactions are defined as Mongoose schemas and models, and every read and write of ledger data goes through them.",
+      "status": "met",
+      "evidence": "app/src/models/account.js (lines 3-8), app/src/models/transaction.js (lines 3-9), app/src/transactions.js (lines 1-3, 20-28)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Every debit and every credit is recorded as its own transaction document in Azure DocumentDB, inserted once and left unchanged afterwards (no code path updates or deletes a posted transaction document).",
+      "status": "met",
+      "evidence": "app/src/transactions.js (lines 19-21 insert transaction); no code path performs updates/deletes against Transaction documents elsewhere in repo",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Each account has a balance snapshot document that holds its current balance (e.g. an Account model with a balance field).",
+      "status": "met",
+      "evidence": "app/src/models/account.js (line 6: balance field)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Posting a transaction runs inside an Azure DocumentDB multi-document transaction: a Mongoose session (withTransaction, or start/commit/abort) wraps both the insert of the transaction document and the update of the account balance snapshot, so both are committed together or neither is.",
+      "status": "met",
+      "evidence": "app/src/transactions.js (lines 15-31 uses session.withTransaction and passes session to save and findOneAndUpdate)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The balance snapshot is adjusted by the posted amount in the direction of the entry (a credit raises it, a debit lowers it).",
+      "status": "met",
+      "evidence": "app/src/transactions.js (line 13 computes signedAmount; line 26 uses $inc with signedAmount)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Every transaction document carries a transactionRef field supplied with the posting request.",
+      "status": "met",
+      "evidence": "app/src/models/transaction.js (line 4: transactionRef required:true) and app/src/transactions.js (line 20 constructs Transaction with transactionRef)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The transactionRef field has a unique index, declared in the Mongoose schema or created in code, so Azure DocumentDB enforces uniqueness.",
+      "status": "met",
+      "evidence": "app/src/models/transaction.js (lines 11-13 declare unique index on transactionRef)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A second posting with an already-used transactionRef is rejected: the unique index makes the insert fail and the enclosing transaction aborts, so the balance snapshot is not changed by the duplicate.",
+      "status": "met",
+      "evidence": "app/src/transactions.js (lines 32-41 catch duplicate-key code 11000 and return existing transaction/account), demo script shows duplicate attempt handled (app/src/demo.js lines 17-26), and verification ran the demo successfully per builder_report.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.js (lines 5-6 read process.env.DOCUMENTDB_URI and process.env.MONGODB_DATABASE), .env.example contains placeholders (app/.env.example lines 2-5)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": ".env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example (lines 2-5 list DOCUMENTDB_URI, MONGODB_DATABASE, PORT)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "No vector/indexing/embedding code present in this sample repository.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If the sample will include vector search later, add a section that sets `VECTOR_DIMS` and create the vector index with that dim value; otherwise mark vector search as out-of-scope in the README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector search/indexing implemented in repo",
+      "cause": "could_not_determine",
+      "smallest_fix": "Not applicable unless vector search is added; then include index-parameter guidance in README."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js (lines 12-27 implement a single mongoose.connect and isConnected guard; other code calls connect())",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/src/seed.js (lines 14-21 check for existing accounts and skip, lines 24-26 call Transaction.init() and Account.init()) and builder_report shows seed was run successfully and idempotently",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "No /search endpoint in the sample (app/src/index.js shows POST /transactions and GET /accounts/:id only)",
+      "cause": "could_not_determine",
+      "smallest_fix": "If adding search, implement clear validation and error handling for empty queries and propagate embedding-call errors with distinct 4xx/5xx responses; add tests."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search implementation in repo",
+      "cause": "could_not_determine",
+      "smallest_fix": "If search is added, return score alongside documents in the API and document the field in README."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "not_checkable",
+      "evidence": "This is a Python-specific requirement; repository is Node.js and has package.json and package-lock.json. package-lock.json is present, package.json uses a caret range for mongoose (app/package.json line 17).",
+      "cause": "could_not_determine",
+      "smallest_fix": "For Node.js, either pin exact versions in package.json (use --save-exact) or commit package-lock.json and instruct users to use `npm ci` for reproducible installs."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test suite in repository; no use of in-memory or mocked MongoDB; README does not describe test requirements.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal test suite using an in-memory MongoDB (mongodb-memory-server) or mock Mongoose (e.g., sinon+mockingoose) and show `npm test` in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/ARM/Terraform files in the repo; build deliberately used an existing cluster per run-environment.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep or Terraform example that deploys Microsoft.DocumentDB/mongoClusters (or an AzAPI wrapper) as optional infra in an infra/ directory."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes sample overview, prerequisites, how to run, API, demo, verification and cleanup sections (see lines 3-7, 9-13, 14-26, 36-41, 46-47).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and other user-visible text use 'Azure DocumentDB' (README top lines 1-7). No references to Cosmos DB RU-based connection strings or other product names are present.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton client reuse",
+      "practice": "Reuse a single MongoClient/Mongoose connection across the process (singleton), initialize it once, and configure pool options appropriate for your runtime.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.js (lines 14-27 use isConnected and mongoose.connect with pool options maxPoolSize/minPoolSize)",
+      "source": "documentdb-driver (skill)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver (driver-singleton-client.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection settings",
+      "practice": "Connection settings (timeouts, retry options, TLS) follow the service's recommendation for the chosen driver.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.js (lines 17-25 set dbName, autoIndex:false, maxPoolSize/minPoolSize, serverSelectionTimeoutMS, retryWrites:true; README documents TLS and env var usage)",
+      "source": "documentdb-connection (skill)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection (retry guidance)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver pinning",
+      "practice": "The driver version is pinned and is one the service supports.",
+      "category": "connection",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose",
+      "status": "violated",
+      "evidence": "app/package.json (line 17 shows \"mongoose\": \"^7.0.0\"); package-lock.json exists but package.json uses a caret range rather than an exact pinned version.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "Searched Microsoft Learn quickstarts for 'Mongoose compatibility' and driver testing notes; found quickstart recommending tested driver versions (see quickstart link).",
+      "fix": "Pin an exact Mongoose version in package.json (e.g., \"mongoose\": \"7.17.2\" or the exact version recorded in package-lock.json) and commit package-lock.json. Update README to state tested driver version.",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "No secrets in repo",
+      "practice": "No password, key or full connection string appears in source, config, tests or README.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose",
+      "status": "followed",
+      "evidence": "app/.env.example (lines 2-5), app/src/db.js (line 5 reads process.env.DOCUMENTDB_URI), README warns 'Do NOT commit your connection string'.",
+      "source": "documentdb-security / quickstart",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (notes) / documentdb-security guidance",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": ".env.example completeness",
+      "practice": "A .env.example (or equivalent) lists every required setting with placeholder values.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose",
+      "status": "followed",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI, MONGODB_DATABASE and PORT (app/.env.example lines 2-7)",
+      "source": "documentdb-security (skill)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (notes) / documentdb-security guidance",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose"
+        },
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document shapes",
+      "practice": "Document shapes match the access patterns the sample demonstrates.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/models/transaction.js (fields: transactionRef, accountId, amount, type) and app/src/models/account.js (snapshot with balance). GET /accounts returns recent transactions and account snapshot (app/src/index.js lines 28-34).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling (model-denormalize-reads.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unbounded arrays",
+      "practice": "Documents cannot grow without bound (no unbounded arrays).",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "Schemas in app/src/models/* contain no unbounded array fields.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling (model-denormalize-reads.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Shard key explanation",
+      "practice": "If the collection is sharded, the shard key choice is explained.",
+      "category": "data_modeling",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "not_applicable",
+      "evidence": "This sample does not create or document a sharded collection.",
+      "source": "checklist only",
+      "searched": "searched for 'shard key accountId explanation' and found guidance in documentdb-sharding skill, but sample does not use sharding.",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "If you plan to demonstrate sharding, add a short note in README explaining why 'accountId' was chosen as partition key and when to choose a different key."
+    },
+    {
+      "topic": "Index every query pattern",
+      "practice": "Every query pattern in the app is served by an index, and no index is unused.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "Queries: Account lookup by accountId uses unique index (app/src/models/account.js line 4); transaction recent queries use compound index {accountId:1, createdAt:-1} (app/src/models/transaction.js line 13).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing (index-compound-esr.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index dims",
+      "practice": "Vector indexes use a type and parameters that suit the data size, with the embedding dimensions matching the model.",
+      "category": "indexing",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "not_applicable",
+      "evidence": "No vector-index related code in this sample.",
+      "source": "checklist only",
+      "searched": "n/a",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "If adding vector search, include explicit dim and parameter guidance in README and code."
+    },
+    {
+      "topic": "Full-text/hybrid search",
+      "practice": "Full-text or hybrid search uses the service's supported mechanism.",
+      "category": "search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb",
+      "status": "not_applicable",
+      "evidence": "No full-text/hybrid search implemented in this sample.",
+      "source": "documentdb-full-text-search (skill)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (transactions notes)",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb"
+        },
+        {
+          "title": "Hybrid search",
+          "url": "https://learn.microsoft.com/azure/documentdb/full-text-search-overview"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Aggregation compatibility",
+      "practice": "Aggregation pipelines use only stages and operators the service supports.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample does not use complex aggregation pipelines; it uses $inc and simple finds/sorts.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        },
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#operators"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries",
+      "practice": "Transient failures are retried in the way the service recommends.",
+      "category": "reliability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/src/transactions.js does not implement a retry loop for transient transaction errors; it relies on session.withTransaction but has no explicit retry/backoff behavior.",
+      "source": "documentdb-connection (skill)",
+      "searched": "",
+      "fix": "Implement retry-on-transient pattern: detect TransientTransactionError / UnknownTransactionCommitResult labels and retry with exponential backoff (bounded attempts). Add a wrapper in transactions.postTransaction that retries the withTransaction callback only for transient/known retryable labels.",
+      "sources": [
+        {
+          "title": "documentdb-connection (retry guidance)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk loads batched",
+      "practice": "Bulk loads are batched.",
+      "category": "reliability",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "not_applicable",
+      "evidence": "Seed creates a few accounts in a loop; no bulk ingestion implemented.",
+      "source": "checklist only",
+      "searched": "n/a",
+      "fix": "",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Infra as code",
+      "practice": "Infrastructure is defined as code using the service's own resource type.",
+      "category": "provisioning",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "not_applicable",
+      "evidence": "No Bicep/ARM/Terraform files included; run policy forbade provisioning during build.",
+      "source": "checklist only",
+      "searched": "n/a",
+      "fix": "Provide an optional infra/ directory with a Bicep or Terraform example that targets Microsoft.DocumentDB/mongoClusters (or an AzAPI wrapper).",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Defaults and cost-aware parameters",
+      "practice": "Tier, storage and region are parameters, with defaults that keep cost low.",
+      "category": "provisioning",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "not_applicable",
+      "evidence": "No infra files; the sample uses an existing cluster per run environment.",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Clean-up steps",
+      "practice": "Clean-up steps are provided.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "README cleanup guidance (app/README.md lines 46-47) advises dropping the database or deleting collections.",
+      "source": "documentdb-monitoring (skill)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-monitoring (monitoring-slow-query-log.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "README completeness",
+      "practice": "The README states what the sample shows, prerequisites, setup, run and clean-up steps.",
+      "category": "sample_hygiene",
+      "availability": "discovered_and_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/README.md contains overview, prerequisites (lines 9-12), how to run (lines 14-26), API and demo, and cleanup (lines 46-47).",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Run commands match README",
+      "practice": "The sample runs with the commands in the README.",
+      "category": "sample_hygiene",
+      "availability": "discovered_and_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "package.json scripts (app/package.json lines 6-11) provide seed/start/demo commands used in README; events show npm install and npm run seed executed successfully.",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Tests without live cloud",
+      "practice": "Tests exist and pass without a live cloud resource, or README says what they need.",
+      "category": "sample_hygiene",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "not_applicable",
+      "evidence": "No tests in repo and README does not describe tests or mocking strategy.",
+      "source": "checklist only",
+      "searched": "n/a",
+      "fix": "Add unit tests that mock Mongoose (e.g., mockingoose) or use mongodb-memory-server; add `npm test` to package.json and document test expectations in README.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Dependency pinning",
+      "practice": "Dependencies are pinned.",
+      "category": "sample_hygiene",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose",
+      "status": "followed",
+      "evidence": "package-lock.json is committed (app/package-lock.json). package.json includes concrete versions for most deps; mongoose is declared as a caret range (^7.0.0) (app/package.json line 17) but package-lock.json provides exact resolved versions.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "Prefer exact pins in package.json or instruct users to run `npm ci`. Update package.json to exact versions if you want explicit pinning.",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Service naming",
+      "practice": "The sample names the service correctly and does not use a former or neighbouring product name.",
+      "category": "sample_hygiene",
+      "availability": "discovered_and_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "repo and README consistently use 'Azure DocumentDB (MongoDB-compatible)', no references to Cosmos DB RU or other conflicting names.",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent index on transactionRef",
+      "practice": "Enforce idempotency by creating a unique index on transactionRef but only for documents that include it (use unique partial/sparse index).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/src/models/transaction.js (line 12: TransactionSchema.index({ transactionRef: 1 }, { unique: true })) — unique index present but not declared as partial/sparse.",
+      "source": "documentdb-indexing (skill)",
+      "searched": "",
+      "fix": "If some collections may contain documents without transactionRef, create a partial index: TransactionSchema.index({ transactionRef:1 }, { unique:true, partialFilterExpression: { transactionRef: { $exists: true } } }); otherwise ensure transactionRef is required (it currently is) and document that invariant.",
+      "sources": [
+        {
+          "title": "documentdb-indexing (index-single-field.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-indexing (index-single-field.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Session + withTransaction pattern",
+      "practice": "Use explicit client sessions and withTransaction to group multi-document operations, and pass the session to every operation in the transaction callback.",
+      "category": "transactions",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/transactions.js (lines 15-31 use mongoose.startSession() and session.withTransaction, and pass { session } into save/findOneAndUpdate; finally calls session.endSession() on line 44).",
+      "source": "prior_knowledge",
+      "searched": "searched for 'withTransaction startSession Mongoose pattern' but the discovered practice came from prior knowledge; public docs would help.",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short 'Transactions with Mongoose' snippet on the Mongoose + DocumentDB quickstart showing startSession(), session.withTransaction(callback, options) and the explicit passing of { session } to every Model operation."
+    },
+    {
+      "topic": "Monetary types",
+      "practice": "Store monetary values using a precise numeric type (Decimal128) or integer minor-units (cents) rather than floating-point.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$todecimal#examples",
+      "status": "violated",
+      "evidence": "app/src/models/transaction.js (line 6 defines amount: { type: Number }) and app/src/models/account.js (line 6 balance: { type: Number }).",
+      "source": "$toDecimal / Handle decimal and money values (Azure docs)",
+      "searched": "",
+      "fix": "Change amount and account.balance to Decimal128 or use integer cents. Example: amount: { type: mongoose.Schema.Types.Decimal128, required: true } and convert inputs via Decimal128.fromString() or store amounts in cents as integers.",
+      "sources": [
+        {
+          "title": "$toDecimal / Handle decimal and money values (Azure docs)",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$todecimal#examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound ESR index",
+      "practice": "Create a compound index that follows the ESR rule for account queries (accountId + createdAt).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/models/transaction.js (line 13: TransactionSchema.index({ accountId: 1, createdAt: -1 }))",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing (index-compound-esr.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-indexing (index-compound-esr.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create indexes at startup",
+      "practice": "Create indexes explicitly before production traffic — run createIndexes()/Model.init() at startup or during CI.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb",
+      "status": "followed",
+      "evidence": "app/src/index.js (lines 41-44 ensure indexes via Transaction.init() and Account.init()); app/src/seed.js (lines 24-26 call Transaction.init() and Account.init()).",
+      "source": "Use Mongoose with Azure DocumentDB tutorial notes",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (notes)",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries policy",
+      "practice": "Do not blindly retry whole transactions on any error; implement retries only for transient faults with exponential backoff and idempotent writes.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "No driver-level retry logic or error-label handling in app/src/transactions.js; withTransaction is used but no explicit retry/backoff is implemented.",
+      "source": "documentdb-connection (skill)",
+      "searched": "",
+      "fix": "Add a bounded retry loop around session.withTransaction that retries only when errors are labeled TransientTransactionError or UnknownTransactionCommitResult, with exponential backoff and a small max attempt count.",
+      "sources": [
+        {
+          "title": "documentdb-connection (retry guidance)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-connection (retry guidance)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Keep transactions short",
+      "practice": "Keep transactions short and side-effect free — do the minimum inserts/updates inside the transaction.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb",
+      "status": "followed",
+      "evidence": "app/src/transactions.js (the transaction callback only inserts the Transaction and performs an Account $inc).",
+      "source": "Use Mongoose tutorial notes",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (transactions notes)",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Snapshot ledger design",
+      "practice": "Store immutable Transaction documents for each debit/credit and keep a separate Account snapshot document for fast reads.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "Two collections: accounts (snapshot) and transactions (ledger) implemented (app/src/models/* and D017). Transactions are appended; accounts store balance.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling (model-denormalize-reads.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-data-modeling (model-denormalize-reads.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Environment variable for connection string",
+      "practice": "Read the cluster connection string from environment variables and never commit credentials to source control.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose",
+      "status": "followed",
+      "evidence": "app/src/db.js (line 5 reads process.env.DOCUMENTDB_URI) and .env.example / README warning.",
+      "source": "Use Mongoose with Azure DocumentDB quickstart",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (notes) / documentdb-security guidance",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Optional-field uniqueness (partial index)",
+      "practice": "When creating a uniqueness constraint on an optional field, prefer partialFilterExpression or sparse:true.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "",
+      "status": "not_applicable",
+      "evidence": "In this sample transactionRef is required in schema (app/src/models/transaction.js line 4), so the uniqueness constraint applies only to documents that include the field.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing (index-single-field.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-indexing (index-single-field.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Numeric types in updates",
+      "practice": "Use proper numeric types in queries and updates (Decimal128 or integer cents) and ensure the ODM casts values correctly when using atomic operators like $inc.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$todecimal#examples",
+      "status": "violated",
+      "evidence": "app/src/models/transaction.js (amount: Number, line 6) and app/src/models/account.js (balance: Number, line 6); $inc operations in app/src/transactions.js (line 26) operate on Number fields.",
+      "source": "$toDecimal / Use Mongoose with Azure DocumentDB notes",
+      "searched": "",
+      "fix": "Migrate amount and balance to Decimal128 or store amounts in minor-units (integer cents); update code paths to convert inputs/outputs and ensure $inc uses Decimal128-aware increments.",
+      "sources": [
+        {
+          "title": "$toDecimal / Use Mongoose with Azure DocumentDB notes",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$todecimal#examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring and RU awareness",
+      "practice": "Monitor request-unit (RU/s) consumption, index usage and throttling; alert on CPU/memory/IOPS/connection saturation.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "No metrics or monitoring instrumentation in the sample (no telemetry or Azure Monitor wiring).",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add minimal instrumentation: counters for transaction commits/failures, duplicate-key events, retry counts; export via Prometheus client or Azure Monitor SDK and document configuration in README.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring (monitoring-slow-query-log.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-monitoring (monitoring-slow-query-log.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid vectors in transactional docs",
+      "practice": "Avoid embedding large binary blobs or high-dimensional vectors in transactional ledger documents; if you need vector search, use a dedicated collection.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample contains no vectors or large blobs.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Schema validation",
+      "practice": "Enforce schema validation at the application or server level to require fields like accountId, amount, transactionRef and createdAt.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb",
+      "status": "followed",
+      "evidence": "Transaction schema marks transactionRef and accountId and amount and type as required (app/src/models/transaction.js lines 3-9).",
+      "source": "Use Mongoose with Azure DocumentDB notes",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB notes / documentdb-data-modeling",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Atomic $inc with session",
+      "practice": "When updating an Account snapshot inside a transaction, use an atomic $inc and perform the update with the transaction session, returning the updated document.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction",
+      "status": "followed",
+      "evidence": "app/src/transactions.js (lines 24-28 uses Account.findOneAndUpdate with { $inc: { balance: signedAmount } }, options { upsert:true, new:true, session }).",
+      "source": "Group multiple operations in transactions in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Group multiple operations in transactions in Azure DocumentDB / Use Mongoose tutorial notes",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Duplicate-key handling",
+      "practice": "Handle duplicate-key (E11000) errors explicitly in the API: translate them to idempotent success or a clear 409.",
+      "category": "errors",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/troubleshoot-common-issues#common-errors-and-solutions",
+      "status": "followed",
+      "evidence": "app/src/transactions.js (lines 32-40 catch err.code===11000 and fetch existing tx/account), app/src/index.js (lines 19-22 map code 11000 to HTTP 409 with existing payload).",
+      "source": "Troubleshoot common issues in Azure DocumentDB / Use Mongoose tutorial",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Troubleshoot common issues in Azure DocumentDB (error codes) / Use Mongoose tutorial",
+          "url": "https://learn.microsoft.com/azure/documentdb/troubleshoot-common-issues#common-errors-and-solutions"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Verify indexes and plans",
+      "practice": "Verify indexes and query plans against the actual cluster (use explain or MCP tools) after index creation.",
+      "category": "verification",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "Repository includes src/check_indexes.js which prints indexes (app/src/check_indexes.js lines 5-9); builder used the documentdb MCP tools during verification per builder_report.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Add an example explain('executionStats') query for the main transaction retrieval path in check_indexes.js or a separate verify_indexes_and_plans.js script.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Partition key design",
+      "practice": "Design your partition/shard key to colocate an account's transactions (use accountId as the leading shard key).",
+      "category": "provisioning",
+      "availability": "discovered_not_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample does not provision or document sharding.",
+      "source": "documentdb-sharding",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-sharding",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit metadata",
+      "practice": "Keep detailed immutable audit metadata on each Transaction (createdAt, createdBy, transactionRef...).",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P20",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "Transaction documents include transactionRef and createdAt (timestamps enabled), and metadata is available (app/src/models/transaction.js lines 3-9); createdBy is not present.",
+      "source": "prior_knowledge",
+      "searched": "Searched for 'Azure DocumentDB audit metadata transaction createdBy createdAt immutable ledger' and found no single authoritative page prescribing exact audit fields.",
+      "fix": "Add a createdBy field and any required idempotency metadata if you expect multi-source posting; alternatively document that 'metadata' can carry createdBy and source fields.",
+      "sources": [],
+      "what_would_help": "A short doc on the quickstart page listing recommended readonly audit fields for ledger transactions (createdAt, createdBy, transactionRef, source)."
+    },
+    {
+      "topic": "TTL on ledger",
+      "practice": "Avoid TTL indexes on immutable ledgers.",
+      "category": "indexing",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P21",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "No TTL indexes present in code or seed; indexes created are unique transactionRef and compound accountId+createdAt (app/src/models/transaction.js lines 11-13).",
+      "source": "prior_knowledge",
+      "searched": "Searched for explicit Azure guidance recommending avoiding TTL on ledgers and found no dedicated doc; practice stems from general ledger design.",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "An explicit note on a DocumentDB data-modeling page that 'do not use TTL on ledger collections; if expiry is required put expirable docs in a separate collection' would help agent decisions."
+    },
+    {
+      "topic": "Prefer Entra ID / Key Vault",
+      "practice": "Prefer Microsoft Entra ID (Azure AD) + RBAC or managed identities for authentication and use Azure Key Vault for secrets.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "README explicitly states the sample uses SCRAM via DOCUMENTDB_URI and suggests considering Microsoft Entra ID for production (app/README.md lines 11-12 and 43-45).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "If you want to demonstrate Entra ID, add an optional 'entra-id' example showing DefaultAzureCredential and driver's OIDC callback.",
+      "sources": [
+        {
+          "title": "documentdb-security (security-entra-rbac.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Operational metrics",
+      "practice": "Instrument and emit operational metrics for transaction commit failures, retry counts, duplicate-key events, RU/throughput throttling, and slow queries.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "No telemetry, metrics or logging for metrics events in repository.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Instrument counters and histograms (e.g., transaction_commits_total, transaction_commit_failures_total, duplicate_key_events_total) and export via Prometheus or Azure Monitor. Add examples in README for wiring.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring (monitoring-slow-query-log.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-monitoring (monitoring-slow-query-log.md)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pass session explicitly",
+      "practice": "When using Mongoose sessions, pass the session explicitly to all Model/Document operations inside the transaction and be cautious with middleware that may run outside the session.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb",
+      "status": "followed",
+      "evidence": "app/src/transactions.js passes { session } to tx.save and to Account.findOneAndUpdate (lines 21 and 27) and ends the session in finally (line 44).",
+      "source": "Use Mongoose with Azure DocumentDB tutorial notes",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (sessions note)",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#mongoose-on-azure-documentdb"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval of 'ready_with_gaps' is supported by the builder_report and the recorded readiness checks."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Prompt explicitly requested Mongoose; repository uses Mongoose and an Express REST surface (evidence: src/* files and package.json)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "D003 states Mongoose 7.6.0 would be pinned. The build initially attempted an exact pin but later had to change versions (events show multiple package.json writes and an npm ETARGET error). The decision was reasonable but the final artifact does not reflect a stable exact pin."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "The code and README default to SCRAM via DOCUMENTDB_URI (app/src/db.js and README), matching this decision."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "The repository contains the REST API and seed/demo scripts described in the decision (app/src/index.js, src/seed.js, src/demo.js)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Unique transactionRef and compound index were created (app/src/models/transaction.js)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "npm was used to install dependencies (events.jsonl shows npm install and the build logs)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "The seed script was run against the live cluster during verification (events show npm run seed and documentdb_list_databases results)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Duplicate of readiness approval; supported by build logs."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Node + Express + Mongoose is implemented in the repository and matches environment guidance."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "wrong",
+      "comment": "D011 recorded pinning to Mongoose 7.9.3, but npm later failed with ETARGET and the final package.json contains a caret range (^7.0.0). The planner's intended pin did not survive the tool-run; events show the resolution and decision D016 corrected it."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "SCRAM via DOCUMENTDB_URI is implemented and documented; decision matches code/README."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "The build used the existing cluster and did not provision resources; events show documentdb_list_databases and no infra steps."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "REST API plus CLI seed/demo implemented (app/src/index.js, src/seed.js, src/demo.js)."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Redundant with D006; indexes were created as recorded (app/src/models/transaction.js)."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "D016 records changing mongoose dependency to ^7.0.0 after npm error; events show the npm ETARGET error and package.json being updated accordingly."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Two collections (accounts and transactions) are present (app/src/models/* and documentdb_list_databases output)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Public pattern for Mongoose transactions + session usage",
+      "what_was_missing": "A concise, public example on Microsoft Learn that demonstrates the exact Mongoose pattern: startSession(), session.withTransaction(async callback), and the need to pass { session } to every Model operation inside the callback, plus correct endSession() placement and error-label handling for retries.",
+      "where_searched": "documentdb quickstarts and installed documentdb-* skills; searches for 'Mongoose withTransaction example' returned tutorial text but no small copy-paste snippet that shows retry labels and session passing in one place.",
+      "effect_on_this_build": "The builder implemented the pattern correctly, but an agent searching for a single authoritative snippet might not have found it quickly (P02 was prior_knowledge_only).",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Transactions with Mongoose on Azure DocumentDB' page: 1) sample code showing startSession()/withTransaction(), 2) explicit passing of { session } to every Model method, 3) example finally block with session.endSession(), 4) guidance on handling TransientTransactionError and UnknownTransactionCommitResult labels with a bounded retry/backoff loop.",
+      "priority": "high"
+    },
+    {
+      "topic": "Guidance on audit fields for ledger transactions",
+      "what_was_missing": "A concise public recommendation listing recommended immutable audit fields for ledger transactions (createdAt, createdBy, transactionRef, source, idempotency metadata) and an example schema.",
+      "where_searched": "Microsoft Learn and the documentdb-data-modeling skill; searches for 'audit metadata ledger DocumentDB' returned no single authoritative page.",
+      "effect_on_this_build": "The sample included basic audit fields (transactionRef, createdAt, metadata) but omitted createdBy; an agent might decide different fields based on prior knowledge and produce inconsistent schemas.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A 'Ledger design patterns' subsection listing recommended immutable audit fields, example Mongoose schema, and notes on what to store in 'metadata' versus explicit fields.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Explicit note: avoid TTL on transaction/ledger collections",
+      "what_was_missing": "No Microsoft Learn page explicitly states 'do not use TTL indexes for immutable ledger collections' (this is currently only in prior knowledge conversations).",
+      "where_searched": "Microsoft Learn and skill docs, queries searching for TTL + ledger guidance.",
+      "effect_on_this_build": "No TTL index present in this sample. However, absent explicit guidance an agent might accidentally add a TTL index to a ledger.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a small paragraph on the data-modeling page: 'Ledger collections should not use TTL indexes; store expirable data in separate collections.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Mongoose driver/version pinning guidance",
+      "what_was_missing": "A single short note in the quickstart that recommends exact pinning semantics for sample repositories (for Node: pin exact version in package.json or commit package-lock.json and recommend `npm ci`).",
+      "where_searched": "Quickstart and tutorial pages: they describe tested driver versions but do not prescribe sample repo pinning policy.",
+      "effect_on_this_build": "Builder initially attempted to pin an exact version, hit a registry mismatch, and used a caret range. This left the repo with a range rather than an explicit pinned package.json entry.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a 'Pin dependencies' short guidance paragraph in the Node quickstart: preferred sample repository pattern (exact pins in package.json OR commit package-lock.json and instruct `npm ci`).",
+      "priority": "low"
+    },
+    {
+      "topic": "Agent-facing decision guidance for API surface",
+      "what_was_missing": "There is no explicit guidance in the skills/quickstarts telling an agent whether to prefer CLI-only samples vs REST+CLI in small demos.",
+      "where_searched": "Skill docs and quickstarts; this decision is currently left to the builder as model_default.",
+      "effect_on_this_build": "Builder selected REST+CLI by default (reasonable), but agents may make inconsistent surface choices for similar samples.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add an agent-kit rule: 'For service quickstart samples that demonstrate read/write flows, prefer a minimal REST surface plus a CLI seed/demo script unless user explicitly asks for CLI-only.'",
+      "priority": "low"
+    },
+    {
+      "topic": "Public snippet for transaction retry semantics",
+      "what_was_missing": "A small public example showing how to detect retryable transaction errors (TransientTransactionError, UnknownTransactionCommitResult) and perform bounded exponential-backoff retries in Node/Mongoose against Azure DocumentDB.",
+      "where_searched": "documentdb-connection and quickstart docs; pieces exist but not a compact, copy-paste retry wrapper.",
+      "effect_on_this_build": "The sample does not implement a retry wrapper; having the snippet would make it straightforward to add and would reduce the risk of incorrect retry implementations.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A small retry helper in the Node quickstart showing error-label checks, backoff, and max-attempts, plus tests that simulate transient errors.",
+      "priority": "high"
+    },
+    {
+      "topic": "Entra ID example for Mongoose drivers",
+      "what_was_missing": "A short Node snippet showing how to wire DefaultAzureCredential into the MongoDB driver's OIDC callback for a cluster that has MicrosoftEntraID auth enabled.",
+      "where_searched": "documentdb security docs and quickstarts; docs mention it but lack a short copy-paste example.",
+      "effect_on_this_build": "Sample defaults to SCRAM and documents Entra ID as an option. A short example would help teams adopt Entra ID securely.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A 10-line code example demonstrating the driver's token refresh callback and using @azure/identity DefaultAzureCredential to obtain tokens for the MongoDB driver.",
+      "priority": "medium"
+    }
+  ]
+}
