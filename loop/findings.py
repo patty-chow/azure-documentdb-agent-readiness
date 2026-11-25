@@ -131,7 +131,7 @@ def extract(run_dir: Path) -> list[Finding]:
                 sample, rel, "build", "mcp_unused", "agent-kit", "high",
                 topic="Builder did not use the DocumentDB MCP server",
                 detail="The server was available with its tools, yet the build stage made no call to it. "
-                       f"Calls per server in this run: {{k: v['total'] for k, v in usage.items()}}.",
+                       f"Calls per server in this run: { {k: v['total'] for k, v in usage.items()} }.",
                 proposed_change="Kit rule: when a DocumentDB MCP connection is available, verify collections, indexes and "
                                 "queries against it instead of (or before) a local container; MCP description should say "
                                 "it is the data-plane for the connected cluster.",
