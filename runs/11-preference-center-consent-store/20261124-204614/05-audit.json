@@ -1,0 +1,659 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested FastAPI + Beanie consent store, includes an idempotent seed script that was run and verified against the live Azure DocumentDB cluster, and creates a TTL index. Key features (endpoints, Beanie Document models, history array, consentVersion, TTL index and retention field population, environment-driven connection string, pinned requirements, README, .env.example) are present. Several important best-practice gaps remain (non-atomic read-modify-write updates instead of atomic $push/$set updates, no connection-pool tuning, Motor vs PyMongo compatibility causing a runtime mismatch risk, unit tests that trigger DB startup and therefore cannot run reliably without mocking, and no infrastructure-as-code). These do not make the sample unusable (the seed and verification succeeded), but they are significant findings for correctness/reliability and for agentic reproducibility. See requirement_results, checks and doc_gaps for details and recommended fixes.",
+  "requirement_results": [
+    {
+      "requirement": "A Python FastAPI service exposes HTTP endpoints to record consent, withdraw consent, and retrieve a customer's current preference state (e.g. POST to record, POST to withdraw, GET to retrieve).",
+      "status": "met",
+      "evidence": "app/app/main.py:36-51 (POST /consents/record), 53-73 (POST /consents/withdraw), 75-80 (GET /consents/{customerId})",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Customer consent records and channel preferences are modelled as Beanie ODM Document classes and stored as documents in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/app/models.py:14-19 (Consent Document), app/app/main.py:9,28 (init_beanie and document model registration)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Each consent document carries a consentVersion field and a consent history sub-array that holds past consent events for audit.",
+      "status": "met",
+      "evidence": "app/app/models.py:16-18 (consentVersion, history) and endpoints append HistoryItem (app/app/main.py:48-49,70-71)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Recording consent appends a new entry to the consent history sub-array (e.g. with a push update that leaves earlier entries in place) and updates the document's current channel preferences and consentVersion.",
+      "status": "partly_met",
+      "evidence": "app/app/main.py:41-50 — code loads document, increments consentVersion, updates channels, appends a HistoryItem to consent.history and calls consent.save()",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Use an atomic single-document update (findOneAndUpdate / updateOne with $push and $set and upsert=true) instead of read-modify-write; e.g. perform find_one_and_update(filter={'customerId': id}, update={'$push': {'history': history_item_dict}, '$set': {'channels': new_channels, 'retention_expires_at': retention, 'consentVersion': new_version}}, upsert=True, return_document=ReturnDocument.AFTER)."
+    },
+    {
+      "requirement": "Withdrawing consent appends a new entry to the consent history sub-array (e.g. with a push update that leaves earlier entries in place) and updates the document's current channel preferences.",
+      "status": "partly_met",
+      "evidence": "app/app/main.py:57-73 — code finds the consent, mutates consent.channels, appends HistoryItem and calls consent.save()",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Same as for recording: implement the withdraw as an atomic find_one_and_update with $push (history) and $set (channels, retention_expires_at, consentVersion) to avoid race conditions."
+    },
+    {
+      "requirement": "The retrieve endpoint reads the customer's document from Azure DocumentDB through Beanie and returns its current preference state.",
+      "status": "met",
+      "evidence": "app/app/main.py:75-80 (GET /consents/{customerId} uses Consent.find_one and returns ConsentResponse)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A TTL index with expireAfterSeconds is created in code (e.g. in the Beanie Document's index settings) on a Date-typed retention field of the consent documents, for data retention enforcement.",
+      "status": "met",
+      "evidence": "app/app/main.py:29-30 (create_index on retention_expires_at in init_db) and scripts/seed.py:32-34 (seed also creates TTL index); app/app/models.py:19 declares retention_expires_at as Optional[datetime]",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Consent documents written by the record and withdraw endpoints set that Date-typed retention field.",
+      "status": "met",
+      "evidence": "app/app/main.py:39-41, 56-57, 46-47, 69 (calculate retention and assign to consent.retention_expires_at in record and withdraw handlers)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/app/main.py:16 reads DOCUMENTDB_URI from environment, app/.env.example lists DOCUMENTDB_URI placeholder, README.md:12 instructs setting DOCUMENTDB_URI",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example: lines 1-4 include DOCUMENTDB_URI and CONSENT_RETENTION_DAYS placeholders",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "No vector/indexing functionality implemented in this sample (no /search or embedding usage).",
+      "cause": "none",
+      "smallest_fix": "If vector search is added, add explicit index-dimension env var and document the embedding model dimension in README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector/indexing functionality implemented.",
+      "cause": "none",
+      "smallest_fix": "As above, add guidance when vector features are added."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/app/main.py:21 (client global), 23-28 (init_db creates AsyncIOMotorClient once and assigns to global), and init_beanie is called with client[DB_NAME] (line 28)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "scripts/seed.py:33 creates TTL index, lines 37-59 upsert logic: insert only if find_one returns None, otherwise update retention_expires_at (idempotent). The builder ran this script against the live cluster and inserted 3 documents (build logs).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "No /search endpoint implemented in this sample.",
+      "cause": "none",
+      "smallest_fix": "Implement /search with explicit error handling if search is added."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search implemented.",
+      "cause": "none",
+      "smallest_fix": "If search is added, return similarity scores in response schema."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "app/requirements.txt lines 1-8 show pinned versions (fastapi==0.95.2, beanie==1.22.1, motor==3.1.1, etc.)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "app/tests/test_smoke.py imports app.main at module scope (tests/test_smoke.py:5-7). Importing the async FastAPI app triggers the startup event (app/app/main.py:32-34) which attempts init_db and raises if DOCUMENTDB_URI is not set. The builder report states tests were not executed for this reason.",
+      "cause": "builder_error",
+      "smallest_fix": "Make DB startup tolerant for test imports (e.g., in startup_event skip init if DOCUMENTDB_URI is unset, or allow injecting a mock client during tests). The smallest change: in app/app/main.py startup_event check `if not DOCUMENTDB_URI: return` so tests can import app without requiring a live cluster, or change tests to patch init_db before importing app."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository contains no IaC (no Bicep/Terraform) for Microsoft.DocumentDB/mongoClusters; builder explicitly chose not to provision resources (decisions.jsonl: D010).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a sample IaC template (Bicep/ARM or Terraform) using resource type Microsoft.DocumentDB/mongoClusters as an optional artifact (e.g., infra/mongoCluster.bicep)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes sample description, prerequisites (lines 9-13), setup (lines 15-20), run (lines 24-26) and cleaning up (lines 37-39).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The sample runs with the commands in the README.",
+      "status": "partly_met",
+      "evidence": "pip install and the seed script were executed successfully as documented (build logs). Starting the FastAPI app (uvicorn) was not executed in the run because importing Motor exposed an ImportError in this environment (see builder_report open_issues).",
+      "cause": "builder_error",
+      "smallest_fix": "Pin and verify a known-working Motor/PyMongo/Beanie combination and note the compatibility in README; adjust requirements.txt accordingly so uvicorn startup works reliably in the tested environment."
+    },
+    {
+      "requirement": "Tests exist and pass without a live cloud resource, or the README says what they need.",
+      "status": "not_met",
+      "evidence": "There is a test (app/tests/test_smoke.py) but it imports app.main and triggers async DB startup; README does not document how to run tests without a cluster or how to mock the DB.",
+      "cause": "builder_error",
+      "smallest_fix": "Update tests to avoid starting the real startup (e.g., import app without triggering startup, patch init_db, or run with a mocked client); update README with test instructions."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and code comments use 'Azure DocumentDB' (README lines 3, 43).",
+      "cause": "none",
+      "smallest_fix": "none"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env secrets and .env.example",
+      "practice": "Read the DocumentDB/MongoDB connection string from an environment variable (e.g., DOCUMENTDB_URI) and never commit secrets into code or logs; provide a .env.example with a placeholder only.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "followed",
+      "evidence": ".env.example (app/.env.example:1-4); app/app/main.py:16 reads DOCUMENTDB_URI; README.md:43 warns not to commit secrets",
+      "source": ".env.example / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example / README.md",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Singleton client",
+      "practice": "Create a single shared MongoClient (or AsyncMongoClient) at application startup and reuse it across the process rather than creating a client per request.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app/main.py:21 (client global), 23-28 (init_db creates AsyncIOMotorClient once and initializes Beanie)",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection pool tuning",
+      "practice": "Tune connection-pool parameters (maxPoolSize, minPoolSize, maxIdleTimeMS) according to the runtime (serverless vs long-running) and expected concurrency rather than using arbitrary values.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/app/main.py:27 client = AsyncIOMotorClient(DOCUMENTDB_URI) — no pool sizing or timeout options supplied",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Set pool options from env (e.g., AsyncIOMotorClient(DOCUMENTDB_URI, maxPoolSize=int(os.getenv('DB_MAX_POOL', '100')), minPoolSize=..., maxIdleTimeMS=...)).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver choice",
+      "practice": "Prefer PyMongo's AsyncMongoClient for async Python applications (rather than Motor) because Motor is deprecated for new async code; avoid mixing different driver types at runtime.",
+      "category": "runtime",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/app/main.py:10 imports motor.motor_asyncio.AsyncIOMotorClient and uses it (line 27) rather than an Async client from pymongo; build experienced a Motor/PyMongo compatibility ImportError during an initial seed attempt (events.jsonl run logs).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Switch to the recommended async client per the skill (use PyMongo's async client if recommended) or document and pin Motor/PyMongo versions known to be compatible. The immediate fix: pin a tested Motor/PyMongo/Beanie combination (see doc_gaps) or change client construction to the PyMongo async client per skill guidance.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Use TLS for all connections and do not disable certificate verification in production; ensure tls=true and a valid CA bundle are available to the driver.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "The code reads a connection string (DOCUMENTDB_URI) and does not disable TLS or certificate verification in code; README warns not to commit secrets (app/README.md:43).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL index usage",
+      "practice": "Create a TTL index on a Date field (e.g., retention_expires_at) with expireAfterSeconds (0 for absolute expiry) and remember TTL deletions are performed by a background job and can lag (not sub-minute precise).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app/main.py:29-30 creates TTL index with expireAfterSeconds=0; scripts/seed.py:32-34 does the same; app/app/models.py:19 declares retention_expires_at Date-typed",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Append-only history modeling",
+      "practice": "Model consent as append-only history embedded in the consent document for auditability, but if history can grow unbounded split it into a separate collection to avoid large-document problems.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app/models.py:6-12 (HistoryItem) and 14-19 (Consent.history) store an append-only history, and endpoints append HistoryItem (app/main.py:48,71).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Partly a follow-up: add history-growth guards. Smallest change: on append use $push with $slice (or implement max_history_entries env var) or move history to a separate collection if entries may be high-volume.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size cap",
+      "practice": "Keep documents well under the 16 MB BSON limit: cap arrays, compress or spill large fields to child collections, and plan for steady-state growth, not just current size.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "Consent.history is an unbounded list (models.py:18) and the write paths append entries without trimming; no logic caps history length.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Add history trimming (e.g., $push with $slice to keep the last N entries) or move history to a separate collection when it grows beyond threshold; add an env var MAX_HISTORY_ENTRIES to drive this.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Atomic updates",
+      "practice": "Perform atomic single-document updates (e.g., findOneAndUpdate / updateOne with $push and $set or $each/$slice) to append history and update derived fields in one operation and avoid partial updates and race windows.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "app/app/main.py:41-50 (record) and 57-73 (withdraw) use find_one then mutate then save() (read-modify-write) instead of atomic findOneAndUpdate with $push and $set",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Replace read-modify-write with a single find_one_and_update that uses $push and $set (and upsert=true) so consentVersion increment / history append / channels update is atomic.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Optimistic concurrency",
+      "practice": "Use optimistic concurrency (include a version or lastUpdated in update filters) when updates cannot safely be lost to concurrent requests.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "Endpoints increment consentVersion but do not use it in an update filter to guarantee optimistic concurrency; code does not fail updates on version mismatch (app/app/main.py:41-50, 57-73).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Use consentVersion in the find filter during an atomic update (e.g., filter={'customerId': id, 'consentVersion': current_version}) and handle retries/return a conflict if filter fails, or use $inc and check return_document to ensure the increment was applied exactly once.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver retries",
+      "practice": "Enable driver retry options (retryWrites=true, retryReads=true) and implement application-level retries with exponential backoff for transient errors while ensuring write idempotency where needed.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/app/main.py:27 creates AsyncIOMotorClient(DOCUMENTDB_URI) without explicitly setting retryReads/retryWrites or application-level retry logic.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add retry options in the connection string or client args and implement a small retry wrapper with exponential backoff for transient operations; for example add retryWrites=true&retryReads=true to the connection string or pass appropriate client kwargs and wrap writes in an idempotent retry policy.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Fresh reads",
+      "practice": "When you require the freshest read (e.g., current consent state), read from the primary; cross-region replicas are asynchronous and can return stale data.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md",
+      "status": "followed",
+      "evidence": "GET /consents uses Consent.find_one (default read preference is primary) (app/app/main.py:75-80).",
+      "source": "documentdb-high-availability",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-high-availability",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Beanie + sync/async separation",
+      "practice": "Avoid mixing synchronous and asynchronous drivers in the runtime path (e.g., don't run pymongo sync client and Motor in the same event loop); if you must, keep them isolated (e.g., synchronous seeding scripts separate from async app runtime).",
+      "category": "runtime",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "scripts/seed.py uses synchronous pymongo (scripts/seed.py:12-13, 29-33) and the app uses Motor/Beanie; seeding was adapted to synchronous and run independently from the async app (events.jsonl shows seed run and the change).",
+      "source": "scripts/seed.py comment and documentdb-connection guidance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.py (comment) and documentdb-connection",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.py (comment)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pin dependencies",
+      "practice": "Pin and verify compatible driver and ODM versions (PyMongo/AsyncMongoClient, Motor, Beanie) to the cluster's MongoDB wire protocol to avoid runtime incompatibilities and test on the target cluster version.",
+      "category": "runtime",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/requirements.txt (pinned versions), but build encountered a Motor / PyMongo compatibility ImportError when running the original async seed (events.jsonl: run_command failure and subsequent change to sync seed).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Verify the pinned versions together (Motor, PyMongo, Beanie) and update requirements.txt to a tested, compatible set that allows the async app to start; include a compatibility note in README.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Beanie validation and server-side schema",
+      "practice": "When using an ODM (e.g., Beanie), use its model validation for input validation but also consider defense-in-depth because collection-level JSON schema support may vary; check service feature support for validator/$jsonSchema on your target server version.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema",
+      "status": "followed",
+      "evidence": "Input validation uses Pydantic schemas (app/schemas.py:4-8) and Beanie models (app/models.py). No server-side JSON schema validators are created.",
+      "source": "Microsoft Learn / documentdb-data-modeling skill",
+      "searched": "",
+      "fix": "Consider creating a collection validator with $jsonSchema during setup if you require server-side validation; otherwise document the reliance on Beanie/Pydantic for validation in README.",
+      "sources": [
+        {
+          "title": "Microsoft Learn — $jsonSchema / feature support",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit metadata",
+      "practice": "Include actor, timestamp and reason metadata in each appended history entry so consent changes form a clear, auditable, immutable trail.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "HistoryItem model includes timestamp, actor and reason (app/models.py:6-12) and endpoints include actor/reason fields and populate them (app/main.py:48,70). scripts/seed.py sets actor='seed'.",
+      "source": "app/models.py and scripts/seed.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "app/models.py and scripts/seed.py",
+          "url": ""
+        },
+        {
+          "title": "app/models.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index coverage",
+      "practice": "Create and maintain indexes that support your API query patterns (equality → sort → range design, ESR ordering) and periodically inspect query plans with explain(\"executionStats\") to detect and fix COLLSCANs.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "customerId is declared Indexed in the Consent model (app/models.py:15) so Beanie will create an index for lookup by customerId during init_beanie (app/main.py:28). TTL index present as listed in builder verification (events.jsonl: documentdb_list_indexes result).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Run explain() during load testing to confirm index usage and add explicit compound indexes if additional query patterns are added.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Administrative approval recorded by the builder. Nothing in the trace contradicts it."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Matches the starter prompt; evidence is in prompt and code (FastAPI + Beanie present)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "Decision chose Motor+Beanie singleton client. The documentdb-connection skill was loaded and contains guidance that prefers PyMongo's async client for new async code; choosing Motor is defensible but a source suggests another preferred option."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "unverifiable",
+      "comment": "Retention = 365 days was chosen as a model default (reason_source=model_default). There is no authoritative service-side default to check against; this is a reasonable sample choice but it is a model-default decision and should be documented as such."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Pinning dependencies is implemented in requirements.txt (evidence). The builder recorded intent and repository contains pinned versions."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Endpoints chosen match prompt and are implemented in app/app/main.py."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Duplicate administrative approval; same rationale as D001."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Restates D002; FastAPI + Beanie is implemented."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from environment is implemented (app/app/main.py:16) and .env.example provides a placeholder."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Builder explicitly chose not to provision Azure resources; this matches the run environment guidance and is supported by the trace (no IaC files created)."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Redundant with D005; repo contains pinned requirements."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Creating TTL index is implemented and verified (main.py index creation and seed script both create the TTL index; documentdb_list_indexes shows ttl_retention_expires_at)."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "unverifiable",
+      "comment": "Another model-default decision to choose 365 days; reasonable but model-originated; no public policy dictates the sample default."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Using customerId as logical key and not sharding is consistent with the sample and implemented in the code (models.py:15)."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Three minimal endpoints were implemented and match the decision (app/main.py)."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "The run trace contains an ImportError from Motor when running the initial async seed (events.jsonl run_command with exit code 1), and the builder then updated the seed script to use synchronous pymongo (events.jsonl shows the change and the successful subsequent seed run). The decision and reason are supported by the trace."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Beanie + Azure DocumentDB examples",
+      "what_was_missing": "Concise public examples showing how to create indexes (including TTL) and perform atomic findOneAndUpdate operations using Beanie against Azure DocumentDB; examples for optimistic concurrency patterns that show how to use a consentVersion field in the update filter.",
+      "where_searched": "Local repo files (.env.example, README, scripts), installed DocumentDB skills search for 'Beanie' returned no direct example; the discovered searches returned no useful result for 'Azure DocumentDB Beanie ODM best practices' (discovery log).",
+      "effect_on_this_build": "The builder implemented Beanie models and input validation, but did not adopt atomic $push/$set updates or optimistic-concurrency patterns with version filters (led to partly_met findings for atomic updates and optimistic concurrency). Tests and examples for Beanie usage against DocumentDB are absent, leaving an agent or new builder unsure of idiomatic code patterns.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Beanie on Azure DocumentDB' page that includes: 1) example async init_beanie sequence for azure DocumentDB, 2) TTL index creation examples in Beanie and a note about create_index fallback, 3) atomic append-and-update example using find_one_and_update/$push/$set with upsert and returnDocument, 4) optimistic concurrency example using consentVersion in the filter with a retry/conflict handling snippet, 5) note on Beanie index creation/Indexed usage. Put this under the DocumentDB agent-kit docs and reference it from the documentdb-driver and documentdb-data-modeling skills.",
+      "priority": "high"
+    },
+    {
+      "topic": "Driver compatibility matrix (Motor / PyMongo / Beanie)",
+      "what_was_missing": "An authoritative, small compatibility table listing tested Motor / PyMongo / Beanie versions for Python 3.11+ / 3.13 that are known to work together without ImportError (the run encountered an ImportError caused by a Motor / PyMongo mismatch).",
+      "where_searched": "DocumentDB skills and Microsoft docs (skill resources were loaded), but there was no single pinned matrix for the sample's stack (searches in discovery returned no single authoritative table).",
+      "effect_on_this_build": "The builder had to change the seed script to synchronous pymongo to work around an environment ImportError, and the async app start was not exercised in this run. This reduces confidence that uvicorn app startup will work for users following the README.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short compatibility matrix page to the agent kit docs (or a 'tested-versions.md' in the sample template) listing a small set of tested tuples (Beanie version X, Motor version Y, PyMongo version Z) with a short note on how to reproduce and test the async startup locally. Include a one-line reproduction test command to validate compatibility (e.g., start the app in a disposable virtualenv and confirm init_beanie completes).",
+      "priority": "high"
+    },
+    {
+      "topic": "Tests without live cluster — testing guidance",
+      "what_was_missing": "Clear guidance and an example on how to write sample tests that do not require the real DocumentDB cluster (patterns: patch init_db in startup, use a local DocumentDB gateway container with TLS, or inject a mock client).",
+      "where_searched": "Repository files and agent-kit skills; discovery searches returned no useful 'Beanie + local testing' example.",
+      "effect_on_this_build": "The included test imports app.main at module scope and therefore triggers startup which requires DOCUMENTDB_URI; as a result tests could not be executed without a live cluster. This prevents CI-style checks and confuses new builders.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "An agent-kit rule and short README section: 1) recommend starting the app lazily in samples (only connect to DB when first request or explicitly when env var RUN_WITH_DB=true), or 2) show how to patch startup/init_beanie in tests (example pytest fixture that monkeypatches init_db to a no-op and provides a fake in-memory client). Provide a concrete test fixture snippet and an example test that runs without a remote cluster.",
+      "priority": "high"
+    },
+    {
+      "topic": "Default retention policy guidance",
+      "what_was_missing": "A recommended sample default retention period (and rationale) so builders choose consistent values rather than model-defaults. The builder chose 365 days (model_default) but no public guidance defines a sample default.",
+      "where_searched": "Discovery did not find prescriptive 'consent retention default' guidance; the choice was model_default in decisions (D004/D013).",
+      "effect_on_this_build": "The sample uses 365 days and documents it in README, but because this was a model-default choice there is variability between samples. Agents will make arbitrary choices when a default is missing.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short 'Consent retention' sentence in guidance that recommends a sample default for demos (e.g., 365 days) and explains how to change it via CONSENT_RETENTION_DAYS; include policy caveats and mention legal/regulatory guidance as out-of-scope.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Naming and product disambiguation",
+      "what_was_missing": "Clear, prominent documentation that explains the product name 'Azure DocumentDB (vCore Mongo offering)', how it differs from 'Azure Cosmos DB for MongoDB (RU)', and that it is not Amazon DocumentDB. The readiness findings show confusion across many docs/agents.",
+      "where_searched": "Readiness findings and discovered searches; agent-kit and Microsoft Learn contain relevant pages but a concise naming note is not consistently prominent.",
+      "effect_on_this_build": "Potential to mis-provision or use the wrong resource type (e.g., databaseAccounts vs mongoClusters) if a builder follows older or ambiguous docs. This is a high-risk area for IaC and sample provisioning.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "A short 'Naming note' at the top of the DocumentDB quickstart and sample README clarifying the lineage and difference between Azure DocumentDB (vCore), Azure Cosmos DB for MongoDB (RU), and Amazon DocumentDB, and pointing to the correct Bicep/Terraform resource type (Microsoft.DocumentDB/mongoClusters).",
+      "priority": "high"
+    },
+    {
+      "topic": "Beanie + TTL index example",
+      "what_was_missing": "An explicit example showing how to declare TTL indexes in Beanie model Settings or how to create them from Python if Beanie does not express expireAfterSeconds directly.",
+      "where_searched": "Discovery for 'Azure DocumentDB Beanie create TTL index Beanie' returned no targeted example.",
+      "effect_on_this_build": "The builder created the index via client.create_index in both main and seed; a Beanie-specific example would let agent builders do this idiomatically within models or startup code.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A minimal code snippet showing either: a) how to create TTL index via Beanie startup (call the underlying collection.create_index with expireAfterSeconds=0) or b) how to include TTL semantics in a Beanie Settings block if supported. Put this as a short subsection in the 'Beanie on Azure DocumentDB' doc.",
+      "priority": "medium"
+    }
+  ]
+}
