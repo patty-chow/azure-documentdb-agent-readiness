@@ -8,13 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement the agent in Python using LlamaIndex: provide a single-agent Python LlamaIndex RAG implementation that accepts a clinical question and a patient identifier and performs retrieval + summarization in one process.
-- When ingesting patient records, split each record into searchable chunks, compute embeddings for each chunk, and store each chunk as a document in Azure DocumentDB with an embedding field and a patientId field.
-- Create a cosmosSearch vector index (kind vector-hnsw, vector-ivf or vector-diskann) in Azure DocumentDB on the embedding field, with the index dimensions set to match the embedding vector length produced by the embedding model used by the app.
-- Use a Mongo-compatible Python driver (e.g., pymongo) to insert chunk documents and to perform retrieval; run vector similarity queries against the cosmosSearch vector index using $search / cosmosSearch (similarity COS, L2 or IP) to return the top-k most similar chunks.
-- Enforce access control by filtering retrieval queries by the patientId field so that only chunks whose patientId matches the requested patient identifier are returned.
-- Apply context engineering: assemble the model prompt by combining a clinical-summary instruction template, the retrieved chunks ordered by relevance, and the original clinical question (the prompt must explicitly structure context and instructions for a clinical summary).
-- Produce a grounded clinical summary that explicitly cites the source chunks/documents used as evidence (include references to the stored chunk documents such as chunk identifiers or other document reference + patientId alongside the summary so each claim can be traced to source documents).
+- A Python RAG agent built with LlamaIndex answers a clinical question about a patient: one agent retrieves relevant record sections from Azure DocumentDB and produces the summary from them.
+- Patient records are split into chunks and each chunk is stored as a document in Azure DocumentDB with its embedding on the document, written through LlamaIndex's vector store integration or a MongoDB-compatible Python driver (e.g. pymongo).
+- Every stored patient-record document carries a `patientId` field.
+- A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field, with `dimensions` matching the embedding model the app uses.
+- Retrieval embeds the clinical question and runs the similarity search in Azure DocumentDB with `$search` / `cosmosSearch` (similarity COS, L2 or IP), returning the most relevant chunks.
+- Retrieval is limited to the requested patient's records by `patientId`, so sections of other patients are never retrieved (e.g. a `filter` on `patientId` inside `cosmosSearch`).
+- The summarization prompt is assembled deliberately (context engineering): instructions for a clinical summary, the retrieved sections as context and the clinical question are placed in a structured layout.
+- The answer is grounded in the retrieved sections and returned together with references to the source documents it drew on.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
