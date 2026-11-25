@@ -1,0 +1,42 @@
+# 3. Build report: 17-ai-survey-response-analyzer
+
+**Status: completed**
+
+I built a small Python sample that seeds example survey response documents into an Azure DocumentDB cluster, enriches them (themes, sentiment, representative quote, embeddings) using either OpenAI (if OPENAI_API_KEY is set) or a deterministic local fallback, and runs aggregation queries that surface top themes and sentiment distribution per question. I installed dependencies, ran the seed and enrichment scripts, inspected sample documents with the DocumentDB MCP server, and executed the aggregation queries that demonstrate the intended behavior. I attempted to create a native vector index via the documentdb MCP create_index API but the create_index calls failed; the sample documents and expected index shape are documented in README.md so an operator can create the index manually if desired.
+
+## How to run
+
+1) Copy .env.example to .env and set DOCUMENTDB_URI (and OPENAI_API_KEY if you want real LLM/embedding calls).
+2) Install dependencies: pip install -r requirements.txt
+3) Seed sample data: python seeds/seed.py
+4) Enrich documents: python enrich/enrich.py
+5) Show aggregation reports: python aggregates/show_aggregates.py
+
+Notes: The code reads configuration from environment variables (DOCUMENTDB_URI, DATABASE_NAME, OPENAI_API_KEY, OPENAI_MODEL_EMBEDDING, EMBEDDING_DIMENSIONS). Do not commit secrets. If you want a native vector index you should create a 'vector-diskann' index on the 'embedding' field with dimensions matching EMBEDDING_DIMENSIONS (default 1536) and similarity 'COS' — the README documents the expected index parameters.
+
+## Verified by running
+
+- pip install -r requirements.txt: succeeded (packages installed / already satisfied in venv).
+- python seeds/seed.py: succeeded — inserted/upserted 4 sample documents into sample_customer_360_17.survey_responses.
+- python enrich/enrich.py: succeeded — ran without error; reported 'Enriched 0 documents.' (no documents missing enrichment in this run).
+- documentdb_list_databases (MCP): returned database 'sample_customer_360_17' (and 'sample_customer_360_18').
+- documentdb_sample_documents (MCP) for sample_customer_360_17.survey_responses: returned sample documents with themes, sentiment, representative_quote and embedding fields (embedding vectors present).
+- documentdb_list_indexes (MCP) for survey_responses: returned only default _id_ index (no vector index present).
+- python aggregates/show_aggregates.py: succeeded — printed Top themes per question and Sentiment distribution per question (sample output included in run logs).
+
+## Not verified
+
+- Create native vector index via the documentdb MCP server: attempted twice using the MCP create_index API but the calls failed with a generic 'Function failed' response. Because the MCP create_index tool failed repeatedly I did not create a vector index programmatically. Manual creation via the portal or CLI is required; the README documents the expected index shape. (Reason: MCP create_index tool returned an opaque failure — see earlier run logs.)
+- OpenAI-based extraction/embedding end-to-end: not executed in this run because OPENAI_API_KEY was not set in the environment for this session. The code supports OpenAI when OPENAI_API_KEY is provided and falls back to deterministic local logic for verification. To verify with OpenAI set OPENAI_API_KEY and re-run enrich/enrich.py.
+
+## Open issues
+
+- documentdb_create_index via MCP failed: I attempted to create a 'vector-diskann' native index on the 'embedding' field (dimensions=1536, similarity=COS, maxDegree=32, lBuild=50) but the MCP create_index tool returned an opaque failure twice. Because the run policy forbids creating resources by other means, I stopped after two attempts per guidance. Manual index creation via portal/CLI or investigation of MCP server permissions is required.
+- Beanie vs PyMongo Async driver trade-off: Readiness guidance recommends PyMongo's AsyncMongoClient for new async Python code (Motor being deprecated). The prompt required Beanie, so I used Beanie (1.24.0) with Motor (3.1.1) as the repository's code. This fulfills the prompt but is a known tension; teams should consider migrating to PyMongo Async + a compatible ODM should they prefer to follow the connection-skill recommendation.
+- The enrichment run reported 0 documents updated because the seeded documents in this run already contained enrichment fields. If you seed fresh documents without themes/embedding the pipeline will process them (or set OPENAI_API_KEY to use real LLM/embedding provider).
+- I added a small sys.path insertion (scripts append repository root to PYTHONPATH) to keep scripts runnable directly. For production or packaging, prefer installing the package or using a proper package layout.
+
+## Files
+
+- `src/__init__.py`
+

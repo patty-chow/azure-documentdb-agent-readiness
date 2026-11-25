@@ -1,0 +1,614 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core pipeline requested by the starter prompt: a Beanie Document model, an async enrichment loop that either calls OpenAI or a deterministic fallback, embeddings persisted to each document, and aggregation scripts that produce top-themes and sentiment distributions. The build pinned dependencies, included a runnable idempotent seed script, and provided a .env.example. The main gaps are: aggregation scripts use pymongo instead of Beanie as the reference requires; native vector index creation via the MCP tool failed (management tools disabled), so no vector index exists though embedding dimensions are enforced in code; no /search HTTP endpoint or unit tests are present; and README lacks concrete vector-index JSON / tuning guidance. The decisions recorded in decisions.jsonl are mostly supported by run evidence; one convenience choice (inserting the repo root on sys.path) is workable but flagged as a questionable practice in a published sample. See findings, practice checks and doc-gaps below.",
+  "requirement_results": [
+    {
+      "requirement": "A Python pipeline that uses the Beanie ODM to read survey response documents from Azure DocumentDB (a Beanie Document model for the survey response collection, iterated with a Beanie query).",
+      "status": "met",
+      "evidence": "app/src/models.py:10-15 (SurveyResponse Document); app/src/db.py:14-19 (init_beanie); app/enrich/enrich.py:102-108 (SurveyResponse.find cursor).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "For each response, a prompt-engineered LLM call (e.g. OpenAI) whose prompt instructs the model to extract themes, sentiment (e.g. a label or a score) and a representative quote from the response text, with the model's reply parsed into those three values.",
+      "status": "met",
+      "evidence": "app/enrich/enrich.py:76-92 builds a prompt, calls OpenAI ChatCompletion and attempts to parse JSON into themes, sentiment and quote.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The response text is embedded with an embedding model call (e.g. OpenAI embeddings) to produce a vector for the response.",
+      "status": "met",
+      "evidence": "app/enrich/enrich.py:94-96 (openai.Embedding.create) and fallback embedding at lines 55-69.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The enriched document, carrying the themes, sentiment, representative quote and embedding, is written back to the original document in Azure DocumentDB through Beanie (e.g. saving or updating the existing document by its id).",
+      "status": "met",
+      "evidence": "app/enrich/enrich.py:122-126 (doc.themes/doc.sentiment/doc.representative_quote/doc.embedding and await doc.save()).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "An aggregation pipeline, executed in Azure DocumentDB through Beanie, that surfaces the top themes per survey question (e.g. unwinding each response's themes, grouping by question and theme, and sorting by count).",
+      "status": "partly_met",
+      "evidence": "app/aggregates/show_aggregates.py:17-24 defines a pipeline that unwinds themes and groups by question and theme, then prints results.",
+      "cause": "builder_error",
+      "smallest_fix": "Replace the top-level pymongo-based aggregation script with a Beanie-based aggregation (e.g., use SurveyResponse.get_motor_collection().aggregate(pipeline) or call init_beanie() then use the Motor collection bound to SurveyResponse) so the sample demonstrates running the pipeline through the Beanie-initialized DB client."
+    },
+    {
+      "requirement": "An aggregation pipeline, executed in Azure DocumentDB through Beanie, that returns the sentiment distribution per survey question (e.g. grouping by question and sentiment value and counting, or bucketing scores).",
+      "status": "partly_met",
+      "evidence": "app/aggregates/show_aggregates.py:31-39 defines and runs a sentiment distribution aggregation via pymongo.",
+      "cause": "builder_error",
+      "smallest_fix": "As above, run the sentiment aggregation using the Beanie/Motor database binding (SurveyResponse.get_motor_collection().aggregate or an equivalent Beanie API) so the aggregation executes against the same connection/initialization path used by the sample's Beanie model."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example:2-6 contains placeholders; app/src/db.py:11 reads DOCUMENTDB_URI; app/enrich/enrich.py and aggregates/seeds read OPENAI_API_KEY and DOCUMENTDB_URI respectively.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example:2-7 lists DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_MODEL_CHAT, OPENAI_MODEL_EMBEDDING, EMBEDDING_DIMENSIONS, DATABASE_NAME.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "app/enrich/enrich.py:18-19 sets OPENAI_EMBEDDING_MODEL default and EMBEDDING_DIMS default 1536 and normalizes embedding length at lines 115-121. However no native vector index was created on the cluster (MCP index creation failed). See events.jsonl documentdb_create_index failure.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Add an idempotent index-creation script or index JSON file that an operator can apply manually or re-run once management tools are enabled; include explicit guidance (EMBEDDING_DIMENSIONS must match the chosen embedding model). If the MCP tool is used programmatically, make the create_index call conditional and surface the exact index JSON and required ENABLE_MANAGEMENT_TOOLS flag in README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "README.md notes a vector index is expected (app/README.md:40-41) but does not include the index JSON, algorithm choice, parameter rationale or tuning guidance. The attempt to create an index via MCP failed (events.jsonl shows management tools disabled).",
+      "cause": "builder_error",
+      "smallest_fix": "Add a documented index JSON example (vector-diskann/vectors-hnsw or IVF) with default parameters used for the sample (e.g., dims=1536, similarity='COS', lBuild, maxDegree) and a short note on how to tune numLists/efSearch/lBuild for larger corpora; include an idempotent script or CLI snippet that operators can run manually."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py:17 creates AsyncIOMotorClient and returns it from init_db; enrichment uses that client for the script's lifetime. The seed and aggregates scripts create a MongoClient at module level and reuse it for their process lifetime (app/seeds/seed.py:17, app/aggregates/show_aggregates.py:13).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/seeds/seed.py:52-55 performs idempotent upserts (update_one with $setOnInsert and upsert=True). The seed script does not create the native vector index; index creation via MCP failed (events.jsonl: documentdb_create_index error).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Add a conditional index-creation step (for normal scalar/multikey indexes via pymongo) and document the vector-index creation JSON for manual application; make index creation optional and guard it with an explicit env opt-in (e.g., ENABLE_MANAGEMENT_TOOLS=true) so scripts remain safe to run."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No web endpoint or /search handler is present in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal FastAPI (or Flask) search endpoint that validates input (400 on empty query), performs embedding (returns 502 or 500 on embedding failure) and includes similarity scores in results. Smallest change: add app/api/search.py with two error cases and a simple local fallback path for embedding."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search endpoint is implemented; aggregates/show_aggregates.py is not a search API and does not return similarity scores.",
+      "cause": "prompt_silent",
+      "smallest_fix": "When adding a /search endpoint, include the similarity score (from $search response or computed cosine distance) in each result object."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "app/requirements.txt pins beanie==1.24.0, motor==3.1.1, pymongo==4.6.0, openai==0.27.0, python-dotenv==1.0.0, pytest==7.4.0.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files are present in the repository; pytest is present in requirements but no mocks or local-gateway test harness is provided.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock the Motor/PyMongo client or that run against the local Gateway Docker image (documentdb-local-deployment) with TLS options. For immediate fix add pytest tests that patch SurveyResponse.save and the Motor client so tests run offline."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/Terraform) files are present in the repository. The build intentionally avoided provisioning (decisions D010 and events show policy constraints).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep template or Terraform example that targets Microsoft.DocumentDB/mongoClusters (or the equivalent AzAPI resource), with parameters for tier, storage and region, and mark defaults to low-cost tiers in the template. If policy blocks provisioning in CI, include these files as examples only."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes Overview, Prerequisites, Setup, Run and Clean up sections (lines 3-36).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and other texts use 'Azure DocumentDB' (app/README.md:1, lines 5-9). .env.example uses the mongocluster.cosmos.azure.com host pattern which is correct for Azure DocumentDB clusters.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Environment secrets",
+      "practice": "Read the DocumentDB/Mongo connection string from an environment variable (DOCUMENTDB_URI) and do not commit credentials to source control; in production, prefer managed identity / secret stores.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#prerequisites",
+      "status": "followed",
+      "evidence": "app/.env.example:2 (placeholder) and app/src/db.py:11 (DOCUMENTDB_URI read from environment).",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#prerequisites"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver connection options",
+      "practice": "Configure MongoDB driver connection options explicitly (timeouts like serverSelectionTimeoutMS, maxIdleTimeMS, pool settings) and include appName in the URI so the server and diagnostics can attribute connections.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/connect-account#get-the-mongodb-connection-string-to-customize",
+      "status": "followed",
+      "evidence": "app/src/db.py:17 uses AsyncIOMotorClient(DOCUMENTDB_URI) and requirements pinned to known driver versions. The connection string is left to the env var so operators can include appName and other options in DOCUMENTDB_URI as needed.",
+      "source": "Get the MongoDB connection string to customize / driver requirements",
+      "searched": "",
+      "fix": "Consider adding an example that demonstrates adding appName and explicit timeout query parameters in .env.example and/or documentation.",
+      "sources": [
+        {
+          "title": "Get the MongoDB connection string to customize / driver requirements",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/connect-account#get-the-mongodb-connection-string-to-customize"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Enforce TLS for all client connections and verify server certificates.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/self-serve-minimum-tls-enforcement",
+      "status": "followed",
+      "evidence": "app/.env.example:2 includes tls=true; code reads the connection string from the environment so it does not override TLS settings.",
+      "source": "Self-serve minimum TLS version enforcement in Azure Cosmos DB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Self-serve minimum TLS version enforcement in Azure Cosmos DB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/self-serve-minimum-tls-enforcement"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size limit",
+      "practice": "Respect the 16 MB maximum BSON document size — avoid embedding very large binary blobs or huge strings inline and keep documents well under the limit.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/max-document-size",
+      "status": "followed",
+      "evidence": "SurveyResponse model (app/src/models.py:17-21) stores embedding as List[float] and text as response_text. The embedding is kept to a fixed EMBEDDING_DIMS and trimmed/padded (app/enrich/enrich.py:115-121), reducing risk of unbounded growth.",
+      "source": "Document size and batch write limits in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Document size and batch write limits in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/max-document-size"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Typed enrichment fields",
+      "practice": "Store enrichment outputs as typed fields and save model/embedding metadata (original_text, themes, sentiment, representative_quote, embedding, embedding_model, schema_version, created_at).",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/microsoft-embedding-1#api-reference",
+      "status": "followed",
+      "evidence": "app/src/models.py:17-23 defines themes, sentiment, representative_quote, embedding and schema_version. enrich/enrich.py sets these fields and records embeddings and model defaults (app/enrich/enrich.py:17-19, 122-125).",
+      "source": "Microsoft Embedding 1 (preview) / RAG guidance",
+      "searched": "",
+      "fix": "Consider persisting embedding_model/model_name and enrichment run metadata (model prompt text or prompt hash) to the document for reproducibility (small change: add fields embedding_model and enrichment_run to SurveyResponse).",
+      "sources": [
+        {
+          "title": "Microsoft Embedding 1 (preview) / RAG guidance",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/microsoft-embedding-1#api-reference"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Indexes for filters",
+      "practice": "Create normal (non-vector) indexes for fields used in filters and aggregations (e.g., question_id, sentiment.label, created_at) and use compound indexes for multi-field predicates.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field",
+      "status": "violated",
+      "evidence": "app/src/models.py marks survey_id and question_id as Indexed (app/src/models.py:11-12) but there is no explicit index on sentiment.label or themes (multi-key) created programmatically. The documentdb_create_index call was attempted and failed (events.jsonl: documentdb_create_index error).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "Create scalar/multikey indexes programmatically via pymongo.create_index for fields used in aggregations (e.g., col.create_index([('question_id',1)]), col.create_index([('sentiment.label',1)]), col.create_index([('themes',1)])). If MCP is preferred, document the required ENABLE_MANAGEMENT_TOOLS opt-in and provide the create_index JSON.",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index creation",
+      "practice": "For semantic / vector search, create a native vector index specifying algorithm kind and parameters rather than relying on default scalar indexes.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index",
+      "status": "not_assessable",
+      "evidence": "Code attempts to normalize and persist embeddings (app/enrich/enrich.py:115-125) and a create_index attempt was recorded in the run (decisions D018/D019) but the documentdb_create_index tool failed due to management tools being disabled (events.jsonl: documentdb_create_index error). No native vector index exists on the cluster (builder reported list_indexes returned only _id_).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Provide the index JSON in the repo/README and an idempotent script for manual creation; instruct operators to enable management tools or use the portal/CLI examples from the vector-search skill.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embedding dimension validation",
+      "practice": "Fix and document the embedding dimensionality for the deployment and validate embedding length on write (reject or pad/trim mismatched vectors).",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "app/enrich/enrich.py sets EMBEDDING_DIMS (line 19) and normalizes embeddings to that length before saving (lines 115-121).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregation",
+      "practice": "When computing top themes or sentiment distributions use server-side aggregation pipelines that project only needed fields, $unwind arrays, $group, $sort/$limit and consider $facet.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$facet",
+      "status": "followed",
+      "evidence": "app/aggregates/show_aggregates.py:17-24 and lines 31-39 implement server-side $unwind/$group/$sort pipelines and print results.",
+      "source": "$facet (aggregation operator) and aggregation examples",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "$facet (aggregation operator) and aggregation examples",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$facet"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent enrichment writes",
+      "practice": "Make enrichment writes idempotent (upsert by deterministic key or record an enrichment_run_id) so retries or repeated runs do not create duplicates or inconsistent state.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/architecture/patterns/idempotent-consumer#example",
+      "status": "followed",
+      "evidence": "Seeding is idempotent (app/seeds/seed.py:52-55 uses update_one with $setOnInsert and upsert=True). Enrichment updates are single-document saves (app/enrich/enrich.py:122-126) — single-document saves are idempotent for a deterministic enrichment run, though the code currently has no explicit enrichment_run_id or upsert-versioning field.",
+      "source": "Idempotent Consumer pattern / transactional advice",
+      "searched": "",
+      "fix": "To fully satisfy idempotency for varied enrichment versions add an enrichment_run_id or enrichment_version field and perform an upsert using deterministic keys if the enrichment must be rerun with different logic.",
+      "sources": [
+        {
+          "title": "Idempotent Consumer pattern / transactional advice",
+          "url": "https://learn.microsoft.com/azure/architecture/patterns/idempotent-consumer#example"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vectors stored as numeric arrays",
+      "practice": "Vectors must be stored as a number[] (numeric array) to be indexed; only one vector per path is indexable and you can create only one vector index per vector path.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#how-does-a-vector-store-work",
+      "status": "followed",
+      "evidence": "app/src/models.py:21 defines embedding: Optional[List[float]] and enrich/enrich.py ensures embedding is a list of floats before saving (lines 55-69 and 115-121).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#how-does-a-vector-store-work"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Enrichment workflow",
+      "practice": "Treat external LLM/embedding calls as a separate bounded step: persist original text first, call the embedding/LLM, then atomically upsert the embedding and metadata (model name, prompts).",
+      "category": "enrichment_workflow",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/rag#key-components-and-frameworks",
+      "status": "followed",
+      "evidence": "app/seeds/seed.py persists original documents first; enrich/enrich.py reads documents, calls extract/embed (or fallback) and updates the document fields in one save (app/enrich/enrich.py:102-126). The code does not yet persist model name or prompt text into the document (only defaults exist in env).",
+      "source": "Retrieval-augmented generation (RAG) with Azure DocumentDB",
+      "searched": "",
+      "fix": "Persist embedding_model and a short prompt hash or enrichment_run_id when writing enrichment results.",
+      "sources": [
+        {
+          "title": "Retrieval-augmented generation (RAG) with Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/rag#key-components-and-frameworks"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Beanie initialization",
+      "practice": "When using Beanie with DocumentDB, initialize Beanie with an AsyncIOMotorClient and your document models and prefer async bulk / upsert operations.",
+      "category": "application_patterns",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-python-beanie#prerequisites",
+      "status": "followed",
+      "evidence": "app/src/db.py:14-19 uses AsyncIOMotorClient and await init_beanie(database=db, document_models=[SurveyResponse]). Enrichment uses await doc.save().",
+      "source": "Use Beanie with Azure DocumentDB: Build a Python inventory API",
+      "searched": "",
+      "fix": "For larger workloads consider using bulk/update_many patterns; the sample uses per-document saves for clarity.",
+      "sources": [
+        {
+          "title": "Use Beanie with Azure DocumentDB: Build a Python inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-python-beanie#prerequisites"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Record index definitions",
+      "practice": "Create vector indexes via the service index API (createIndexes with cosmosSearchOptions), record the index JSON in code or IaC and keep those definitions under version control.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index",
+      "status": "violated",
+      "evidence": "No index JSON files or IaC index definitions are present in the repository. The MCP create_index call was attempted and failed (events.jsonl shows a management-tool error) and README does not contain the index JSON.",
+      "source": "Integrated vector store in Azure DocumentDB (createIndexes examples)",
+      "searched": "",
+      "fix": "Add the exact JSON used to create the vector index and a small script that will call the MCP API (guarded by an env opt-in) or an explicit CLI/portal example for manual operator creation.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB (createIndexes examples)",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Schema validation",
+      "practice": "Validate documents at ingest (schema checks or application-level validation) — e.g., use $jsonSchema or application validation to enforce embedding dimension, field types and enumerations.",
+      "category": "data_quality",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema",
+      "status": "violated",
+      "evidence": "The sample normalizes embedding length at write time (app/enrich/enrich.py:115-121) but there is no server-side or collection-level $jsonSchema validation created by the seed script. No validation rules or schema migration scripts are present.",
+      "source": "$jsonSchema operator / Schema validation",
+      "searched": "",
+      "fix": "Add a collection-level JSON schema validator (via create_collection options or a one-shot command) to reject documents with incorrect embedding dimensions or invalid sentiment types. Alternatively, include a migration/validation script in seeds/ that applies $jsonSchema.",
+      "sources": [
+        {
+          "title": "$jsonSchema operator / Schema validation",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain plans for aggregation",
+      "practice": "Use explain(\"executionStats\") on queries and aggregate pipelines to check whether an index is used and to spot COLLSCAN/high docsExamined.",
+      "category": "observability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output",
+      "status": "violated",
+      "evidence": "No explain() calls or saved explain output are present; the builder inspected documents with the MCP server but did not record aggregate explain plans or adjust indexes based on explain output.",
+      "source": "Read query explain output in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add a short script that runs col.aggregate(pipeline, explain=True) or uses the MCP explain tool to collect explain(\"executionStats\") output for the sample pipelines and include the output or guidance in README.",
+      "sources": [
+        {
+          "title": "Read query explain output in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Readiness approval recorded by operator; events show the run proceeded and build artifacts were created."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python + Beanie matches the prompt; code and requirements.txt show Beanie usage and pinned versions."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Decision to use Motor as Beanie's async driver is reflected in src/db.py (AsyncIOMotorClient) and requirements.txt (motor==3.1.1)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "OpenAI + local fallback is implemented (app/enrich/enrich.py has openai_* functions and fallback_extract/fallback_embedding)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Tradeoff acknowledged: Beanie required Motor; the code uses Motor to remain compatible with Beanie and the decision is supported by the runs and files."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Builder attempted MCP index creation and fell back to documenting the index shape when the tool failed; events.jsonl shows the create_index tool returned a management-tools-disabled error."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Duplicate of readiness approval; consistent with D001."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Pinned dependency choices appear in requirements.txt and match the decision record."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Code reads DOCUMENTDB_URI from environment and .env.example is present; decision is implemented."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Decision not to provision resources programmatically is consistent with policy and the run evidence (no IaC applied); the repo could still include IaC as examples but the choice was deliberate."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "OpenAI optional-fallback is implemented and exercised when OPENAI_API_KEY is missing; events show enrich ran using fallback embedding/extraction."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Default embedding model and dimension (text-embedding-3-small / 1536) are present in code and env defaults (app/enrich/enrich.py:18-19 and app/.env.example:5-6)."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Escaping braces in the f-string prompt fixed a SyntaxError; events show the syntax error occurred and the file was overwritten to escape braces."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Adding src/__init__.py resolved import errors; the file exists and the scripts run after the change."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "questionable",
+      "comment": "Appending repository root to sys.path in scripts is a pragmatic local-dev convenience (and is present in app/enrich/enrich.py:7-10). It works for samples but is not best practice for published packages; prefer proper package install or entrypoints in a gallery sample."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Models updated to current Beanie Settings API; app/src/models.py uses class Settings with name attribute."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "client.close() is called synchronously (app/enrich/enrich.py:128) as appropriate for Motor's close() semantics; events show this resolved a TypeError observed earlier."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "sound",
+      "comment": "Choosing the vector-diskann index with 1536 dims and COS similarity is consistent with the vector-search skill guidance; the attempt to create it via MCP failed due to management tools disabled (tool failure is logged)."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "Stopping retries after repeated MCP failures and documenting the index shape is reasonable; events show the create_index tool failed twice and the builder recorded the failure."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Index creation & management tools discoverability",
+      "what_was_missing": "Concrete, copy-paste index JSON and a guarded script to create native vector indexes (vector-diskann/HNSW/IVF) and instructions on the ENABLE_MANAGEMENT_TOOLS opt-in for the MCP server were not present in the repository. README mentions an index but lacks the exact index JSON and CLI/API snippet to create it.",
+      "where_searched": "Repository (README, seeds/), events.jsonl, documentdb-vector-search skill, Microsoft Learn vector-search docs.",
+      "effect_on_this_build": "The builder attempted to create the index via the MCP create_index tool but it failed (management tools disabled). Because the repo lacked explicit index JSON or a guarded script, the build could not recover automatically and required operator manual steps.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Add a file index/create_vector_index.json with the exact createIndexes payload (e.g., vector-diskann on 'embedding' with dimensions placeholder, similarity 'COS', and candidate tuning parameters) and a short script create_index.py that calls the MCP create_index API only when ENABLE_MANAGEMENT_TOOLS=true. README should include the exact portal/CLI steps for manual creation as well.",
+      "priority": "high"
+    },
+    {
+      "topic": "Aggregation via Beanie (discoverability for authors)",
+      "what_was_missing": "The checklist expects aggregation examples executed through Beanie; the repository contains aggregation pipelines but they are executed via pymongo rather than via the Beanie/Motor binding.",
+      "where_searched": "Repository (aggregates/show_aggregates.py), Beanie docs, documentdb-beanie readiness notes.",
+      "effect_on_this_build": "Readers may not see how to run aggregations with the Beanie-initialized client; the sample demonstrates the pipelines but not the Beanie execution path, reducing consistency with the rest of the sample.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short section to README and an alternate aggregates/show_aggregates_beanie.py demonstrating how to call the same pipelines through the Beanie-initialized database (init_beanie -> SurveyResponse.get_motor_collection().aggregate(...)) and explain reasons to use the Beanie/Motor binding.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Embedding model / dimension guidance",
+      "what_was_missing": "A short, prominent sentence explaining the mapping of default embedding model (text-embedding-3-small) to EMBEDDING_DIMENSIONS and how to change both consistently, plus recommended dims for common providers.",
+      "where_searched": "Repository README, enrich/enrich.py, documentdb-vector-search skill and Microsoft Learn embedding docs.",
+      "effect_on_this_build": "The code enforces EMBEDDING_DIMS but operators need to know which embedding model outputs which dims and how to change the vector index to match; lack of this guidance risks dimension mismatches if users swap models.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "README subsection 'Embedding model and dimensions' that states the default model and dims (text-embedding-3-small -> 1536), shows how to set OPENAI_MODEL_EMBEDDING and EMBEDDING_DIMENSIONS, and gives a short table of common providers/models and their dims.",
+      "priority": "high"
+    },
+    {
+      "topic": "Tests runnable without cloud",
+      "what_was_missing": "Unit tests and a test harness that run without a live cluster (mocks or Gateway docker config) are absent.",
+      "where_searched": "Repository (no tests directory), documentdb-local-deployment skill for Gateway guidance.",
+      "effect_on_this_build": "No fast offline tests for CI or contributors; verifying behavior requires a live cluster or adding mocks which increases friction.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add tests/test_enrich.py that patches SurveyResponse and Motor client (use pytest + pytest-asyncio), plus an optional docker-compose snippet or test fixture that starts the DocumentDB Gateway image for integration tests. Include instructions in README on how to run tests locally without Azure credentials.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Beanie + async driver compatibility matrix",
+      "what_was_missing": "Clear, short guidance on which Beanie versions are compatible with Motor vs PyMongo AsyncMongoClient and recommended pinned versions.",
+      "where_searched": "documentdb-connection and documentdb-driver skills, Beanie docs, repository requirements.txt.",
+      "effect_on_this_build": "The builder chose Beanie+Motor and pinned versions; future authors may pick incompatible combos (Beanie + PyMongo Async) causing runtime errors.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule or a one-page compatibility table that lists tested Beanie releases and the underlying async client (Motor or PyMongo Async) with exact pinned versions and a short snippet for init_beanie for each supported stack.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Decision to modify sys.path in scripts (packaging guidance)",
+      "what_was_missing": "The repository uses a sys.path insertion to make 'src' importable for direct script runs. The sample README does not explain this convenience choice or recommend the proper packaging alternative.",
+      "where_searched": "app/enrich/enrich.py lines 7-10, events.jsonl D015 and D015's model_default reason.",
+      "effect_on_this_build": "Works for local runs but is not idiomatic for published packages and may confuse readers about correct packaging/installation.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short README note: 'The scripts modify PYTHONPATH for convenience when run directly. For production or proper packaging, install the package (pip install -e .) or use canonical entrypoints; see packaging notes.'",
+      "priority": "low"
+    }
+  ]
+}
