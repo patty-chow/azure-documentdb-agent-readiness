@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LlamaIndex agent with a DocumentDB aggregation tool that reconstructs a customer's journey by sorting and grouping touchpoint event documents by timestamp and channel. Use context engineering to format the journey as a structured timeline in the prompt and generate a plain-language journey summary with key inflection points highlighted.

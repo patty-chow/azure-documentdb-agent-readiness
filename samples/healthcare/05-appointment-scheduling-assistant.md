@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain agent with agent memory and tools that query DocumentDB for provider availability slots, create appointment documents, and handle rescheduling by updating slot status atomically. The agent should maintain conversation context so a patient can say 'move it an hour later' without restating all details.

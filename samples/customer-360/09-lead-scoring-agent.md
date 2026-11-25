@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain agent with agent memory and tools that fetch a lead's activity history, company firmographic document, and engagement signals from DocumentDB. The agent reasons over the signals using prompt engineering, assigns a score from 0-100, and writes the score and a one-paragraph rationale back to the lead document.

@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python pipeline using Beanie ODM that reads raw clinical notes from DocumentDB, sends each note to OpenAI with a prompt engineered to identify and replace PHI entities (names, dates, locations, IDs) with placeholders, and writes the de-identified version back as a separate document with a sourceId reference.

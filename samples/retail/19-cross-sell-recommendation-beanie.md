@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build an async Python service using Beanie ODM that aggregates co-purchase pairs from order history in DocumentDB, embeds product pairs using OpenAI, stores the vectors, and exposes a /cross-sell endpoint that accepts a basket of product IDs and returns the top 5 cross-sell candidates ranked by affinity score.

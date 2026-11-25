@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python FastAPI service that exposes cohort analysis endpoints backed by DocumentDB aggregation. Use $bucket to group customers by acquisition month, compute retention rates at 30/60/90 days, and break down by channel and product using $facet. Cache cohort snapshots as materialised documents refreshed weekly.

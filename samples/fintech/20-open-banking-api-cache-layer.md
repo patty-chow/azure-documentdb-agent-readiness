@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose caching layer that intercepts open banking API calls, checks DocumentDB for a cached response document with a TTL index, returns the cached result if fresh, and fetches and stores a new document if stale. Implement a stale-while-revalidate pattern to serve stale data immediately while refreshing in the background.

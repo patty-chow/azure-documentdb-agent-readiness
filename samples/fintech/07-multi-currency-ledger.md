@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js multi-currency ledger using Mongoose and DocumentDB transactions. Store transactions with a currency field and a reference to an exchange rate document. Use idempotency keys to prevent duplicate postings. Expose endpoints for posting transactions and querying balances in any base currency using aggregation.

@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex RAG agent that indexes regulatory documents and internal policy documents as separate collections in DocumentDB. When given a policy excerpt, the agent retrieves the most relevant regulatory clauses, compares them, and produces a compliance gap report using context engineering to structure the comparison prompt.

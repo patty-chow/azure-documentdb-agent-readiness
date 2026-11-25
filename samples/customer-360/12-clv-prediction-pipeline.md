@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with a DocumentDB aggregation tool that computes historical purchase frequency, average order value, and tenure per customer. Use prompt engineering to instruct the LLM to estimate CLV tier (low, medium, high, VIP), generate a rationale, and write the CLV score and tier back to the customer profile document in DocumentDB.

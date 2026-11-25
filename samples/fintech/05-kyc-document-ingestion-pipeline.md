@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build an async Python pipeline using Beanie ODM that accepts uploaded KYC documents, sends them to OpenAI for structured entity extraction (name, DOB, address, ID numbers), validates the output against a Pydantic schema, and upserts the customer record into DocumentDB. Flag incomplete records for manual review.

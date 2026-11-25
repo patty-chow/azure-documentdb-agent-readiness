@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain RAG chatbot that indexes clinical triage guidelines in a DocumentDB vector index. Use prompt engineering to enforce safety guardrails (always recommend professional consultation, never diagnose), retrieve the most relevant guideline sections for each symptom description, and return structured triage advice with urgency level.

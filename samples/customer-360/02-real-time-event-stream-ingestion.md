@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js event ingestion service that receives customer behavioural events (page views, clicks, purchases) and bulk-writes them to DocumentDB using unordered bulk operations for throughput. Use a composite unique index on (customerId, eventId) for deduplication. Open a change stream to trigger downstream profile update jobs.

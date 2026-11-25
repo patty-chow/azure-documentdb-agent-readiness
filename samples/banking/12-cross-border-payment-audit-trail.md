@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose audit trail service that writes an immutable document to DocumentDB at every stage of a cross-border payment lifecycle (initiated, routed, FX converted, settled). Prevent updates using application-layer guards. Expose an aggregation endpoint that reconstructs the full timeline for a given payment reference.

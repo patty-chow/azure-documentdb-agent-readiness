@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose service that identifies household members by matching on shared address, phone, and surname fields across customer documents in DocumentDB. Create household group documents with member references, and expose aggregation endpoints that compute household-level CLV and product holdings across all members.

@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python FastAPI service that exposes aggregation-backed endpoints for a population health dashboard. Implement faceted queries that break down patient cohorts by diagnosis, age band, gender, and region using $facet. Cache expensive aggregations in DocumentDB as materialised summary documents refreshed on a schedule.

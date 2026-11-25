@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose portfolio service that stores positions and alert rules in DocumentDB. Open a change stream on the positions collection to detect price updates, evaluate each alert rule document, and fire a webhook when a threshold is breached. Include an aggregation that computes portfolio P&L and sector allocation.

@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python FastAPI service that exposes aggregation-backed endpoints for a branch performance dashboard. Use $facet to compute transaction volume, average ticket size, and product mix per branch. Cache rolled-up summary documents in DocumentDB and add a LangChain tool that lets analysts ask natural language questions against the cached summaries.

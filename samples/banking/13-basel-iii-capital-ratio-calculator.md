@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with a DocumentDB aggregation tool that sums risk-weighted assets and capital elements from position documents. Use prompt engineering to instruct the LLM to interpret the computed ratios against Basel III thresholds and generate a board-ready capital adequacy commentary.

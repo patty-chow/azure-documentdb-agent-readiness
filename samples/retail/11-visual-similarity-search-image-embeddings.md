@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python app that encodes product images using the CLIP model, stores the resulting 512-dimensional embeddings as BSON binary vectors with subtype 0x09 in DocumentDB, creates a vector-ivf index, and exposes a /visual-search endpoint that accepts an uploaded image, encodes it, and returns the top 8 visually similar products.

@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python service that stores medical imaging metadata (modality, body part, findings) as DocumentDB documents and embeds the findings text using OpenAI. Store embeddings as BSON binary vectors and create a vector-ivf index. Expose a search endpoint that retrieves images by semantic similarity to a clinical query string.

@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build an async Python SWIFT message ingestion service using Beanie ODM that parses MT103 and MT202 message fields into structured DocumentDB documents, validates required fields, and bulk-writes batches for throughput. Include an aggregation endpoint that summarises daily message volume and total value by message type.

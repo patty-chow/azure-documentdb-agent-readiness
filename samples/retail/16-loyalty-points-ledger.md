@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose loyalty ledger that stores every earn and redeem event as an immutable document in DocumentDB. Use multi-document transactions to atomically append the event and update the running balance. Expose a /balance and /history endpoint and include an aggregation that calculates tier status from lifetime points.

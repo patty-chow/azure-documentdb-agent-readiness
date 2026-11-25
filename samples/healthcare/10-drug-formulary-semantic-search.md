@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex service that stores drug formulary entries (name, indications, contraindications, dosing) as DocumentDB documents with embedded vectors. Expose a /formulary-search endpoint that accepts a clinical intent description, embeds it, and returns the top 10 formulary matches ranked by vector similarity.

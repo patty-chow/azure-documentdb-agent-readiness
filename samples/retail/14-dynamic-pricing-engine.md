@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with tools that query DocumentDB for current demand metrics, competitor price documents, and margin rule documents. Use prompt engineering to instruct the LLM to reason step-by-step before recommending a new price, then write the updated price back to the product document atomically.

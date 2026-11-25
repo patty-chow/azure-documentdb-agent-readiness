@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with agent memory that connects to DocumentDB and has tools for fetching order history, running aggregation pipelines for spend summaries, and looking up individual order status. The agent should maintain conversation context so follow-up questions like 'what about last month?' resolve correctly.

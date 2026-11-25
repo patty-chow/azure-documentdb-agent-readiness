@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent that embeds correspondent bank entity profiles, stores the vectors in DocumentDB, and searches against embedded sanctions list and adverse media entries on each review cycle. The agent should return a risk score, matched entries, and a plain-language risk narrative for each correspondent reviewed.

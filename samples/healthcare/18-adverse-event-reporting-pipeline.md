@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python pipeline using Beanie ODM that accepts free-text adverse event reports, uses prompt engineering to extract structured fields (drug, event, severity, onset date), validates against a Pydantic schema, and writes the structured document to DocumentDB. Build an aggregation query that surfaces the most frequently reported events by drug.

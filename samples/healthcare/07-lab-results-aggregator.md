@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build an async Python service using Beanie ODM that stores lab results as time-series documents in DocumentDB with patientId, testCode, value, and timestamp fields. Build aggregation pipelines that compute moving averages and flag results outside reference ranges. Open a change stream to trigger real-time alerts when critical values are written.

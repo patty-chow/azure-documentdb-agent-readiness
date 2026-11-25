@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose batch processor that runs on a daily schedule, queries all active interest-bearing account documents from DocumentDB in cursor-paginated batches, computes accrued interest using the account's rate and balance, and writes each accrual as an immutable journal document using unordered bulk writes for maximum throughput.

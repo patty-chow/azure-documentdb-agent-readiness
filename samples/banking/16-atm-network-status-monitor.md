@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose ATM monitor that receives status heartbeat documents from ATMs and writes them to DocumentDB. Open a change stream to detect status changes (online, offline, low cash), maintain a live network summary document, and trigger alerts when availability drops below a configurable threshold.

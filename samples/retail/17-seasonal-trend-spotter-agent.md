@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with two tools: one that runs a DocumentDB aggregation pipeline comparing sales velocity across seasons, and a web search tool that fetches current trend signals. Use context engineering to combine both signals in the prompt and produce a ranked list of rising and declining categories.

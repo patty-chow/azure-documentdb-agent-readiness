@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain agent using Beanie ODM with tools that look up the patient's active prescriptions in DocumentDB, check refill eligibility (days supply remaining, refill count), and create a refill request document. Use agent memory so the patient can say 'refill my blood pressure medication' without specifying the drug name each time.

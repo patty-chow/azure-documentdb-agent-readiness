@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with a DocumentDB aggregation tool that groups wallet transactions by day, computes volume and frequency metrics, and flags statistical outliers. The agent should accept a wallet address, run the analysis pipeline, and return a plain-language summary of activity patterns and any anomalies detected.

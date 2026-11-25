@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex RAG agent with agent memory that indexes wealth management research documents in a DocumentDB vector store. The agent has a tool that fetches the client's portfolio document and uses context engineering to combine portfolio context with retrieved research to answer relationship manager questions about client positioning.

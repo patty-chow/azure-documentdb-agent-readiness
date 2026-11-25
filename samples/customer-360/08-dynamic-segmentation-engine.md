@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with a DocumentDB aggregation tool that computes behavioural metrics (recency, frequency, category affinity) per customer on demand. Use context engineering to inject segmentation rules into the prompt and have the agent assign a segment label, writing it back to the customer profile document in DocumentDB.

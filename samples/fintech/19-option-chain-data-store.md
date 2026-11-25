@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python ingestion service that receives options chain snapshots and bulk-writes them to DocumentDB using ordered=False bulk writes for throughput. Create compound indexes on (underlying, expiry, strike) to support efficient queries. Expose endpoints that return the full chain for a given underlying and expiry date.

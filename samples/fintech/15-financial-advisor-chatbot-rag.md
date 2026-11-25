@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LlamaIndex RAG agent with agent memory that retrieves relevant financial knowledge articles from a DocumentDB vector index and combines them with the client's live portfolio data fetched via a tool. Maintain conversation history in agent memory so follow-up questions like 'how does that affect my bond allocation?' resolve in context.

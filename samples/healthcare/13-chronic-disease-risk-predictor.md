@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex agent with agent memory that stores high-risk patient profile embeddings in a DocumentDB vector index. For a new patient, embed their clinical features, retrieve the most similar high-risk profiles, and use the agent to reason over the similarities and generate a personalised risk narrative with recommended interventions.

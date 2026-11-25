@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain orchestration flow that accepts a return request, passes the order document fetched from DocumentDB to a policy agent that determines eligibility, then to a refund-calculation agent, and finally to a comms agent that generates the customer notification. Write the final return document back to DocumentDB via Mongoose.
