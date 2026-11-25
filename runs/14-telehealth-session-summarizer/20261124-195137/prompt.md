@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex pipeline that accepts a telehealth session transcript, uses context engineering to structure the summarisation prompt (chief complaint, assessment, plan, follow-up), generates a structured clinical summary using OpenAI, and stores the result as a structured DocumentDB document linked to the patient record by patientId.
