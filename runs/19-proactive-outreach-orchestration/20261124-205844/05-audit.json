@@ -1,0 +1,689 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested orchestration (trigger → copy → send) and uses a singleton MongoClient, environment-driven secrets, idempotent seeding, and sandboxed sends. Key functional requirements are met and the sample was verified against a live Azure DocumentDB cluster for seeding, index creation (scalar indexes), and one-shot processing. Findings: the implementation intentionally avoids full LangChain constructs (calls are 'LangChain-style' but not composed with the langchain library), change-stream consumer resilience (resume tokens & error handling) is not implemented, vector-index creation and related guidance is absent, send-agent is sandboxed and lacks provider integration/idempotency checks, and there are a number of documentation & discoverability gaps (IaC for mongoClusters, vector index creation snippet, guidance on resume tokens & writeConcern, CI-friendly tests that do not require a live cluster). None of the missing items makes the sample nonfunctional for demonstration, but several are important for production-readiness or for an automated agent to reproduce safely.",
+  "requirement_results": [
+    {
+      "requirement": "A trigger agent, written in Node.js, opens a change stream against Azure DocumentDB and keeps listening so customer events are handled as they arrive.",
+      "status": "met",
+      "evidence": "app/src/listener.js lines 8-13, 25-29 (coll.watch and changeStream.on('change') / SIGINT handler).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The trigger agent passes on only qualifying customer events, recognising cart_abandon, contract_renewal and birthday.",
+      "status": "met",
+      "evidence": "app/src/listener.js lines 12-16 (filters: ['cart_abandon','contract_renewal','birthday']).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "An orchestrator built with LangChain in Node.js coordinates the three agents, handing each qualifying event from the trigger agent to the copy agent and the copy agent's output to the send agent, in that order.",
+      "status": "partly_met",
+      "evidence": "app/src/orchestrator.js lines 14-23 show processEvent calling copyAgent.generateMessage() then sendAgent.sendMessage().",
+      "cause": "builder_error",
+      "smallest_fix": "Replace the simple function calls with a minimal LangChain Chain/LLMChain composition (e.g., construct an LLMChain that calls the LLM prompt template for the copy agent and a separate chain/tool wrapper for the send agent) so the sample demonstrates LangChain orchestration explicitly."
+    },
+    {
+      "requirement": "A copy agent generates personalised outreach copy for the event with a LangChain LLM call.",
+      "status": "partly_met",
+      "evidence": "app/src/copyAgent.js lines 19-30 call OpenAI directly and assemble a prompt; there is no LangChain LLMChain usage.",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap the prompt and OpenAI call in a LangChain LLMChain (or a small Chain implementation) and show it wired in orchestrator; keep the existing fallback template."
+    },
+    {
+      "requirement": "The copy agent practises context engineering: its prompt is assembled from the triggering event's details and the customer's data so the copy is personalised.",
+      "status": "met",
+      "evidence": "app/src/orchestrator.js lines 7-10 (fetch customer) and app/src/copyAgent.js line 20 (prompt uses JSON.stringify(customer) and JSON.stringify(event)).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A send agent determines the customer's preferred channel from their data and dispatches the generated copy through that channel (e.g. email, SMS or push).",
+      "status": "partly_met",
+      "evidence": "app/src/orchestrator.js line 20 sets channel from cust.preferred_channel; app/src/sendAgent.js lines 9-20 record the attempt to outreach_logs and return a sandboxed result. There is no real provider integration.",
+      "cause": "builder_error",
+      "smallest_fix": "Provide provider-specific send logic in src/sendAgent.js (guarded behind env vars) or show one concrete provider implementation (e.g., SMTP) and add required env placeholders to .env.example. Also add an explicit idempotency check before sending."
+    },
+    {
+      "requirement": "The outcome of each outreach (e.g. the event, the channel used and whether the dispatch succeeded) is written to an Azure DocumentDB collection.",
+      "status": "met",
+      "evidence": "app/src/sendAgent.js lines 9-20 insert a record into outreach_logs with eventId, channel, status and sentAt.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 4-7 read process.env.DOCUMENTDB_URI; app/src/copyAgent.js line 5 reads OPENAI_API_KEY; app/.env.example contains placeholders, and no real secrets are present in the repo.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI, OPENAI_API_KEY, MODEL_NAME, EMBEDDING_MODEL, SANDBOX_SEND, DB_NAME, PORT (app/.env.example lines 2-14).",
+      "cause": "builder_error",
+      "smallest_fix": "Add missing optional env keys the code reads (e.g., MAX_POOL_SIZE, MIN_POOL_SIZE) and stub placeholders for common send-provider envs (SMTP_HOST, SMTP_USER, TWILIO_SID, etc.) so the example enumerates the settings developers will need to supply."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_met",
+      "evidence": "The sample does not create any vector index; app/.env.example includes EMBEDDING_MODEL but there is no index-creation for vectors in the code (see builder_report 'not_verified' notes).",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Add an idempotent index-creation script that uses the DocumentDB createIndexes shape with cosmosSearchOptions and reads EMBEDDING_MODEL (or EMBEDDING_DIMS) from env to set dimensions."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "No vector index created and README (app/README.md) contains no index parameter guidance.",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Ship a documented default for vector-index parameters in README and an index-creation script that exposes build/search parameters (lBuild/lSearch/maxDegree/numLists) via env vars or a small config file."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 9-21 implement a singleton MongoClient and getClient() that reuses it.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/src/seed.js uses updateOne(..., { upsert: true }) for customers/events (lines 12-15, 26-29) and createIndex() calls for indexes (lines 34-36).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "There is no /search endpoint implemented. app/src/server.js only exposes GET /logs (lines 7-11).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search route that validates input (400 on empty query), calls the embedding model in a try/catch and returns a 502 or 500 with a clear error message when embedding fails."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search endpoint is present; no similarity scores are returned by any endpoint.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding vector search, return each result with its similarity score in the /search JSON payload (score field), and document the metric semantics in README."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt (or equivalent lock file for Node).",
+      "status": "met",
+      "evidence": "app/package-lock.json exists (lockfile pins versions).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "app/src/test_runner.js runs the seed and run-once scripts directly and those scripts connect to the live cluster; no mocking or in-memory test harness (mongodb-memory-server) is present.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock the MongoClient (or use mongodb-memory-server) and a test that stubs the OpenAI client so CI tests can run without a live cluster or API keys."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "The repo contains no Bicep/ARM/Terraform files for Microsoft.DocumentDB/mongoClusters; skill_md indicates an existing cluster is expected.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small Bicep or Terraform example that creates a Microsoft.DocumentDB/mongoClusters resource with parameterized tier, storage and region; keep defaults low-cost for gallery use."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains 'What this shows', 'Prerequisites', 'Setup', 'Run', and 'Cleanup' sections (lines 1-31).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md title and text use 'Azure DocumentDB' (app/README.md line 1 and elsewhere).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create a single, process-wide MongoClient and reuse it (singleton) rather than creating a new client per request or per change-stream event.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 9-21 implement a singleton client (client variable + getClient()).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets from environment",
+      "practice": "Never store production DocumentDB credentials in code or the repo; read the connection string from environment variables and keep only a .env.example with placeholders.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 4-7 read DOCUMENTDB_URI from env; app/.env.example provides a placeholder (app/.env.example lines 2-6). No secrets are committed.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Require TLS",
+      "practice": "Require TLS for all connections to Azure DocumentDB and do not disable certificate validation in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example suggests mongodb+srv connection string with ?tls=true (app/.env.example line 2); README instructs to set DOCUMENTDB_URI and not commit secrets.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune MongoClient connection options (maxPoolSize, minPoolSize, connectTimeoutMS) to your deployment pattern rather than rely on defaults.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 12-17 set maxPoolSize, minPoolSize, retryWrites, and connectTimeoutMS.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries & idempotent retries",
+      "practice": "Enable driver retryable reads/writes where supported and implement application-level retries with exponential backoff for idempotent operations.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.js line 15 sets retryWrites: true, but the app does not implement application-level retry/backoff for idempotent operations (no retry wrapper around send or DB operations).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add an application-level retry wrapper (exponential backoff) for idempotent DB ops and for read retries; ensure non-idempotent side effects (sends) are guarded by idempotency checks before retrying.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change-stream resume tokens",
+      "practice": "Persist change-stream resume tokens to durable storage and resume streams using resumeAfter or startAtOperationTime.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream",
+      "status": "violated",
+      "evidence": "app/src/listener.js opens coll.watch() (line 10) but does not persist resume tokens or call watch() with resumeAfter/startAtOperationTime on startup.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Persist the change._id (resume token) after processing each change (or periodically) into a durable collection (e.g., consumer_checkpoints) and on startup pass resumeAfter with the last token to coll.watch().",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change-stream error handling",
+      "practice": "Handle change-stream errors explicitly: persist resume progress frequently, attempt resumes for resumable/transient errors, and provide a safe recovery plan for non-resumable errors.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams",
+      "status": "violated",
+      "evidence": "app/src/listener.js registers change handler but has no handlers for changeStream.on('error') or logic to attempt resume/reopen; only SIGINT shutdown is implemented (lines 25-30).",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add error event handlers that decide resumable vs non-resumable based on error codes, attempt resume/reconnect with backoff for transient errors, and escalate or replay a bounded window for non-resumable errors.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Shard key decision",
+      "practice": "Default to single-shard unless collection size or throughput requires sharding; choose a shard key appropriate for the workload.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md",
+      "status": "followed",
+      "evidence": "Decisions (decisions.jsonl D006) and absence of sharding code indicate a single-shard approach; sample data size is small and the seed script runs without sharding.",
+      "source": "documentdb-sharding",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-sharding",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation for queries",
+      "practice": "Create indexes for fields used in query predicates and sort keys and verify index usage with explain().",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/seed.js lines 34-36 create indexes on events.customerId, events.type and outreach_logs.eventId which match query patterns used in run_once/orchestrator.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Add a short explain() check in the seed/test step to confirm index usage for any heavier query patterns.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound indexes (ESR)",
+      "practice": "Design compound indexes following the ESR rule so common query patterns are served by a single compound index.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Current queries are covered by single-field indexes (events.type, events.customerId) and the sample's data size is small; no query pattern requiring a compound index was present in the code.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection for queries",
+      "practice": "Use projection to return only the fields needed for a query to reduce network transfer and RU/IO consumption.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/understand-request-unit-consumption#key-takeaways-and-best-practices",
+      "status": "violated",
+      "evidence": "app/src/orchestrator.js line 9 uses customers.findOne({ customerId: event.customerId }) without projection; server.js returns full outreach_logs documents (app/src/server.js lines 7-10).",
+      "source": "Understand request units consumption in Azure Cosmos DB",
+      "searched": "",
+      "fix": "Use projection in customers.findOne() to request only the fields needed by the copy agent (e.g., name, preferred_channel, profile) and modify /logs to exclude sensitive or large fields unless explicitly requested.",
+      "sources": [
+        {
+          "title": "Understand request units consumption in Azure Cosmos DB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/understand-request-unit-consumption#key-takeaways-and-best-practices"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL index for outreach logs",
+      "practice": "For temporary or retention-based logs use a TTL index on a timestamp field to automatically expire old records.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "Seed script creates outreach_logs.eventId index but no TTL index on sentAt (app/src/seed.js lines 32-36).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Create a TTL index e.g. db.collection('outreach_logs').createIndex({ sentAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 30 }) and document retention policy in README.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent seed & index scripts",
+      "practice": "Make seeding and index-creation scripts idempotent: check for collection existence or use createIndexes.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/seed.js uses updateOne(..., { upsert: true }) for documents and createIndex() for indexes (idempotent).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use transactions sparingly",
+      "practice": "Use multi-operation transactions only when you need atomicity across documents and be prepared to retry transient transaction errors.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction",
+      "status": "followed",
+      "evidence": "The app does not use transactions; multi-document atomicity is not required for the sample flows.",
+      "source": "Group multiple operations in transactions in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Group multiple operations in transactions in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring and explain checks",
+      "practice": "Instrument and monitor cluster and query metrics and capture slow query traces; use explain() to validate important queries.",
+      "category": "observability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "No monitoring instrumentation or explain() checks are present in the code; sample was verified manually with MCP but automated explain checks are absent.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add an explain() assertion in the seed/test step and a small example showing how to enable diagnostic settings and capture slow-query logs; optionally include minimal telemetry exports or guidance in README.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotency for external side effects",
+      "practice": "Implement idempotency for external side effects (e.g., sending outreach): store and check an idempotency key such as event id or outreach_id to avoid duplicate sends on replay.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://learn.microsoft.com/azure/well-architected/design-guides/handle-transient-faults#implementing-retries",
+      "status": "violated",
+      "evidence": "The sendAgent writes outreach_logs after composing a record but does not check for pre-existing outreach_logs.eventId before sending; no unique constraint on eventId is enforced in seed.",
+      "source": "Recommendations for handling transient faults",
+      "searched": "",
+      "fix": "Add an idempotency check in orchestrator or sendAgent: ensure outreach_logs has a unique index on eventId and check/skip sends when a record exists; or insert with upsert semantics and only perform external side-effects on successful insert.",
+      "sources": [
+        {
+          "title": "Recommendations for handling transient faults",
+          "url": "https://learn.microsoft.com/azure/well-architected/design-guides/handle-transient-faults#implementing-retries"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Resume token persistence vs writeConcern",
+      "practice": "Persist change-stream consumer progress durably but do not rely on client-side writeConcern: Azure DocumentDB handles quorum for writes and client writeConcern may be ignored.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream",
+      "status": "violated",
+      "evidence": "No resume token persistence is implemented (app/src/listener.js). The code does not configure any client-side writeConcern for checkpoint writes to a durable collection.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Persist resume tokens to a durable collection and on startup resume from the last token; do not rely on setting writeConcern:majority in the client since the service documents that client writeConcern may be ignored.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Backpressure & batching",
+      "practice": "Avoid unbounded aggregations or map-reduce in change-stream consumers; process events in bounded batches, apply backpressure, and limit concurrency.",
+      "category": "performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "listener.js invokes orchestrator.processEvent for each change directly with no concurrency/batching/limiting logic (app/src/listener.js lines 11-19).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add a bounded worker queue or semaphore throttle around processEvent and consider batching updates for non-latency-critical work; implement backpressure for sustained high-throughput streams.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "PII logging",
+      "practice": "Do not log full PII or credentials; redact or avoid persisting sensitive customer attributes in logs or persisted traces.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/sendAgent.js line 22 logs the full record in sandbox mode; outreach_logs stores the full message and does not redact PII (app/src/sendAgent.js lines 11-20).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Redact PII in console logs and consider storing only customerId and a message hash or store a redacted message in outreach_logs; document PII retention policy in README.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator action. There is no contradictory evidence in the events trace; build proceeded."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "The prompt required Node.js + LangChain and the builder implemented a Node.js sample. The code is CommonJS Node.js. Events show the build used Node.js tooling."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Decision to use the official 'mongodb' driver and a singleton client is reflected in app/package.json (mongodb dependency) and app/src/db.js which implements a singleton. events.jsonl also shows the documentdb-driver skill was loaded (build trace)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading connection string from DOCUMENTDB_URI was implemented (app/src/db.js lines 4-7). The skill_md also instructed this. events.jsonl shows skill loads for driver/connection during build."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "An idempotent Node.js seed script was created (app/src/seed.js uses upsert and createIndex). The decision's outcome matches the repository."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choosing single-shard (no sharding) for the sample is implemented (no sharding or shard-key logic in repo) and aligns with the decision recorded in decisions.jsonl."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "The builder recorded choosing text-embedding-3-small (1536 dims) in decisions.jsonl and app/.env.example includes EMBEDDING_MODEL set to text-embedding-3-small. The code does not yet create a vector index, but the decision is reflected in the env example."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "The sandbox/mock send agent decision is implemented in app/src/sendAgent.js (SANDBOX_SEND default true)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Duplicate readiness approval entry; consistent with earlier D001 and operator evidence."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "The code uses CommonJS modules throughout (require/module.exports), matching the decision."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "The official mongodb package is declared in package.json and used in app/src/db.js. events.jsonl also shows the documentdb-driver skill loaded."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from env is implemented; events.jsonl shows skill loads consistent with environment guidance."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Singleton with pool settings (maxPoolSize/minPoolSize) is implemented in app/src/db.js lines 12-14 and matches the recorded decision."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Denormalized model with customers, events, outreach_logs implemented and seeded in app/src/seed.js; this matches decision text."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Decision to use OpenAI is implemented: app/src/copyAgent.js reads OPENAI_API_KEY and uses the OpenAI SDK. events.jsonl shows documentdb-vector-search and other skills were loaded during discovery; the decision is reflected in code, though the SDK call shape may require updates per provider SDK version (noted in builder_report)."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Mock/sandbox send agent is implemented and documented in README and app/src/sendAgent.js."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "A CLI listener and a minimal REST API for logs (GET /logs) are in the repo (app/src/listener.js and app/src/server.js)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Resume-token persistence & writeConcern naming",
+      "what_was_missing": "Clear, prominent guidance stating that while consumers should persist resume tokens to durable storage, client-side writeConcern:majority may be ignored by the service and should not be relied on for checkpoint durability.",
+      "where_searched": "Learn docs on change streams, documentdb change-streams page; discovered in 'Change streams in Azure DocumentDB' (see discovered practice P19).",
+      "effect_on_this_build": "Builder did not implement resume-token persistence or follow-up guidance; sample's change-stream listener can lose events after restarts and a builder might attempt to set client writeConcern expecting it to change server behavior.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "A short 'Change-stream consumer checklist' page under DocumentDB docs: (1) explicit example Node.js snippet that persists resume tokens to a durable collection and reads them at startup; (2) a clear note 'do not rely on client writeConcern — the service manages replication quorum; set up durable checkpoints regardless'; (3) sample code for resumeAfter and startAtOperationTime usage.",
+      "priority": "high"
+    },
+    {
+      "topic": "Vector index creation snippet",
+      "what_was_missing": "A ready-to-run, idempotent Node.js example that creates a DocumentDB vector index using the createIndexes command with cosmosSearchOptions and reads embedding dimensions from env.",
+      "where_searched": "DocumentDB vector search docs and installed documentdb-vector-search skill; no ready-to-run Node.js createIndexes snippet was found in the repo.",
+      "effect_on_this_build": "Builder did not create a vector index programmatically; the repo lacks the exact createIndexes JSON shape required by the service and left index creation as a manual step.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "A small Node.js script (idempotent) named tools/create_vector_index.js that constructs the createIndexes payload with cosmosSearchOptions (kind, dimensions, metric, algorithm params) using EMBEDDING_MODEL / EMBEDDING_DIMS env values, and runs the DB command via the driver. Include README instructions and a sample default parameter set suitable for small demo datasets.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness",
+      "what_was_missing": ".env.example omitted optional/operational env keys the code reads (MAX_POOL_SIZE, MIN_POOL_SIZE) and did not provide placeholders for common send-provider settings (SMTP/TWILIO placeholders).",
+      "where_searched": "Repo files (.env.example) and code (app/src/db.js, app/src/sendAgent.js).",
+      "effect_on_this_build": "Developers may copy .env.example and later discover required env variables at runtime; missing provider placeholders reduce discoverability of how to enable real sends.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Update .env.example to include MAX_POOL_SIZE, MIN_POOL_SIZE, and example provider env names with placeholders (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, TWILIO_SID, TWILIO_AUTH_TOKEN) plus a short README subsection describing how and when to set them.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Idempotent seed / vector and explain verification",
+      "what_was_missing": "An explain() check in seeding/tests to verify that created indexes actually serve the intended queries and a demonstration of idempotent vector index creation.",
+      "where_searched": "Repo seed script and code; documentdb-indexing and monitoring skill docs.",
+      "effect_on_this_build": "Indexes were created but not automatically validated with explain(); for larger samples this could let a missing index go undetected.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a test script step that runs explain('executionStats') for key queries and fails the CI step if a COLLSCAN is observed for an important query. Add the vector index creation tool described above as an idempotent step.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests that run without a live cluster",
+      "what_was_missing": "A small test harness and examples showing how to run unit tests without a live DocumentDB (mocking the MongoClient or using a recommended test dependency).",
+      "where_searched": "Repo test_runner.js (which runs seed and run-once) and the codebase for any mocking examples (none present).",
+      "effect_on_this_build": "Current smoke tests require a live cluster; CI for gallery samples should be able to run fast unit tests without external resources.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short 'Testing' page and example tests using mongodb-memory-server or a small mock wrapper around getClient(); include an npm script 'test:unit' that runs these mocked tests and document what environment variables to stub.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Sample IaC for mongoClusters",
+      "what_was_missing": "A small Bicep or Terraform example that creates Microsoft.DocumentDB/mongoClusters (the service's actual resource type) with low-cost defaults and parameters for tier, region and storage.",
+      "where_searched": "Repository (no IaC present) and readiness notes pointing to the mongoClusters docs.",
+      "effect_on_this_build": "The sample assumes an existing cluster; without IaC a user may create the wrong resource (databaseAccounts) or use cosmosdb CLI group incorrectly.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add 'infra/bicep/mongoCluster.bicep' and 'infra/terraform/mongocluster.tf' example templates that create a mongoCluster with parameterized tier, region and minimal defaults, plus README instructions and a one-line az CLI example (az documentdb mongocluster create...).",
+      "priority": "high"
+    },
+    {
+      "topic": "Send-agent integration examples & safe defaults",
+      "what_was_missing": "A concrete provider example (one or two) for the send agent (e.g., SMTP for email, Twilio for SMS) with env var names, and an explicit pattern for enabling real sends safely.",
+      "where_searched": "Repo sendAgent.js (contains TODO) and README notes; no provider examples present.",
+      "effect_on_this_build": "Send-agent is sandboxed by default; a developer enabling real sends might not know which env vars to add and how to avoid committing secrets or accidentally enabling sends in CI.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add example provider implementations under src/providers/ (smtpProvider.js, twilioProvider.js) with clear env var names and a README subsection 'How to enable real sends safely' describing SANDBOX_SEND toggle and CI guard rails.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Naming map & product disambiguation",
+      "what_was_missing": "A short 'Naming map' section clarifying Azure DocumentDB (mongoClusters) vs Azure Cosmos DB vs Amazon DocumentDB and historical 'DocumentDB' naming to avoid agent or human confusion.",
+      "where_searched": "README and readiness notes where naming confusion was observed.",
+      "effect_on_this_build": "Reduces risk of an agent or developer applying Cosmos DB examples or CLI commands incorrectly; the README currently does not include a naming map.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A one-paragraph 'Naming & compatibility' note in the README with links to Learn pages illustrating the differences and correct resource types ('Microsoft.DocumentDB/mongoClusters').",
+      "priority": "low"
+    }
+  ]
+}
