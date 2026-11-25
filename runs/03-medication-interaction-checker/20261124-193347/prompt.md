@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain agent using Mongoose that maintains a drug interaction knowledge base in DocumentDB. Given a list of medications, the agent queries all pairwise interaction documents, uses prompt engineering to instruct the LLM to assess severity, and returns a ranked list of interactions with clinical recommendations.
