@@ -1,0 +1,60 @@
+# 1. Prompt review: 09-clinical-notes-de-identification
+
+**Verdict: sufficient_with_assumptions**
+
+The starter prompt clearly defines the core goal: a Python/Beanie pipeline that reads raw clinical notes from Azure DocumentDB, sends each note to OpenAI to replace PHI with placeholders, and writes a new de-identified document with a sourceId. It omits many engineering details (Python runtime, exact driver, OpenAI model/key, seed data, indexes, tests, README, and IaC). The installed skills (notably documentdb-driver, documentdb-connection and the provided run environment) cover connection best-practices and environment conventions so the build can start but will rely on reasonable defaults for several items.
+
+## Where each answer will come from
+
+| Source | Rubric items |
+|---|---|
+| In the prompt | 4: Goal and scenario, Target service and tier, Authentication and secrets, Provisioning and deployment |
+| Covered by a skill | 0: - |
+| Ambiguous: builder will guess | 6: Workflow type, Language and runtime, Driver and version, Data model, AI components, App surface |
+| Missing: builder will guess | 6: Sample data, Queries and indexes, Run and test instructions, Definition of done, Constraints and non-goals, Repository conventions |
+| Not applicable | 0: - |
+
+## Reference requirements at risk
+
+- OpenAI credentials from environment variables: prompt/skill_md specify DocumentDB URI env var but do not explicitly require an OPENAI_API_KEY env var; builder will assume one but the reference requires this explicitly.
+- .env.example lists every setting with placeholder values: prompt asks to avoid writing connection strings into files, but does not explicitly require a complete .env.example; at risk.
+- The vector index dimensions match the embedding model's output: reference requires matching vector index dims; the starter prompt does not use embeddings or vector indexing, so this requirement will likely be missed unless builder adds embeddings/search.
+- Vector index parameters chosen for sample size and README guidance to change them: not mentioned and likely omitted.
+- Seed script that loads sample data and creates the index, and is idempotent: prompt doesn't ask for seed scripts; at risk.
+- `/search` endpoint error handling and similarity score: reference expects a search endpoint with specific behaviors; prompt does not mention a search surface, so this will probably be absent.
+- Dependencies pinned in requirements.txt: prompt doesn't say to pin dependencies; at risk.
+- Unit tests that run without a live cluster: prompt doesn't request tests or local mocks; at risk.
+- Infrastructure as code for the cluster using Azure DocumentDB resource type: prompt and skill_md say a cluster exists and do not require IaC; at risk relative to reference.
+- README covering what the sample shows, prerequisites, setup, run and clean-up: not requested by the prompt explicitly; builder should add this but it's at risk.
+
+## Questions for the prompt author
+
+- Do you require Beanie specifically (which implies Motor), or is using PyMongo's async client (recommended by documentdb-connection) acceptable? This choice affects driver selection and example code.
+- Which OpenAI model should the sample call (e.g., gpt-3.5-turbo, gpt-4)? Also confirm the env var name for the key (suggest OPENAI_API_KEY).
+- Do you want the repository to include infrastructure-as-code (Bicep/Terraform) for creating the Azure DocumentDB resource, or must the sample assume an existing cluster (the run environment currently assumes an existing cluster)?
+- Should the sample provide a seed dataset and idempotent seed script (recommended)? If yes, any constraints on data size or examples to include?
+
+## Contradictions and missing references
+
+- documentdb-connection skill recommends using PyMongo's AsyncMongoClient (PyMongo 4.9+) instead of Motor for new async Python code, whereas the starter prompt explicitly requires Beanie ODM. Beanie depends on Motor; this creates a conflict the builder must resolve (use Beanie+Motor despite the recommendation, or choose an alternative ODM/approach).
+
+## Rubric
+
+| Item | Status | Blocking | In the prompt | Skill | Assumed if unanswered | Note |
+|---|---|---|---|---|---|---|
+| Goal and scenario | specified | no | build a Python pipeline using Beanie ODM that reads raw clinical notes from DocumentDB, sends each note to OpenAI ... and writes the de-identified version back as a separate document with a sourceId reference. | - | - | The business problem, user and demo purpose are explicit and actionable. |
+| Workflow type | ambiguous | no | Using the DocumentDB skill, build a Python pipeline ... | - | Implement as a simple, single-process Python pipeline/CLI (no agent framework or multi-agent orchestration), i.e., a script or module that sequentially processes notes and calls OpenAI. | Prompt does not say whether to provide an API, background worker, or agentic orchestration; the most-likely builder choice is a single-process pipeline script. |
+| Language and runtime | ambiguous | no | Python | - | Target Python 3.10 (or 3.11) for the sample environment and pin this in README and CI. Use an ordinary virtualenv; `python`/`pip` map to that venv as described in skill_md. | Prompt states Python but not the version; the run environment (skill_md) says `python` and `pip` are available and map to a venv. |
+| Driver and version | ambiguous | no | using Beanie ODM | documentdb-connection, documentdb-driver | Use Beanie (which depends on Motor and PyMongo). Choose Beanie compatible with PyMongo 4.x + Motor matching PyMongo version (e.g., Beanie 1.x + Motor/PyMongo 4.9+). Apply the documentdb-driver guidance to create a single MongoClient/Motor client instance. | documentdb-connection recommends PyMongo's AsyncMongoClient over Motor for new async code, which potentially conflicts with the prompt's explicit Beanie requirement (Beanie currently expects Motor). This is a material ambiguity and will force the builder to choose between honoring Beanie or following the doc's driver guidance. |
+| Target service and tier | specified | no | The shared run environment: a vector-capable Azure DocumentDB cluster (compute tier M30, MongoDB 7.0 wire protocol) is reachable and DOCUMENTDB_URI env var holds the connection string; use database `sample_healthcare_09`. | - | - | The sample's skill.md run environment provides the cluster and database name; builders must not provision a new cluster. |
+| Authentication and secrets | specified | no | skill_md: connection string in env var DOCUMENTDB_URI; do not write it into files; use config or .env.example with placeholder | documentdb-local-deployment | OpenAI API key should be taken from an environment variable (e.g., OPENAI_API_KEY) and not committed. Builder will add a `.env.example` listing DOCUMENTDB_URI and OPENAI_API_KEY placeholders. | DocumentDB connection secret guidance is given in skill_md. The prompt doesn't explicitly state the OpenAI key variable; builder will assume standard OPENAI_API_KEY in env. |
+| Data model | ambiguous | no | reads raw clinical notes from DocumentDB through a Beanie ODM Document model... writes the de-identified version back as a separate document with a sourceId reference. | documentdb-data-modeling | Create two collections (documents): `RawNote` with fields (id/_id, text, metadata, created_at) and `DeidNote` with fields (id/_id, text, sourceId referencing RawNote._id, deid_metadata, created_at, tool_version). Use Beanie Document models for both. | Prompt specifies the high-level model (raw vs de-id with sourceId) but not field names/types, collection names, or schema versioning. documentdb-data-modeling can guide decisions like embedding vs referencing and size limits. |
+| Sample data | missing | no | - | - | Add a seed script that inserts ~5–10 synthetic clinical notes demonstrating names, dates, locations, and IDs. The script should be idempotent (check for an existing marker document or unique external IDs). | No sample data or source is provided in the prompt or skills; builder must add synthetic examples for the gallery. |
+| Queries and indexes | missing | no | - | documentdb-indexing | Create an index on `sourceId` for DeidNote and an index on `created_at`. If any text search is required, add a text or search index later; no vector/index configuration is necessary for the basic de-id pipeline unless embeddings/search are added. | Prompt does not request search or vector indexes. documentdb-indexing skill can be used to design indexes if the builder decides to add search or embeddings to the sample; otherwise basic indexes should be added for expected queries. |
+| AI components | ambiguous | no | sends each note to OpenAI with a prompt engineered to identify and replace PHI entities (names, dates, locations, IDs) | - | Use OpenAI's chat/completion API (e.g., gpt-3.5-turbo) called once per note. Store OpenAI API key in OPENAI_API_KEY env var. The code will build a clear system/user prompt instructing the model to replace PHI with placeholders like [NAME], [DATE], [LOCATION], [ID]. | Prompt names provider (OpenAI) and PHI categories, but does not specify model name, temperature, max tokens, or whether to call chat or completions API. It also doesn't state error handling or rate limiting; builder will implement simple retry and error handling. |
+| App surface | ambiguous | no | build a Python pipeline ... | - | Implement as a CLI script `deid_pipeline.py` with commands: `seed`, `run` (process all raw notes), and `dry-run`. Provide a small `main()` and/or an importable module so code can be reused in other apps. | Prompt says `pipeline` but doesn't require an HTTP API/GUI. A CLI is the least-surprising surface for a gallery sample. |
+| Provisioning and deployment | specified | no | skill_md: a cluster is already provisioned and reachable; do not provision another cluster unless run policy allows Azure writes | - | No infrastructure provisioning will be included in the sample; the README will state the sample uses an existing cluster and how to point the app to it. | Because the run environment already supplies a cluster, the sample should not create new cloud resources. |
+| Run and test instructions | missing | no | - | - | Provide a README with exact commands: create venv, pip install -r requirements.txt, set env vars (from .env or export), run `python seed.py`, then `python deid_pipeline.py run`. Include simple unit tests and test-run instructions. | Prompt didn't include run/test commands; builder should add them. |
+| Definition of done | missing | no | - | - | Definition of done: pipeline runs without errors against the sample DB, every seeded RawNote has exactly one DeidNote document pointing to it (sourceId), and no raw note text is modified. The build report documents which steps were executed. | No acceptance criteria were provided; builder will need to define them in README or tests. |
+| Constraints and non-goals | missing | no | - | documentdb-security | Non-goals: do not store actual credentials in the repo, do not attempt production-scale HA or CMK setup in the sample. Emphasize avoiding logging PHI. | Prompt doesn't mention legal/compliance constraints; sample should at least caution about PHI handling and not include secrets. |
+| Repository conventions | missing | no | - | documentdb-local-deployment | Follow a conventional layout: src/ or app/, tests/, seed.py, deid_pipeline.py, requirements.txt (pinned), README.md, .env.example, and a LICENSE. Use 'Azure DocumentDB' naming in README and comments. | No explicit repo layout or README expectations in prompt; skill guidance covers env-driven config but not the full repo conventions. |
