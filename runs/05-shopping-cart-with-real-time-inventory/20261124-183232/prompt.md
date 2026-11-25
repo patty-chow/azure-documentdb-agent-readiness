@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js cart service using Mongoose that stores cart and inventory documents in DocumentDB. Use multi-document transactions to atomically decrement stock and add items to the cart. Handle optimistic locking with a version field and surface clear errors when stock is exhausted.
