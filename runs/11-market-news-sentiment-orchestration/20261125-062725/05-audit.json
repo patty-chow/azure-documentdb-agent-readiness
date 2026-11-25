@@ -1,0 +1,630 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "Documentation search was not available from this run environment, so checks that would normally rely on external docs were judged from the repository contents and the discovery results captured earlier. The sample implements the requested Node.js LangChain-style orchestration, sentiment/ticker extraction (LLM when configured, deterministic fallback otherwise), a reusable MongoClient, idempotent seed/verify scripts, and an alerting demo that logs and optionally POSTs webhooks. Major operational gaps remain around vector-index creation & parameters, embedding-dimensionality validation, an explicit /search endpoint with similarity scoring and error handling, and infrastructure-as-code for the cluster. None of the missing items made the sample non-functional for the demo scenario; they are readiness/documentation and operational gaps that should be fixed before gallery publication.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the pipeline in Node.js with LangChain, with an orchestrator that runs the scraper agent, the sentiment agent and the alert agent in that order and passes each agent's output to the next.",
+      "status": "met",
+      "evidence": "app/src/run.js lines 21-31 and 39-47: run() calls fetchHeadlines(), analyzeHeadlineLLM(), embedText(), inserts the document, then queries watchlist and calls notify() for matches.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Implement a scraper agent that fetches financial news headlines and hands the fetched headlines to the orchestrator.",
+      "status": "met",
+      "evidence": "app/src/scraper.js lines 29-41: fetchHeadlines() returns either NewsAPI results (if NEWS_API_KEY set) or a bundled sample headlines array.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Implement a sentiment agent that assigns a sentiment score to each fetched headline.",
+      "status": "met",
+      "evidence": "app/src/ai.js lines 11-19 (heuristic fallback) and lines 22-35 (LLM path): analyzeHeadlineLLM() returns a numeric sentiment.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Have the sentiment agent extract the ticker mentions from each headline alongside its score.",
+      "status": "met",
+      "evidence": "app/src/ai.js line 18 (regex uppercase words) and lines 32-35 (parsing JSON from LLM) return tickers in the analysis result.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Store every scored article as a document in Azure DocumentDB using a MongoDB driver for Node.js (e.g. `mongodb`), with each document carrying the headline, its sentiment score and the extracted ticker mentions.",
+      "status": "met",
+      "evidence": "app/src/run.js lines 31-40 constructs the document with headline, sentiment, tickers and uses articles.insertOne(doc). app/src/db.js lines 5-11 show MongoClient read from DOCUMENTDB_URI. package.json lists dependency 'mongodb'.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Implement an alert agent that queries Azure DocumentDB for watchlist entries matching the tickers extracted from the scored headlines.",
+      "status": "met",
+      "evidence": "app/src/run.js lines 43-46: matches = await watchlist.find({ ticker: { $in: doc.tickers } }).toArray();",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Have the alert agent fire a notification for each watchlist match it finds.",
+      "status": "met",
+      "evidence": "app/src/run.js lines 7-15 (notify function logs and optionally POSTs to WEBHOOK_URL) and lines 46-48 call notify(m, doc) for each match.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.js line 7 reads process.env.DOCUMENTDB_URI; app/src/ai.js line 4 reads process.env.OPENAI_API_KEY; app/.env.example provides placeholders (lines 1-6). No real keys in repo.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lines 1-10 include DOCUMENTDB_URI, OPENAI_API_KEY, WEBHOOK_URL, NEWS_API_KEY. server.js uses process.env.PORT (app/src/server.js line 14) but PORT is not present in .env.example.",
+      "cause": "builder_error",
+      "smallest_fix": "Add missing runtime environment placeholders (for example add 'PORT=\"3000\"' and any other optional env keys such as OPENAI_API_BASE, EMBEDDING_DIM) to .env.example."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_met",
+      "evidence": "The code stores embeddings (app/src/run.js line 37) but no cluster vector index is created by the seed script (scripts/seed.js lines 29-33 create only text and tickers indexes). The embedding model choice and dimensionality are an assumed value in decisions (D006) but not enforced in code.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an EMBEDDING_DIM environment variable and validate embedText() output length against it before inserting documents; document the chosen embedding model in README and use EMBEDDING_DIM when creating vector indexes in the seed script."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "README notes that vector index creation is not guaranteed (app/README.md line 36-38) but does not recommend index parameters (M/efConstruction/efSearch or similar) or defaults for small vs large datasets; scripts/seed.js does not create a vector index.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a README section describing recommended vector-index type and parameter defaults for the sample (including EMBEDDING_DIM) and add an optional seed script path or sample createIndex command that uses those parameters."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 3-11 implement a module-scoped client variable and return the same MongoClient instance from getClient().",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "scripts/seed.js lines 24-27 use updateOne(..., {upsert:true}) for the watchlist; lines 29-33 create text and tickers indexes. The script logs 'Upserted watchlist' and 'Ensured indexes on articles'.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint is implemented. app/src/server.js exposes only GET /run (lines 5-12).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search endpoint that validates the query, returns 400 for empty queries, calls embedText() and returns a meaningful 502/5xx or JSON error when embedding fails, with logging for operators."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search endpoint implemented; the current orchestration logs alerts and stores embeddings but does not expose vector similarity results or similarity scores.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Implement a /search endpoint that runs the vector or hybrid search and returns results with a similarity or distance score field for each hit."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "This is a Node project: app/package.json lists package versions and app/package-lock.json is present and was used by npm install (events show npm install completed using package-lock.json).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/run-tests.js calls fetchHeadlines() and analyzeHeadlineLLM() only (it does not touch the DB). events.jsonl shows npm test completed and printed 'fetchHeadlines returned 20 items' and analysis output.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (ARM/Bicep/Terraform) files were added to the repository. Directory listing shows no .bicep, .tf, or ARM templates.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small ARM/Bicep or Terraform sample template that declares the Azure DocumentDB resource (for example Bicep/ARM resource type Microsoft.DocumentDB/databaseAccounts or the appropriate provider resource) with cost-conscious defaults and parameterized region/tier."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md includes what the sample shows, prerequisites and run/seed instructions (lines 16-28) but does not document explicit clean-up steps for the resources the sample creates (such as how to remove the sample database or collections).",
+      "cause": "builder_error",
+      "smallest_fix": "Add a 'Clean-up' subsection to README with the commands to drop the sample database/collections (for example a small script or instructions to run 'db.dropDatabase()' against sample_fintech_11, or how to remove created resources)."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and app/.env.example refer to 'Azure DocumentDB (MongoDB-compatible)' and no occurrences of 'Cosmos' or other neighbouring product names were found in repository files.",
+      "cause": "none",
+      "smallest_fix": "none"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env var for connection string",
+      "practice": "Read the DocumentDB connection string from a runtime secret (DOCUMENTDB_URI) and provide a .env.example placeholder instead of committing real credentials.",
+      "category": "auth_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/.env.example lines 1-2; app/src/db.js line 7 reads process.env.DOCUMENTDB_URI.",
+      "source": "app/.env.example",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": "app/.env.example",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver connection options",
+      "practice": "When connecting from Node.js, ensure driver connection options (parser/topology and TLS settings) are explicitly configured according to the platform's best practices.",
+      "category": "connection_handling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/db.js constructs new MongoClient(uri) with no explicit options (line 9); discovered practice is prior_knowledge_only so public guidance not available from this run.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A brief page stating recommended MongoClient options for Node.js connecting to Azure DocumentDB (recommended tls/ssl, connection pool sizing and retry options) with example code."
+    },
+    {
+      "topic": "TLS/cert validation",
+      "practice": "Enable TLS/SSL and certificate validation for client connections and do not disable certificate validation in production.",
+      "category": "connection_handling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P03",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "No explicit TLS options set in app/src/db.js (line 9). The practice was found only as prior knowledge in the discovery step.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A definitive doc stating the TLS requirements and example connection string/query parameters for Azure DocumentDB's MongoDB-compatible endpoint."
+    },
+    {
+      "topic": "Client reuse",
+      "practice": "Reuse a single MongoClient instance across the application process instead of creating a new client per request (store it in module scope and return the same client).",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 3-11 implement module-scoped client and getClient() returns same instance.",
+      "source": "app/src/db.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.js",
+          "url": ""
+        },
+        {
+          "title": "app/src/db.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retryable writes & app retries",
+      "practice": "Enable driver retryable writes and implement application-level retries with exponential backoff for transient errors and throttling.",
+      "category": "retries",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P05",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/db.js uses a default MongoClient(uri) and app code does not implement application-level retry/backoff; discovery showed only prior knowledge guidance.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A page describing recommended retry settings for this managed DocumentDB service, including whether the driver should enable retryWrites and sample backoff code."
+    },
+    {
+      "topic": "TTL for ephemeral articles",
+      "practice": "Consider using TTL (expireAfterSeconds) on ephemeral article documents so old headlines are removed automatically instead of accumulating indefinitely.",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P08",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "scripts/seed.js does not set a TTL index; this practice was flagged as prior knowledge only during discovery.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short example in the agent kit demonstrating adding a TTL index to the articles collection (e.g., {createdAt:1} with expireAfterSeconds) and guidance for appropriate retention periods."
+    },
+    {
+      "topic": "Explicit indexes",
+      "practice": "Create explicit indexes for fields used in queries (text index on headline and a normal index on tickers are created by the sample seed script).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "scripts/seed.js lines 29-33: createIndex({ headline: 'text' }) and createIndex({ tickers: 1 }). verify.js prints these indexes in events.",
+      "source": "scripts/seed.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Store embeddings field",
+      "practice": "Store vector embeddings in a dedicated fixed field (embedding) on the document when available and keep vector dimensionality consistent across documents.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/run.js line 37 adds doc.embedding when embedText() returns a vector; app/src/ai.js embedText() returns the embedding array when OPENAI_API_KEY set.",
+      "source": "app/src/run.js and app/src/ai.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/run.js and src/ai.js",
+          "url": ""
+        },
+        {
+          "title": "app/src/run.js",
+          "url": ""
+        },
+        {
+          "title": "app/src/ai.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize vectors",
+      "practice": "Normalize vectors for cosine similarity and validate vector dimensionality at ingest time to avoid mismatched-dimension inserts.",
+      "category": "vector_search",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P11",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/ai.js embedText() returns raw embeddings if OpenAI is configured; there is no normalization or dimensionality validation before insert (app/src/run.js lines 30-37). Discovery had this as prior knowledge only.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short guidance page or agent-kit rule that says whether embeddings should be L2-normalized for this service and an example normalize+validate function to run before insert."
+    },
+    {
+      "topic": "Idempotent seed upserts",
+      "practice": "Use upserts with a dedupe key (e.g., ticker or article id) to make ingestion idempotent; seed script uses updateOne with upsert:true for watchlist entries.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "scripts/seed.js lines 24-27: wl.updateOne({ticker:w.ticker}, {$set:w}, {upsert:true}) ensures watchlist upserts.",
+      "source": "scripts/seed.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid shipping embeddings unnecessarily",
+      "practice": "Keep documents reasonably small and avoid shipping embeddings unless needed (use projection in queries to exclude embedding fields when not required).",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The app stores embeddings when available (app/src/run.js line 37) and verify.js project shows embedding field when present, but there is no code that conditionally projects embeddings out of queries for HTTP responses. Discovery flagged this as prior knowledge only.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short sample demonstrating projection patterns (exclude 'embedding' in queries by default) and when to include it for vector operations."
+    },
+    {
+      "topic": "Handle throttling (429)",
+      "practice": "Handle HTTP 429/RequestRateTooLarge responses by honoring Retry-After and implementing exponential backoff with jitter; monitor and log 429 spikes.",
+      "category": "retries",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P15",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "No explicit retry/backoff handling for DB operations or webhook calls is present (app/src/run.js uses insertOne directly and fetch for webhooks without retry on 429). Discovery supplied this item only as prior knowledge.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A guidance page showing how to detect 429s and implement Retry-After/jittered backoff for the MongoDB driver and for external webhooks in Node.js."
+    },
+    {
+      "topic": "Use explain() to verify indexes",
+      "practice": "Use explain() to verify queries use indexes and avoid full-collection scans in production.",
+      "category": "queries",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P16",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "scripts/verify.js lists indexes (lines 15-16) but does not call explain() on the alert/query patterns. Discovery flagged explain() as prior knowledge only.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A verification example showing use of explain() for the watchlist lookup and any vector queries, and guidance on interpreting the plan."
+    },
+    {
+      "topic": "Driver & server metrics",
+      "practice": "Enable driver and server metrics (connection pool, RU consumption, latency, 429s) and create alerts for throttling, high latency, or connection churn.",
+      "category": "logging_monitoring",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P18",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample logs basic events to console but does not enable or emit driver-level metrics. Discovery labeled this as prior_knowledge_only.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short monitoring checklist and sample code/config showing how to export driver metrics for the service (connection pool, latency, and throttles) to an observability backend."
+    },
+    {
+      "topic": "Protect run endpoint",
+      "practice": "Protect server endpoints that trigger scrapes or runs: require authentication/authorization, rate-limit requests, validate inputs and never expose admin DB endpoints or credentials.",
+      "category": "server_endpoints",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/server.js exposes GET /run with no auth or rate limiting (lines 5-12). Discovery noted this practice only from prior knowledge.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "An agent-kit rule or short page advising protecting trigger endpoints in sample repos; a small code snippet showing a simple API key check or middleware-based rate limiting would help."
+    },
+    {
+      "topic": "Compound index for alerts",
+      "practice": "Create a compound index tailored to typical alert lookups (for example {ticker:1, active:1}) so watchlist queries are efficient rather than scanning the whole collection.",
+      "category": "indexing",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P20",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "scripts/seed.js creates only a single-field index on tickers (line 32); no compound index for watchlist lookup was created. This guidance was only prior knowledge in discovery.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A recommendation page showing common compound index shapes for alerting lookup patterns (e.g., {ticker:1, active:1}) and when to add them."
+    },
+    {
+      "topic": "Idempotent seed & verify scripts",
+      "practice": "Use idempotent seed and verification scripts that create-if-not-exists and are scoped to the sample_fintech_11 database (do not enumerate or modify other databases on the cluster).",
+      "category": "scripts",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "scripts/seed.js uses upsert:true for watchlist entries (lines 24-27) and scripts/verify.js operates against sample_fintech_11 (line 4).",
+      "source": "scripts/seed.js and scripts/verify.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.js and scripts/verify.js",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        },
+        {
+          "title": "scripts/verify.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk ingestion batching",
+      "practice": "When ingesting at scale, use bulkWrite with reasonable batch sizes and backoff on failures rather than individual inserts to avoid RU saturation.",
+      "category": "provisioning",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P24",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/run.js inserts articles one-by-one via insertOne (line 39) rather than using bulkWrite with batching. Discovery noted this item only from prior knowledge.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short guidance page showing sample bulkWrite usage for Node.js with batch sizes and backoff recommendations for this managed DocumentDB service."
+    },
+    {
+      "topic": "Prefer change streams or watermark polling",
+      "practice": "Prefer change streams or push-based mechanisms to trigger downstream alerting where available; if not, poll efficiently using a last-seen watermark on created_at.",
+      "category": "queries",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P25",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample runs an immediate watchlist lookup after insert rather than using change streams or a last-seen watermark. The availability of change streams for this managed service was not confirmed and discovery marked this practice as prior knowledge only.",
+      "source": "prior_knowledge_only",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A clear statement in docs about whether MongoDB change streams are supported by this managed service and an example alternative (watermark polling) if not."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is consistent with the builder running with --yes. The events log records the build proceeding; this decision is administrative and supported by the run trace."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Selecting Node.js matches the prompt and the code produced (package.json main uses src/server.js). events.jsonl shows this decision was recorded and the repository contains Node.js code."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Driver pinned to 'mongodb' ^5.7.0 and package.json contains that dependency. The events trace shows package.json was written and npm install completed using that dependency."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "Decision states the connection string is read from DOCUMENTDB_URI (which the code does: src/db.js line 7). However the decision's recorded reason_source is 'model_default' even though the run-environment (skill_md / readiness) explicitly instructs using DOCUMENTDB_URI. The choice is correct but the stated reason_source is inconsistent with available guidance."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Choosing OpenAI as the LLM provider is implemented in code (app/src/ai.js) and the choice is reasonable for a sample. The events show fallback heuristics executed when OPENAI_API_KEY was absent."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "questionable",
+      "comment": "The builder assumed 'text-embedding-3-small' with 1536 dims. This assumption is implemented as the model name in ai.js but embeddings were not exercised in the run (OPENAI_API_KEY was not set). The dimensionality assumption is unverified against the live embedding provider and not validated by the code, so the choice is speculative and should be documented or enforced."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Console notifications with optional webhook are implemented in app/src/run.js: notify() logs the alert and posts to WEBHOOK_URL if present; events show alerts printed and webhook code exists."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision to create text and tickers indexes and to document vector index as optional is reflected in scripts/seed.js (createIndex text and tickers). The repo deliberately does not force a vector index creation step in this run; that matches the decision."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Both CLI (npm run run) and Express HTTP endpoint (src/server.js) were implemented and exercised. events.jsonl shows run was executed and server is present."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "The document schema chosen (_id, headline, sentiment, tickers, timestamp, optional embedding) is present in app/src/run.js lines 31-37. This decision is reflected in the implementation."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Vector index creation & parameters",
+      "what_was_missing": "Concrete, tested instructions and a sample createIndex script for creating vector indexes (HNSW/IVF/DiskANN) with the exact option names and parameter defaults (dims, M, efConstruction, distance) for the DocumentDB cluster.",
+      "where_searched": "No external documentation search available in this run; repository files inspected (scripts/seed.js, src/run.js) show no vector index creation code.",
+      "effect_on_this_build": "The sample stores embeddings but did not create a cluster vector index. As a result, vector search was not verified; users must create an index manually and choose matching dimensions/parameters before running similarity queries.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Title: 'Creating vector indexes on Azure DocumentDB (MongoDB-compatible)'. Outline: description of supported vector index types (HNSW, IVF, DiskANN), exact createIndex command examples for Node.js driver (showing option names supported by the cluster), recommended defaults for small sample datasets, how to set dims from EMBEDDING_DIM env var, and troubleshooting steps for common errors.",
+      "priority": "high"
+    },
+    {
+      "topic": "Driver connection options and TLS guidance",
+      "what_was_missing": "An authoritative example of recommended MongoClient connection options for this managed DocumentDB offering (TLS/ssl settings, recommended pool sizing and retry options) and a canonical connection-string example for builders to reference.",
+      "where_searched": "Run environment notes and repository files. No external docs reachable from this run.",
+      "effect_on_this_build": "The code uses MongoClient(uri) with default options; without confirmed TLS/option guidance builders may omit important settings or hardcode wrong parameters, risking failed connections or insecure defaults.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Title: 'Recommended MongoClient options for Azure DocumentDB (MongoDB-compatible)'. Outline: canonical connection string example, TLS enforcement examples, recommended pool (maxPoolSize) values for sample vs production, example Node.js code snippet showing options and explanation.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness",
+      "what_was_missing": ".env.example does not list runtime PORT and a few optional keys (e.g., EMBEDDING_DIM, OPENAI_API_BASE) that the code or deployment might expect.",
+      "where_searched": "app/.env.example and app/src/server.js, app/src/ai.js inspected; no external search possible.",
+      "effect_on_this_build": "Users can run the demo, but common runtime variables like PORT are not suggested in .env.example which can confuse newcomers and make the demo less discoverable.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add entries to .env.example: PORT=\"3000\", EMBEDDING_DIM=\"1536\" (or a placeholder), OPENAI_API_BASE=\"\" (if supporting Azure), and a short comment describing each variable's role.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Embedding model dimensionality & validation",
+      "what_was_missing": "Explicit recommendation to set and validate embedding dimensionality (EMBEDDING_DIM) and code examples that reject or log mismatched-dimension embeddings before insert.",
+      "where_searched": "Code inspection (src/ai.js, src/run.js) showed embedding calls exist but no dimensionality checks; external doc search unavailable.",
+      "effect_on_this_build": "If a user configures a different embedding model than the assumed dims, inserts could produce mismatched-dimension vectors and make vector indexes unusable.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: require EMBEDDING_DIM env var for any sample that stores embeddings; sample code snippet to assert embedding.length === parseInt(process.env.EMBEDDING_DIM) and to log/skip or convert if mismatch. README addition describing how to change EMBEDDING_DIM when selecting different models.",
+      "priority": "high"
+    },
+    {
+      "topic": "429 / Retry guidance",
+      "what_was_missing": "Explicit guidance and a code sample for honoring Retry-After headers, and implementing exponential backoff with jitter for transient DB and external-service errors.",
+      "where_searched": "Repository inspection; no external docs reachable.",
+      "effect_on_this_build": "No application-level retry/backoff was implemented; under higher load or throttling conditions this could cause failed ingest or missed alerts.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Title: 'Handling transient errors and throttling on Azure DocumentDB'. Outline: how to detect 429s, read Retry-After headers, implement exponential backoff with jitter in Node.js, and sample wrapper for MongoDB operations using a retry policy.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Search API and similarity scoring",
+      "what_was_missing": "A documented /search endpoint example that validates inputs, returns clear errors for empty queries or embedding failures, and includes similarity scores in results.",
+      "where_searched": "Repository files (src/server.js, src/run.js) do not implement /search; external search unavailable.",
+      "effect_on_this_build": "The sample lacks a public-facing search demonstration and does not show how to return similarity scores; this reduces the gallery's ability to demonstrate vector search or LLM retrieval functionality.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short sample 'search' endpoint (server route) that: validates the query, calls embedText(), handles embed failures, runs a vector/hybrid search (with filtering step if needed), and returns hits with similarity scores and metadata.",
+      "priority": "high"
+    },
+    {
+      "topic": "Infrastructure-as-code example",
+      "what_was_missing": "A small IaC template (Bicep/ARM or Terraform) that creates the DocumentDB resource type used by the sample, parameterized for tier/region and with low-cost defaults.",
+      "where_searched": "No IaC files in repo; external docs not available in this run.",
+      "effect_on_this_build": "Without IaC, reviewers or users must create the cluster manually; sample cannot be fully end-to-end reproducible from the repo alone.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Provide a minimal Bicep snippet and equivalent Terraform example that create the cluster resource (parameterized name, region, tier) and references any necessary settings for MongoDB wire compatibility; include notes about run_policy and cost.",
+      "priority": "medium"
+    },
+    {
+      "topic": "README clean-up instructions",
+      "what_was_missing": "Explicit clean-up steps (how to drop sample_fintech_11 or remove created collections).",
+      "where_searched": "app/README.md inspected; external docs not reachable.",
+      "effect_on_this_build": "Users are not told how to remove the objects the sample creates; may leave test data in user clusters.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a 'Clean-up' section with commands to remove the sample DB (example using mongo shell or a short Node.js script that drops sample_fintech_11) and an admonition to not run on production clusters.",
+      "priority": "low"
+    },
+    {
+      "topic": "Decision reason_source clarity",
+      "what_was_missing": "Several logged decisions record reason_source as 'model_default' even though the run-environment or readiness notes provided authoritative guidance (for example DOCUMENTDB_URI).",
+      "where_searched": "decisions.jsonl and the run-environment/skill_md (readiness report) in repository.",
+      "effect_on_this_build": "Mislabelled reason sources can hide whether a decision was guided by operator/dataset/run-environment docs; this reduces traceability.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: when logging decisions, set reason_source to the most specific source available (prompt, skill_md/readiness_report, operator) rather than 'model_default'; show a short checklist for mapping evidence to reason_source.",
+      "priority": "low"
+    }
+  ]
+}
