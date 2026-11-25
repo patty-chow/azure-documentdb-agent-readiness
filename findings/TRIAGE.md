@@ -1351,7 +1351,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 04-medical-imaging-metadata-store | `runs/04-medical-imaging-metadata-store/20261124-193446` | 4 | 0 | 21 | 63 | 5 |
 | 04-natural-language-product-search | `runs/04-natural-language-product-search/20261124-183232` | 2 | 0 | 33 | 80 | 3 |
 | 04-regulatory-reporting-orchestration | `runs/04-regulatory-reporting-orchestration/20261124-200545` | 0 | 0 | 13 | 4 | 0 |
-| 05-appointment-scheduling-assistant | `runs/05-appointment-scheduling-assistant/20261124-193733` | 0 | 0 | 8 | 13 | 2 |
+| 05-appointment-scheduling-assistant | `runs/05-appointment-scheduling-assistant/20261124-193733` | 3 | 0 | 8 | 36 | 4 |
 | 05-branch-performance-analytics | `runs/05-branch-performance-analytics/20261124-200647` | 0 | 0 | 10 | 2 | 0 |
 | 05-churn-prediction-pipeline | `runs/05-churn-prediction-pipeline/20261124-203754` | 0 | 0 | 11 | 4 | 0 |
 | 05-kyc-document-ingestion-pipeline | `runs/05-kyc-document-ingestion-pipeline/20261124-190500` | 4 | 0 | 19 | 57 | 5 |
@@ -1360,9 +1360,9 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 06-credit-risk-multi-agent-scorer | `runs/06-credit-risk-multi-agent-scorer/20261124-190546` | 1 | 0 | 24 | 56 | 1 |
 | 06-omnichannel-interaction-history | `runs/06-omnichannel-interaction-history/20261124-204007` | 0 | 0 | 8 | 0 | 0 |
 | 06-order-history-timeline-agent | `runs/06-order-history-timeline-agent/20261124-183612` | 3 | 0 | 20 | 106 | 0 |
-| 06-symptom-triage-chatbot-rag | `runs/06-symptom-triage-chatbot-rag/20261124-193845` | 0 | 0 | 11 | 23 | 4 |
+| 06-symptom-triage-chatbot-rag | `runs/06-symptom-triage-chatbot-rag/20261124-193845` | 2 | 0 | 27 | 45 | 4 |
 | 07-customer-review-sentiment-pipeline | `runs/07-customer-review-sentiment-pipeline/20261124-183656` | 0 | 0 | 16 | 45 | 3 |
-| 07-lab-results-aggregator | `runs/07-lab-results-aggregator/20261124-194018` | 0 | 0 | 6 | 10 | 0 |
+| 07-lab-results-aggregator | `runs/07-lab-results-aggregator/20261124-194018` | 3 | 0 | 6 | 41 | 1 |
 | 07-mortgage-application-multi-agent | `runs/07-mortgage-application-multi-agent/20261124-201025` | 0 | 0 | 10 | 4 | 0 |
 | 07-multi-currency-ledger | `runs/07-multi-currency-ledger/20261124-190814` | 0 | 0 | 8 | 46 | 3 |
 | 07-voice-of-customer-sentiment-hub | `runs/07-voice-of-customer-sentiment-hub/20261124-204049` | 1 | 0 | 5 | 9 | 0 |

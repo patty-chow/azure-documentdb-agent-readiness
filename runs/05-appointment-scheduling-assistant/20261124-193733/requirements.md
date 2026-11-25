@@ -8,14 +8,13 @@
 
 ## What the starter prompt asks for
 
-- A single Node.js agent built with LangChain lets a patient book, reschedule and cancel appointments through conversation, choosing which of its tools to call for each request.
+- A single Node.js agent built with LangChain lets a patient book and reschedule appointments through conversation, choosing which of its tools to call for each request.
 - The agent has agent memory that carries the conversation context across turns, so a follow-up such as "move it an hour later" is resolved against the appointment discussed earlier without the patient restating the provider, date or time.
 - A LangChain tool queries provider availability slots from Azure DocumentDB each time the agent needs availability, reading the current slot documents through a MongoDB-compatible Node.js driver (e.g. the `mongodb` package).
 - Provider availability is modelled as slot documents in Azure DocumentDB, each carrying a status that the booking and rescheduling tools change (e.g. available to booked).
 - A tool books an appointment by creating an appointment document in Azure DocumentDB for the chosen slot and updating that slot's status.
 - A tool reschedules an existing appointment by updating slot status atomically (e.g. a single conditional update that claims the new slot only while it is still available, or a session `withTransaction` when the old slot, the new slot and the appointment document change together) and pointing the appointment document at the new slot.
 - When a patient gives a relative time such as "an hour later", the agent computes the target time from the remembered appointment time and uses the availability tool to find a matching slot in Azure DocumentDB before rescheduling.
-- A tool cancels an appointment by updating the appointment document in Azure DocumentDB and returning its slot to an available status.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
