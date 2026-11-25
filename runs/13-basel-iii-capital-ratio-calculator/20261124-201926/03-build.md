@@ -1,0 +1,36 @@
+# 3. Build report: 13-basel-iii-capital-ratio-calculator
+
+**Status: completed**
+
+Built a small Python sample that connects to a live Azure DocumentDB cluster, seeds a representative `positions` collection, runs a MongoDB aggregation that sums risk-weighted assets and capital elements, computes CET1 and Total Capital ratios, and produces a board-ready Basel III commentary. The sample includes a LangChain/OpenAI-based agent path but falls back to a deterministic, rule-based commentary when OPENAI_API_KEY is not present (so the core DocumentDB behavior can be verified without LLM credentials).
+
+## How to run
+
+1) Create and activate a Python virtualenv (Python 3.10+). 2) pip install -r requirements.txt. 3) Put your DocumentDB connection string into the environment variable DOCUMENTDB_URI (or copy .env.example to .env and edit). 4) (Optional) set OPENAI_API_KEY to enable the LangChain/OpenAI agent path. 5) Run python seed_data.py to idempotently upsert sample position documents. 6) Run python main.py to run the aggregation and produce a board-ready commentary. Notes: LangChain/openai are optional extras; install them if you want to exercise the agent path.
+
+## Verified by running
+
+- pip install -r requirements.txt: success (pymongo and python-dotenv installed)
+- python seed_data.py: success (Upserted: 20, Modified: 0)
+- python main.py: success — ran aggregation using tools/aggregation_tool.aggregate_totals(), computed ratios, printed deterministic board-ready commentary (fallback path used because OPENAI_API_KEY was not set in the environment used for verification).
+
+## Not verified
+
+- LangChain agent end-to-end with OpenAI: not executed because OPENAI_API_KEY was not present in the environment during verification. The repository supports it (main.py attempts to use LangChain/OpenAI when OPENAI_API_KEY is set), but the LLM-driven path was not exercised.
+- Installation and compatibility of a specific langchain / openai version: not installed or tested during verification (LangChain/OpenAI kept optional in requirements to allow verification without LLM keys).
+- Any performance or index recommendations on the live collection: only a full-collection $group aggregation was executed, so index usage and query plan verification for filter-based queries were not performed. No additional indexes were created because the sample aggregation is full-collection and the run policy forbids provisioning resources.
+
+## Open issues
+
+- Document counts observed at runtime (aggregated count=25) differed from the newly-seeded 20 documents — likely pre-existing documents in the `sample_banking_13.positions` collection from the run environment. The seed script upserts 20 records and reports 20 upserts, but the aggregate result shows 25 total documents; if strict isolation is required, drop the collection before seeding (not done here to avoid destructive operations) or run the seed against a fresh DB instance.
+- LangChain/OpenAI path requires the developer to install langchain and openai and set OPENAI_API_KEY. The sample provides a deterministic fallback to allow verification without secrets.
+
+## Files
+
+- `README.md`
+- `.env.example`
+- `requirements.txt`
+- `tools/aggregation_tool.py`
+- `seed_data.py`
+- `main.py`
+

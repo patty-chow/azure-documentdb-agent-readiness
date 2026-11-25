@@ -1,0 +1,564 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested Python LangChain agent pattern, a DocumentDB-backed aggregation pipeline that sums RWAs and capital elements, computes CET1 and Total Capital ratios, and produces a board-ready commentary. The repository runs on the live cluster (seed and aggregation were exercised in verification) and sensibly falls back to a deterministic commentary when OPENAI_API_KEY is absent. Key findings: the LangChain tool exposed to the LLM does not itself call the database (it returns precomputed aggregates), unit-tests and some runner scripts reference a non-existent class API, .env.example has a syntax problem, some “best-practice” guidance from the DocumentDB skills (pool tuning, Decimal128, explain()) was not followed, and there is no infra-as-code for cluster provisioning or monitoring instrumentation. None of the issues found make the sample unsafe to run against the provided cluster, but several developer- and agent-facing issues should be fixed before publishing.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the sample in Python as a single LangChain agent: one LLM-backed agent handles the whole request from question to commentary.",
+      "status": "met",
+      "evidence": "app/main.py lines 77-110 (run_agent_with_langchain defines a LangChain agent using initialize_agent and returns agent.run(user_request)).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Give the agent a DocumentDB aggregation tool: a LangChain tool whose implementation runs an aggregation pipeline against Azure DocumentDB through a MongoDB-compatible Python driver and returns the aggregated results to the agent.",
+      "status": "partly_met",
+      "evidence": "app/main.py lines 90-96: a LangChain Tool named 'aggregate_totals' is created; it returns a text summary of aggregates. The actual DB aggregation is executed earlier in main() by tools/aggregation_tool.aggregate_totals() (app/main.py lines 112-116), not when the agent invokes the tool.",
+      "cause": "builder_error",
+      "smallest_fix": "Make the agent's tool call tools/aggregation_tool.aggregate_totals() when invoked (move the aggregate call into the tool implementation so the agent triggers the DB aggregation at runtime)."
+    },
+    {
+      "requirement": "The aggregation pipeline itself produces the totals: it sums risk-weighted assets and the capital elements (e.g. a $group stage with $sum accumulators).",
+      "status": "met",
+      "evidence": "app/tools/aggregation_tool.py lines 46-55 implement a $group stage that sums risk_weighted_assets, capital.cet1 and capital.total.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Compute the capital ratios from those aggregated totals (e.g. CET1 capital divided by risk-weighted assets, total capital divided by risk-weighted assets).",
+      "status": "met",
+      "evidence": "app/main.py lines 30-36 compute ratios in compute_ratios(); main.py then uses those ratios to produce commentary.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Use prompt engineering for the LLM call: the prompt carries the computed ratios and instructs the LLM to interpret the computed ratios against Basel III thresholds (e.g. the 4.5% CET1 and 8% total capital minimums).",
+      "status": "met",
+      "evidence": "app/main.py lines 101-107: the user_request string instructs the agent to use the aggregate tool and interpret ratios against CET1 4.5%, buffer 2.5%, and Total capital 8%.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The agent's final output is an LLM-generated, board-ready capital adequacy commentary that states how each ratio stands against the Basel III thresholds, written for a board audience.",
+      "status": "met",
+      "evidence": "app/main.py lines 101-109: run_agent_with_langchain returns the agent output; deterministic_board_commentary (lines 39-74) is used as a fallback and produces board-ready commentary for verification.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/main.py lines 15-19 read OPENAI_API_KEY and DOCUMENTDB_URI from environment; no secrets are committed in repository files.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI and OPENAI_API_KEY, and README references copying .env.example (app/README.md lines 32-36).",
+      "cause": "builder_error",
+      "smallest_fix": "Fix .env.example quoting and ensure placeholders are valid text (see app/.env.example line 2: missing closing quote)."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use a vector index; vector search is out of scope for this sample.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create a vector index or use vector search.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/tools/aggregation_tool.py lines 14-22 define a module-global _client and get_client() that lazily constructs a MongoClient and reuses it.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/seed_data.py (lines 36-41) uses UpdateOne with upsert=True and bulk_write, so seeding is idempotent. It does not create any index.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add index creation steps to seed_data.py (idempotent createIndexes or createIndexes with ifNotExists logic) or document why no index is required for this full-collection aggregation."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample has no /search endpoint or web server.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search feature implemented.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "app/requirements.txt pins pymongo==4.4.0 and python-dotenv==1.0.0; optional deps are commented.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "app/tests/test_aggregation.py (lines 5-13) is skip-if-DOCUMENTDB_URI and imports a non-existent DocumentDBAggregationTool (the code implements aggregate_totals function instead), so tests require either a live cluster or patching; they do not run offline.",
+      "cause": "builder_error",
+      "smallest_fix": "Provide unit tests that mock the collection or the get_positions_collection() call (monkeypatch or dependency injection) so tests run offline, and fix test imports to match the public API (use aggregate_totals or provide a wrapper class)."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/ARM/Terraform) templates or az CLI provisioning scripts found in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal Bicep/Terraform example using Microsoft.DocumentDB/mongoClusters (document the difference vs databaseAccounts) — the documentdb-azure-deployment skill contains guidance to copy into the repo."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains sections: what this sample demonstrates, prerequisites, quickstart run steps, LangChain notes, and clean-up (see lines 3-16, 25-44, 53-54).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md, app/tools/aggregation_tool.py, and other files use 'Azure DocumentDB' or 'DocumentDB' consistently (e.g., README title line 1).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env var secrets",
+      "practice": "Read the MongoDB-style connection string from an environment variable (e.g., DOCUMENTDB_URI) and do not hard-code, log, or commit it; publish a .env.example with placeholders instead.",
+      "category": "connection & secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "app/main.py lines 15-19 and app/tools/aggregation_tool.py lines 10-12 read DOCUMENTDB_URI from env; no credentials are committed. .env.example present but has a quoting syntax issue (app/.env.example line 2).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "Fix .env.example quoting (close the quote) and include any additional env vars the LangChain path needs (if the sample later documents more).",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always require TLS on the wire (e.g., tls=true or equivalent driver option) and validate server certificates when connecting to an Azure DocumentDB cluster.",
+      "category": "connection & security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "app/tools/aggregation_tool.py line 21 and app/seed_data.py line 14 construct MongoClient(..., tls=True).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Managed secret store",
+      "practice": "Store connection strings and other secrets in a managed secret store (e.g., Azure Key Vault) or inject them as environment-only values rather than embedding them in code or repository files.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/key-vault/secrets/secure-secrets",
+      "status": "followed",
+      "evidence": "Secrets are read from environment variables and not committed in code; README warns not to store secrets in files (app/README.md line 11).",
+      "source": "Secure your Azure Key Vault secrets",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Secure your Azure Key Vault secrets",
+          "url": "https://learn.microsoft.com/azure/key-vault/secrets/secure-secrets"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client reuse",
+      "practice": "Create a single MongoClient per process (singleton) and reuse it rather than creating a new client per request; configure pool parameters only after understanding app concurrency patterns.",
+      "category": "driver & connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/tools/aggregation_tool.py lines 14-22 define a module-global _client and get_client() that reuses it.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pool tuning",
+      "practice": "Tune connection-pool and timeout settings to match your runtime (serverless vs long-running servers vs OLAP) and initialize the client outside the request/handler scope to enable reuse (serverless: small maxPoolSize, short maxIdleTimeMS).",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "get_client() in app/tools/aggregation_tool.py (lines 17-22) creates MongoClient(DOCUMENTDB_URI, tls=True) with defaults and no explicit pool or timeout tuning.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add conservative pool/timeouts to MongoClient in get_client(), e.g. MongoClient(..., tls=True, maxPoolSize=50, serverSelectionTimeoutMS=5000, connectTimeoutMS=10000) or surface these in .env; follow documentdb-connection guidance.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries and idempotency",
+      "practice": "Implement retries with exponential backoff for transient network or rate-limit errors and make aggregation/write operations idempotent or detect duplicates to avoid double-counting.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/seed_data.py uses a bulk_write upsert (idempotent) (lines 36-41) but there is no retry/backoff wrapper around operations in seed_data.py or aggregation_tool.py.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add a small retry/backoff wrapper for transient errors around DB operations (or use pymongo's built-in retryWrites where appropriate). Keep seed writes idempotent (already done).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregation",
+      "practice": "Perform numeric aggregations server-side using the aggregation pipeline (db.collection.aggregate with $group and accumulators) rather than fetching documents and summing client-side to reduce network and I/O cost.",
+      "category": "queries & performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/",
+      "status": "followed",
+      "evidence": "app/tools/aggregation_tool.py lines 46-57 assemble a pipeline and run coll.aggregate(pipeline).",
+      "source": "Aggregation - commands",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Aggregation - commands",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pipeline ordering",
+      "practice": "Order aggregation pipeline stages to filter early: place $match first, then $project to keep only required numeric fields, then $group to minimize documents and memory use; verify plan/index usage with explain(\"executionStats\").",
+      "category": "queries & performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md",
+      "status": "violated",
+      "evidence": "aggregate_totals() builds pipeline with optional $match then $group but does not add an explicit $project stage to limit fields or demonstrate explain usage (app/tools/aggregation_tool.py lines 43-56).",
+      "source": "documentdb-query-optimization",
+      "searched": "",
+      "fix": "Add an idempotent $project stage before $group to include only risk_weighted_assets and capital fields when appropriate, and provide an option to call collection.aggregate(...).explain('executionStats') for debugging.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimization",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain plans",
+      "practice": "Use explain(\"executionStats\") and server-side profiling / slow-query logs to confirm index usage and detect COLLSCANs; tune indexes or pipeline ordering when keysExamined/docsExamined indicate inefficiency.",
+      "category": "observability & performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md",
+      "status": "violated",
+      "evidence": "No use of explain() or plan inspection in app/tools/aggregation_tool.py or in README; verification ran a full-collection grouping but did not call explain (builder report notes no explain call).",
+      "source": "documentdb-query-optimization",
+      "searched": "",
+      "fix": "Add an optional --explain flag or helper that runs coll.aggregate(pipeline).explain('executionStats') and prints keysExamined/docsExamined, and document how to call it in README.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimization",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monetary numeric type",
+      "practice": "Store monetary and regulatory numeric values using Decimal128 (or other fixed-point/decimal types) and use aggregation operators like $toDecimal / $convert when needed to avoid floating-point rounding errors.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$todecimal#examples",
+      "status": "violated",
+      "evidence": "seed_data.py stores 'risk_weighted_assets' as integers and 'capital' totals as floats (app/seed_data.py lines 23-31); aggregation_tool returns floats (app/tools/aggregation_tool.py lines 61-64). No Decimal128 usage or $toDecimal in the pipeline.",
+      "source": "$toDecimal",
+      "searched": "",
+      "fix": "Store 'capital' fields using bson.decimal128.Decimal128 (or convert in pipeline with $toDecimal/$convert). Update seed_data.py to write Decimal128 values and adjust aggregation to preserve Decimal128 or explicitly cast to decimal in pipeline.",
+      "sources": [
+        {
+          "title": "$toDecimal",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$todecimal#examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Indexing support",
+      "practice": "Create indexes that support the aggregation pipeline (equality fields first, then sort/range) — prefer one well-shaped compound index over many single-field indexes and keep a modest per-collection index budget.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample aggregation is a full-collection $group with no pre-filtering; no additional indexes were created (app/tools/aggregation_tool.py and seed_data.py).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "If you add filtering in the sample (date range, account etc.), create a compound index on those fields and document index budget in the README.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotency",
+      "practice": "Seed sample data idempotently (use upserts or bulk_write upserts) and, for ephemeral test data, consider TTL indexes so repeated runs do not accumulate test artifacts.",
+      "category": "data loading & testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/seed_data.py lines 36-41 use UpdateOne(..., upsert=True) and bulk_write for idempotent upserts.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "Consider adding an optional TTL index for test data or add an explicit collection-drop mode with caution in README.",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "LLM privacy",
+      "practice": "Avoid sending raw PII or sensitive balance-level data to external LLM services; minimize exposure by sending de-identified aggregates or running LLMs in an approved, private environment.",
+      "category": "LLM & privacy",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P17",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample's LLM tool agg_tool_call returns only aggregated metrics (app/main.py lines 90-94), which avoids sending raw position-level data. However, there is no official DocumentDB page stating LLM-specific PII guidance for this service (practice basis is prior_knowledge_only).",
+      "source": "prior_knowledge",
+      "searched": "Searched for 'Azure DocumentDB LLM PII guidance' and related queries; no service-specific guidance found.",
+      "fix": "Product docs should state explicit guidance: e.g., 'Do not send raw customer balances or PII to external LLMs — send aggregated metrics only or require on-prem/approved LLM environments.'",
+      "sources": [],
+      "what_would_help": "A short sentence in a security/LLM integration doc that states when aggregates are acceptable and when PII must be removed, with example payloads."
+    },
+    {
+      "topic": "Monitoring",
+      "practice": "Enable diagnostic settings and collect slow-query logs and cluster metrics into Log Analytics; create alerts for throttling, slow queries, and resource saturation.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "violated",
+      "evidence": "No diagnostic settings, slow-query logging, or Log Analytics configuration in repository or README; no instrumentation for query latency is present.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a short section in README on enabling diagnostic settings and an example az monitor diagnostic-settings create command, plus a note to review slow-query logs in Log Analytics.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Least privilege",
+      "practice": "Prefer least-privilege credentials (Azure Entra ID / RBAC or per-app users) rather than a single full-access account key; rotate and revoke credentials used for test runs.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "violated",
+      "evidence": "Sample uses a single DOCUMENTDB_URI in env; README does not document least-privilege or Entra ID authentication examples (app/README.md lines 15-16).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Document and optionally include an example of using Microsoft Entra ID (OIDC) via azure-identity, and add a note in README recommending least-privilege accounts for samples.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Single-pipeline correctness",
+      "practice": "Compute numerators and denominators together on the server (single aggregation pipeline or transaction where supported) to avoid inconsistent snapshots across multiple client queries; when multi-document transactions aren't available (sharded collections) prefer single-pipeline aggregations.",
+      "category": "correctness & queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/",
+      "status": "followed",
+      "evidence": "aggregate_totals() performs a single aggregation that computes count, rwa, cet1, and total_capital together in one $group (app/tools/aggregation_tool.py lines 46-55).",
+      "source": "Aggregation - commands",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Aggregation - commands",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with 'ready_with_gaps' is defensible; the repository contains a working sample and known gaps are documented in the builder report. No events are required to back this operator-level approval."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "questionable",
+      "comment": "Choosing Python 3.11 is defensible, but README states 'Python 3.10+'; the decision references a prompt assumption rather than explicit build artifacts. It's not harmful but there is a small mismatch between declared runtime in README and the recorded decision."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "The code uses OpenAI via LangChain when OPENAI_API_KEY is present (app/main.py lines 84-100). The decision to select OpenAI is reflected in the code and README notes."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Duplicate approval recorded; same rationale as D001."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "questionable",
+      "comment": "Duplicate of D002 (runtime choice). See D002 comment."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "The code implements an OpenAI/LangChain path with a deterministic fallback when OPENAI_API_KEY is absent (app/main.py lines 112-128), matching the recorded decision and evidence."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "The builder used the provided DOCUMENTDB_URI live cluster and did not provision resources. events.jsonl shows the run environment and the choice is implemented (app/main.py reads DOCUMENTDB_URI and no IaC was added)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Choosing nested capital object (capital.cet1, capital.total) is implemented in seed_data.py and aggregation_tool.py (seed_data.py line 31, aggregation_tool.py line 52). The reasoning source was 'model_default' but the choice is consistent and present in code."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Decision to rely on default _id index is implemented. It is defensible for a full-collection $group aggregation; README notes the aggregation is full-collection. (If filtering is later added, indexes should be added.)"
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Code implements a singleton MongoClient per process (app/tools/aggregation_tool.py lines 14-22), matching the decision and guidance from the documentdb-driver skill (events.jsonl shows the skill was loaded)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "LLM & PII guidance for DocumentDB samples",
+      "what_was_missing": "No service-specific guidance on whether and when to send per-position balances or PII to external LLMs. The discovered practice P17 is prior_knowledge_only (no public DocumentDB page was found).",
+      "where_searched": "Searches for 'Azure DocumentDB LLM PII guidance' and 'Azure DocumentDB privacy LLM' returned no service-specific guidance; general privacy docs exist elsewhere.",
+      "effect_on_this_build": "The builder conservatively sends only aggregates to the LLM, but an agent might send raw documents unless guidance is explicit; this could cause privacy leakage depending on developer choices.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short guidance page titled 'Using LLMs with Azure DocumentDB: privacy and PII best practices' that states: (1) do not send raw per-customer balance-level data to external LLMs; (2) prefer sending de-identified aggregates for commentary; (3) include example payloads that are acceptable and unacceptable; (4) example code showing how to reduce documents to aggregates before calling an LLM. Put this page under DocumentDB security/operational guidance.",
+      "priority": "high"
+    },
+    {
+      "topic": "Driver version and OIDC compatibility",
+      "what_was_missing": "Clear, discoverable guidance about which PyMongo driver versions are required for newer authentication modes (e.g., OIDC/MONGODB-OIDC). The repo pinned pymongo==4.4.0 but Microsoft docs show newer tested versions (>=4.7+ recommended for OIDC).",
+      "where_searched": "Microsoft Learn quickstarts and vector-search docs (quickstart-python, quickstart-python-vector-search) and skill docs.",
+      "effect_on_this_build": "The sample pins pymongo==4.4.0 which may lack support for some auth modes or features; users enabling Entra ID-based auth or OIDC may encounter failures.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A short note on the DocumentDB quickstart page and sample README that lists 'Tested PyMongo versions' and states min version for features (e.g., 'For MONGODB-OIDC/Entra integration ensure pymongo >= 4.7; we recommend pinning to 4.19.0 used in Microsoft quickstarts').",
+      "priority": "high"
+    },
+    {
+      "topic": "README: exact CLI and ARM resource types (mongoClusters)",
+      "what_was_missing": "The sample README does not explicitly state the exact Azure resource type name and the authoritative az CLI group for vCore DocumentDB clusters (Microsoft.DocumentDB/mongoClusters and az documentdb mongocluster).",
+      "where_searched": "Readiness findings and Microsoft Learn quickstarts (az documentdb mongocluster docs).",
+      "effect_on_this_build": "Risk of authors copying older Cosmos DB examples (databaseAccounts/az cosmosdb) which target a different service. This causes deploy or user confusion when trying to create clusters.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a short 'Naming and provisioning' paragraph to the README with: (1) exact ARM/Bicep resource type: Microsoft.DocumentDB/mongoClusters; (2) example az CLI command group 'az documentdb mongocluster create' and one-liner; (3) note that az cosmosdb examples may target a different service. Include links to the Microsoft Learn pages.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests run offline guidance",
+      "what_was_missing": "A guideline (and sample helper) showing how to write unit tests for DocumentDB-based samples that run without a live cluster, e.g., monkeypatching get_positions_collection or providing a fake collection client.",
+      "where_searched": "Repository tests and installed skills; no sample-specific guidance found in the repo.",
+      "effect_on_this_build": "Current tests require a DOCUMENTDB_URI or refer to a non-existent class, preventing local CI verification without a live cluster.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "An agent-kit rule and short README snippet: 'Unit tests must run offline by mocking pymongo.Collection or the sample's DB-adapter function. Provide an example pytest fixture that replaces get_positions_collection() with a fake collection implementing aggregate().' Include a minimal example test that does this.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example correctness",
+      "what_was_missing": "A valid, syntactically-correct .env.example that the README references. The current .env.example contains a malformed line (missing closing quote) which can confuse users copying it.",
+      "where_searched": "app/.env.example and README.",
+      "effect_on_this_build": "Minor friction: copy/paste may produce a malformed .env and cause immediate run errors for newcomers.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Replace .env.example with syntactically-correct placeholders and a short comment for each var. Example: DOCUMENTDB_URI=\"mongodb+srv://<user>:<pass>@<cluster>/?tls=true\". Include a one-line note about retrieving the connection string from 'az documentdb mongocluster list-connection-strings'.",
+      "priority": "medium"
+    },
+    {
+      "topic": "DocumentDB guidance for Decimal128 and aggregation currency handling",
+      "what_was_missing": "A short, discoverable example on the DocumentDB docs or agent-kit showing storing regulatory/monetary amounts as Decimal128 and showing $toDecimal usage in aggregation pipelines.",
+      "where_searched": "Microsoft Learn $toDecimal page and documentdb skills; guidance exists but an explicit short example for 'Basel III' style sums would help agents.",
+      "effect_on_this_build": "Builder stored numeric values as floats; adopting Decimal128 would make the sample safer for regulatory sums and avoid rounding differences.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a small 'Handling money and regulatory numerics' example page or snippet showing: 'Use bson.decimal128.Decimal128 for storage; example seed_data write; example aggregation using $toDecimal or ensuring Decimal128 propagation.'",
+      "priority": "high"
+    }
+  ]
+}
