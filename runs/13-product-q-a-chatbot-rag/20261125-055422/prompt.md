@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex RAG chatbot that indexes product descriptions, specs, and reviews into a DocumentDB vector store. On each user question, retrieve the top 5 relevant chunks, inject them as context, and generate a grounded answer. Apply context engineering to keep the prompt within token limits when product docs are long.

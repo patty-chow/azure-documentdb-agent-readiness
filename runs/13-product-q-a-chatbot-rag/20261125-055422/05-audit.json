@@ -1,0 +1,528 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements a working, minimal CLI RAG demo that seeds product documents and chunk documents into the live Azure DocumentDB database, retrieves top-5 chunks, and generates grounded answers (or a fallback) in an interactive REPL. Core engineering choices (singleton MongoClient, env-driven config, pinned dependencies, unit test) are present. However, the repository does not actually create or verify a cosmosSearch vector index (the MCP create_index call failed due to management tools being disabled), LlamaIndex was removed from requirements (so the sample is not implemented using LlamaIndex), embeddings were not computed in the verification run (OPENAI_API_KEY was not set), and several gallery checklist items (index creation automation, context-window token trimming, bulk ingestion optimization, infra-as-code) are incomplete or only partially addressed. The builder logged decisions for most major choices; a few in-code choices (vector index parameters attempted, text-search fallback) were not recorded as decisions and are reported in the audit trail. See Requirement Results, Practices checks and Doc Gaps below for actionable fixes and minimal edits to meet the full gallery checklist next time.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the chatbot in Python with LlamaIndex as a single RAG pipeline, using a LlamaIndex vector store backed by an Azure DocumentDB collection through a MongoDB-compatible Python driver (e.g. pymongo).",
+      "status": "not_met",
+      "evidence": "requirements.md / prompt: asks for LlamaIndex; app/requirements.txt does NOT include llama-index and app code does not import or call LlamaIndex. README mentions LlamaIndex but code uses custom chunking and retrieval (app.py).",
+      "cause": "builder_error",
+      "smallest_fix": "Restore LlamaIndex usage (re-add a llama-index-compatible version) or change the starter prompt to permit a non-LlamaIndex implementation; smallest code fix: add explicit LlamaIndex retriever pipeline and import in app.py and include a note in README about Python runtime constraint (or run sample on Python 3.11 with llama-index pinned)."
+    },
+    {
+      "requirement": "Index product descriptions, specs, and reviews: split them into chunks with LlamaIndex, embed each chunk, and store the chunk text and its embedding together on each document in Azure DocumentDB.",
+      "status": "partly_met",
+      "evidence": "app/seed.py lines 51-74: chunks are created from product fields and upserted as documents with 'chunk_text' and conditional 'embedding' fields (seed.py:57-71). However chunking is implemented with utils.chunk_text (not LlamaIndex) and embeddings are only computed when OPENAI_API_KEY is set (seed.py:63-70).",
+      "cause": "builder_error",
+      "smallest_fix": "Either (A) add LlamaIndex-based chunking/embed pipeline or (B) update the starter prompt to allow the current chunker. Also ensure seed.py is run without --skip-embeddings when OPENAI_API_KEY is present, and document that embeddings are required for vector-search behavior."
+    },
+    {
+      "requirement": "Create a cosmosSearch vector index in code (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field, with dimensions matching the embedding model used for the chunks.",
+      "status": "not_met",
+      "evidence": "events.jsonl shows an attempted documentdb_create_index call with cosmosSearchOptions(kind: \"vector-hnsw\", dimensions:1536,... ) which raised ToolExecutionException: \"Management tools are disabled by default. Set ENABLE_MANAGEMENT_TOOLS=true to opt in.\" (events.jsonl lines ~72). app/infra/README.md notes the index must match embedding dims, but no index exists in the cluster: events.jsonl documentdb_list_indexes returned only the _id index (line 71).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Make index creation tolerant: have seed.py attempt index creation only when an explicit flag (ENV or CLI) is set (e.g., ENABLE_MANAGEMENT_TOOLS=true) and otherwise print a clear manual index creation command in the script output/README. Alternatively, provide an IaC template that the operator can run separately."
+    },
+    {
+      "requirement": "On each user question, embed the question and retrieve the top 5 most relevant chunks through the LlamaIndex retriever (e.g. similarity_top_k=5), which runs a $search / cosmosSearch similarity query (COS, L2 or IP) against the index in Azure DocumentDB.",
+      "status": "partly_met",
+      "evidence": "app.py retrieve_top_k checks for documents with an 'embedding' field and OPENAI_API_KEY, computes a query embedding and builds an aggregation pipeline using $search with a kNN block (app.py lines 72-87). However the code does not use LlamaIndex's retriever class and if embeddings/index missing it falls back to a client-side text-search (fallback_text_search). During verification, vector path was not executed (no embeddings/index) and LlamaIndex is not installed.",
+      "cause": "builder_error",
+      "smallest_fix": "Either use LlamaIndex retriever API (install a compatible llama-index) or document that the sample uses the shown pymongo $search + knn aggregation, and add a check to fail early if embeddings exist but the index is missing (or attempt index creation when permitted)."
+    },
+    {
+      "requirement": "Inject the text of the retrieved chunks into the LLM prompt as context and generate the answer from that context (e.g. a LlamaIndex query engine or response synthesizer with a grounding instruction).",
+      "status": "met",
+      "evidence": "app.py generate_answer assembles context_text from retrieved chunks and calls openai.ChatCompletion.create with a prompt if OPENAI_API_KEY is present (app.py lines 112-117). If OpenAI is not configured, a fallback templated answer is returned (app.py lines 120-122).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Apply context engineering before the LLM call: measure the token size of the assembled prompt and, when long product docs would exceed the model's token limit, reduce the injected context (e.g. drop lower-ranked chunks or truncate chunk text) so the prompt fits within the limit.",
+      "status": "not_met",
+      "evidence": "app.py assembles all retrieved chunks into context_text but includes no token counting or truncation logic (generate_answer uses full join at line 112). README mentions 'apply context engineering' in the prompt but no code enforces token budgets.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a lightweight token-budget check (heuristic: characters→tokens or integrate tiktoken) and trim lower-ranked chunks or truncate chunk_text until within limit before calling the LLM. Add a unit test for the truncation behavior."
+    },
+    {
+      "requirement": "Accept user questions interactively and return the generated answer for each (e.g. a chat loop or chat endpoint).",
+      "status": "met",
+      "evidence": "app.py implements a CLI REPL loop that prompts for input and prints results (app.py lines 125-138). run_sample_query.py demonstrates a one-shot retrieval call (run_sample_query.py).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example lists placeholders and db.py reads DOCUMENTDB_URI from the environment (db.py lines 5-9, 15-19; app/.env.example lines 2-9).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI, EMBEDDING_MODEL, EMBEDDING_DIMS, OPENAI_API_KEY, LLM_MODEL, DB_NAME, PRODUCTS_COLLECTION, CHUNKS_COLLECTION (app/.env.example).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "app/.env.example and README set EMBEDDING_DIMS=1536; seed.py warns on size mismatch when embeddings are computed (seed.py lines 21, 66-68). However the sample was unable to create/verify an index in the cluster (events.jsonl shows index creation failed).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Either create the index (when management tools are enabled) with dimensions=EMBEDDING_DIMS, or make seed.py print a manual create-index command that the operator can run and verify dimensions before seeding embeddings."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "infra/README.md and README mention dimensions and engine preference (README line 36; infra/README.md). They do not include tuned parameter choices for scaling (nlist/m/efConstruction/etc.) or concrete recommendations for larger datasets.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a short table in infra/README.md describing recommended index kinds and parameter ranges for small demo vs medium vs large datasets (e.g. vector-ivf for <10k vectors, vector-hnsw for 10k–1M, diskann for >1M) and sample lBuild/lSearch examples."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "db.py implements a module-level _client and get_client() returns a singleton MongoClient with serverSelectionTimeoutMS and retry options (db.py lines 10-19).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "seed.py uses update_one(..., upsert=True) for products and chunks so seeding is idempotent for documents (seed.py lines 48-50 and 71). However the seed's attempt to create a vector index failed (events.jsonl line 72) and seed.py only computes embeddings when OPENAI_API_KEY present.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Make index creation optional and gated by an env flag; provide a clear manual index creation command in README/infra/README.md for users who can't enable management tools."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "The sample is a CLI REPL (no /search endpoint) and app.py does not explicitly validate empty queries beyond skipping when blank or exit (app.py lines 129-132). There is no HTTP endpoint implementation that would return structured errors.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If an HTTP search endpoint is desired, add a minimal FastAPI route /search that validates input (return 400 for empty query) and returns a clear error object on embedding failures; otherwise document in README that the CLI REPL expects non-empty questions."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "format_retrieval and run_sample_query.py include scores for retrieved chunks; vector path populates similarity via cosine() and fallback_text_search returns numeric scores (app.py lines 88-93, 100-106; run_sample_query.py lines 6-10).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "app/requirements.txt pins pymongo==4.5.0, python-dotenv==1.0.0, openai==1.0.0, pytest==7.4.0 (app/requirements.txt).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "tests/test_utils.py unit test (chunk_text) runs locally and passed during verification (events.jsonl shows pytest 1 passed) (events.jsonl lines 67 and 103).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "app/infra/README.md contains a reference note but there is no executable IaC template or Bicep/ARM/Terraform file in infra/; README explicitly says sample does NOT provision resources (app/infra/README.md and app/README.md lines 13 & infra README).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep or ARM template (or Terraform example) that targets Microsoft.DocumentDB/mongoClusters (as documented) and includes parameters for tier, storage, and region. Keep it optional and marked as an operator step (do not run in automated verification)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "README.md documents the sample purpose, prerequisites, quick start, seeding and that it does not provision infra (README.md). It does not include explicit clean-up commands for removing seeded data or indexes.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a 'Clean-up' section that shows how to remove the sample documents/collections (db.products.delete_many({'product_id': {'$regex':'p-'}}) or drop database) and how to remove any manually created vector indexes."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md, .env.example and other files use the term 'Azure DocumentDB' (README.md lines 1-3, .env.example lines 2-5).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create one long-lived MongoClient per process (singleton) and reuse it rather than opening a new client per request.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "app/db.py lines 10-19: module-level _client and get_client() create and reuse a MongoClient with serverSelectionTimeoutMS and retry options.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets in environment",
+      "practice": "Keep the DocumentDB connection string and credentials out of source control; read DOCUMENTDB_URI from environment (or an uncommitted config) and never log secrets.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": ".env.example contains only placeholders and db.py reads DOCUMENTDB_URI from environment (app/.env.example lines 2-9; app/db.py lines 5-9, 15-19).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector storage shape",
+      "practice": "Store vectors as dense numeric arrays (number[]) and include embedding model name and vector dimension metadata.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "seed.py stores 'embedding' as a numeric list on chunk documents when embeddings are computed (seed.py lines 63-69) and .env.example includes EMBEDDING_MODEL/EMBEDDING_DIMS (app/.env.example lines 3-5).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create vector index",
+      "practice": "When creating vector indexes, pick the algorithm and parameters to match scale and tune index parameters (numLists/m/efConstruction/lSearch/maxDegree) to balance recall and latency.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "violated",
+      "evidence": "events.jsonl shows documentdb_create_index attempted with cosmosSearchOptions kind vector-hnsw and dimensions 1536 but the call failed with 'Management tools are disabled...' (events.jsonl line 72). No index exists (documentdb_list_indexes returned only _id) (events.jsonl line 71).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Make seed.py create index only when an opt-in flag is set, or provide a manual create-index command in infra/README.md. Example: gate creation on ENABLE_MANAGEMENT_TOOLS env var and print the createIndexes JSON if not set.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Push filters into vector query",
+      "practice": "When running a vector kNN ($search with cosmosSearch), push structured predicates into the search (filter/pre_filter) so filtering happens inside the ANN search.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample does not include example filters on product metadata in the vector kNN pipeline; app.py's $search pipeline (app.py lines 78-86) does not include a 'filter' field in the aggregation when attempting vector search.",
+      "source": "documentdb-vector-search",
+      "searched": "Searched installed skill 'documentdb-vector-search' for guidance; the skill recommends using 'filter' inside cosmosSearch to avoid client-side post-filtering.",
+      "fix": "Add optional filter parameter to retrieve_top_k that pushes metadata predicates into the $search call (e.g., cosmosSearch.filter).",
+      "sources": [
+        {
+          "title": "documentdb-vector-search (vector-knn-query.md)",
+          "url": ""
+        },
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": "A short example in the README showing how to restrict vector search by product category (add 'filter' to the cosmosSearch block)."
+    },
+    {
+      "topic": "Full-text / hybrid search",
+      "practice": "Prefer DocumentDB's search index and $search aggregation (createSearchIndexes) for full-text features rather than relying on community MongoDB text indexes and $text.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/full-text-search-overview#how-azure-documentdb-full-text-search-works",
+      "status": "violated",
+      "evidence": "The sample falls back to fallback_text_search that scans chunks client-side (app.py lines 50-67) rather than using createSearchIndexes/$search for full-text fallback. README notes fallback behavior but does not implement or show createSearchIndexes usage.",
+      "source": "Full-text search in Azure DocumentDB",
+      "searched": "",
+      "fix": "Implement a createSearchIndexes example (or show portal/az CLI steps) and change fallback_text_search to call the server-side $search textSearch operator when a search index is present.",
+      "sources": [
+        {
+          "title": "Full-text search in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/full-text-search-overview#how-azure-documentdb-full-text-search-works"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index verification",
+      "practice": "Use explain()/query plan output and the DocumentDB tooling to verify index definitions and confirm index usage.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/mcp-toolkit#tool-catalog",
+      "status": "violated",
+      "evidence": "events.jsonl shows documentdb_list_indexes returned only _id (events.jsonl line 71) and the create index call failed; the sample does not include a follow-up verify-explain step.",
+      "source": "Azure DocumentDB MCP Toolkit / How to read explain output",
+      "searched": "",
+      "fix": "Add an explicit verification step in seed.py or a separate script to call MCP list_indexes and an explain() on a representative query after index creation and throw a helpful message if index not found.",
+      "sources": [
+        {
+          "title": "Azure DocumentDB MCP Toolkit / How to read explain output",
+          "url": "https://learn.microsoft.com/azure/documentdb/mcp-toolkit#tool-catalog"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document provenance",
+      "practice": "Record provenance metadata (source id, chunk index, source URL/timestamp) with each chunk so answers can cite sources.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/build-rag-applications",
+      "status": "violated",
+      "evidence": "seed.py stores metadata: {'title': p.get('title')} on each chunk (seed.py line 61), but does not populate source URL, timestamp or chunk-origin fields (no 'source_url' or 'created_at' fields).",
+      "source": "Build RAG applications with Azure DocumentDB",
+      "searched": "",
+      "fix": "Store provenance fields on each chunk: {'source_doc_id': product_id, 'chunk_index': i, 'source_title': title, 'seeded_at': ISOtimestamp, 'embedding_model': EMBEDDING_MODEL}.",
+      "sources": [
+        {
+          "title": "Build RAG applications with Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/build-rag-applications"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size limit",
+      "practice": "Document size must not exceed 16 MB; design chunking and chunk-size to keep documents well under that limit.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/max-document-size",
+      "status": "followed",
+      "evidence": "utils.chunk_text uses max_chars=800 default so chunks are small (utils.py lines 3-17); sample product docs are small (app/data/sample_products.json).",
+      "source": "Document size and batch write limits in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Document size and batch write limits in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/max-document-size"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk ingestion",
+      "practice": "Use SDK bulk/ingestion features when ingesting large numbers of documents or parallel async clients; tune concurrency to avoid throttling.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/vector-search-performance-tips#tips-for-optimizing-insert-throughput",
+      "status": "violated",
+      "evidence": "seed.py inserts/upserts chunks one-by-one with update_one(..., upsert=True) inside a Python loop (seed.py lines 48-71) instead of using bulk operations.",
+      "source": "Tips for optimizing vector indexing & search performance / bulk execution",
+      "searched": "",
+      "fix": "Use pymongo insert_many with ordered=False or the driver's bulk API for larger datasets and provide a concurrency limit; add guidance in README and implement optional --bulk flag in seed.py.",
+      "sources": [
+        {
+          "title": "Tips for optimizing vector indexing & search performance / bulk execution",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/vector-search-performance-tips#tips-for-optimizing-insert-throughput"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries & idempotency",
+      "practice": "Implement retries for transient faults with exponential backoff and jitter, and make write operations idempotent (upserts or client-generated idempotency tokens).",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "not_assessable",
+      "evidence": "MongoClient created with retryWrites=True (db.py line 18), but the application does not implement an explicit retry/backoff wrapper for network/embedding errors or retryable write loops in seed.py.",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add a small retry helper (exponential backoff + jitter) used for embedding ops and for any control-plane calls; mark writes as idempotent (already using upsert) and add guidance in README.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "RAG prompt engineering (token budget)",
+      "practice": "Retrieve top-N chunks, deduplicate/threshold them, and truncate or summarize assembled context to fit the LLM token budget.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/architecture/ai-ml/guide/rag/rag-prompt-engineering#manage-context-window-and-token-limits",
+      "status": "violated",
+      "evidence": "app.py retrieves top-5 chunks but does not deduplicate or enforce a token budget; generate_answer uses full joined context (app.py lines 112-116).",
+      "source": "RAG prompt engineering (Azure architecture guidance)",
+      "searched": "",
+      "fix": "Add a token-budgeting function that (a) estimates tokens for context_text, (b) removes or truncates the lowest-ranked chunks until under limit, and (c) optionally applies a short extractive summarization per chunk.",
+      "sources": [
+        {
+          "title": "RAG prompt engineering (Azure architecture guidance)",
+          "url": "https://learn.microsoft.com/azure/architecture/ai-ml/guide/rag/rag-prompt-engineering#manage-context-window-and-token-limits"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Administrative approval recorded; the events log shows an operator approval and is consistent with the build choices."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Python is consistent with the prompt and the run environment; the code is Python and events show the decision was logged before build steps."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Use of pymongo is visible in requirements and imports; the documentdb-driver skill was loaded as evidence. Events show the skill was loaded (events.jsonl)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from env is implemented in db.py and .env.example; decision is supported by code and events."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Decision not to provision resources matches the run policy; the README documents this and no provisioning calls were made."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Products in 'products' and chunks in 'product_chunks' are present in seed.py and in the DB; this aligns with code and events (documentdb_find_documents)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "The embedding model selection (text-embedding-3-small, 1536 dims) is documented in .env.example and seed.py uses EMBEDDING_DIMS; the decision aligns with README and readiness findings."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Default LLM model name gpt-4o-mini is used in .env.example and app.py; the decision is reflected in code."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The CLI REPL choice is visible in app.py; running the REPL and run_sample_query was part of verification (events.jsonl)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Events show pip install failed for the originally pinned openai version and the decision to pick openai==1.0.0 is justified by the pip error recorded in events.jsonl."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "The remove-llama-index decision is documented and matches the pip compatibility errors for llama-index vs the runtime Python version; the events log shows the pip failure and subsequent edits to requirements.txt."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Removing numpy to avoid build-toolchain issues and replacing numeric code with a pure-Python cosine is recorded and visible in events.jsonl and app.py; the reasoning and evidence are present."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Embedding model selection & index dimensions",
+      "what_was_missing": "No authoritative guidance recommending a default embedding provider/model and the embedding dimensionality to use in samples (e.g., when to pick OpenAI text-embedding-3-small (1536) vs another model).",
+      "where_searched": "Microsoft Learn docs and installed DocumentDB skills (documentdb-vector-search, documentdb-indexing).",
+      "effect_on_this_build": "The builder picked OpenAI text-embedding-3-small (1536) as a reasonable default (decision D007). Without an explicit recommended default, different builders may pick incompatible dims or forget to document the required index dimensions, causing mismatch or silent failures.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Embedding & index dimensions' page that: (1) lists recommended embedding models and their output dimensions for sample usage (e.g., OpenAI text-embedding-3-small → 1536), (2) shows the exact createIndexes JSON with cosmosSearchOptions.dimensions set to the EMBEDDING_DIMS value, and (3) includes a checklist: set EMBEDDING_MODEL / EMBEDDING_DIMS in .env and ensure index dimensions match before seeding embeddings.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index creation examples (pymongo runCommand)",
+      "what_was_missing": "A copy-pasteable Python (pymongo) example that calls createIndexes/runCommand with cosmosSearchOptions for vector-hnsw / vector-diskann and the exact JSON used to create such an index.",
+      "where_searched": "Azure docs (vector-search pages) and MCP skill resources; examples exist in prose but no minimal pymongo code snippet was obvious to an agent.",
+      "effect_on_this_build": "The builder attempted to create an index via the MCP helper but the helper failed; a small pymongo example in the docs would have allowed an alternate automated creation path or a clearer manual step.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Publish a 'create vector index with pymongo' quickstart: a short Python script that connects using pymongo, runs db.command({'createIndexes': '<coll>', 'indexes': [{ 'name': 'embedding_vec', 'key': {'embedding': 'cosmosSearch'}, 'cosmosSearchOptions': {...}}]}) and then runs explain() on a small kNN aggregation. Include the minimal permission/role required.",
+      "priority": "high"
+    },
+    {
+      "topic": "Guidance for management-tool opt-in and MCP index creation failures",
+      "what_was_missing": "Clear public instruction that the MCP management tools are opt-in (ENABLE_MANAGEMENT_TOOLS) and what operators must set to allow automated create-index operations from agent tooling.",
+      "where_searched": "MCP toolkit docs and skill resources; events showed an opt-in error but documentation linkage for this opt-in is sparse in an agent-discoverable location.",
+      "effect_on_this_build": "Automated index creation failed with 'Management tools are disabled by default.' This prevented the sample from fully exercising the vector-search path during verification.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Management tool opt-in' note on the MCP Toolkit docs and the create-index quickstarts: explain ENABLE_MANAGEMENT_TOOLS usage, security implications, and an example CLI command to enable it for a given session or profile.",
+      "priority": "high"
+    },
+    {
+      "topic": "Fallback search guidance when vector index missing",
+      "what_was_missing": "Explicit guidance that samples should implement a clear server-side text-search fallback via createSearchIndexes/$search (or show recommended local fallback behavior) and include example code for both.",
+      "where_searched": "Azure vector-search and full-text docs; the docs describe createSearchIndexes but do not give a combined code snippet showing fallback strategies.",
+      "effect_on_this_build": "The sample implements a client-side substring-scoring fallback. That works for tiny demos but is inefficient and could encourage bad patterns when builders assume the server handles text search.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A 'RAG sample fallback' section that shows: (a) server-side text index createSearchIndexes example, (b) how to detect index presence and use $search textSearch as fallback, and (c) how to degrade to a safe client-side fallback with a clear note about performance/cost.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Bulk ingestion and batch-size recommendations",
+      "what_was_missing": "Documentation stating recommended batch sizes, use of AllowBulkExecution/bulk APIs, and safe concurrency limits for seed scripts when ingesting vectors into DocumentDB.",
+      "where_searched": "Microsoft Docs and vector-search tips pages; agent searches returned general advice but not concrete small-sample defaults.",
+      "effect_on_this_build": "seed.py uses per-document upserts which is fine for tiny data sets but may mislead builders creating larger datasets into non-performant ingestion patterns.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a small 'Seeding large datasets' page: recommended insert_many batch sizes (e.g., 500–2000 depending on cluster tier), sample code for pymongo bulk API with ordered=False, and notes on AllowBulkExecution toggles if applicable.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Embedding dtype & normalization guidance",
+      "what_was_missing": "Public guidance that states whether embeddings should be stored as float32, float16, or another dtype in DocumentDB, and whether they should be L2-normalized for cosine similarity queries.",
+      "where_searched": "Microsoft docs and installed skills (documentdb-vector-search) — skill mentions normalization in resources but public docs do not give a quick, agent-discoverable statement about dtype choices.",
+      "effect_on_this_build": "The sample stores embeddings as lists of floats and computes cosine in client; missing dtype guidance may cause mismatches for some drivers or indexes (and affects storage/perf choices).",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A short note in the vector-search docs: recommend storing vectors as dense number[] in the DB (float32 preferred), and recommend L2-normalizing vectors when using COS metric with an example normalization snippet.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Embedding model & LLM provider example for samples",
+      "what_was_missing": "A short canonical paragraph in the 'build-rag-applications' doc that lists example embedding and LLM provider choices (OpenAI, Azure OpenAI, local Llama), with sample .env entries and expected dims.",
+      "where_searched": "RAG guidance and DocumentDB samples; this guidance was found in disparate places but not consolidated for sample authors.",
+      "effect_on_this_build": "Builder made reasonable defaults (OpenAI embeddings + gpt-4o-mini) but had to choose versions and dims without a canonical suggested default; this led to inconsistent dependency choices and removal of LlamaIndex due to environment mismatch.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A brief 'Choose your embedding & LLM' section in the RAG quickstart showing three recommended example stacks (A: OpenAI embeddings + OpenAI Chat, B: Azure OpenAI embeddings + Azure OpenAI Chat, C: local Llama + local embedding model), and .env templates for each.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Token-budgeting example for RAG prompt engineering",
+      "what_was_missing": "A compact example function showing how to estimate tokens (heuristic or using tiktoken) and progressively truncate lower-ranked chunks to fit a model's token budget.",
+      "where_searched": "RAG prompt-engineering docs on Microsoft Learn; they discuss theory but have no code snippet the agent could easily reuse for a Python sample.",
+      "effect_on_this_build": "The sample omitted token-trimming logic; a ready-to-copy example would make adding this check trivial.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Provide a 20–40 line Python helper that uses a simple char→token heuristic and demonstrates dropping/truncating chunks until under budget; include a comment recommending replacement with tiktoken when available.",
+      "priority": "medium"
+    }
+  ]
+}
