@@ -1,0 +1,602 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "Documentation search was not available to the auditor (documentation_search_available: false), so all \"not found\" statements below mean \"not searchable from this machine\" rather than a definitive absence on the web. The sample implements the requested Node.js + Mongoose service and most gallery hygiene: it reads DOCUMENTDB_URI from the environment, reuses a single Mongoose connection scoped to the sample database, provides an HTTP POST /events endpoint, an idempotent seed that creates indexes non-destructively, and a README describing setup/run. The main functional correctness issue is the upsert implementation: it sets the entire source subdocument (sources.<source>) to the incoming attributes object rather than merging only the dotted paths present in the event; this can clobber unrelated fields previously present under the same source. Other findings: dependencies are not strictly pinned in package.json (caret ranges are used though package-lock.json exists), there are no unit tests that run without a live cluster, and no infrastructure-as-code is included. Decisions recorded in decisions.jsonl are mostly sound; one (D007) is questionable because it claims the upsert avoids overwriting unrelated fields while the code will overwrite the whole source subdocument.",
+  "requirement_results": [
+    {
+      "requirement": "The service is written in Node.js and uses the Mongoose ODM, with a Mongoose schema and model for the canonical customer profile document stored in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/models/customer.js lines 6-23 define a Mongoose schema (CustomerSchema) and createModel(db) returning db.model('Customer', CustomerSchema).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The canonical profile schema carries a stable `customerId` field and one nested sub-document per source system (CRM, e-commerce and support).",
+      "status": "met",
+      "evidence": "app/src/models/customer.js lines 6-12 (customerId field and sources.crm, sources.ecommerce, sources.support).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The service exposes an entry point that receives a customer event carrying its originating source system, the customer's `customerId` and that system's attributes (e.g. an HTTP endpoint or an exported handler function).",
+      "status": "met",
+      "evidence": "app/src/routes/events.js lines 6-13 define POST /events expecting { source, customerId, attributes }; app/src/index.js registers the route (lines 9 and 13-18).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Identity resolution matches an incoming event to its profile on the stable `customerId` alone: the update's filter selects the document by `customerId`.",
+      "status": "met",
+      "evidence": "app/src/lib/upsert.js lines 11-13: const filter = { customerId }; the update call uses that filter (line 25).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Each event is applied through a Mongoose upsert (e.g. `findOneAndUpdate` or `updateOne` with `upsert: true`), creating the canonical profile document when none exists for that `customerId` and updating the existing one otherwise.",
+      "status": "met",
+      "evidence": "app/src/lib/upsert.js lines 23-26 use updateOne(filter, update, { upsert: true }).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The update merges the event's attributes with the `$set` operator on dotted paths inside the originating source system's sub-document (e.g. `crm.email`), writing only the fields present in the event.",
+      "status": "not_met",
+      "evidence": "app/src/lib/upsert.js lines 12-16 build setPath = `sources.${source}` and then $set [setPath]: attributes (this replaces the whole source subdocument with the attributes object rather than setting dotted sub-fields).",
+      "cause": "builder_error",
+      "smallest_fix": "Update upsertEvent to set individual dotted fields instead of replacing the whole subdocument. Example smallest change: build update.$set entries per attribute key (e.g. for each [k,v] in attributes set update.$set[`sources.${source}.${k}`] = v) and then call updateOne(filter, update, { upsert: true })."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI (line 4) and app/src/db.js reads process.env.DOCUMENTDB_URI (line 4) and exits when not set (lines 5-8). No real credentials are committed.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI and PORT placeholders (lines 4-5) and sample URI examples (lines 7-9). The code only requires DOCUMENTDB_URI and optionally PORT.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use any vector index or embeddings; repo contains no embedding model or vector-index creation.",
+      "cause": "none",
+      "smallest_fix": "If vectors are added later, include explicit dims and model mapping in seed/index creation code and README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexes exist in the repo; README does not document any vector index parameters.",
+      "cause": "none",
+      "smallest_fix": "N/A unless the sample adds vector search; then document algorithm_config, m/efConstruction and dims in README and seed script."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 10-16 cache mainConnection and return the same mongoose connection; routes call dbModule.connect() but it returns the reused connection (line 14-21).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.js reads sample-data/events.json (lines 24-26) and upserts each event (line 30). It calls Customer.createIndexes() inside a try/catch and handles index conflicts non-destructively (lines 13-22). The run logs show the seed was executed twice and the second run completed (events.jsonl run outputs).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "The sample exposes only POST /events and has no /search endpoint; no embedding or search logic is present.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search endpoint (or a separate sample) and implement explicit checks returning HTTP 400 for empty queries and 502/500 with clear error messages if embedding service calls fail."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search or embedding implementation exists in this repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If search is added, include similarity score in the JSON response and tests that assert its presence."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "partly_met",
+      "evidence": "This is a Node.js project: app/package.json lists dependencies with caret ranges (dotenv: ^16.3.1, express: ^4.18.2, mongoose: ^7.6.1). A package-lock.json is present in the repo, which locks the dependency graph for reproducible installs, but package.json uses ranged semver, not exact pins.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Either pin exact dependency versions in package.json (remove caret and use exact versions) or add guidance in README to use npm ci and commit package-lock.json (already present)."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files are present and no test framework is configured in package.json.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock Mongoose (or use an in-memory Mongo stub) to test upsert logic and validation. For example, a test for upsertEvent that stubs db.model(...).updateOne and asserts called arguments."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "There are no ARM/Bicep/Terraform files or az CLI provisioning scripts in the repo; README explicitly says the sample does not provision resources (app/README.md line 41).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an optional infra/ folder with an example (ARM/Bicep/Terraform) that shows the correct resource type and minimal parameters for creating a DocumentDB account, clearly marked optional."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md documents what the sample shows, prerequisites and quickstart setup/run (lines 5-27), but it does not include explicit clean-up steps to remove created data/collections.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a short \"clean-up\" section to README with commands to drop the sample collection or instructions to run a cleanup script (or explain how to remove the sample DB/collection safely)."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md uses 'Azure DocumentDB' (line 3 and elsewhere) and the code/comments refer to DocumentDB. No Cosmos or other vendor names are used in the sample files.",
+      "cause": "none",
+      "smallest_fix": "none"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection reuse",
+      "practice": "Create and reuse a single client for the life of the process (do not open per-request connections).",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 10-16 (mainConnection caching and early return) and line 20 (useDb('sample_customer_360_01')).",
+      "source": "src/db.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.js",
+          "url": ""
+        },
+        {
+          "title": "src/db.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection options",
+      "practice": "Use the driver/Mongoose connection options and the provided connection string so driver-level TLS and SRV handling remain correct; avoid hardcoding conflicting flags in code.",
+      "category": "connection",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P12",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/db.js lines 16-19 include a comment 'avoid hardcoding tls/ssl flags; the URI provided at runtime should include required options.' The repo does not document exact option values to use for this managed DocumentDB product.",
+      "source": "src/db.js",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short, authoritative Mongoose connect snippet (pinned to the tested Mongoose version) showing recommended options for the managed DocumentDB cluster (e.g., which tls/ssl/replicaSet/retryWrites/connectTimeoutMS values to include) would let an agent verify and implement recommended flags."
+    },
+    {
+      "topic": "Secrets in repo",
+      "practice": "Read the cluster connection string only from an environment variable (DOCUMENTDB_URI) at runtime and do not commit real credentials; provide a .env.example with a placeholder instead.",
+      "category": "authentication/secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI (line 4); app/src/db.js reads process.env.DOCUMENTDB_URI (line 4) and errors if unset (lines 5-8).",
+      "source": ".env.example / src/db.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example / README.md / src/db.js",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": "src/db.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unique index on customerId",
+      "practice": "Create a unique index on customerId so identity resolution and upserts can rely on a stable unique key.",
+      "category": "indexing/data_model",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/models/customer.js line 18 declares CustomerSchema.index({ customerId: 1 }, { unique: true }); scripts/seed.js calls Customer.createIndexes() (line 14) and handles conflicts.",
+      "source": "src/models/customer.js / scripts/seed.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/models/customer.js",
+          "url": ""
+        },
+        {
+          "title": "src/models/customer.js",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent upserts",
+      "practice": "Perform single-document idempotent upserts using updateOne with upsert:true and $set/$setOnInsert (set updatedAt and setOnInsert createdAt) to keep writes atomic and safe for concurrent updates.",
+      "category": "data_model/transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/lib/upsert.js lines 13-22 show $set updatedAt and $setOnInsert createdAt/customerId and line 25 uses updateOne(..., { upsert: true }).",
+      "source": "src/lib/upsert.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/lib/upsert.js / README.md",
+          "url": ""
+        },
+        {
+          "title": "src/lib/upsert.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Per-source nested subdocuments",
+      "practice": "Model each source system as a nested subdocument (sources.crm, sources.ecommerce, sources.support) so source-specific attributes are stored under each source key.",
+      "category": "data_model",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/models/customer.js lines 8-11 define sources.crm, sources.ecommerce and sources.support as subdocuments (SourceSchema).",
+      "source": "src/models/customer.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/models/customer.js / README.md",
+          "url": ""
+        },
+        {
+          "title": "src/models/customer.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Flexible source schema",
+      "practice": "Use a flexible SourceSchema (strict: false) for source subdocuments so events with different attribute shapes can be accepted without prior schema changes.",
+      "category": "data_model/validation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/models/customer.js line 4 defines const SourceSchema = new Schema({}, { strict: false }).",
+      "source": "src/models/customer.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/models/customer.js",
+          "url": ""
+        },
+        {
+          "title": "src/models/customer.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent index creation",
+      "practice": "Create indexes in an idempotent, non-destructive way (call createIndexes and handle IndexKeySpecsConflict rather than dropping existing indexes).",
+      "category": "indexing/provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.js lines 13-22 call Customer.createIndexes() and catch IndexKeySpecsConflict to skip destructive changes; events.jsonl shows initial attempt produced an index conflict and seed was updated to handle it.",
+      "source": "scripts/seed.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Input validation",
+      "practice": "Validate incoming event shape at the API boundary and return HTTP 400 for missing required fields (require source, customerId, attributes).",
+      "category": "input_validation/observability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/routes/events.js lines 6-11 check for !source || !customerId || !attributes and return 400 with an error JSON.",
+      "source": "src/routes/events.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/routes/events.js",
+          "url": ""
+        },
+        {
+          "title": "src/routes/events.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Set vs replace for source attributes",
+      "practice": "Model each source system as a nested subdocument and update that source key with targeted $set of the changed sub-paths so each source’s data is isolated and partial updates do not overwrite unrelated fields.",
+      "category": "data_model",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/src/lib/upsert.js lines 12-16 set update.$set[setPath] = attributes which replaces the whole sources.<source> object rather than setting only the provided attributes via dotted sub-paths.",
+      "source": "src/lib/upsert.js",
+      "searched": "",
+      "fix": "Change upsertEvent to generate $set entries per nested attribute (e.g. update.$set[`sources.${source}.${field}`] = value for each field) or recursively merge per-field so existing unrelated fields under the same source are preserved.",
+      "sources": [
+        {
+          "title": "README.md / src/lib/upsert.js / src/models/customer.js",
+          "url": ""
+        },
+        {
+          "title": "src/lib/upsert.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection pool sizing",
+      "practice": "Configure a connection pool sized to the workload rather than opening many short-lived connections per request; set maxPoolSize appropriate to app concurrency.",
+      "category": "connection",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/db.js does not explicitly set maxPoolSize; it relies on mongoose.connect(URI, {}) and comments (lines 16-19) advising URI-driven options. No public guidance in this run documents the recommended pool size for this product.",
+      "source": "src/db.js",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short guidance page stating recommended maxPoolSize defaults and examples for low/high concurrency deployments for this managed DocumentDB product."
+    },
+    {
+      "topic": "Idempotency and event dedupe",
+      "practice": "Make updates idempotent by using upsert patterns and timestamps (createdAt/updatedAt); track event deduplication at the application layer if needed.",
+      "category": "retries/idempotency",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P17",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "The sample uses upsert with $setOnInsert createdAt and $set updatedAt (app/src/lib/upsert.js lines 14-21) which provides basic idempotency at the document level; it does not store per-event eventId for dedupe.",
+      "source": "src/lib/upsert.js",
+      "searched": "",
+      "fix": "If dedupe is required, store lastAppliedEventId per source or an events log; add logic in upsertEvent to ignore duplicate eventIds.",
+      "sources": [],
+      "what_would_help": "A short spec describing when to include eventId tracking and example schema additions to the Customer profile would let an agent implement event deduplication."
+    },
+    {
+      "topic": "Retry/backoff",
+      "practice": "Implement retry with exponential backoff and jitter for transient network errors and throttling (429).",
+      "category": "retries",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P18",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "No retry/backoff logic is present in DB calls or seed scripts; app/src/lib/upsert.js calls Customer.updateOne() without retries.",
+      "source": "src/lib/upsert.js",
+      "searched": "",
+      "fix": "Add a small retry wrapper to upsertEvent that retries on transient network errors and 429 responses with exponential backoff and jitter, limited to a small number of attempts.",
+      "sources": [],
+      "what_would_help": "A recommended retry policy example for this managed DocumentDB product (which error codes to retry, recommended max attempts and backoff parameters)."
+    },
+    {
+      "topic": "Avoid unbounded document growth",
+      "practice": "Avoid unbounded document growth by keeping profile documents small or moving high-cardinality/time-series events into a separate collection.",
+      "category": "data_model/provisioning",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample keeps per-source attributes small in sample-data/events.json; repo contains no explicit caps or patterns for offloading high-cardinality data.",
+      "source": "sample-data/events.json / src/models/customer.js",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "Guidance page describing document-size limits for this managed DocumentDB product and recommended patterns (when to move events to a separate collection and sample schema)."
+    },
+    {
+      "topic": "Indexing for query patterns",
+      "practice": "Create indexes that match your read/query patterns and avoid broad wildcard indexes over large nested subdocuments.",
+      "category": "indexing/queries",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P20",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "Sample creates a unique index on customerId and nothing else (src/models/customer.js); the app's query patterns are simple (fetch by customerId), so the index set is minimal.",
+      "source": "src/models/customer.js",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "Documentation stating RU implications of additional indexes and examples of partial/sparse indexes for optional source fields would help decide further indexing."
+    },
+    {
+      "topic": "DB-level schema validation",
+      "practice": "Use schema validation on the DB if you need to enforce document shapes; Mongoose validation alone is not DB-level enforcement.",
+      "category": "data_model/validation",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P29",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "Repository uses Mongoose schemas for application-level validation but contains no DB-level JSON Schema validators or createCollection validators.",
+      "source": "src/models/customer.js",
+      "searched": "",
+      "fix": "If DB-level enforcement is desired, add a createCollection call in seed.js with a JSON Schema validator for required fields (customerId, sources object shape) and document it in README.",
+      "sources": [],
+      "what_would_help": "A short example of the collection validator JSON schema and a seed snippet that calls db.createCollection(..., { validator: { $jsonSchema: ... } })."
+    },
+    {
+      "topic": "README completeness",
+      "practice": "The README states what the sample shows, prerequisites, setup, run and clean-up steps.",
+      "category": "sample hygiene",
+      "availability": "discovered_and_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/README.md includes what the sample shows, prerequisites and quickstart (lines 5-27). Clean-up is missing (limitations mention no provisioning).",
+      "source": "README.md",
+      "searched": "",
+      "fix": "Add an explicit clean-up section to README explaining how to remove or clean sample data/collection.",
+      "sources": [
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator decision. The repo contains trade-offs and missing items consistent with 'ready with gaps'."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Decision to use Node.js + Express + Mongoose is consistent with the prompt and implementation (app/package.json and code)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Decision to read DOCUMENTDB_URI from environment is reflected in app/src/db.js lines 4-8. Events show earlier logging attempts failed due to a validation constraint but the final decision D003 is recorded and matches the code."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Decision not to provision Azure resources is consistent with run policy; README explicitly states the sample does not provision resources (app/README.md line 41). The events log shows the policy reason_source was model_default."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Decision to create a unique index on customerId is implemented in the schema and seed script (app/src/models/customer.js line 18 and scripts/seed.js lines 13-16)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Decision to model nested sub-documents per source is implemented (app/src/models/customer.js lines 8-11)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "questionable",
+      "comment": "The decision states upserts will use $set on nested 'sources.<source>' to avoid overwriting unrelated fields. The code (app/src/lib/upsert.js lines 12-16) does $set on the whole sources.<source> object, which overwrites existing fields under that same source. The decision's stated intent (avoid overwriting unrelated fields inside the same source subdocument) is not achieved by the implementation—either the decision or the implementation is inconsistent with the intended merging behavior."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision to use Mongoose 7.x is reflected in package.json dependencies (mongoose ^7.6.1)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Decision to detect existing conflicting index and skip recreation is supported by the seed script's error handling (scripts/seed.js lines 13-22) and by the events log showing an initial index conflict followed by a fixed seed run."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Authoritative Mongoose connection options for DocumentDB",
+      "what_was_missing": "A short authoritative snippet showing the recommended mongoose.connect invocation and a list of driver options (tls/ssl, replicaSet, retryWrites, connectTimeoutMS, serverSelectionTimeoutMS, maxPoolSize) appropriate for this managed Azure DocumentDB product.",
+      "where_searched": "Local repo files only; documentation search unavailable in this environment.",
+      "effect_on_this_build": "The sample deliberately avoids hardcoding flags and asks the operator to supply a correct DOCUMENTDB_URI. Without a canonical snippet, builders may either omit required flags or accidentally hardcode deprecated driver options.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Page title: 'Connecting to Azure DocumentDB with Mongoose'\nOutline: brief explanation of using DOCUMENTDB_URI, an annotated sample mongoose.connect(process.env.DOCUMENTDB_URI, { /* recommended options */ }) pinning options known to be required for the product and explanation of which options to avoid; recommended maxPoolSize guidance and example for low/high concurrency; note on driver versions. Include tested snippet pinned to Mongoose 7.x.",
+      "priority": "high"
+    },
+    {
+      "topic": "Authentication methods and whether Microsoft Entra ID is supported",
+      "what_was_missing": "Authoritative statement of supported data-plane authentication methods (account keys / username+password vs Microsoft Entra (AAD) token authentication) for the managed MongoDB-compatible DocumentDB product.",
+      "where_searched": "Local repo files only; documentation search unavailable.",
+      "effect_on_this_build": "The sample uses DOCUMENTDB_URI (username/password) but the README does not explain whether AAD is supported; users might try unsupported authentication mechanisms or miss recommended secure methods.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Short page titled 'Authentication options for Azure DocumentDB (MongoDB-compatible)'. Describe supported methods, example connection string forms, and recommended practice (use connection string stored in secret store for CI; mention whether AAD data-plane auth is supported or not).",
+      "priority": "high"
+    },
+    {
+      "topic": "Exact vector-index creation API and examples",
+      "what_was_missing": "Concrete examples showing how to create DiskANN/HNSW/IVF vector indexes (API call or createIndex invocation), and the mapping between embedding model dimensions and index dims.",
+      "where_searched": "Local repo files only; documentation search unavailable.",
+      "effect_on_this_build": "The run environment mentions a vector-capable cluster, but the sample omitted vector handling because the correct create-index call and parameters are not documented locally. Builders may either omit vector index creation or attempt incorrect Atlas-style options.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Page titled 'Creating vector indexes on Azure DocumentDB'. Include exact index creation commands (db.collection.createIndex(...)) or management API calls accepted by this product, the index options format (metric, dims, algorithm_config), example parameters for small sample vs larger datasets, and guidance on RU costs for dims and algorithm choices.",
+      "priority": "high"
+    },
+    {
+      "topic": "CLI / ARM resource type for provisioning examples",
+      "what_was_missing": "Authoritative CLI/ARM/Terraform snippet showing the correct resource provider and resource type to provision this managed DocumentDB cluster (so README IaC examples are accurate).",
+      "where_searched": "Local repo files and readiness notes; documentation search unavailable.",
+      "effect_on_this_build": "README currently states the sample does not provision resources. If an IaC example is later added, it must use the correct resource type; otherwise README would mislead readers who attempt to automate provisioning.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A small doc 'Provisioning examples' with az CLI example, an ARM/Bicep snippet, and a Terraform example using the correct provider/resource type. Mark them optional and include placeholders only.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Change-stream and feature support matrix",
+      "what_was_missing": "A short matrix stating support for key MongoDB features (change streams, transactions, server-side JS, aggregation operator support) for the specific managed DocumentDB product and the reported MongoDB wire protocol version.",
+      "where_searched": "Local repo and readiness notes; documentation search unavailable.",
+      "effect_on_this_build": "Builders may assume change streams or other features are/are not available and design samples that break on the live cluster. This sample avoided change-streams but a README note would reduce confusion.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Page 'Feature compatibility' listing the product's supported MongoDB wire protocol versions (e.g., 7.0 as in the run environment), and per-feature supported/unsupported status with short examples where relevant.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Agent discoverability: driver version pinning guidance",
+      "what_was_missing": "A clear note in the agent kit or sample README about dependency pinning strategy for Node samples (either pin in package.json or require npm ci and commit package-lock.json).",
+      "where_searched": "Local files only; documentation search unavailable.",
+      "effect_on_this_build": "package-lock.json exists but package.json uses caret ranges. An explicit recommendation would help agents and builders pick a consistent, reproducible approach.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: 'For Node samples pin either in package.json exact versions OR require contributors to use npm ci and commit package-lock.json; include a README badge/instruction to 'npm ci' for reproducible builds.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Test strategy for samples that require a live cluster",
+      "what_was_missing": "Guidance and a small test harness example showing how to unit test DB-related code without a live managed cluster (mock Mongoose or use an in-memory stub) and what to document for integration tests that do require a live cluster.",
+      "where_searched": "Local repo only; documentation search unavailable.",
+      "effect_on_this_build": "No unit tests were provided; adding a standard pattern would let agents and builders include tests that run offline.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Quickstart 'Testing' showing two options: 1) unit tests that mock Mongoose using sinon + proxyquire (example test for upsertEvent), 2) optional integration tests that read DOCUMENTDB_URI from env and are gated with an environment variable. Provide npm test script examples.",
+      "priority": "high"
+    }
+  ]
+}
