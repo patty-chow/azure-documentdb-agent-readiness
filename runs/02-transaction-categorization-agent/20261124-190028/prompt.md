@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js LangChain agent that reads uncategorised transactions from DocumentDB, uses prompt engineering to instruct the LLM to assign a category from a fixed taxonomy, writes the category back to the document, and exposes an aggregation endpoint showing monthly spend breakdown by category.
