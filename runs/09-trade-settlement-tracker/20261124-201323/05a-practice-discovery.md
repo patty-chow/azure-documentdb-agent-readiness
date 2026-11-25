@@ -1,0 +1,61 @@
+# 5a. Best practices: prior knowledge against the public record: 09-trade-settlement-tracker
+
+A model first listed the best practices it knew from training, with no tools. An agent then searched public sources without the team's checklist, the way an agent building this app would, and checked each prior belief against what it found.
+
+**20 practices, 20 with a public address.**
+
+| Outcome | Count | What it means |
+|---|---|---|
+| The model believed otherwise; public sources contradict it | 1 | An agent working from memory builds the wrong thing here. |
+| The model knows it; no public source for this service says either way | 0 | Agents will act on it. Nothing public says whether they should. |
+| The model knew it, and public sources agree | 19 | Memory and documentation line up. |
+| Found in public sources only | 0 | Documented; the model did not list it beforehand. |
+
+## Sources that were reachable in this run
+
+| Source | Reachable | Detail |
+|---|---|---|
+| `learn` (documentation search) | yes | 3 tools |
+| Installed agent skills | 17 | 17 have a public address |
+
+## Where public sources contradict the model
+
+### P06: Do not assume driver-managed retryable writes are enabled; Azure DocumentDB samples set retryWrites=false and recommend designing idempotent application-level retries rather than relying on retryWrites=true for non-idempotent operations.
+
+- **The model believed:** Set appropriate writeConcern and readConcern for transactional work (use writeConcern: { w: 'majority' } and readConcern: 'local' or 'majority' per consistency requirements) and ensure driver options include retryWrites=true for transient server errors. (knowledge of `mongodb`)
+- **The source says:** Do not assume driver-managed retryable writes are enabled; Azure DocumentDB samples set retryWrites=false and recommend designing idempotent application-level retries rather than relying on retryWrites=true for non-idempotent operations.
+- **Source:** [Quickstart: Connect Mongoose to Azure DocumentDB](https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose)
+
+## All practices
+
+| Id | Practice | Category | Basis | Source | Public address | How it was found | Applies to this app |
+|---|---|---|---|---|---|---|---|
+| P01 | Create and reuse a single Mongoose/MongoClient per Node process (singleton) and size the pool for OLTP (e.g., maxPoolSize ≈ 50) rather than opening/closing a connection per HTTP request. | connection handling | prior_knowledge_confirmed | Quickstart: Connect Mongoose to Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose | Azure DocumentDB MongoDB connection pool maxPoolSize Mongoose best practices DocumentDB connection pooling | yes |
+| P02 | Do not commit DocumentDB credentials into source; keep DOCUMENTDB_URI out of the repo, use a .env/.env.example for local dev and a secret store (Azure Key Vault / managed identity) in production. | authentication and secrets | prior_knowledge_confirmed | Quickstart: Connect Mongoose to Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose | Don't commit DOCUMENTDB_URI .env azure documentdb | yes |
+| P03 | Open change streams with an aggregation pipeline filter (e.g., $match on fields or operationType) and use fullDocument:'updateLookup' only when you need the post-update document; persist resume tokens so streams can be resumed. | change streams | prior_knowledge_confirmed | Change streams in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/change-streams | Azure DocumentDB change streams resume token persist resumeAfter fullDocument updateLookup | yes |
+| P04 | Embed bounded transition history in the trade document when size is bounded (accessed together) and maintain an append-only transition log collection for unbounded audit/query workloads. | data modeling | prior_knowledge_confirmed | documentdb-data-modeling (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md | documentdb-data-modeling | yes |
+| P05 | Use startSession() and withTransaction() to group related writes atomically, validate preconditions early, keep transactions short and small, and avoid non-idempotent external side effects inside the transaction callback. | transactions | prior_knowledge_confirmed | Group multiple operations in transactions in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction | Azure DocumentDB transactions startSession withTransaction best practices | yes |
+| P06 | Do not assume driver-managed retryable writes are enabled; Azure DocumentDB samples set retryWrites=false and recommend designing idempotent application-level retries rather than relying on retryWrites=true for non-idempotent operations. | consistency and retries | prior_knowledge_contradicted | Quickstart: Connect Mongoose to Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose | Azure DocumentDB retryWrites=false why keep retryWrites false mongoose quickstart | yes |
+| P07 | Index every field used in filters and group keys for aggregation endpoints (create single-field or compound indexes on assetClass, counterparty, settlementDate for the settlement-rates aggregation). | indexing | prior_knowledge_confirmed | Manage indexing in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/how-to-create-indexes | Azure DocumentDB indexing index fields filters group keys aggregation best practices | yes |
+| P08 | For vector search use a DocumentDB vector index (cosmosSearch) and choose the algorithm and parameters (DiskANN, HNSW, or IVF, dimensions, lBuild/lSearch, maxDegree), and store normalized dense numeric arrays for cosine similarity. | vector search | prior_knowledge_confirmed | documentdb-vector-search (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md | documentdb-vector-search | no |
+| P09 | Avoid doing fullDocument lookups and heavy aggregations inside change-stream handlers; offload expensive processing to a worker queue and ensure durable checkpointing/acknowledgement so the stream cursor is not blocked. | change streams | prior_knowledge_confirmed | Change streams in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/change-streams | Azure DocumentDB change stream handlers avoid heavy processing offload worker queue checkpointing | yes |
+| P10 | Persist and version the change-stream resume token after processing each batch so restarts can resume without data loss. | change streams | prior_knowledge_confirmed | Change streams in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream | Azure DocumentDB change streams resumeAfter store resume token example | yes |
+| P11 | Disable Mongoose autoIndex in production (autoIndex:false) and build/create indexes during deployment/ops rather than at application startup to avoid RU spikes and long startups. | provisioning and deployment | prior_knowledge_confirmed | Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (public_doc) | https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project | Mongoose autoIndex false production azure documentdb tutorial | yes |
+| P12 | Choose a partition/shard key aligned with your hottest query patterns: for read-heavy choose the most frequent query filter, for write-heavy choose a high-cardinality, evenly-distributed field; avoid hot keys. | provisioning and scaling | prior_knowledge_confirmed | documentdb-sharding (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md | documentdb-sharding | no |
+| P13 | Keep transactions and state documents small, validate early, and fail fast to avoid transaction timeouts and resource contention. | transactions | prior_knowledge_confirmed | Group multiple operations in transactions in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction | Azure DocumentDB transactions keep transactions short avoid conflicts validate early | yes |
+| P14 | Use exponential backoff and idempotent retry semantics for transient network or rate-limit errors; cap retries and log incidents rather than blindly repeating non-idempotent writes. | retries | prior_knowledge_confirmed | Reliability in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults | Azure DocumentDB transient faults retry backoff idempotent retries recommendations | yes |
+| P15 | Avoid scatter/gather queries across many partitions for frequent/heavy aggregations; maintain pre-aggregated counters or materialized views updated atomically or by a low-latency change-stream worker instead. | queries and aggregation | prior_knowledge_confirmed | documentdb-sharding (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md | documentdb-sharding avoid scatter gather aggregation pre-aggregated counters | yes |
+| P16 | When building compound indexes put the most selective fields first and follow ESR (Equality → Sort → Range) to allow the index to serve your query shapes without a blocking SORT. | indexing | prior_knowledge_confirmed | documentdb-indexing (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md | documentdb-indexing index-compound-esr | yes |
+| P17 | Instrument DB operations (latency, RU consumption, transaction commits/aborts) and export diagnostics to Azure Monitor / Log Analytics so you can alert on RU throttling, high latency, and repeated transaction aborts. | monitoring and observability | prior_knowledge_confirmed | documentdb-monitoring (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md | documentdb-monitoring | no |
+| P18 | Use TTL indexes on transition-log or ephemeral collections to automatically expire old audit entries instead of manual deletes. | data retention | prior_knowledge_confirmed | documentdb-indexing (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md | documentdb-indexing index-ttl-expiry.md | no |
+| P19 | When running change streams against a managed cloud host, checkpoint frequently and avoid very long-running cursors without checkpoints to reduce the risk of resumability gaps and blocked processing. | change streams | prior_knowledge_confirmed | Change streams in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream | Azure DocumentDB change streams checkpoint frequently resumability guidance | yes |
+| P20 | Check server compatibility (wire version / feature support) at startup and run the Azure DocumentDB compatibility assessment before migration; gate advanced features (e.g., vector index subtypes) behind runtime checks. | compatibility and startup checks | prior_knowledge_confirmed | Quickstart: Connect Mongoose to Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose | Azure DocumentDB compatibility assessment check server wire version runtime checks | yes |
+
+## Searches that returned nothing useful
+
+None.
+
+## Notes
+
+I inspected the app files (db connection, Mongoose models, transactions, change-stream watcher, aggregation endpoint) and then searched Microsoft Learn and used installed DocumentDB skills. Every prior belief (K01..K20) was found in an Azure DocumentDB public doc or in an installed skill except K06, where Azure DocumentDB guidance (quickstart/migration docs) recommends setting retryWrites=false and emphasizes idempotent application retries rather than the prior belief's advice to enable driver retryWrites and manipulate writeConcern; that prior belief is therefore contradicted for Azure DocumentDB. Entries P01..P20 each correspond to one prior belief and cite the public documentation or installed skill I used (how_found shows the query or skill name).
+

@@ -1,0 +1,611 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The repository contains a complete Node.js + Mongoose settlement-tracker sample implementing the features the starter prompt asked for (state-machine trade documents, transactional state advancement, transition logging, change-stream watcher for FAILED settlements, and an aggregation endpoint for settlement rates). The builder documented run steps and included a .env.example. Runtime verification against the live cluster was attempted but blocked by environment restrictions (npm registry resolution errors and write tools disabled on the MCP server). Key best-practice items are followed (singleton client, pool sizing, transaction usage, indexed aggregation fields, idempotent seed), but there are gaps to fix before publishing: pin dependencies / commit a lockfile, add unit tests that run without a live cluster, avoid unbounded stateHistory growth (or add an append-only audit collection / TTL), persist change-stream resume tokens and implement robust backoff/retry semantics around transient failures, and provide infra-as-code if you intend the gallery sample to include provisioning. The decision log largely matches the recorded events: skills were loaded as claimed and MCP calls and npm failures are visible in the trace. See requirement-by-requirement results, practice checks and recommended fixes below.",
+  "requirement_results": [
+    {
+      "requirement": "A Node.js application uses the Mongoose ODM to store each trade as a single document in Azure DocumentDB that carries the trade's current settlement state, so one document represents the trade's whole settlement lifecycle (e.g. from matched through to settled or failed).",
+      "status": "met",
+      "evidence": "app/src/models/trade.js lines 12-19 (TradeSchema with tradeId, currentState, stateHistory, metadata, version).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The settlement lifecycle is modelled as a state machine: the set of states (e.g. matched, settled, failed and any intermediate ones) and the transitions allowed between them are defined in code, and advancing a trade moves it along one of those transitions.",
+      "status": "met",
+      "evidence": "app/src/index.js lines 12-18 (ALLOWED transitions) and lines 34-36 (validation of allowed transition before applying).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Advancing a trade's state runs inside a multi-document transaction on a Mongoose session (withTransaction, or start/commit/abort) so the state change commits atomically.",
+      "status": "met",
+      "evidence": "app/src/index.js lines 26-28 (startSession/withTransaction) and line 43 (trade.save({ session })).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Every state transition is logged as a record written within the same transaction (e.g. a transition document recording which trade moved, from which state to which, and when).",
+      "status": "met",
+      "evidence": "app/src/index.js lines 39-43 (creates transition object, pushes into trade.stateHistory, saves within the transaction); Trade model includes TransitionSchema lines 4-10 and stateHistory field line 17.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The application opens a change stream on the trade documents in Azure DocumentDB (Mongoose watch) and detects trades whose settlement has moved to the failed state.",
+      "status": "met",
+      "evidence": "app/src/watcher/changeStream.js lines 9-12 (pipeline matches fullDocument.currentState: 'FAILED' and Trade.watch), and lines 13-19 (on 'change' handler logs and calls handler).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "When the change stream detects a failed settlement, it triggers an exception workflow for that trade (e.g. a handler that records the exception or hands the trade to a follow-up process).",
+      "status": "met",
+      "evidence": "app/src/watcher/changeStream.js lines 16-19 call handleFailedSettlement(doc) and function defined lines 36-39 (currently logs notification).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "An HTTP endpoint runs an aggregation pipeline in Azure DocumentDB that returns settlement rates grouped by asset class and by counterparty (e.g. the share of trades that reached settled out of all trades in each group).",
+      "status": "met",
+      "evidence": "app/src/index.js lines 60-69 define the aggregation pipeline grouping by assetClass and counterparty and compute a 'rate' field, executed by Trade.aggregate(...) line 68.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example lines 1-2 contains a placeholder DOCUMENTDB_URI; app/src/db.js line 5 reads process.env.DOCUMENTDB_URI and warns if not set (lines 5-8). No credentials are committed.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI only (app/.env.example lines 1-2). The sample uses PORT (index.js line 10) and other run-time knobs are taken from environment or hard-coded (DATABASE_NAME is fixed in src/db.js line 4).",
+      "cause": "builder_error",
+      "smallest_fix": "Add all required environment keys to .env.example (e.g., DOCUMENTDB_URI, PORT, NODE_ENV, optionally LOG_LEVEL) and a short comment explaining each."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use vector fields or embeddings; no vector index is present in the codebase.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index or embedding usage in code or README.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 10-27 implement a connectionPromise singleton; connect() returns the same promise to reuse the Mongoose connection pool.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.js lines 12-16 create indexes idempotently. Lines 21 and 38 use initializeUnorderedBulkOp() with find({ tradeId }).upsert().replaceOne(doc) to upsert by tradeId, making the script idempotent.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "There is no /search or embedding endpoint in this sample.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search endpoint or similarity code present.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "not_met",
+      "evidence": "app/package.json dependencies (lines 17-21) use caret ranges (e.g., \"mongoose\": \"^7.9.0\") and no lockfile (package-lock.json) is present in the repository. No requirements.txt exists (Node.js project).",
+      "cause": "builder_error",
+      "smallest_fix": "Pin dependencies (e.g., set exact versions in package.json) and commit the generated lockfile (package-lock.json or npm-shrinkwrap.json). Recommend aligning to a tested Mongoose version recommended in the quickstart (e.g., Mongoose 9.x as documented) and committing package-lock.json."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "app/package.json test script returns 'no tests' (package.json lines 9-10) and no test files are present.",
+      "cause": "builder_error",
+      "smallest_fix": "Add unit tests that run with an in-memory MongoDB (e.g., mongodb-memory-server) or mock Mongoose; include test script in package.json and CI sample."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No infra-as-code (Bicep, ARM, Terraform) files found in the repository; README explicitly instructs using an existing cluster (README.md line 12).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If the gallery requires provisioning, add a minimal Bicep/Terraform sample that demonstrates Microsoft.DocumentDB/mongoClusters resource creation; otherwise document clearly that the sample uses an existing cluster and do not include provisioning."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md lines 3-19 (what it demonstrates and quickstart), lines 26-30 (security & cleanup).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md line 1 uses 'Azure DocumentDB — Settlement Tracker sample', and other files reference DocumentDB naming and DocumentDB-specific skills (no Cosmos DB or other product names used).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton Mongoose client",
+      "practice": "Create and reuse a single Mongoose/MongoClient per Node process (singleton) and size the pool for OLTP (e.g., maxPoolSize ≈ 50) rather than opening/closing a connection per HTTP request.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 10-26 implement connectionPromise singleton and set maxPoolSize:50, minPoolSize:10, socketTimeoutMS:30000; app loads connect() at startup (app/src/index.js lines 88-96).",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets in env",
+      "practice": "Do not commit DocumentDB credentials into source; keep DOCUMENTDB_URI out of the repo, use a .env/.env.example for local dev and a secret store (Azure Key Vault / managed identity) in production.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose",
+      "status": "followed",
+      "evidence": "app/.env.example provides a placeholder DOCUMENTDB_URI (app/.env.example lines 1-2) and app/src/db.js reads DOCUMENTDB_URI at runtime (line 5). No real credentials are committed.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change stream usage",
+      "practice": "Open change streams with an aggregation pipeline filter (e.g., $match on fields or operationType) and use fullDocument:'updateLookup' only when you need the post-update document; persist resume tokens so streams can be resumed.",
+      "category": "change streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams",
+      "status": "violated",
+      "evidence": "app/src/watcher/changeStream.js line 9 uses a pipeline filter and fullDocument:'updateLookup' (lines 9 and 11) but there is no resume-token persistence or durable checkpointing anywhere in the watcher (no control collection or external store).",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Persist the change-stream resume token after each processed batch (e.g. write the resume token into a control collection within the same transaction or to a durable external store) and reload it at startup.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embed & audit log",
+      "practice": "Embed bounded transition history in the trade document when size is bounded (accessed together) and maintain an append-only transition log collection for unbounded audit/query workloads.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/models/trade.js lines 16-18 define stateHistory as an array on the trade document. There is no size bound or TTL enforcement, nor is there a separate transition-log collection written to inside transactions (index.js line 45 notes an audit collection is 'omitted for brevity').",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Either bound the embedded stateHistory (e.g., keep last N transitions) or write a separate 'transitions' append-only collection in the same transaction when advancing state to enable unbounded audit workloads.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transactions",
+      "practice": "Use startSession() and withTransaction() to group related writes atomically, validate preconditions early, keep transactions short and small, and avoid non-idempotent external side effects inside the transaction callback.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction",
+      "status": "followed",
+      "evidence": "app/src/index.js lines 26-47 use mongoose.startSession() and session.withTransaction() and validate preconditions (trade exists, transition allowed) before applying changes in the transaction.",
+      "source": "Group multiple operations in transactions in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Group multiple operations in transactions in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "RetryWrites setting",
+      "practice": "Do not assume driver-managed retryable writes are enabled; Azure DocumentDB samples set retryWrites=false and recommend designing idempotent application-level retries rather than relying on retryWrites=true for non-idempotent operations.",
+      "category": "consistency and retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose",
+      "status": "followed",
+      "evidence": "app/src/db.js line 23 sets retryWrites: false in the Mongoose connection options.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index aggregation fields",
+      "practice": "Index every field used in filters and group keys for aggregation endpoints (create single-field or compound indexes on assetClass, counterparty, settlementDate for the settlement-rates aggregation).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes",
+      "status": "followed",
+      "evidence": "app/src/index.js lines 91-93 create a compound index { assetClass:1, counterparty:1, currentState:1 } and a single-field index on currentState; app/scripts/seed.js lines 14-16 also create these indexes idempotently.",
+      "source": "Manage indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid heavy change-stream work",
+      "practice": "Avoid doing fullDocument lookups and heavy aggregations inside change-stream handlers; offload expensive processing to a worker queue and ensure durable checkpointing/acknowledgement so the stream cursor is not blocked.",
+      "category": "change streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams",
+      "status": "followed",
+      "evidence": "app/src/watcher/changeStream.js line 11 uses fullDocument:'updateLookup', but the handler (lines 16-19 and 36-39) performs only logging and a minimal notification call. The implementation does not do heavy synchronous processing in the handler.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "If you plan to do heavier processing in the handler, offload it to a durable worker queue and checkpoint the resume token before lengthy processing.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Persist resume token",
+      "practice": "Persist and version the change-stream resume token after processing each batch so restarts can resume without data loss.",
+      "category": "change streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream",
+      "status": "violated",
+      "evidence": "No resume token persistence or checkpointing is implemented in app/src/watcher/changeStream.js; changeStream.on('error') (lines 25-28) only logs the error and mentions a TODO.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Persist the stream's resume token (change._id) after each batch in a small control collection or external durable store; read it at startup to resume watching from the last processed event.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Disable autoIndex in prod",
+      "practice": "Disable Mongoose autoIndex in production (autoIndex:false) and build/create indexes during deployment/ops rather than at application startup to avoid RU spikes and long startups.",
+      "category": "provisioning and deployment",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project",
+      "status": "violated",
+      "evidence": "app/src/index.js lines 90-94 call Trade.collection.createIndex(...) at startup. The Mongoose connection options in app/src/db.js do not set autoIndex:false; indexes are created at startup.",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "Set Mongoose's autoIndex: false in production and create indexes as part of deployment scripts (seed/index creation script) rather than at runtime; e.g., set mongoose.set('autoIndex', false) or pass autoIndex:false in schema options for production.",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Keep transactions small",
+      "practice": "Keep transactions and state documents small, validate early, and fail fast to avoid transaction timeouts and resource contention.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction",
+      "status": "followed",
+      "evidence": "The transaction in app/src/index.js reads and updates a single trade document and pushes one transition; precondition checks are done early (lines 30-36).",
+      "source": "Group multiple operations in transactions in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Group multiple operations in transactions in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry/backoff",
+      "practice": "Use exponential backoff and idempotent retry semantics for transient network or rate-limit errors; cap retries and log incidents rather than blindly repeating non-idempotent writes.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "violated",
+      "evidence": "No retry middleware or exponential backoff present. The code handles transaction errors with a generic try/catch (app/src/index.js lines 48-56) but does not implement bounded retries or backoff for transient errors.",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add idempotent retry logic with exponential backoff around transient operations (e.g., seed bulk execution and transaction commits). Keep retry count small and log incidents; ensure operations are idempotent before retrying.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid scatter/gather aggregations",
+      "practice": "Avoid doing scatter/gather queries across many partitions for frequent/heavy aggregations; maintain pre-aggregated counters or materialized views updated atomically or by a low-latency change-stream worker instead.",
+      "category": "queries and aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The aggregation endpoint exists (app/src/index.js lines 62-69). Whether the cluster is sharded and whether this aggregation would cause scatter/gather depends on the cluster's partitioning (not visible in the repository). The run environment readiness noted the cluster sharding is unknown.",
+      "source": "documentdb-sharding",
+      "searched": "I looked for cluster sharding state via the documentdb MCP server but the run-time inventory didn't return shard info; the builder could query the MCP server to confirm whether the cluster is multishard.",
+      "fix": "If the cluster is sharded and the aggregation will be frequent, implement pre-aggregated counters updated by a change-stream worker or in the same transaction, or explain in README when to enable pre-aggregation.",
+      "sources": [
+        {
+          "title": "documentdb-sharding",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index ESR",
+      "practice": "When building compound indexes put the most selective fields first and follow ESR (Equality → Sort → Range) to allow the index to serve your query shapes without a blocking SORT.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "The compound index chosen { assetClass:1, counterparty:1, currentState:1 } (app/src/index.js line 92 and app/scripts/seed.js line 15) matches the aggregation/group keys and follows ESR principles (equality fields first).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change stream checkpoint frequency",
+      "practice": "When running change streams against a managed cloud host, checkpoint frequently and avoid very long-running cursors without checkpoints to reduce the risk of resumability gaps and blocked processing.",
+      "category": "change streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream",
+      "status": "violated",
+      "evidence": "app/src/watcher/changeStream.js lines 25-28 have a placeholder comment recommending resume-token persistence, but no checkpointing implementation is present.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Implement periodic checkpointing by persisting the latest processed resume token after each batch and restart the stream using resumeAfter on startup.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compatibility checks at startup",
+      "practice": "Check server compatibility (wire version / feature support) at startup and run the Azure DocumentDB compatibility assessment before migration; gate advanced features (e.g., vector index subtypes) behind runtime checks.",
+      "category": "compatibility and startup checks",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose",
+      "status": "violated",
+      "evidence": "app/src/index.js and app/src/db.js do not check server wire version or feature support at startup; advanced features (none used here) are not gated.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "Add an early startup check that uses the driver to inspect server buildInfo or isMaster/wireVersion and log/exit if unsupported features are required. Document in README which features require which server versions.",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: chosen state machine",
+      "practice": "audit trail",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/index.js lines 12-18 define ALLOWED state set (INIT, PENDING_SETTLEMENT, SETTLED, FAILED). This choice is present in code but no decision in decisions.jsonl specifically logs the chosen states.",
+      "source": "code",
+      "searched": "",
+      "fix": "Record a short design decision in the repo (DECISIONS.md or comment) explaining the chosen state names and transitions.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: embedding transition history",
+      "practice": "audit trail",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/models/trade.js lines 12-19 embed stateHistory in the trade document but no prose decision logs why embedding was chosen instead of a separate transition-log collection.",
+      "source": "code",
+      "searched": "",
+      "fix": "Add a short note in README or DECISIONS.md describing the tradeoffs and why embedding was selected for this sample.",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "The decision to approve 'ready_with_gaps' is supported by the run evidence and the builder's recorded verification steps; events.jsonl shows the build proceeded with noted gaps and recorded them."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Node.js with Express and Mongoose follows the prompt. The code and package.json reflect this choice; events show the decision was logged and files created."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "wrong",
+      "comment": "D003 recorded a model_default decision to pin Mongoose at 7.14.0. The public quickstart/tutorial guidance documents recommend Mongoose 9.x (tested driver 7.8.0 bundled with Mongoose 9.x). Also, npm install attempts in this environment failed for 7.14.0 (events.jsonl shows npm error ETARGET). The decision was both a model_default and contradicted by the published guidance, so mark as wrong."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Decision to load documentdb-connection is supported by events.jsonl (load_skill calls) and the db options in src/db.js match the skill guidance."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "OLTP defaults (maxPoolSize 50, minPoolSize 10, socketTimeoutMS 30000) appear in app/src/db.js lines 15-23. events.jsonl shows the documentdb-connection skill was loaded and used as the reason source."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "The compound index decision is implemented (app/src/index.js line 92 and seed.js line 15) and the documentdb-indexing skill was loaded per events.jsonl. Evidence supports the choice."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "D007 changed the Mongoose version to ^7.9.0 after npm install for 7.14.0 failed. Events.jsonl shows the npm install failure and the write to package.json with ^7.9.0. The decision is a pragmatic reaction to the environment failures and is documented in the log; given the environment constraints it was a defensible choice."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision to continue building files despite npm install failure and verify via MCP is supported by events.jsonl showing continued file writes and subsequent MCP calls (documentdb_list_databases)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The decision to use the documentdb MCP server for verification is confirmed by events.jsonl showing a documentdb_list_databases call that returned the target database with no collections (events.jsonl line 35)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Choosing to seed using the MCP server was attempted; events.jsonl shows documentdb_insert_documents calls (lines 37 and 39) and the tool returned an exception because write tools are disabled by default. The decision and its rationale are recorded and the attempt is visible in the event trace."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "The decision to retry the MCP insert once is recorded (events.jsonl line 38) and the retry attempt is visible (line 39). Both attempts failed due to write tools disabled; the event trace shows the expected evidence."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Driver version pinning and tested versions",
+      "what_was_missing": "A single, prominent statement in the quickstart/agent-kit that recommends which Mongoose and underlying MongoDB Node driver versions were tested with Azure DocumentDB (vCore) for Node.js 24 and which exact versions to pin for samples.",
+      "where_searched": "Searched Microsoft Learn quickstarts and tutorials (learn.microsoft.com quickstart-nodejs-mongoose and tutorial-nodejs-mongoose). The docs include tested-driver info but it is not surfaced as a short rule the agent would automatically apply when selecting a version.",
+      "effect_on_this_build": "The builder chose a Mongoose 7.x version by model-default and then tried to pick an available 7.x version. The transient npm registry errors compounded the choice. The sample ends up using a caret range (^7.9.0) rather than a recommended pinned Mongoose 9.x release; this blocked reproducible installs and verification in this environment.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a one-paragraph 'Tested driver versions' section to the Node.js quickstarts and to the documentdb-driver skill README: list exact Mongoose and MongoDB driver versions tested with Node 24 (e.g., Mongoose 9.12.1 / mongodb driver 7.8.0) and a recommended package.json snippet to pin them. Example snippet and a note: 'Commit package-lock.json to the sample repo.'",
+      "priority": "high"
+    },
+    {
+      "topic": "RetryWrites behavior is different from prior knowledge",
+      "what_was_missing": "A prominent note that Azure DocumentDB samples commonly set retryWrites=false and recommend application-level idempotency rather than assuming driver-managed retryWrites=true.",
+      "where_searched": "Quickstart and tutorial pages (learn.microsoft.com quickstart-nodejs-mongoose and tutorial-nodejs-mongoose) and documentdb guidance; the discovery showed prior belief about enabling retryWrites was contradicted by Azure DocumentDB guidance.",
+      "effect_on_this_build": "A model or builder following general MongoDB advice (enable retryWrites) could choose a configuration that contradicts Azure DocumentDB guidance and risk unexpected duplicate non-idempotent writes. The sample explicitly set retryWrites:false in connection options (app/src/db.js line 23), which is correct for Azure DocumentDB, but the guidance must be prominent to prevent agent/model confusion.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a short, high-visibility note to the top of the Node.js quickstart and to the documentdb-driver skill: 'Note: Azure DocumentDB samples set retryWrites=false. Design idempotent application retries instead of enabling driver retryWrites for non-idempotent operations.' Include a brief example showing how to implement a persisted deduplication key for idempotent writes.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness",
+      "what_was_missing": ".env.example contains only DOCUMENTDB_URI. The sample also uses PORT and could require other knobs (NODE_ENV, logging).",
+      "where_searched": "Repository .env.example and README; examined src/index.js and src/db.js to identify used environment variables.",
+      "effect_on_this_build": "The sample included .env.example but omitted other expected environment settings. This increases friction for users and automated agents, who may not know to set PORT or other runtime flags.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Update .env.example to list all required and optional settings with placeholders and short descriptions (DOCUMENTDB_URI, PORT, NODE_ENV, ENABLE_WRITE_TOOLS (if used), and an example). Add a short 'local development' paragraph in the README describing copying .env.example and what to set.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Resume-token persistence for change streams (guidance prominence)",
+      "what_was_missing": "While change-stream guidance exists, an agent authoring samples may not treat resume-token persistence as required for production change-stream code. Make checkpointing a required line item in the change-stream sample template.",
+      "where_searched": "learn.microsoft.com change streams doc and documentdb change-stream skills; the guidance exists but the sample's watcher currently only logs a TODO.",
+      "effect_on_this_build": "The sample's watcher was implemented but lacked resume-token persistence and robust restart behavior; this was noted in the builder's open_issues and is visible in code (no checkpointing).",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a rule to the change-stream sample template: 'Always persist resume tokens after processing each batch. Provide a sample control collection schema and sample code showing resumeAfter on startup.' Include a short code snippet and a test that simulates restart and resume.",
+      "priority": "high"
+    },
+    {
+      "topic": "Tests run without cluster (example/mocking guidance)",
+      "what_was_missing": "A concrete sample in the agent kit showing how to write unit tests for Mongoose models and request handlers that do not need a live cluster (e.g., using mongodb-memory-server or mocking Mongoose).",
+      "where_searched": "documentdb-local-deployment skill and repository; no explicit sample tests or test harness present in this repo.",
+      "effect_on_this_build": "No tests were added (package.json test is a stub). Agents/builders may omit tests or add tests that require a live cluster. Lack of test harness reduces confidence in publishable sample quality.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Ship a minimal test harness example in the agent kit: a test/ directory with a simple set of unit tests that run against mongodb-memory-server (or mocked Mongoose), sample jest/mocha config, and a README section 'How to run tests locally without a cluster.'",
+      "priority": "high"
+    },
+    {
+      "topic": "Infra-as-code ambiguity (mongoClusters vs databaseAccounts)",
+      "what_was_missing": "Clear, top-level note and examples that the vCore Azure DocumentDB control-plane resource is Microsoft.DocumentDB/mongoClusters (not Microsoft.DocumentDB/databaseAccounts).",
+      "where_searched": "Readiness findings and the cold-answer confusion (readiness_findings Q01..Q03). The available docs include the correct resource but the agent model confusion is real.",
+      "effect_on_this_build": "If a builder attempted to add provisioning, they might choose the wrong ARM/Terraform resource type and target Cosmos DB's databaseAccounts resource instead of the vCore mongoClusters resource, causing deployment errors or incorrect automation.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a short 'Naming and resource types' paragraph to quickstarts and the agent kit that explicitly maps: 'For vCore DocumentDB clusters use Microsoft.DocumentDB/mongoClusters (examples Bicep/Terraform included). Do not use databaseAccounts which is for Cosmos DB RU model.' Include a minimal Bicep snippet for mongoClusters.",
+      "priority": "high"
+    }
+  ]
+}
