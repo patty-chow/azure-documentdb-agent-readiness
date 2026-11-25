@@ -1,0 +1,51 @@
+# 3. Build report: 13-chronic-disease-risk-predictor
+
+**Status: partial**
+
+Implemented a small Python sample that demonstrates storing synthetic high-risk patient profile embeddings in Azure DocumentDB, retrieving similar profiles for a new patient (server-side $search when available, otherwise a client-side cosine fallback), and producing a personalised risk narrative (OpenAI via LlamaIndex when configured; deterministic offline fallback otherwise). Created a FastAPI app, seeding script, embedding helpers (OpenAI or deterministic fallback), a retriever with $search and a client-side fallback, and an agent wrapper. Verified dependency installation, seeding into the live cluster, client-side retrieval and offline agent output. Attempted to create the DocumentDB vector index but the index creation failed due to pre-existing documents in the collection with incompatible embedding shape (server error: expected 1536 dimensions, not 3). Tests could not be executed in this environment (mongomock import error referencing missing pkg_resources in the test runner environment), so unit tests remain not verified here.
+
+## How to run
+
+1. Copy .env.example -> .env and fill DOCUMENTDB_URI (SRV string) and optionally OPENAI_API_KEY.
+2. (Recommended) Create and activate a Python venv.
+3. pip install -r requirements.txt
+4. python seed.py  # idempotent seed/upsert of synthetic profiles
+5. uvicorn src.app:app --host 127.0.0.1 --port 8000
+6. POST to /predict (application/json) with body: {"features": {"age": 65, "bmi": 32, "systolic": 150}}
+7. If OPENAI_API_KEY is set, the sample will attempt to use OpenAI embeddings and the OpenAI chat model; otherwise the sample falls back to deterministic embeddings and a template narrative. See README.md for details and example curl.
+
+## Verified by running
+
+- pip install -r requirements.txt: succeeded (dependencies installed in the environment).
+- seed.py: ran successfully against the live cluster and upserted 200 synthetic documents into database 'sample_healthcare_13' collection 'high_risk_profiles' (script printed 'Seeding complete.').
+- Embedding helper sanity check: embed_vector_from_features({'age':70,'bmi':33,'systolic':150}) returned a 1536-dimensional vector as expected (fallback deterministic vector when OPENAI_API_KEY not set).
+- retrieve_similar: executed a sample retrieval after seeding. Server-side $search attempt failed (see next item) and code fell back to client-side linear scan + cosine similarity; that fallback returned 3 results as expected and their similarity scores were printed.
+- agent.generate_narrative (offline path): produced the deterministic personalised narrative combining the retrieved profiles (demo output printed).
+
+## Not verified
+
+- Server-side vector index creation/usage (cosmosSearch DiskANN index) could not be completed: ensure_vector_index() attempted to create the index but returned an error from the server. Error observed when running ensure_vector_index(): "expected 1536 dimensions, not 3" — indicates pre-existing documents in the target collection contain incompatible embedding shapes and prevents index creation. Because index creation failed, the $search aggregation could not be verified; code uses a safe client-side fallback instead.
+- Running pytest-based unit tests: the project's test run was blocked in this environment by test-runner import errors unrelated to the sample code (mongomock import raised ModuleNotFoundError: pkg_resources). I attempted to install dependencies and setuptools, but pytest collection still failed to run the broader repository-level tests in this environment. The provided tests/ file (tests/test_seed.py) exists but was not successfully executed here due to environment packaging issues.
+- End-to-end LlamaIndex + OpenAI chat generation on live service: not executed here because OPENAI_API_KEY was not used in the verification run. The code path is implemented and will run when OPENAI_API_KEY is set; no live LLM calls were made during verification to avoid secrets use and to keep the run deterministic.
+- documentdb_create_index via the MCP helper function: attempted earlier (tool call) but the helper returned an error; the low-level db.command() attempt was used and produced the server error described above. Because of that, the recommended server-side vector index creation workflow (cosmosSearch with kind='vector-diskann' and dimensions=1536) was not successfully validated end-to-end on the cluster.
+
+## Open issues
+
+- Vector index creation failed due to incompatible existing documents in 'high_risk_profiles' (server error: expected 1536 dimensions, not 3). Resolution options: (a) remove or update incompatible documents (if safe) to ensure all existing embedding fields are arrays of length 1536, then re-run index creation; (b) use a fresh collection name and create the index there before inserting seeded documents; or (c) choose a different embedding model/dim that matches existing data and rebuild accordingly. I did not delete or alter existing non-matching documents as a precaution.
+- Pytest collection failed in this environment due to a test-runner packaging problem (mongomock -> pkg_resources missing). This prevented running the included unit test(s) here. In a normal dev environment (working venv/packaging), pytest should run the tests/ files; if CI is used, ensure setuptools/pkg_resources are available to the test runner.
+- LLM calls (OpenAI) were not executed in the verification run; to test full LLM behaviour set OPENAI_API_KEY and optionally OPENAI_CHAT_MODEL, then seed and query the running FastAPI app.
+- I attempted to create the vector index using the documentdb MCP create-index function — that call failed earlier (tool returned failure) and the low-level db.command() call produced the server-side 'expected 1536 dimensions, not 3' failure. The MCP tool may be re-run after cleaning or using a fresh collection.
+
+## Files
+
+- `requirements.txt`
+- `.env.example`
+- `README.md`
+- `src/db.py`
+- `src/embeddings.py`
+- `src/retriever.py`
+- `src/agent.py`
+- `src/app.py`
+- `seed.py`
+- `tests/test_seed.py`
+

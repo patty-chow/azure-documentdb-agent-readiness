@@ -1449,7 +1449,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 12-invoice-matching-reconciliation | `runs/12-invoice-matching-reconciliation/20261124-191603` | 4 | 0 | 23 | 66 | 0 |
 | 13-algorithmic-trade-journal | `runs/13-algorithmic-trade-journal/20261124-191835` | 3 | 0 | 24 | 126 | 1 |
 | 13-basel-iii-capital-ratio-calculator | `runs/13-basel-iii-capital-ratio-calculator/20261124-201926` | 0 | 0 | 10 | 5 | 0 |
-| 13-chronic-disease-risk-predictor | `runs/13-chronic-disease-risk-predictor/20261124-194916` | 8 | 0 | 10 | 99 | 4 |
+| 13-chronic-disease-risk-predictor | `runs/13-chronic-disease-risk-predictor/20261124-194916` | 11 | 0 | 21 | 154 | 10 |
 | 13-household-grouping-linkage | `runs/13-household-grouping-linkage/20261124-204947` | 0 | 0 | 9 | 3 | 0 |
 | 13-product-q-a-chatbot-rag | `runs/13-product-q-a-chatbot-rag/20261124-184527` | 0 | 0 | 26 | 50 | 3 |
 | 14-customer-complaint-classifier | `runs/14-customer-complaint-classifier/20261124-201931` | 0 | 0 | 5 | 8 | 0 |
@@ -1460,12 +1460,12 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 15-cohort-analysis-backend | `runs/15-cohort-analysis-backend/20261124-205336` | 1 | 0 | 11 | 5 | 0 |
 | 15-digital-onboarding-orchestration | `runs/15-digital-onboarding-orchestration/20261124-202211` | 0 | 0 | 10 | 1 | 0 |
 | 15-financial-advisor-chatbot-rag | `runs/15-financial-advisor-chatbot-rag/20261124-192021` | 5 | 0 | 9 | 104 | 6 |
-| 15-prescription-refill-agent | `runs/15-prescription-refill-agent/20261124-195253` | 4 | 0 | 9 | 63 | 2 |
+| 15-prescription-refill-agent | `runs/15-prescription-refill-agent/20261124-195253` | 4 | 0 | 13 | 75 | 2 |
 | 15-supplier-po-management | `runs/15-supplier-po-management/20261124-184929` | 0 | 0 | 28 | 80 | 2 |
 | 16-atm-network-status-monitor | `runs/16-atm-network-status-monitor/20261124-202405` | 0 | 0 | 9 | 1 | 0 |
 | 16-loyalty-points-ledger | `runs/16-loyalty-points-ledger/20261124-184937` | 3 | 0 | 27 | 67 | 0 |
 | 16-multi-touch-attribution-model | `runs/16-multi-touch-attribution-model/20261124-205342` | 0 | 0 | 6 | 10 | 0 |
-| 16-population-health-dashboard-backend | `runs/16-population-health-dashboard-backend/20261124-195348` | 0 | 0 | 12 | 5 | 0 |
+| 16-population-health-dashboard-backend | `runs/16-population-health-dashboard-backend/20261124-195348` | 0 | 0 | 12 | 32 | 2 |
 | 16-subscription-billing-engine | `runs/16-subscription-billing-engine/20261124-192251` | 2 | 0 | 23 | 58 | 1 |
 | 17-ai-survey-response-analyzer | `runs/17-ai-survey-response-analyzer/20261124-205518` | 0 | 0 | 6 | 12 | 0 |
 | 17-esg-scoring-pipeline | `runs/17-esg-scoring-pipeline/20261124-192259` | 4 | 0 | 15 | 89 | 4 |
