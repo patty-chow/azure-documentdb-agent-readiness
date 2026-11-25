@@ -1,0 +1,773 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the async Beanie enrichment pipeline, mock + real-OpenAI integration, idempotent seeding, and the requested aggregation. Most developer-facing items (README, pinned dependencies, .env.example, seed script, Beanie models and indexes declaration) are present and runnable. Major findings: the code does not implement a single process-global Mongo client (it creates a new AsyncIOMotorClient on each init), several index/query mismatches (aggregation groups on sentiment_label but the compound index uses sentiment_score), there is no application-level retry/backoff for transient DB or OpenAI failures, and a few helper scripts reference a missing get_motor_client or otherwise duplicate functionality (two run_pipeline implementations). These are correctness / reliability issues to fix before publishing. Many of the product team's best practices are discoverable via the installed DocumentDB skills; a small set are only in the model's prior-knowledge and should be documented. See requirement_results, checks, decision_reviews and doc_gaps for details and minimal fixes.",
+  "requirement_results": [
+    {
+      "requirement": "The pipeline is written in Python with async/await and uses the Beanie ODM to read the raw product review documents from Azure DocumentDB (e.g. a Beanie `Document` model for reviews queried with an awaited `find`).",
+      "status": "met",
+      "evidence": "app/src/sample_retail_07/models.py:7-15 (Review Document); app/scripts/run_pipeline.py:95-99 (await init_db(); Review.find(...); await cursor.to_list / Review.find -> to_list())",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "For each review, the pipeline calls OpenAI to classify the review's sentiment and to extract its key themes.",
+      "status": "partly_met",
+      "evidence": "app/scripts/run_pipeline.py:24-28 (call_openai_for_review docstring / expected JSON response); app/scripts/run_pipeline.py:49-78 (HTTP call to OpenAI when OPENAI_API_KEY is set); app/scripts/run_pipeline.py:31-47 (deterministic mock fallback used when no key is present)",
+      "cause": "builder_error",
+      "smallest_fix": "Document the intended behaviour (always call OpenAI if OPENAI_API_KEY present) and keep the deterministic fallback but make it an explicit 'mock' mode controlled by an env var. Add a small integration test that exercises real OpenAI when OPENAI_API_KEY is set."
+    },
+    {
+      "requirement": "The OpenAI classification call is made asynchronously inside the pipeline (e.g. the async OpenAI client awaited per review).",
+      "status": "met",
+      "evidence": "app/scripts/run_pipeline.py:62-66 (async with httpx.AsyncClient and await client.post(...)); app/scripts/run_pipeline.py:81-82 (await call_openai_for_review(...))",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Each review document is enriched with a sentiment score field and a tags field derived from the OpenAI result (the tags holding the extracted themes).",
+      "status": "met",
+      "evidence": "app/scripts/run_pipeline.py:84-91 (map parsed => sentiment_score, sentiment_label, themes; assign review.sentiment_score, review.sentiment_label, review.tags, review.enriched_at)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The enriched document is upserted back into Azure DocumentDB through Beanie (e.g. an awaited `save`/`replace`, or an upsert on the underlying collection), so an existing review is updated in place.",
+      "status": "met",
+      "evidence": "app/scripts/run_pipeline.py:92 (await review.save()); scripts/seed.py and src scripts use insert/upsert patterns.",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A summary aggregation query runs against Azure DocumentDB (via Beanie's aggregate or the underlying collection) and groups the enriched reviews by product and sentiment (e.g. a `$group` on a compound key returning a count per group).",
+      "status": "met",
+      "evidence": "app/scripts/aggregate.py:12-16 (pipeline grouping by product_id and sentiment_label); app/src/sample_retail_07/aggregations.py:10-18 (same pipeline variant)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example:2-3 (DOCUMENTDB_URI and OPENAI_API_KEY placeholders); app/src/sample_retail_07/db.py:10-16 (reads DOCUMENTDB_URI from environment), README.md:11-12 (instructions to set DOCUMENTDB_URI and OPENAI_API_KEY)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example:1-5 lists DOCUMENTDB_URI, OPENAI_API_KEY and OPENAI_CONCURRENCY; src/run_pipeline.py expects MODEL and CONCURRENCY (and src/aggregations.py accepts DATABASE_NAME).",
+      "cause": "builder_error",
+      "smallest_fix": "Add missing placeholders to .env.example: MODEL, DATABASE_NAME (optional), CONCURRENCY (or standardize names across scripts)."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "This sample does not create or use vector embeddings or a vector index.",
+      "cause": "could_not_determine",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexes are created in this sample.",
+      "cause": "could_not_determine",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "not_met",
+      "evidence": "app/src/sample_retail_07/db.py:10-16 creates AsyncIOMotorClient(uri) inside init_db() and returns db; create_indexes.py and other scripts expect a get_motor_client() helper but src/db.py does not implement a persistent, process-global client; scripts call init_db() multiple times which may create multiple clients.",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Change db.init_db/get_motor_client to create a module-level AsyncMongo/AsyncMongoClient singleton (one client per process), return that, and add a close/shutdown hook. Minimal prompt: add to starter-skill rule 'Make a single module-level Async client and expose get_motor_client()'."
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "scripts/seed.py (app/scripts/seed.py) and src/sample_retail_07/scripts/seed.py implement idempotent upserts by checking existing = await Review.find_one(...), updating or inserting (scripts/seed.py:85-101). Indexes are declared in the Beanie model (src/sample_retail_07/models.py:19-24). However src/sample_retail_07/scripts/create_indexes.py calls get_motor_client() which is not implemented in src/db.py (a missing helper) — that script cannot run as-is.",
+      "cause": "builder_error",
+      "smallest_fix": "Implement a module-level get_motor_client() in src/sample_retail_07/db.py (reuse the same client used by init_beanie) or change create_indexes.py to use Beanie's index creation at init. Ensure seed/create-index scripts are importable with PYTHONPATH in README examples."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "This sample does not implement an HTTP `/search` endpoint or a search API; there is no web server code to return such errors.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If a search endpoint is desired add a small FastAPI app with /search that validates the query (400 on empty) and handles embedding failures with clear 502/503 messages and logs."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search or similarity ranking is implemented in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If search is added, include the returned similarity score in the API response and show it in sample output in README."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "met",
+      "evidence": "app/requirements.txt lines 1-7 pin versions (beanie==1.13.0, motor==3.1.2, pymongo==4.6.0, pydantic==1.10.12, httpx==0.24.1, python-dotenv==1.0.0, pytest==7.4.0).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No tests are present under app/ that mock the OpenAI client or the database; requirements include pytest but there are no test files. README does not describe test behavior.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that patch the OpenAI HTTP call and use a mongomock or test double for Beanie, or add small integration tests that run only when configured with a test database. Document required env vars for tests in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No infra-as-code (Bicep/ARM/Terraform) files are present in the repository. The run environment provided the cluster externally per skill_md.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep or Terraform sample that uses Microsoft.DocumentDB/mongoClusters (the dedicated DocumentDB resource) with parameters for tier, storage and region. Include a README snippet cautioning about costs."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains sections: what it shows (lines 3-7), prerequisites (lines 9-12), setup (14-20), seed/run/aggregate commands (22-31), and cleaning up (39-41).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md title and content use the phrase 'Azure DocumentDB' (README.md:1 and throughout). No references to 'Cosmos DB' or 'Amazon DocumentDB' were found in app/ (search returned none).",
+      "cause": "none",
+      "smallest_fix": "none"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "For Python apps prefer one process-global AsyncMongoClient reused across the app lifecycle rather than creating a new Motor AsyncIOMotorClient per request; initialize once and close on shutdown.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/sample_retail_07/db.py:10-16 creates an AsyncIOMotorClient() inside init_db() on each call and returns db; there is no module-level singleton or get_motor_client implemented (create_indexes.py expects get_motor_client).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Create a module-level client singleton in src/sample_retail_07/db.py (e.g., _CLIENT = None; def get_motor_client(): if _CLIENT is None: _CLIENT = AsyncMongoClient(uri) ; return _CLIENT) and ensure init_beanie is called once at startup.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Env var placeholders",
+      "practice": "Read the cluster connection string and other secrets from environment variables or a secure secret store (Key Vault) and provide a `.env.example` placeholder for local/dev only; never commit real secrets to source control.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-web-app#test-the-mern-application-with-the-azure-documentdb-cluster",
+      "status": "followed",
+      "evidence": "app/.env.example:2-3 (DOCUMENTDB_URI and OPENAI_API_KEY placeholders); README.md:20-22 instructs copying .env.example. No real secrets committed.",
+      "source": "Tutorial: Connect a Node.js web app with Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Tutorial: Connect a Node.js web app with Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-web-app#test-the-mern-application-with-the-azure-documentdb-cluster"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always connect with TLS (tls=true) and do not disable certificate verification in production; fix CA bundle/SNI issues rather than allowing invalid certificates.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example:2 includes '?tls=true' in the example connection string; README warns 'Never commit secrets' and uses DOCUMENTDB_URI from env.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection pool & timeouts",
+      "practice": "Tune Mongo client pool and timeout parameters for the deployment model (serverless: small pools, short maxIdleTimeMS; long-running servers: larger maxPoolSize and longer maxIdleTimeMS) and set serverSelectionTimeoutMS/socketTimeoutMS to reasonable values for your environment.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/sample_retail_07/db.py:14 uses AsyncIOMotorClient(uri) without pool or timeout tuning parameters; no serverSelectionTimeoutMS/maxPoolSize set.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Set client options when constructing the client (e.g., AsyncMongoClient(uri, serverSelectionTimeoutMS=20000, maxPoolSize=50) or pass similar Motor options). Prefer a singleton client so pool tuning applies globally.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secret logging",
+      "practice": "Avoid logging or printing full connection strings and API keys; use Key Vault/managed identities and secret-scanning tools, and keep `.env` out of source control.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/security/fundamentals/secrets-best-practices#secret-discovery-and-prevention",
+      "status": "followed",
+      "evidence": "No code prints DOCUMENTDB_URI or OPENAI_API_KEY. README and .env.example explicitly instruct not to commit secrets (README.md:42-43; .env.example documented).",
+      "source": "Best practices for protecting secrets",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Best practices for protecting secrets",
+          "url": "https://learn.microsoft.com/azure/security/fundamentals/secrets-best-practices#secret-discovery-and-prevention"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent upserts",
+      "practice": "Use a durable unique key (e.g., review_id or _id) and create a unique index on it so upserts are idempotent.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "scripts/seed.py (app/scripts/seed.py) upserts by review_id: it checks await Review.find_one(Review.review_id == rec['review_id']) (scripts/seed.py:85-101); model defines review_id field and uses Review.insert/save.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Sentiment and tags modeling",
+      "practice": "Model sentiment as a numeric field (e.g., float) and store tags as a bounded array of strings, and be aware multikey indexes create one index entry per array element so index tags selectively and keep arrays bounded or move to a child collection.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/sample_retail_07/models.py:13-15 declares sentiment_score: Optional[float], sentiment_label: Optional[str], tags: Optional[List[str]] and the pipeline limits themes in the prompt and mock (app/scripts/run_pipeline.py:51-58 and comment noting up to 5 themes).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size limit",
+      "practice": "Azure DocumentDB enforces the MongoDB BSON document size limit (16 MB); keep documents well under 16 MB and spill large fields to a side collection or external blob storage.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "The sample's Review document is small (review_text and small metadata); data/sample_reviews.json contains short text fields and no large blobs.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Indexes for aggregation",
+      "practice": "Create indexes to support aggregation/reporting: at minimum index product_id and create a compound index on (product_id, sentiment) when grouping by product and sentiment to accelerate aggregation pipelines.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "src/sample_retail_07/models.py:21-23 declares indexes on product_id and product_id+sentiment_score, but aggregation scripts (app/scripts/aggregate.py:14-16 and src/sample_retail_07/aggregations.py:14-16) group on sentiment_label (different field). The compound index does not include sentiment_label, so the group-by by sentiment_label will not be accelerated.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Change the compound index to (product_id, sentiment_label) or add a separate index on sentiment_label: models.Settings.indexes should include IndexModel([('product_id', ASCENDING), ('sentiment_label', ASCENDING)]).",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid index bloat",
+      "practice": "Avoid unnecessary indexes: maintain a modest index budget (e.g., 5–15 indexes per collection), review index usage with $indexStats, and prefer partial/sparse indexes to reduce write and storage cost.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "The model declares only two indexes (app/src/sample_retail_07/models.py:21-23) which is modest; no gratuitous indexes created.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Application retries",
+      "practice": "Implement application retries with exponential backoff for transient errors (network blips, 429 throttling, transient 5xx), and honour Retry-After headers when present.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "No retry/backoff logic is implemented for the OpenAI HTTP call (app/scripts/run_pipeline.py:62-66) or for database writes (app/scripts/run_pipeline.py:92 uses await review.save() with no retries).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Wrap HTTP calls and DB writes in a retry-with-backoff library (tenacity or a small custom loop), detect 429/5xx and honour Retry-After. Implement idempotent retry semantics for upserts.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retryable writes",
+      "practice": "Azure DocumentDB does not support driver-level retryable writes; do not rely on automatic retryable-write semantics—implement safe application-level retries instead.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md",
+      "status": "violated",
+      "evidence": "No application-level retry logic is present (app/scripts/run_pipeline.py:101-109 and app/scripts/run_pipeline.py:92 save operation). The example .env.example does not explicitly include retryWrites=false; the app may therefore be exposed to write failures without retries.",
+      "source": "documentdb-azure-deployment",
+      "searched": "",
+      "fix": "Do not rely on driver retry semantics. Add app-level retries for upsert/save operations and document in README why this is necessary for Azure DocumentDB (include example code).",
+      "sources": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Provisioning guidance",
+      "practice": "Provision throughput by choosing appropriate compute tier and storage (use autoscale or pick a tier sized for peak ingestion/aggregation); monitor RU consumption and scale or change tier proactively.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The run environment provides an existing cluster; the sample does not include cluster provisioning code.",
+      "source": "documentdb-azure-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "RU-efficient aggregation",
+      "practice": "Write aggregation pipelines to be RU-efficient: $match early, $project early, avoid $lookup where possible, and design $group on indexed fields; test RU cost with explain and adjust.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "The aggregation pipelines project early (src/sample_retail_07/aggregations.py:14 project product_id and sentiment_label) and group on product_id; but the group key sentiment_label is not indexed (see index mismatch noted above).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Add index on sentiment_label or change group to use sentiment_score which is indexed (but adjust aggregation to use score buckets).",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pagination and batching",
+      "practice": "Use pagination and batching (cursor + limit / batchSize) for reads to avoid scanning large collections in a single request; prefer cursor-based paging for large datasets.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "scripts/run_pipeline.py:98-100 uses Review.find(...).to_list() which for the sample size is OK; src/run_pipeline.py iterates async for review in cursor (src/sample_retail_07/run_pipeline.py:71) which uses cursor-based iteration.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "For larger datasets, add batchSize and a streaming pattern; note in README.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring & diagnostics",
+      "practice": "Enable diagnostic settings and slow-query logging, collect metrics (RU, latency, requestCharge), and alert on CPU/memory/IOPS/storage/connection saturation via Azure Monitor / Log Analytics.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample does not set or verify cluster diagnostic settings (the run environment provided the cluster).",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent pipeline",
+      "practice": "Design enrichment/upsert pipelines to be idempotent: use a stable key and upsert operations so re-processing a review does not create duplicates or partial writes.",
+      "category": "app_behavior",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/update#examples",
+      "status": "followed",
+      "evidence": "scripts/seed.py upserts by review_id (app/scripts/seed.py:85-101). The enrichment pipeline writes in-place via review.save() using the same document objects, preserving review_id.",
+      "source": "update",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "update",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/update#examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "JSON schema validation",
+      "practice": "Use JSON schema validation ($jsonSchema) on collections where supported to enforce required fields and types, or validate in the application layer before writes.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema#supported-keywords",
+      "status": "not_assessable",
+      "evidence": "The sample performs application-level validation by using Beanie models but does not create a collection-level $jsonSchema. Evidence: no createCollection/$jsonSchema calls exist in scripts; model fields exist (src/sample_retail_07/models.py:7-18).",
+      "source": "$jsonSchema",
+      "searched": "",
+      "fix": "Consider adding a createCollection step with $jsonSchema or validate before writes; document in README.",
+      "sources": [
+        {
+          "title": "$jsonSchema",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema#supported-keywords"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Beanie init",
+      "practice": "When using Beanie ODM, declare indexes in the Document Settings and call init_beanie once at application startup so indexes are created at initialization rather than per-request.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie",
+      "status": "followed",
+      "evidence": "Indexes are declared in src/sample_retail_07/models.py:19-24 and init_beanie is called in src/sample_retail_07/db.py:16 (await init_beanie(database=db,...)).",
+      "source": "Quickstart: Connect Beanie to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Beanie to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Partition key selection",
+      "practice": "Pick a partition (shard) key with the right tradeoff: collocate related workloads (e.g., product-level data) on the same partition key for localized queries, choose high-cardinality keys for write-heavy workloads, and avoid hot/monotonic keys.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample does not create or document a sharded collection in repo code; the run environment uses a provided cluster and collection.",
+      "source": "documentdb-sharding",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-sharding",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Backups & retention",
+      "practice": "Enable built-in backups and retention and test restore procedures; for critical data export periodic snapshots to durable storage as part of your backup plan.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Cluster administration (backups/retention) is outside the sample and handled by cluster owner.",
+      "source": "documentdb-azure-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "OpenAI concurrency (prior knowledge)",
+      "practice": "Limit concurrency when calling external services (OpenAI) using an async semaphore or similar rate-limiter to bound simultaneous requests so you don't overwhelm external APIs or your pipeline.",
+      "category": "app_behavior",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P20",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/scripts/run_pipeline.py:100-109 uses asyncio.Semaphore(concurrency) and takes concurrency from env OPENAI_CONCURRENCY (app/.env.example line 5). This repository follows the pattern, but the practice is prior_knowledge_only (no public Azure DocumentDB source found).",
+      "source": "",
+      "searched": "Search for Azure DocumentDB limit concurrency external services semaphore OpenAI best practices; no authoritative public guidance found.",
+      "fix": "Document a recommended default concurrency in README and expose as env var; add a small benchmark or comment explaining tradeoffs. Because this practice is not visible in public docs, the product team should add guidance.",
+      "sources": [],
+      "what_would_help": "A short sentence on the OpenAI + DocumentDB quickstart page recommending a default concurrency (e.g., 5) and explaining why to tune it."
+    },
+    {
+      "topic": "Prefer structured tags over text indexing (prior knowledge)",
+      "practice": "Prefer extracting structured tags/key themes and indexing those tag fields for fast filtering/aggregation rather than relying solely on expensive free-text indexes.",
+      "category": "indexing",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P27",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The pipeline stores extracted themes in review.tags (app/scripts/run_pipeline.py:86-89). The repo does not index tags (models.py:21-24 indexes product and sentiment_score only). Since the practice is prior_knowledge_only, it is not publicly verifiable whether Azure DocumentDB prefers this pattern in every circumstance.",
+      "source": "",
+      "searched": "Search for Azure DocumentDB text search prefer structured tags index instead of text search; no high-confidence public source found.",
+      "fix": "Either add an index on tags (bounded small arrays) if the sample intends to query by tags, or add a short README note recommending structured tags for structured queries. The product team should publish guidance about when to prefer extracting tags vs. text search for DocumentDB users.",
+      "sources": [],
+      "what_would_help": "A one-paragraph guidance on the indexing page describing when to index extracted tags vs using $search."
+    },
+    {
+      "topic": "Mock OpenAI for CI (prior knowledge)",
+      "practice": "Test pipelines end-to-end with a mockable OpenAI implementation in CI (DevProxy / local LLM / test doubles) so CI runs do not require real API keys and real external calls.",
+      "category": "app_behavior",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P28",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The repo provides a deterministic mock fallback when OPENAI_API_KEY is not set (app/scripts/run_pipeline.py:29-47) but lacks explicit test harness or CI tests that exercise a mock OpenAI. Because the practice has no public source, status is not_assessable though the app happens to include a simple fallback.",
+      "source": "",
+      "searched": "Search for Azure DocumentDB pipeline testing mock OpenAI CI; no public source found.",
+      "fix": "Add unit/integration tests that inject a mock OpenAI client (or set OPENAI_API_KEY=MOCK) so CI can run without real keys; product team should add a short page recommending test doubles for LLM dependencies.",
+      "sources": [],
+      "what_would_help": "A short 'Testing with mocks' page in the agent-kit explaining how to swap OpenAI calls for deterministic stubs in CI."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator-approved readiness and acceptance is a valid administrative decision; events.jsonl contains the corresponding log entries. No conflicting evidence."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing the host Python runtime because the environment had Python 3.13 is supported by the readiness report (events.jsonl shows a search for Python and environment details) and the decision was logged."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Prompt required Beanie; the builder chose Beanie + Motor. The code uses Beanie Document models as implemented in src/sample_retail_07/models.py."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Pinning versions early to improve reproducibility is reasonable. Later decisions refined the pinned versions to match what the environment accepted; the later decisions supersede this but D004 as an interim choice is defensible."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Choosing the public OpenAI API (OPENAI_API_KEY) is a model-default decision; events show the code used OPENAI_API_KEY and included a mock fallback. This is consistent with the run artifacts."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choosing gpt-3.5-turbo as a default model is a reasonable cost-based choice; the code accepts MODEL as an override. No conflicting evidence was found."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "questionable",
+      "comment": "This decision chose a semaphore of 8, but later the builder logged a different concurrency default (5 in D016) and the final top-level .env.example and scripts default to 5. The D007 choice is defensible, but ultimately not the final setting."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Index choice (product_id and compound with sentiment_score) is consistent with documentdb-indexing guidance and is implemented in src/sample_retail_07/models.py. The implementation later shows a mismatch between index field (sentiment_score) and aggregation's grouping field (sentiment_label), which is a separate implementation issue."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Events show pip failed to locate motor==3.1.0; adjusting to 3.1.2 is justified as a patch-level change and was logged (events.jsonl shows the pip error and the decision)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Removing aiohttp to avoid binary wheel build failures on Python 3.13 was supported by pip errors captured in the events trace. The change is recorded and justified by the build log."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "The build attempted to run Beanie/Motor code and encountered ImportError; the builder added pymongo-based helper scripts for verification as a pragmatic mitigation. Events show the import failure and the decision to add helpers was logged."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Second operator approval; consistent with D001 and build logs."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Targeting async Python 3.11+ and using the available 3.13 runtime is reasonable and consistent with the environment and prompt."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "questionable",
+      "comment": "D014 pins Beanie==1.19.1 and motor==3.1.1, but later decisions and the final requirements reflect a downgrade to beanie==1.13.0 and motor==3.1.2 to avoid import incompatibilities. D014 was a reasonable initial choice but the environment forced a revision."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Public OpenAI + mock fallback decision is documented and implemented (events and code show the fallback path), consistent with the build trace."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "The final concurrency default of 5 is reflected in .env.example and scripts, and the decision was logged. This supersedes the earlier D007 choice and is consistent with the run artifacts."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Choosing a small synthetic dataset (100 records) is recorded and the repository contains a sample_reviews.json and a generator for 100 records. This is consistent with the build artifact."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "sound",
+      "comment": "Declaring indexes in the Beanie model is consistent with Beanie/DocumentDB guidance; the decision is implemented in src/models.py. The index/aggregation mismatch is an implementation bug but does not invalidate the decision to declare indexes in code."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "Pinning beanie to 1.13.0 / motor to 3.1.2 was recorded as a remedial step to fix import issues; this matches the final requirements.txt and traces."
+    },
+    {
+      "decision_id": "D020",
+      "assessment": "sound",
+      "comment": "Pinning pymongo==4.6.0 to avoid the observed ImportError is supported by the pip/build logs in the events trace and is reflected in requirements.txt."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Driver/version compatibility guidance",
+      "what_was_missing": "A short authoritative sentence in the quickstart showing the tested combinations of Beanie/Motor/PyMongo (exact pins) that are known to work with Azure DocumentDB, and a statement that Beanie 2 prefers PyMongo's AsyncMongoClient over Motor in some quickstarts.",
+      "where_searched": "Searched the installed documentdb Beanie quickstart and the Microsoft Learn 'Quickstart: Connect Beanie to Azure DocumentDB' (learn_microsoft_docs_search results). The quickstart references tested versions in text but the agent discovery did not surface a concise short matrix for this sample's pinned set.",
+      "effect_on_this_build": "The builder encountered ImportError and multiple pins had to be iterated (beanie/pymongo/motor), leading to extra build iterations and a pinned pymongo==4.6.0 in requirements. This caused additional decision churn (D014 -> D019 -> D020).",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Tested client matrix' snippet in the Beanie quickstart and agent-kit that lists 'beanie==1.13.0, motor==3.1.2, pymongo==4.6.0' (or the current tested matrix), with notes on how to reproduce import errors and where to pin. Also add a one-line mention that some older Beanie quickstarts used Motor vs AsyncMongoClient and when to prefer one.",
+      "priority": "high"
+    },
+    {
+      "topic": "Single-client pattern guidance (discoverability)",
+      "what_was_missing": "Although the connection skill documents singleton client patterns, an explicit code snippet showing a small module-level AsyncMongoClient singleton and a get_motor_client() helper was not in a discoverable top-level sample page for Python/Beanie.",
+      "where_searched": "documentdb-connection skill and Beanie quickstart; the skill contains guidance but a short copy-paste snippet for Python/Beanie was not prominent.",
+      "effect_on_this_build": "The builder implemented init_db that constructs a client per call (src/sample_retail_07/db.py), causing potential resource leaks and a missing get_motor_client() helper referenced by create_indexes.py and other helpers.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a 10-line snippet to the Beanie quickstart showing module-level client reuse: _CLIENT: Optional[AsyncMongoClient]=None; def get_motor_client(): global _CLIENT; if not _CLIENT: _CLIENT = AsyncMongoClient(uri, serverSelectionTimeoutMS=20000, maxPoolSize=50); return _CLIENT. Show how to call init_beanie(client[DATABASE]) once at startup.",
+      "priority": "high"
+    },
+    {
+      "topic": "Retry guidance for writes & LLM calls",
+      "what_was_missing": "A succinct example demonstrating exponential backoff retries for transient errors (HTTP 429/5xx and DB transient network errors) and guidance that Azure DocumentDB does not provide driver-level retryable writes.",
+      "where_searched": "documentdb-connection skill and azure-deployment skill; the connection skill recommends retries but there's no compact example combined with async OpenAI calls.",
+      "effect_on_this_build": "No retry/backoff was implemented in the enrichment pipeline. This makes the sample brittle in the face of transient network errors or rate limits and contradicts the expectation that production-ready samples handle retries.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A cookbook page: 'Retries and idempotency for DocumentDB + LLMs' showing (1) how to wrap OpenAI HTTP calls with exponential backoff (tenacity or custom), (2) how to apply idempotent upsert semantics for retryable writes, and (3) example values for backoff/limits.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness and canonical env var names",
+      "what_was_missing": ".env.example omitted some env vars the code expects (MODEL, DATABASE_NAME/CONCURRENCY naming mismatch across src vs top-level scripts). The run environment documentation expects DOCUMENTDB_URI as the canonical env var name.",
+      "where_searched": "Repo files (app/.env.example, src scripts), the Beanie quickstart, and readiness notes about DOCUMENTDB_URI naming.",
+      "effect_on_this_build": "The missing placeholders caused minor confusion (two run_pipeline implementations expect different env var names) and required cross-checking code to run scripts. It also risks user error when following README without updating .env.example.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Standardize and publish canonical env var names for samples (DOCUMENTDB_URI, OPENAI_API_KEY, MODEL, OPENAI_CONCURRENCY, DATABASE_NAME) and require .env.example include them. Agent-kit rule: 'All Python samples must include MODEL and DATABASE_NAME placeholders in .env.example and use DOCUMENTDB_URI as canonical DB URI name.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Prior-knowledge-only practices left undocumented",
+      "what_was_missing": "Several practices the model carried from general MongoDB memory but for which no Azure-DocumentDB public page exists (e.g., recommended concurrency defaults for LLM calls, structured-tags vs. text search tradeoffs, testing-with-mock patterns).",
+      "where_searched": "Agent skill discovery and web searches (see 'searches_with_no_useful_result' list).",
+      "effect_on_this_build": "Agent relied on prior knowledge to choose defaults (concurrency=5, mock fallback) that are sensible but not verifiably recommended by public docs. This increases the chance different builders will pick incompatible defaults.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Small guidance pages: 'LLM concurrency considerations for DocumentDB samples' and 'Testing LLM-backed pipelines in CI', each with recommended defaults and short examples.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Index vs aggregation example mismatch (docs + sample)",
+      "what_was_missing": "A short example in the indexing quickstart that shows indexing for grouping by a label field and a numeric score field with the exact index shapes to use (compound index examples that match common aggregation keys).",
+      "where_searched": "documentdb-indexing skill and Beanie quickstart; the skill has index-shape cookbook but the sample's aggregation used sentiment_label while the index used sentiment_score causing a mismatch.",
+      "effect_on_this_build": "The sample ended up with an index that does not accelerate the provided aggregation pipeline causing the sample to perform suboptimally and confusing readers.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a 'Group-by example' subsection to index-shape cookbook showing 'When you group on sentiment_label, add index (product_id, sentiment_label)' and include a short Beanie/IndexModel snippet.",
+      "priority": "high"
+    },
+    {
+      "topic": "Missing get_motor_client helper in module examples",
+      "what_was_missing": "Some sample helper scripts (create_indexes.py, aggregations.py) rely on get_motor_client but the sample db module originally lacked a single exported get_motor_client. This mismatch suggests the agent-kit should publish a recommended db helper template.",
+      "where_searched": "Repo scripts (src/sample_retail_07/scripts/create_indexes.py), src/db.py edits in events.",
+      "effect_on_this_build": "create_indexes.py and aggregations.py reference get_motor_client which was not implemented in some code iterations, causing those scripts to be broken until the helper was added or client usage standardized.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'db utility' snippet to the Beanie quickstart and agent-kit showing get_motor_client + init_beanie usage and note the return types.",
+      "priority": "medium"
+    }
+  ]
+}
