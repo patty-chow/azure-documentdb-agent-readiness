@@ -8,15 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the system in Python using a LangChain multi-agent architecture with three agents named exactly "forecast agent", "supplier agent", and "orchestrator agent".
-- The "forecast agent" must read sales velocity DocumentDB documents from Azure DocumentDB and produce numeric reorder quantities per product (i.e., fetch historical sales velocity records and return a predicted reorder quantity for each product).
-- The "supplier agent" must read supplier lead time DocumentDB documents from Azure DocumentDB and select a best supplier per product based on lead time (selection logic must be coded and return at least supplier_id and lead_time).
-- Launch the "forecast agent" and "supplier agent" to run in parallel (concurrently) and ensure the "orchestrator agent" waits for and consumes both agents' results.
-- The "orchestrator agent" must deterministically reconcile the agents' outputs per product (use the forecast agent's quantity together with the supplier agent's selected supplier) and produce a single purchase order decision per product.
-- Before creating a purchase order, the "orchestrator agent" must consult and update a shared agent memory (LangChain agent memory shared across agents) to detect and prevent duplicate orders for the same product when agents run concurrently.
-- When writing a purchase order, the "orchestrator agent" must persist a purchase order DocumentDB document into Azure DocumentDB that includes, at minimum, product identifier, quantity, and supplier identifier returned by the agents.
-- The system must avoid writing duplicate purchase order documents to Azure DocumentDB for the same product when a pending or recently-created order exists in shared agent memory (i.e., orchestrator skips writing and returns existing order info).
-- Provide an end-to-end demonstration or test run that seeds Azure DocumentDB with sample sales velocity and supplier lead time documents, executes the LangChain multi-agent flow, and verifies that exactly one purchase order DocumentDB document is created per product as reconciled by the orchestrator.
+- A Python LangChain multi-agent system with three agent roles: a forecast agent, a supplier agent and an orchestrator agent.
+- The forecast agent reads sales velocity documents from Azure DocumentDB with the Python MongoDB driver (e.g. PyMongo) and predicts a reorder quantity from them.
+- The supplier agent reads lead time documents from Azure DocumentDB and selects the best supplier based on lead time (e.g. the shortest).
+- The orchestrator agent coordinates the forecast agent and the supplier agent and reconciles their results into a reorder decision.
+- The orchestrator writes purchase order documents to Azure DocumentDB for the reorders it decides on.
+- Shared agent memory is used by the orchestrator to detect an order already placed for the same item and skip it, and a newly written purchase order is recorded in that memory.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

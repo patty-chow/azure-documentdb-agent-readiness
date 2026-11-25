@@ -1,0 +1,60 @@
+# 5a. Best practices: prior knowledge against the public record: 09-inventory-reorder-multi-agent-system
+
+A model first listed the best practices it knew from training, with no tools. An agent then searched public sources without the team's checklist, the way an agent building this app would, and checked each prior belief against what it found.
+
+**21 practices, 20 with a public address.**
+
+| Outcome | Count | What it means |
+|---|---|---|
+| The model believed otherwise; public sources contradict it | 0 | An agent working from memory builds the wrong thing here. |
+| The model knows it; no public source for this service says either way | 1 | Agents will act on it. Nothing public says whether they should. |
+| The model knew it, and public sources agree | 19 | Memory and documentation line up. |
+| Found in public sources only | 1 | Documented; the model did not list it beforehand. |
+
+## Sources that were reachable in this run
+
+| Source | Reachable | Detail |
+|---|---|---|
+| `learn` (documentation search) | yes | 3 tools |
+| Installed agent skills | 17 | 17 have a public address |
+
+## Known to the model, with no public source for this service
+
+| Id | Practice | Knowledge of | Searches tried |
+|---|---|---|---|
+| P14 | When strong ordering or causal guarantees are required, prefer explicit DB-level consistency controls (readConcern / writeConcern / session options) where supported and make critical writes durable before downstream actions; verify the service-level mapping for Azure DocumentDB before relying on specific readConcern/writeConcern semantics. | mongodb | Azure DocumentDB readConcern writeConcern causal consistency (searched via Microsoft docs) |
+
+## All practices
+
+| Id | Practice | Category | Basis | Source | Public address | How it was found | Applies to this app |
+|---|---|---|---|---|---|---|---|
+| P01 | Create and reuse a single MongoClient (singleton) per process and do not create a new client per request; cache/connect once and share the client across handlers. | connection | prior_knowledge_confirmed | documentdb-driver (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md | documentdb-driver | yes |
+| P02 | Keep the DocumentDB connection string and credentials out of source control: read them from environment variables or retrieve from Azure Key Vault at runtime instead of committing secrets to files. | authentication and secrets | prior_knowledge_confirmed | documentdb-azure-deployment (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md | documentdb-azure-deployment | yes |
+| P03 | Always use TLS for connections to Azure DocumentDB and do not disable certificate validation in production (tls=true and validate server certificates). | security | prior_knowledge_confirmed | documentdb-security (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md | documentdb-security -> security-tls-required | yes |
+| P04 | Use least-privilege credentials and prefer Microsoft Entra ID / RBAC and per-application users instead of using admin/root credentials in the app. | authentication and secrets | prior_knowledge_confirmed | documentdb-security (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md | documentdb-security -> security-entra-rbac | yes |
+| P05 | Model time-series-like sales velocity as compact summaries (one document per SKU or SKU+store with bounded-size history or pre-aggregated summaries) and store raw events separately if needed for reprocessing. | data_model | prior_knowledge_confirmed | documentdb-data-modeling (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md | documentdb-data-modeling -> model-denormalize-reads / model-16mb-limit | yes |
+| P06 | Enforce idempotency for purchase orders with a unique index (for example on product_id + period + supplier_id or an order_reference) and use upsert or conditional writes to avoid duplicate orders from concurrent agents. | data_model | prior_knowledge_confirmed | documentdb-indexing (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md | documentdb-indexing -> index-single-field | yes |
+| P07 | Use TTL indexes for ephemeral agent-memory documents (index a Date field with expireAfterSeconds) but ensure the field is a Date and understand expiration is not instantaneous (~60s background sweeper). | data_model | prior_knowledge_confirmed | documentdb-indexing (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md | documentdb-indexing -> index-ttl-expiry | yes |
+| P08 | Index every field used as a filter or sort key in production queries and design compound indexes using ESR (Equality → Sort → Range) to avoid COLLSCAN and reduce query costs. | indexing | prior_knowledge_confirmed | documentdb-indexing (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md | documentdb-indexing -> index-pattern-cookbook / index-compound-esr | yes |
+| P09 | Store fixed-length numeric embeddings in a dedicated field and create a vector index whose dimensions and similarity exactly match the model (e.g., createIndex({embedding: 'cosmosSearch'}, {cosmosSearchOptions:{kind:'vector-diskann',dimensions:1536,similarity:'COS'}})). | vector_search | prior_knowledge_confirmed | documentdb-vector-search (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md | documentdb-vector-search -> vector-create-diskann-index | yes |
+| P10 | When building a vector index, pick the engine (DiskANN/HNSW/IVF) appropriate to scale and tune parameters (maxDegree, lBuild) and tune query-time parameters (lSearch / ef) to trade recall vs latency; rebuild the index if you change embedding dimensions or similarity. | vector_search | prior_knowledge_confirmed | documentdb-vector-search (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md | documentdb-vector-search -> vector-create-diskann-index / vector-knn-query | yes |
+| P11 | Limit projection to only the fields the agent needs (use find(..., projection) or aggregation $project) to reduce network transfer and serialization costs, especially when reading embeddings or large histories. | queries | prior_knowledge_confirmed | find (projections) (public_doc) | https://learn.microsoft.com/documentdb/query/commands/query-and-write/find#projections | Azure Learn: find projections | yes |
+| P12 | Compute rollups and sales-velocity metrics server-side with aggregation pipelines instead of fetching large raw datasets, and create indexes that support the pipeline pattern (match → sort → group). | queries | prior_knowledge_confirmed | documentdb-query-optimization (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md | documentdb-query-optimization -> query-explain-plan | yes |
+| P13 | Implement retries with exponential backoff for transient network/5xx errors and limit retry budget; use idempotent operations (e.g., upsert with a unique key) so retries do not create duplicates. | retries | prior_knowledge_confirmed | documentdb-connection (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md | documentdb-connection -> retry logic examples | yes |
+| P14 | When strong ordering or causal guarantees are required, prefer explicit DB-level consistency controls (readConcern / writeConcern / session options) where supported and make critical writes durable before downstream actions; verify the service-level mapping for Azure DocumentDB before relying on specific readConcern/writeConcern semantics. | consistency | prior_knowledge_only | - (prior_knowledge) | **none** | Azure DocumentDB readConcern writeConcern causal consistency (searched via Microsoft docs) | yes |
+| P15 | Provision appropriate compute/throughput (pick suitable cluster tier and storage) and use autoscale/scale decisions based on compute-tier IO caps; batch large concurrent writes and use bulkWrite with ordered:false where idempotency permits to avoid saturating the DB. | provisioning | prior_knowledge_confirmed | documentdb-azure-deployment (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md | documentdb-azure-deployment -> deployment tier and sizing guidance; documentdb-storage | yes |
+| P16 | Keep purchase-order documents small and store large or static supplier metadata separately (reference by ID) to keep hot collections small and efficient to index and query. | data_model | prior_knowledge_confirmed | documentdb-data-modeling (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md | documentdb-data-modeling -> model-large-field-split / model-denormalize-reads | yes |
+| P17 | Use change streams (the service supports change streams) or a lightweight notification mechanism to trigger agents instead of frequent polling; Azure DocumentDB exposes change streams and an Azure Functions trigger for them. | operations | prior_knowledge_confirmed | Change streams in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/change-streams | Azure Learn: Change streams in Azure DocumentDB | yes |
+| P18 | Capture and log query performance: enable diagnostic settings and slow-query logs, use explain('executionStats') for hot queries and alert on high docsExamined / CPU / IOPS to drive index and query fixes. | operations | prior_knowledge_confirmed | documentdb-monitoring (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md | documentdb-monitoring -> monitoring-slow-query-log; documentdb-query-optimization -> query-explain-plan | yes |
+| P19 | For latency-sensitive vector nearest-neighbor lookups, include a short pre-filter (e.g., category or product_type) in the vector search query to reduce the candidate set and improve latency and accuracy. | vector_search | prior_knowledge_confirmed | documentdb-vector-search (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md | documentdb-vector-search -> vector-knn-query (recommendation to combine with pre-filters) | yes |
+| P20 | Validate inputs in the application and use the service's JSON schema validation ($jsonSchema) to catch malformed documents early; store schemaVersion to support migrations. | data_model | prior_knowledge_confirmed | $jsonSchema (JSON schema validation) (public_doc) | https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema | $jsonSchema documentation on Microsoft Learn | yes |
+| P21 | Azure DocumentDB does not support retryable multi-document writes; connection strings returned by the service include retryWrites=false and drivers should not assume retryable-writes semantics. | connection | found_in_public_source | documentdb-azure-deployment (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md | documentdb-azure-deployment (Step 8: retrieve the connection string) | yes |
+
+## Searches that returned nothing useful
+
+- Azure DocumentDB readConcern writeConcern causal consistency readConcern majority MongoDB compatibility
+
+## Notes
+
+Open discovery used installed DocumentDB skills (connection, driver, indexing, vector-search, deployment, security, monitoring, data-modeling, query-optimization) and Microsoft Learn pages for projection, change streams and $jsonSchema. All 20 prior beliefs were checked: 19 were found in Azure DocumentDB public docs/skills (confirmed), and K14 (readConcern/writeConcern/causal consistency) had no explicit Azure DocumentDB page confirming the exact MongoDB-style guidance, so it is recorded as prior_knowledge_only with the search query listed above.
+

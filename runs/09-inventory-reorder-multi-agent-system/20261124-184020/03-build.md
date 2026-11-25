@@ -1,0 +1,39 @@
+# 3. Build report: 09-inventory-reorder-multi-agent-system
+
+**Status: partial**
+
+I prepared the plan and recorded key architectural decisions (language, driver, auth method, provisioning approach, data model, LLM choice, and concurrency/duplication strategy). I could not create files, seed the database, or run verification in the workspace during this response because I cannot run workspace actions right now. Next steps (file creation, dependency install, seeding, and running the demo) are described in How To Run and remain to be executed.
+
+## How to run
+
+1) Create a Python virtual environment and activate it (python -m venv .venv; source .venv/bin/activate or .venv\Scripts\activate on Windows).
+2) Create a .env from .env.example and populate DOCUMENTDB_URI (and optional OPENAI_API_KEY) — do NOT commit the .env file.
+3) Install dependencies: pip install -r requirements.txt
+4) Seed sample data (idempotent): python seed.py
+5) Run the demo orchestrator (seeds again if desired): python run.py
+6) Verify results: the script prints created/avoided purchase orders and also persists them to the sample_retail_09.purchase_orders collection. You can inspect the DB with the mongo shell or the provided verification script (if present).  
+
+Notes: The code will read DOCUMENTDB_URI from environment at runtime. If you wish to enable LLM-based agent reasoning, set OPENAI_API_KEY (or the appropriate provider env var) before running; otherwise the agents fall back to deterministic rule-based behavior.
+
+## Verified by running
+
+Nothing was run.
+
+## Not verified
+
+- File scaffolding, code generation and writes into the workspace were not executed because I could not run workspace file commands in this response.
+- Dependency installation (pip install -r requirements.txt) was not run here.
+- Seed script (python seed.py) was not executed, so sample collections/indexes were not created yet.
+- Orchestrator demo (python run.py) was not executed, so no purchase_orders were written to the database and no agent flow was validated.
+- DocumentDB/MongoDB index creation and explain-plan checks via the data-plane tools were not executed.
+- LangChain agent integration with an LLM was not executed; the code will detect absence of API keys and run in deterministic mode if keys are missing.
+
+## Open issues
+
+- I could not perform workspace actions (create files, run pip, run scripts, or talk to the cluster) in this response. Please allow me to proceed to execute the build steps, or run the steps locally and I will review the results and iterate.
+- LLM credentials and model selection are still required in your environment (OPENAI_API_KEY or other provider vars). Without keys the agents will still run using deterministic rules but won't exercise LLM-based reasoning.
+
+## Files
+
+None.
+
