@@ -1,0 +1,61 @@
+# 1. Prompt review: 15-digital-onboarding-orchestration
+
+**Verdict: sufficient_with_assumptions**
+
+The starter prompt is clear about the scenario (a Python LangChain orchestrator using Beanie to model an onboarding state-machine in Azure DocumentDB, delegating to three agents in sequence and atomically persisting state transitions). It omits many implementation details (Python version, exact drivers/versions, LLM models, app surface, seeding, infra-as-code, tests, and README contents) that a builder will make reasonable defaults for or fill in using the installed DocumentDB skills.
+
+## Where each answer will come from
+
+| Source | Rubric items |
+|---|---|
+| In the prompt | 4: Goal and scenario, Workflow type, Target service and tier, Authentication and secrets |
+| Covered by a skill | 3: Driver and version, Data model, Queries and indexes |
+| Ambiguous: builder will guess | 3: Language and runtime, App surface, Repository conventions |
+| Missing: builder will guess | 6: Sample data, AI components, Provisioning and deployment, Run and test instructions, Definition of done, Constraints and non-goals |
+| Not applicable | 0: - |
+
+## Reference requirements at risk
+
+- The vector index dimensions match the embedding model's output — embedding model not specified in the prompt or skill_md, so dims will be guessed.
+- The vector index parameters are chosen for the sample's data size, and the README says how to change them — index tuning and README guidance are not requested explicitly.
+- A seed script loads sample data and creates the index, and can be run twice without duplicating data — no seed script or idempotency requirement is present in the prompt.
+- /search returns a clear error for an empty query and when the embedding call fails — prompt does not mention a search endpoint or error handling.
+- Search results include the similarity score — search/embedding behavior is unspecified.
+- Dependencies are pinned in requirements.txt — prompt doesn't request pinned dependencies.
+- Unit tests run without a live cluster — tests are not described; the prompt does not require offline-capable tests.
+- Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type — the prompt assumes an existing cluster; infra-as-code is not requested.
+- The README covers what the sample shows, prerequisites, setup, run, and clean-up — README content is not specified in the prompt.
+
+## Questions for the prompt author
+
+- Which Python version should the sample target (e.g. 3.10 or 3.11)?
+- Which LLM/embedding provider and exact models should the agents and any embedding/indexing use (e.g. OpenAI text-embedding-3-small 1536-dim + gpt-4o-mini)?
+- Should the sample expose an HTTP API (FastAPI) or be a CLI/library-only demonstration?
+- Do you want infrastructure-as-code (Bicep/Terraform) for the Azure DocumentDB cluster included, or should the sample rely on the existing cluster provided in skill_md?
+- Should unit tests run entirely offline (with mocks) or are integration tests against the live cluster required in CI?
+
+## Contradictions and missing references
+
+- The starter prompt says 'Using the DocumentDB skill' but no single installed skill is named exactly 'DocumentDB' — there are multiple documentdb-* skills available. The builder will infer which installed skills to use.
+- Reference requirements expect infra-as-code for provisioning, but the run environment (skill_md) states a cluster is already provisioned and the prompt does not request new provisioning. This is not a direct contradiction but is a mismatch between gallery requirements and the prompt.
+
+## Rubric
+
+| Item | Status | Blocking | In the prompt | Skill | Assumed if unanswered | Note |
+|---|---|---|---|---|---|---|
+| Goal and scenario | specified | no | build a Python LangChain orchestration pipeline using Beanie ODM that models an onboarding application as a state machine document in DocumentDB. The orchestrator delegates to an ID-verification agent, a risk-assessment agent, and an account-opening agent in sequence, updating the application state atomically after each step and logging the transition. | - | - | Clear business problem and what the sample should demonstrate. |
+| Workflow type | specified | no | Python LangChain orchestration pipeline ... delegates to an ID-verification agent, a risk-assessment agent, and an account-opening agent in sequence | - | - | Specifies a multi-agent orchestration using LangChain. |
+| Language and runtime | ambiguous | no | Python LangChain orchestration pipeline | - | Use a modern supported Python (e.g. Python 3.11) in a virtualenv; tests and CI target that version. | Prompt says Python but no version or runtime constraints. skill_md says python/pip exist on the developer machine but not which exact version. |
+| Driver and version | covered_by_skill | no | using Beanie ODM | documentdb-driver | Use a Beanie-compatible stack (Beanie latest 1.x, Motor compatible with pymongo 4.x). Use singleton Motor/PyMongo client pattern as recommended by documentdb-driver. | Beanie implies Motor/pymongo under the hood; the documentdb-driver skill provides connection/driver best-practices but not exact pinned versions — the builder will pick recent compatible versions. |
+| Target service and tier | specified | no | skill_md: A vector-capable Azure DocumentDB cluster (compute tier M30, MongoDB 7.0 wire protocol, DiskANN, HNSW and IVF vector indexes) is reachable from this machine. The connection string is in DOCUMENTDB_URI. | documentdb-azure-deployment | - | Run environment provides the exact cluster to use (M30, MongoDB 7.0). |
+| Authentication and secrets | specified | no | skill_md: Its connection string is in the environment variable DOCUMENTDB_URI. The documentdb MCP profile `default` is connected to the same cluster. | documentdb-mcp-setup | - | Secrets should be read from env vars per skill_md; sample must not hard-code the URI. |
+| Data model | covered_by_skill | no | models an onboarding application as a state machine document in DocumentDB | documentdb-data-modeling | Create a collection named onboarding_applications in database sample_banking_15; each document uses _id, state (enum/string), applicant (embedded document), transitions (array of {from,to,agent,timestamp,metadata}), created_at, updated_at. No sharding unless data size suggests it. | Prompt dictates the overall model shape (state machine document). Specific fields/collection names/shard keys are not specified; documentdb-data-modeling can guide sensible defaults. |
+| Sample data | missing | no | - | - | Author the builder will create a small synthetic seed (e.g. 3–10 example onboarding documents) and supply an idempotent seed script under scripts/seed.py that inserts or upserts sample documents. | No source, size, or seed script is specified. The builder must create synthetic data. |
+| Queries and indexes | covered_by_skill | no | - | documentdb-indexing | Create an index on state and timestamps (e.g. {state:1, updated_at:-1}); if using embeddings, create a vector index sized to the chosen embedding dimension. Keep indexes minimal for a small sample. | The prompt doesn't list queries or indexes; documentdb-indexing and documentdb-vector-search can supply reasonable index choices. Exact vector index params and dims depend on the embedding model (not specified). |
+| AI components | missing | no | agents (ID-verification agent, risk-assessment agent, account-opening agent) are required, but no LLM/embedding provider or models are named. | - | Use LangChain with an LLM provider configured by env vars (e.g. OPENAI_API_KEY). Assume OpenAI embeddings (text-embedding-3-small, 1536 dims) and a small chat model (gpt-4o-mini or gpt-4o) for agent reasoning; calls to LLMs will be encapsulated so providers can be swapped. | Agents are specified but no model/provider or embedding dimensions are given; this will materially affect index dims and README instructions. |
+| App surface | ambiguous | no | orchestration pipeline ... the orchestrator delegates ... | - | Provide a minimal CLI (python -m sample_orchestrator.run) plus a small FastAPI app with endpoints /orchestrate (kick off a run) and /applications/{id}/status to inspect state. The core library can also be invoked from scripts/tests. | Prompt implies a programmatic orchestrator but doesn't require CLI vs HTTP UI; builder will pick a minimal surface to demonstrate functionality. |
+| Provisioning and deployment | missing | no | Using the DocumentDB skill ... (does not request creating a cluster). | documentdb-azure-deployment | Do not create new cloud resources; use the provided cluster. If infra-as-code is required later, the documentdb-azure-deployment skill can generate Bicep/CLI scripts, but the initial sample will not provision a cluster. | Reference requirements expect infra-as-code, but the starter prompt and run environment indicate an existing cluster should be used; no infra code was requested. |
+| Run and test instructions | missing | no | - | - | Add README with steps: copy .env.example -> .env, pip install -r requirements.txt, run scripts/seed.py, run the orchestrator via python -m sample_orchestrator.run, and run tests with pytest. Tests will use mocks so they run without a live cluster. | Prompt doesn't specify exact commands or test expectations; builder will add conventional steps. |
+| Definition of done | missing | no | - | - | Acceptance: orchestrator can load an onboarding document, run the three agents in sequence, persist each state transition atomically, and emit logs recording previous/new state and agent name; seed script and minimal tests included; README documents how to run. | No explicit acceptance criteria were provided in the prompt. |
+| Constraints and non-goals | missing | no | - | - | Keep sample small and low-cost: do not provision new paid resources, avoid large datasets or long-running batch jobs, and do not include production hardening (CI/CD, full RBAC). | Prompt does not state cost or scope constraints; builder will likely keep the sample minimal. |
+| Repository conventions | ambiguous | no | skill_md: Never write the DOCUMENTDB_URI into any file, log, README or test fixture; use a config file or `.env.example` with a placeholder. | documentdb-local-deployment | Project layout: src/sample_orchestrator, scripts/seed.py, tests/, README.md, requirements.txt pinned; include .env.example with placeholders; follow conventional Python packaging. | skill_md gives some guidance about .env.example and not committing secrets, but broader repo conventions (pinning, README sections) are not specified. |

@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain orchestration pipeline using Beanie ODM that models an onboarding application as a state machine document in DocumentDB. The orchestrator delegates to an ID-verification agent, a risk-assessment agent, and an account-opening agent in sequence, updating the application state atomically after each step and logging the transition.
