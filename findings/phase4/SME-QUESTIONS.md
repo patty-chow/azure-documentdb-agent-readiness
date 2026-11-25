@@ -46,7 +46,7 @@ TypeScript sample appears to mix seconds and milliseconds in `expiresInSeconds`;
 non-admin user run `connectionStatus` with `showPrivileges` and `usersInfo` on itself; are custom roles
 still preview?
 
-## 6. Vector indexes (K05, K23, L02, L09, M01). MOSTLY SETTLED 2026-11-25 from the Learn pages, see DECISIONS.md; only the HNSW 8,000 figure and the numLists guidance above 1M documents remain open
+## 6. Vector indexes (K05, K23, L02, L09, M01). SETTLED 2026-11-25 (Learn pages; HNSW limit confirmed by the product owner: 2,000/4,000, the quickstarts' 8,000 is wrong), see DECISIONS.md; only the numLists guidance above 1M documents remains open
 
 Confirm HNSW and IVF parameter ranges and defaults (`m` 2 to 100, default 16; `efConstruction` 4 to 1000,
 default 64, at least 2m; `efSearch` 40; IVF `numLists` up to 1M; `nProbes` default 1), and the dimension

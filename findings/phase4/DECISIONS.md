@@ -69,14 +69,22 @@ https://learn.microsoft.com/en-us/azure/documentdb/compatibility-query-language.
   same: binary vectors inserted, never returned, and a binary query vector rejected with "expected an
   array type field". Filings may state the exclusion as fact and ask Learn to name binary explicitly.
 
+**Answered by the product owner, 2026-11-25.** HNSW dimension limit: 2,000 uncompressed and 4,000
+with half-precision for HNSW and IVF, 16,000 only with product quantization on DiskANN, is correct.
+The 8,000 figure on the select-algorithm quickstarts
+(https://learn.microsoft.com/en-us/azure/documentdb/quickstart-nodejs-select-algorithm and the Python
+variant; "Choosing the right algorithm" table and the HNSW bullet, plus the DiskANN "Why default"
+sentence about models exceeding 8,000 dimensions) is wrong and the pages should be changed. Filings
+state 2,000/4,000/16,000 as fact and the Learn vector item asks for the quickstart correction.
+Where to fix it: the quickstarts embed `ai/includes/choosing-algorithm.md` from
+github.com/Azure-Samples/documentdb-samples (line 12, the HNSW table row; line 25, "some already
+exceed 8,000 dimensions"; line 30, "supports embeddings up to 8,000 dimensions"), and the same repo's
+`.github/copilot-instructions.md` line 152 repeats "HNSW's 8,000". One PR to that repository fixes
+every language's quickstart at once.
+
 **Still open for engineering.**
 
-1. HNSW dimension limit. The select-algorithm quickstarts
-   (https://learn.microsoft.com/en-us/azure/documentdb/quickstart-nodejs-select-algorithm and the
-   Python variant) say HNSW supports up to 8,000 dimensions; the concept, half-precision and
-   limitations pages say 2,000 uncompressed and 4,000 half-precision. Which is current? Filings use
-   2,000/4,000 and flag the quickstart figure as a doc inconsistency.
-2. IVF above one million documents. The vector-search IVF field table says `numLists` =
+1. IVF above one million documents. The vector-search IVF field table says `numLists` =
    sqrt(documentCount) above 1M; the Important box under it says to use DiskANN instead. Filings follow
    the Important box.
 
