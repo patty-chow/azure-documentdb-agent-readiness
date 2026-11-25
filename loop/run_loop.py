@@ -367,7 +367,8 @@ def build_queue(args: argparse.Namespace) -> list[tuple[dict, str | None]]:
             continue
         resume_from = None
         if not args.rerun:
-            partial = [e for e in history if resumable(e) and reached(e) < STAGE_ORDER[args.stop_after]]
+            # A run that stopped at an earlier gate, or failed before reaching this one, is continued.
+            partial = [e for e in history if resumable(e) and not complete_for(e, args.stop_after)]
             if partial:
                 resume_from = partial[-1]["run_dir"]
         queue.append((s, resume_from))
