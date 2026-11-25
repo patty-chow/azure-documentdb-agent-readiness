@@ -76,6 +76,10 @@ with `STUCK` after three consecutive failures.
   committed and pushed. Any staged file containing the cluster password is removed from the
   commit and reported. `--no-push` and `--no-commit` are available.
 - **Stay awake.** The loop holds a `caffeinate` assertion while it runs.
+- **Several model deployments.** The Azure OpenAI quota is per region. With `FACTORY_OPENAI_ENDPOINTS`
+  set in `.env` to a comma-separated list of endpoints (one gpt-5-mini deployment per region, made
+  with the same template), runs rotate through them and `--parallel` can go up by the same factor.
+  The endpoint each run used is recorded in state.
 - **Azure writes.** `--allow-azure-writes --cleanup` lets the builder provision; the resource group
   is compared before and after and anything new is deleted, except the shared cluster and the
   Azure OpenAI account. Such runs go one at a time.

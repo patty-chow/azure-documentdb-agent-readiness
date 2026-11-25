@@ -34,6 +34,7 @@ What the loop adds around each pipeline run:
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 import re
@@ -82,6 +83,22 @@ RATE_LIMIT_BACKOFF_SECONDS = 90   # the deployment's limit is per minute, so wai
 _state_lock = threading.Lock()
 _print_lock = threading.Lock()
 _git_lock = threading.Lock()
+_endpoint_counter = itertools.count()
+
+
+def model_endpoints() -> list[str]:
+    """Azure OpenAI endpoints to rotate through. The token-per-minute quota is per region, so one
+    deployment per region multiplies the budget. FACTORY_OPENAI_ENDPOINTS is comma separated; when it is
+    not set, the pipeline's own AZURE_OPENAI_ENDPOINT is used for every run."""
+    raw = os.environ.get("FACTORY_OPENAI_ENDPOINTS", "")
+    return [e.strip().rstrip("/") for e in raw.split(",") if e.strip()]
+
+
+def next_endpoint() -> str | None:
+    endpoints = model_endpoints()
+    if not endpoints:
+        return None
+    return endpoints[next(_endpoint_counter) % len(endpoints)]
 
 
 def say(text: str) -> None:
@@ -307,6 +324,12 @@ def run_one(sample: dict, args: argparse.Namespace, resume_from: str | None) -> 
         cmd += ["--skill", str(render_env_note(sample, args.arm, tag))]
 
     env = {**os.environ, **ARMS[args.arm], "PYTHONUNBUFFERED": "1"}
+    endpoint = next_endpoint()
+    if endpoint:
+        # load_dotenv in the pipeline does not override variables that are already set, so this wins over .env.
+        env["AZURE_OPENAI_ENDPOINT"] = endpoint
+        entry["endpoint"] = endpoint.split("//")[-1].split(".")[0]
+        record(entry)
     venv = None
     if args.venv:
         venv = make_venv(tag)

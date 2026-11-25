@@ -17,8 +17,11 @@ if [[ "${1:-}" != "--yes" ]]; then
 fi
 
 az documentdb mongocluster delete -g "$RG" -n "$CLUSTER" --yes --no-wait -o none 2>/dev/null && echo "cluster delete requested" || echo "cluster not found"
-az cognitiveservices account delete -g "$RG" -n "$OPENAI" -o none 2>/dev/null && echo "openai account deleted" || echo "openai account not found"
-az cognitiveservices account purge -g "$RG" -n "$OPENAI" -l "$LOCATION" -o none 2>/dev/null && echo "openai account purged" || true
+# Every Azure OpenAI account in the group (there is one per region used for model quota), purged so the names can be reused.
+az cognitiveservices account list -g "$RG" --query "[?kind=='OpenAI'].[name,location]" -o tsv | while read -r name loc; do
+  az cognitiveservices account delete -g "$RG" -n "$name" -o none 2>/dev/null && echo "openai account $name deleted"
+  az cognitiveservices account purge -g "$RG" -n "$name" -l "$loc" -o none 2>/dev/null && echo "openai account $name purged" || true
+done
 
 # Anything the builder provisioned during write-enabled runs.
 ids=$(az resource list -g "$RG" --tag purpose=samples-factory --query "[].id" -o tsv)
