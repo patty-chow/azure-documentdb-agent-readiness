@@ -1,0 +1,251 @@
+{
+  "test": "query-behaviour (verifier rerun of ../query-behaviour/run.py against database t_query_rerun)",
+  "database": "t_query_rerun",
+  "written_utc": "2026-11-25T20:24:52.610958+00:00",
+  "rerun_status": "BLOCKED - not executed: PostgreSQL inside ddb-engine-test is down after the disk-full PANIC recorded in ../query-behaviour/report.json run2_incident; every connection fails at authentication with code 1 InternalError. No step of the tester's script ran, so no live output exists to compare. Verification below is static: offline recomputation, engine-source and binary cross-checks, gateway-log evidence from run 1, and a re-read of the recorded explain documents.",
+  "target": {
+    "container": "ddb-engine-test, image ghcr.io/documentdb/documentdb/documentdb-local:latest = sha256:a22772de11861a97d395eecdbe6fbaedd245498b015e748ca409f526430ca781",
+    "image_labels": {
+      "org.opencontainers.image.version": "0.117.0",
+      "org.opencontainers.image.revision": "28cc012070ce798361ed265251ec159180b7889f",
+      "org.opencontainers.image.created": "2026-09-25T12:42:08Z",
+      "org.opencontainers.image.source": "https://github.com/documentdb/documentdb"
+    },
+    "hello_internal_from_run1": {
+      "documentdb_versions": [
+        "0.117-0",
+        "0.117.0"
+      ],
+      "msg": "isdbgrid",
+      "maxWireVersion": 21,
+      "maxWriteBatchSize": 25000
+    },
+    "buildInfo_from_run1": {
+      "version": "7.0.0",
+      "versionArray": [
+        7,
+        0,
+        0,
+        0
+      ],
+      "maxBsonObjectSize": 16777216
+    },
+    "uri_redacted": "mongodb://<redacted>@localhost:10260/?tls=true&tlsAllowInvalidCertificates=true&authMechanism=SCRAM-SHA-256&retryWrites=false",
+    "driver": "pymongo 4.20.1, /Users/julietai/claude/azure-documentdb-agent-readiness/.venv/bin/python"
+  },
+  "evidence_scope": "Everything here is evidence about the open-source DocumentDB engine (extension 0.117.0, gateway built from revision 28cc012, advertising buildInfo 7.0.0) in documentdb-local; it does not prove managed Azure DocumentDB behaviour.",
+  "steps": [
+    {
+      "step": "r.0 connectivity check before rerun",
+      "command": "pymongo.MongoClient(LOCAL_URI, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=8000).admin.command('ping')",
+      "response": {
+        "ok": 0.0,
+        "code": 1,
+        "codeName": "InternalError",
+        "errmsg": "[ActivityId=<id>] An unexpected internal error has occurred.",
+        "errorLabels": null
+      },
+      "reading": "The gateway accepts the TLS connection but fails SCRAM authentication with InternalError because it cannot reach PostgreSQL."
+    },
+    {
+      "step": "r.1 run the rerun copy",
+      "command": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/engine-tests/query-behaviour-rerun/run.py (identical to ../query-behaviour/run.py except DB_NAME = 't_query_rerun', the docstring and the step-0.1 label; see diff in verifier notes); stdout -> run.stdout.txt, stderr -> run.stderr.txt",
+      "response": {
+        "exit_code": 1,
+        "failed_at": "client.admin.command('buildInfo') before any test step",
+        "exception": "OperationFailure",
+        "code": 1,
+        "codeName": "InternalError",
+        "errmsg": "[ActivityId=<id>] An unexpected internal error has occurred.",
+        "stdout": ""
+      },
+      "reading": "No test step executed; nothing was written to t_query_rerun and no live output exists to compare with the tester's report."
+    },
+    {
+      "step": "r.2 container state",
+      "command": "docker ps -s; docker inspect (mounts); docker exec ddb-engine-test df -h / /data; docker exec ddb-engine-test du -sh /data/*; docker exec ddb-engine-test tail /var/log/documentdb/postgres/pglog.log; process list inside the container",
+      "response": {
+        "container": "Up (gateway process documentdb_gateway running; no postgres process present)",
+        "df": "overlay / and /dev/vdb1 /data: 25G size, 24G used, 0 available, 100%",
+        "data_volume": "284M total: pg_wal 177M, base 96M, core 12M (PostgreSQL core dump), pglog.log 172K",
+        "pglog_tail": [
+          "PANIC: could not write to file \"pg_wal/xlogtemp.1556\": No space left on device",
+          "server process (PID 1556) was terminated by signal 6: Aborted",
+          "redo starts at 0/2DC99A0",
+          "FATAL: could not extend file \"base/5/19395\": No space left on device",
+          "startup process (PID 1566) exited with exit code 1",
+          "database system is shut down"
+        ]
+      },
+      "reading": "PostgreSQL crashed on WAL write, then failed crash recovery for lack of space and shut down; it cannot restart until the Docker VM disk has free space, and this test's own volume (284M) is not the cause."
+    },
+    {
+      "step": "r.3 where the disk went (read-only)",
+      "command": "docker system df; docker system df -v",
+      "response": {
+        "images": "33 images, 14.17GB, 2.81GB reclaimable",
+        "containers": "32 containers (9 running), 1.24GB, 649MB reclaimable; largest writable layers: documentdb-lead-workbench (exited, 571MB), ato-project-finder documentdb (running, 585MB)",
+        "volumes": "28 volumes, 9.07GB, 4.29GB reclaimable; e.g. ato-semantic-verify-20261018_search-runner-data 581MB",
+        "note": "ghcr.io/documentdb/documentdb/documentdb-local:pg17-1.0-rc2 (created 2026-10-09) is also present and newer than :latest (created 2026-09-25)"
+      },
+      "reading": "About 7.7GB is reclaimable from other projects' Docker resources; pruning them is destructive and outside this test's scope, so nothing was removed."
+    },
+    {
+      "step": "v.1 offline recomputation of section (a) expected values",
+      "command": "python: replicate run.py's seeding (random.seed(7), 3 regions x 8 days, amount = choice([5,12,3,20,7,15,1,9]) + i%3) and compute per-region cumulative sum/max in ts order",
+      "response": {
+        "east": {
+          "finalTotal": 75,
+          "finalMax": 15,
+          "running": [
+            [
+              15,
+              15,
+              15
+            ],
+            [
+              4,
+              19,
+              15
+            ],
+            [
+              3,
+              22,
+              15
+            ],
+            [
+              5,
+              27,
+              15
+            ],
+            [
+              13,
+              40,
+              15
+            ],
+            [
+              14,
+              54,
+              15
+            ],
+            [
+              15,
+              69,
+              15
+            ],
+            [
+              6,
+              75,
+              15
+            ]
+          ]
+        },
+        "west": {
+          "finalTotal": 90,
+          "finalMax": 20
+        },
+        "north": {
+          "finalTotal": 76,
+          "finalMax": 21
+        },
+        "recorded_a1": "east 75/15, north 76/21, west 90/20, n=8, lastTs 2026-01-08",
+        "recorded_a2_equals_a1": true,
+        "recorded_a3_rows": "runningTotal 15,19,22,27,40,54,69,75; runningMax 15 x8"
+      },
+      "reading": "The recorded a.1, a.2 and a.3 responses equal an independent recomputation, so the tester's 'matches client-side computation' readings are correct."
+    },
+    {
+      "step": "v.2 engine-source cross-check (scratchpad/engine-src snapshot of documentdb main)",
+      "command": "grep window_ops.c and commands_common.c",
+      "response": {
+        "window_ops.c:520-522": "ERRCODE_DOCUMENTDB_LOCATION5339902 'Expected a single sort by field for range-based window'",
+        "window_ops.c:539-546": "isUnbounded = START_UNBOUNDED_PRECEDING && END_UNBOUNDED_FOLLOWING; otherwise ERRCODE_DOCUMENTDB_LOCATION5339901 'Missing sortBy field for document-based window'",
+        "commands_common.c:57-62": "IgnoredCommonSpecFields contains 'allowDiskUse'",
+        "commands_common.c:501-509": "IsCommonSpecIgnoredField is a bsearch with no type check"
+      },
+      "reading": "The recorded codes 5339901/5339902 and messages match the source; the TypeMismatch for allowDiskUse:'yes' (b.3) cannot come from this ignore path, so it is validated somewhere else (gateway command parsing is the likely place; not verified)."
+    },
+    {
+      "step": "v.3 gateway binary string check",
+      "command": "docker exec ddb-engine-test grep -a -o -E '<patterns>' /home/documentdb/gateway/pg_documentdb_gw/target/release-with-symbols/documentdb_gateway; same over /usr/lib/postgresql/17/lib/pg_documentdb*.so",
+      "response": {
+        "gateway_binary_contains": [
+          "Query exceeded command timeout of ",
+          "terminated due to a command timeout. This may be due to concurrent transactions. Consider increasing the maxTimeMS",
+          "ExceededTimeLimit",
+          "OutOfDiskSpace"
+        ],
+        "gateway_binary_lacks": [
+          "MaxTimeMSExpired"
+        ],
+        "extension_so_files": "0 hits for 'Query exceeded command timeout' or 'command timeout of'",
+        "postgresql.conf": "statement_timeout = 0"
+      },
+      "reading": "The maxTimeMS message observed in d.3/d.4 is a gateway string distinct from the PostgreSQL QUERY_CANCELED mapping quoted in DECISIONS.md; MongoDB's codeName MaxTimeMSExpired does not exist in this gateway build."
+    },
+    {
+      "step": "v.4 gateway log evidence from run 1",
+      "command": "docker exec ddb-engine-test grep -a 'exceeded command timeout' /var/log/documentdb/gateway.log; grep for Find errors",
+      "response": {
+        "timeout_entries": 2,
+        "both": "telemetry::log_request_fail 'User request failed' error_source=Gateway operation_name=Aggregate error_message_internal='Query exceeded command timeout of 1ms' error_code=50 error_file_name=not_found, db.namespace t_query, collection big, 2026-11-25T20:08:45Z",
+        "find_errors_in_t_query": 0,
+        "only_find_error_line": "namespace t_txn (sibling test), not this test"
+      },
+      "reading": "Both run-1 timeouts (d.3 aggregate, d.4 count_documents which pymongo sends as an aggregate) were raised by the gateway itself, not by PostgreSQL, and no Find in t_query ever failed, consistent with the tester's d.1/d.2/d.5 observations."
+    },
+    {
+      "step": "v.5 pymongo getMore/maxTimeMS check",
+      "command": "grep pymongo/synchronous/cursor.py and cursor_shared.py in the venv",
+      "response": {
+        "cursor.py:214-215": "find options maxTimeMS <- self._max_time_ms",
+        "cursor.py:353": "_GetMore receives self._max_await_time_ms (a different attribute)",
+        "cursor_shared.py:778": "max_await_time_ms docs: the limit applies to a CursorType.TAILABLE_AWAIT cursor"
+      },
+      "reading": "pymongo 4.20.1 sends maxTimeMS on the find command only; non-tailable getMore carries none, confirming the tester's explanation of d.1."
+    },
+    {
+      "step": "v.6 re-read of recorded explain documents",
+      "command": "python over ../query-behaviour/report.json steps c.*",
+      "response": {
+        "c.1": "queryPlanner.winningPlan FETCH{runtimeFilterSet,[rnd>0.999]} -> IXSCAN{indexName _id_, isBitmap true}; executionStats totalDocsExamined 200000, totalDocsRemovedByRuntimeFilter 199785, nReturned 215; queryPlanner keys namespace, winningPlan, indexCosts",
+        "c.4b": "stages[0].$cursor same _id_ IXSCAN pattern, totalDocsExamined 200000",
+        "c.5d": "stages[0].$cursor FETCH{cosmosSearchCustomParams{nProbes 2}} -> IXSCAN{vec_ivf, Forward, hasOrderBy true}; stages keys [$cursor],[$limit],[$project]; no SORT, no COLLSCAN",
+        "c.6": "stages keys [$cursor],[$sort],[$sort],[$sort],[$group],[$sort]; stages[0].$cursor on the 24-doc sales collection with no filter is FETCH -> IXSCAN _id_; COLLSCAN appears only under the $sort/$group sub-plans (SORT -> PROJECTION_DEFAULT -> COLLSCAN)"
+      },
+      "reading": "Every layout and stage-name claim in the tester's conclusions is present in the recorded documents; c.6 additionally shows the _id_ IXSCAN base scan on a 24-document collection with an empty filter, which partly covers the unexecuted c.1b/c.1c."
+    },
+    {
+      "step": "v.7 credential scan",
+      "command": "grep -c -F \"$LOCAL_PASS\" over ../query-behaviour/{report.json,run.py,amend_report.py} and every file in this directory",
+      "response": "0 hits in the tester's files; this directory's files are scanned and redacted by the writer script (see credential_scan below)",
+      "reading": "No credential is recorded in any report or script."
+    }
+  ],
+  "verdict": {
+    "rerun_executed": false,
+    "confirmed": [
+      "L08 chained $setWindowFields pipeline runs and values match (a.1-a.3; recomputed offline)",
+      "sortBy errors 5339901/5339902 and the unbounded/no-window exceptions (a.4-a.7; match engine source)",
+      "allowDiskUse accepted true/false on aggregate and find, TypeMismatch for a string (b.1-b.4)",
+      "explain layouts for find, aggregate and the cosmosSearch pipeline, stage names, _id_ IXSCAN full scans and COLLSCAN only in window sub-plans (c.*; re-read from recorded documents)",
+      "maxTimeMS 1 on aggregate/count -> code 50 codeName ExceededTimeLimit, no errorLabels; find path did not fail (d.*; corroborated by gateway log)",
+      "find-path enforcement left inconclusive (correct)"
+    ],
+    "disputed": [
+      {
+        "claim": "'engine_version: buildInfo.version 7.0.0' and conclusions phrased 'at buildInfo version 7.0.0'",
+        "reason": "7.0.0 is the MongoDB wire-compatibility version the gateway advertises, not the engine version. The engine under test is DocumentDB 0.117.0 (hello.internal.documentdb_versions; image label org.opencontainers.image.version 0.117.0, revision 28cc012, built 2026-09-25). Readers comparing with DECISIONS.md engine_source facts (main @ a5f1636, 2026-11-18) need the 0.117.0 label."
+      },
+      {
+        "claim": "'Is sortBy required for every window except a fully unbounded one? Yes' at confidence observed",
+        "reason": "Only $sum with one bounded documents window, one range window, one fully unbounded window and one no-window output were exercised; the generalisation to every window/operator rests on the engine source cited in DECISIONS.md, so 'observed for these four shapes, general rule from source' is the defensible wording."
+      }
+    ]
+  },
+  "to_resume": [
+    "User frees Docker VM disk space (about 7.7GB is reclaimable per docker system df; the verifier removed nothing)",
+    "docker restart ddb-engine-test (PostgreSQL will replay WAL; a 12M core file sits in /data/core)",
+    "rerun /private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/engine-tests/query-behaviour/run.py to fill in c.1b-c.1d and d.6-d.11, then /private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/engine-tests/query-behaviour-rerun/run.py for the independent comparison"
+  ]
+}

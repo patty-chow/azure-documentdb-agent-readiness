@@ -3,7 +3,7 @@ id: H03
 title: "Readiness inventory: detect installed accelerators by code so the Agent Kit, MCP server and local container are not reported as missed"
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
-status: needs_sme
+status: ready
 hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P1
 sample_count: 59
@@ -11,7 +11,7 @@ member_drafts:
   - 058-readiness-stage-reports-installed-accelerators-the-agent-kit.md
   - 070-readiness-inventory-one-offs-azd-not-installed-agent-kit-rec.md
   - 063-documentdb-local-container-not-pre-pulled-or-running-in-the-.md
-open_questions: 4
+open_questions: 3
 ---
 
 # Readiness inventory: detect installed accelerators by code so the Agent Kit, MCP server and local container are not reported as missed
@@ -61,7 +61,7 @@ def probe_accelerators(skills, skill_paths, mcp_statuses, clis, sign_in, gateway
         s = mcp.get(n); return bool(s and s.available), (s.detail if s else "no mcp.json entry")
     from_lock = any(e.get("source") == "Azure/documentdb-agent-kit" for e in _lock_entries(skill_paths).values())
     kit = sum(1 for s in skills if s.name.startswith("documentdb-"))
-    kit_ok = bool(kit) and from_lock   # see open question 2
+    kit_ok = bool(kit) and from_lock   # see open question 1
     rows = [
         ("DocumentDB Agent Kit", kit_ok, f"{kit} documentdb-* skills" + (" from Azure/documentdb-agent-kit" if from_lock else "")),
         ("Azure DocumentDB MCP Toolkit", *srv("documentdb")),
@@ -110,7 +110,7 @@ def reconcile_accelerators(inventory: dict, report: ReadinessReport) -> Readines
 - Add a column "How the inventory detects it".
 - Kit row: "The kit is the set of `documentdb-*` skills. It is installed when `machine_inventory.accelerators` marks it installed; `npx skills add` installs nothing else."
 - MCP rows: "installed when `mcp_servers[].available` is true".
-- Replace the container row with: `| Local DocumentDB container | Run the open-source engine locally for tests (image ghcr.io/documentdb/documentdb/documentdb-local, MongoDB wire protocol on 10260) | github.com/documentdb/documentdb | Docker. Loop runs intentionally do not start it: the environment note names a live cluster to build against. When that note is present, do not list this container in accelerators_missed. |`
+- Replace the container row with: `| Local DocumentDB container | Run the open-source engine locally for tests (image ghcr.io/documentdb/documentdb/documentdb-local, MongoDB wire protocol on 10260; use a versioned tag such as pg17-1.2.0 rather than :latest). It is not a stand-in for cluster-only features: the image has no DiskANN, pq compression, full-text search, change streams or Entra ID authentication (SCRAM-SHA-256 only). | github.com/documentdb/documentdb, documentdb.io/docs/documentdb-local | Docker. Loop runs intentionally do not start it: the environment note names a live cluster to build against. When that note is present, do not list this container in accelerators_missed. |`
 - Add below the table: "`azd`, `bicep` and `terraform` are deliberately not installed: the harness builds against a pre-provisioned cluster and never deploys. Set `worth_adding` to true for them only when the sample itself asks for infrastructure-as-code or a deployment step."
 
 **5. `prompts/readiness_checker.md`, Tools paragraph.** Replace "Check the known accelerators: anything that exists and would speed this build up but is not installed goes in `accelerators_missed`, with the install command if you know it from a source." with:
@@ -130,7 +130,7 @@ def reconcile_accelerators(inventory: dict, report: ReadinessReport) -> Readines
   - (c) No-skills arm (`installed_skills == []`): the kit entry stays in missed.
 - `tests/test_pipeline_offline.py` seeds `accelerators_missed=["DocumentDB Agent Kit"]`. Give it a no-skills inventory so the assertion does not flip.
 
-**Not in this PR.** Starting the local container in loop runs would change what the experiment measures: builders could verify against the local container instead of the live cluster. If that workflow is ever wanted, it should be a separate opt-in arm, for example a `--local-gateway` flag with one container per run on its own port. Installing Bicep in the build image is handled in a separate filing. Running the kit's own installer (`npx skills add Azure/documentdb-agent-kit`) in the build image, so that `skills-lock.json` is always present as the marker, is optional; the repository already has the lock file, so detection is the cheaper fix.
+**Not in this PR.** Starting the local container in loop runs would change what the experiment measures: builders could verify against the local container instead of the live cluster, and the local image is a different engine build from the managed service (no DiskANN or pq compression, no full-text search, no change streams, no Entra ID, snapshot read concern rejected; DECISIONS.md topic 12). If that workflow is ever wanted, it should be a separate opt-in arm, for example a `--local-gateway` flag with one container per run on its own port, limited to samples that use none of those cluster-only features. Installing Bicep in the build image is handled in a separate filing. Running the kit's own installer (`npx skills add Azure/documentdb-agent-kit`) in the build image, so that `skills-lock.json` is always present as the marker, is optional; the repository already has the lock file, so detection is the cheaper fix.
 
 ## Evidence
 
@@ -141,12 +141,15 @@ def reconcile_accelerators(inventory: dict, report: ReadinessReport) -> Readines
 - `runs/17-esg-scoring-pipeline/20261124-192259/02-readiness.json`: the local container is the only missed accelerator; the build completed against the live cluster.
 - `runs/07-customer-review-sentiment-pipeline/20261124-183656/02-readiness.json`: `azd` is marked `worth_adding: true`.
 
+## Resolved
+
+- Local image parity for `vector-diskann` and Entra ID: settled, no on both counts. The `documentdb-local` image supports only `vector-ivf` and `vector-hnsw` (up to 2,000 dimensions uncompressed, 4,000 with `half`; DiskANN, `pq` and 16,000 dimensions are Azure-only) and authenticates only with SCRAM-SHA-256 (no MONGODB-OIDC handler; `saslSupportedMechs` advertises SCRAM-SHA-256 only), so a local-container arm could not exercise either feature. Sources (DECISIONS.md, SME topic 12): engine clone `pg_documentdb/src/vector/vector_index_kind_impl.c:109-133`, `packaging/gateway/docker/Dockerfile_documentdb_local:89-94`, `pg_documentdb_gw/documentdb_gateway_core/src/auth/manager.rs:159-166`, `processor/ismaster.rs:118,193`; https://documentdb.io/docs/reference/operators/aggregation/$vectorsearch/; https://learn.microsoft.com/en-us/azure/documentdb/limitations; https://learn.microsoft.com/en-us/azure/documentdb/how-to-connect-role-based-access-control.
+
 ## Open questions
 
-1. Does the open-source `documentdb-local` image match the managed service for `vector-diskann` indexes and Entra ID authentication? This matters only if a local-container arm is added later. [needs SME confirmation]
-2. The drafts disagree on how to detect the kit. 058 counts it as installed if `skills-lock.json` names `Azure/documentdb-agent-kit` **or** any `documentdb-*` skill is present. 070 requires the lock entry **and** at least one skill. The code above uses AND. The maintainer should decide whether hand-copied skills with no lock file count as the kit.
-3. Should the container carve-out also be enforced in code (for example, dropping container entries when the environment note is present), or is the prompt change enough?
-4. The counts come from a single run, and the reviewer flags them as unstable. Before quoting them outside the team, re-run the batch after this PR (and the harness MCP and audit-rubric fixes).
+1. The drafts disagree on how to detect the kit. 058 counts it as installed if `skills-lock.json` names `Azure/documentdb-agent-kit` **or** any `documentdb-*` skill is present. 070 requires the lock entry **and** at least one skill. The code above uses AND. The maintainer should decide whether hand-copied skills with no lock file count as the kit.
+2. Should the container carve-out also be enforced in code (for example, dropping container entries when the environment note is present), or is the prompt change enough?
+3. The counts come from a single run, and the reviewer flags them as unstable. Before quoting them outside the team, re-run the batch after this PR (and the harness MCP and audit-rubric fixes).
 
 ## Source drafts
 

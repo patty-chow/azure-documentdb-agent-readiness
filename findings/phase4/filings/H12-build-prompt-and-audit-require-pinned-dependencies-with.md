@@ -3,13 +3,13 @@ id: H12
 title: "Build prompt and audit: require pinned dependencies with a lockfile, a valid .env.example and offline tests"
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
-status: needs_sme
+status: ready
 hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P1
 sample_count: 18
 member_drafts:
   - 082-pipeline-build-prompt-and-audit-checklist-requirements-for-s.md
-open_questions: 3
+open_questions: 1
 ---
 
 # Build prompt and audit: require pinned dependencies with a lockfile, a valid .env.example and offline tests
@@ -58,8 +58,14 @@ Reviewers check these mechanically; a sample that misses one is sent back.
   unbalanced quotes). It lists **every** environment
   variable any file in the sample reads (`process.env.X`, `os.environ[...]`, `os.getenv`),
   required ones first, each with a one-line comment and a placeholder value only
-  (`<your-cluster-name>`, never a real host, user or key). Include the lines
-  `# Get the connection string with: az documentdb mongocluster list-connection-strings --cluster-name <cluster> -g <resource-group>`
+  (`<your-cluster-name>`, never a real host, user or key). The connection-string placeholder is
+  the Azure DocumentDB `mongodb+srv://` form on the `<your-cluster-name>.mongocluster.cosmos.azure.com`
+  host that the portal or CLI returns, keeps `retrywrites=false` (the service does not support
+  retryable writes), and is never an RU-based Cosmos DB for MongoDB URI
+  (`...:27017/?ssl=true&replicaSet=...`). Include the lines
+  `# Get the connection string from the portal (Cluster > Settings > Connection strings) or: az documentdb mongocluster show -n <cluster> -g <resource-group> --query properties.connectionString -o tsv`
+  (`az documentdb mongocluster list-connection-strings --cluster-name <cluster> -g <resource-group>`
+  lists every string; read each entry's `name`/`description` rather than assuming a position)
   and `# Copy to .env; never commit .env`.
 - **Exact pins and a committed lockfile for the sample's language.**
   Python: `requirements.txt` with `==` for every package (or `pyproject.toml` plus a committed
@@ -67,14 +73,27 @@ Reviewers check these mechanically; a sample that misses one is sent back.
   committed `package-lock.json` or `npm-shrinkwrap.json`. Optional integrations (LlamaIndex,
   LangChain, Beanie, ...) go in their own pinned block (`requirements-extras.txt` or an npm
   optional group) that you install once and record as `verification_done`. Do not drop a
-  framework the prompt asked for because the resolver failed; pin a working set instead.
+  framework the prompt asked for because the resolver failed; pin a working set instead. Pin
+  only versions that exist on the registry (resolve the current stable release with
+  `npm view <pkg> version` or `pip index versions <pkg>` before writing the pin): 13 runs failed
+  on `npm ERR! notarget` for versions such as `mongodb@^5.12.0` and `mongoose@^7.14.0` that were
+  never published.
 - **Tested runtime.** The README states "Tested with Python 3.11" (or the Node major), and
   `engines` / `requires-python` says the same. Use the runtime the run environment provides
   and pin packages that support it.
 - **Tests that run offline.** A `tests/` folder with fixtures (mongomock,
-  mongodb-memory-server or driver mocks; a stubbed embedding client). Stub `cosmosSearch`
-  vector queries and `$search` text queries at the data-access layer rather than expecting an
-  emulator to run them. Provide a `test:unit` / `pytest -m "not live"` target that passes with
+  mongodb-memory-server or driver mocks; a stubbed embedding client). Stub full-text `$search`
+  queries and `createSearchIndexes` at the data-access layer: the local DocumentDB gateway
+  container (`ghcr.io/documentdb/documentdb/documentdb-local`) has no full-text search layer:
+  `createSearchIndexes` fails with code 115 `CommandNotSupported` and a text operator in `$search`
+  is rejected (`Unrecognized $search option: text`), and on Azure full-text search is a preview
+  that must be enabled on the cluster first. `cosmosSearch` vector queries may run against that
+  container only with `vector-ivf` or `vector-hnsw` indexes of at most 2,000 dimensions (4,000
+  with `compression: "half"`); `vector-diskann`, `pq` compression, change streams and Entra ID
+  do not exist locally, so stub those paths too. If the sample uses the container, pin a
+  versioned tag (`pg17-1.2.0`, not `:latest`), connect to port 10260 with
+  `tls=true&tlsAllowInvalidCertificates=true` and a username/password, and keep it out of the
+  default offline target. Provide a `test:unit` / `pytest -m "not live"` target that passes with
   no `.env`. Live tests are marked and skipped when `DOCUMENTDB_URI` is unset.
 - **Seed script** that batches writes (`insert_many` / `bulk_write`, bounded batch size), is
   idempotent (upsert on a deterministic key), and takes `--force` to drop and reseed. A
@@ -146,11 +165,14 @@ After this lands, the 25 findings listed below should be re-targeted from Learn 
 
 Finding ids: F0271, F0276, F0334, F0336, F0337, F0443, F0444, F0445, F0515, F0542, F0903, F0933, F0986, F2171, F2229, F3196, F3247, F3313, F3341, F3381, F3383, F3406, F3448, F3482, F3516.
 
+## Resolved
+
+1. Offline tests for `cosmosSearch` and `$search` (stub, or use the local gateway container?): stub full-text `$search` and `createSearchIndexes`, because the documentdb-local gateway has no full-text layer (it rejects `createSearchIndexes` with code 115 `CommandNotSupported` and a text `$search` operator with `Unrecognized $search option: text`), and on Azure the feature is a preview that must be enabled (an un-enabled cluster also returned code 115); `cosmosSearch` vector queries can run on documentdb-local only with `vector-ivf`/`vector-hnsw` indexes up to 2,000 dimensions (4,000 with `half`), never `vector-diskann` or `pq`, so the prompt offers the container for those cases and stubbing for everything else. Sources: DECISIONS.md topic 12 (engine `pg_documentdb/src/vector/vector_index_kind_impl.c:109-133`, `pg_documentdb_gw/.../postgres/data_client.rs:528-548`, `pg_documentdb/include/aggregation/bson_aggregation_search.h:27-36`; https://documentdb.io/docs/reference/operators/aggregation/$search/; https://documentdb.io/docs/reference/operators/aggregation/$vectorsearch/; https://documentdb.io/docs/documentdb-local/) and topic 7 (https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview; runs/07-voice-of-customer-sentiment-hub/20261124-204049).
+2. The `.env.example` connection-string hint (`az documentdb mongocluster list-connection-strings`, or a Learn page?): the command is valid and documented (`--cluster-name`, documentdb extension, Azure CLI 2.75.0 or later, auto-installed on first use, without a prompt in non-interactive shells) and is part of the canonical wording together with the portal path (Cluster > Settings > Connection strings); because Learn does not enumerate the entries it returns, the hint now prefers `az documentdb mongocluster show --query properties.connectionString` for the default string and tells readers to read `name`/`description` from the list output, and the placeholder keeps `retrywrites=false`, which the service requires. Sources: DECISIONS.md topic 3 (https://learn.microsoft.com/en-us/cli/azure/documentdb/mongocluster#az-documentdb-mongocluster-list-connection-strings; https://learn.microsoft.com/en-us/rest/api/document-db/mongo-clusters/get?view=rest-document-db-2026-06-01; https://learn.microsoft.com/en-us/azure/documentdb/tutorial-nodejs-mongoose; loop/provision.sh:48), topic 11 (https://aka.ms/azure-cli-extension-index-v1; Azure/azure-cli dynamic_install.py) and the retryWrites section (https://github.com/documentdb/documentdb/issues/767; https://learn.microsoft.com/en-us/azure/documentdb/quickstart-nodejs).
+
 ## Open questions
 
-1. [needs SME confirmation] Should offline tests stub `cosmosSearch` and `$search` at the data-access layer (the text above assumes mongomock and mongodb-memory-server cannot run them), or should the prompt instead point builders at the local DocumentDB gateway container for those tests?
-2. [needs SME confirmation] Is `az documentdb mongocluster list-connection-strings --cluster-name <cluster> -g <resource-group>` the command the team wants every sample's `.env.example` to show, or should it point to a Learn page instead?
-3. The sample counts (18 samples, 25 findings, and the scan table) come from one run. Python 3.13 install failures in the build image inflate some of them. Should the counts be re-measured after the harness fixes before they are quoted outside the team?
+1. The sample counts (18 samples, 25 findings, and the scan table) come from one run. Python 3.13 install failures in the build image inflate some of them. Should the counts be re-measured after the harness fixes before they are quoted outside the team?
 
 ## Source drafts
 

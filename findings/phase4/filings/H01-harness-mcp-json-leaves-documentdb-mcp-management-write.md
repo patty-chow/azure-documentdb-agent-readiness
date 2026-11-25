@@ -18,7 +18,7 @@ open_questions: 3
 
 ## What happens today
 
-The harness `mcp.json` starts `github:microsoft/documentdb-mcp` with only `TRANSPORT`, `AUTH_REQUIRED`, `ALLOW_UNAUTHENTICATED_STDIO` and `CONNECTION_PROFILES` in `env`. documentdb-mcp ships its write and management tools turned off by default (`src/config.ts` lines 212-213), which is intentional and documented (its README, and `skills/mcp-setup/SKILL.md` in the Agent Kit). So every builder call to `documentdb_create_index` is refused with:
+The harness `mcp.json` starts `github:microsoft/documentdb-mcp` with only `TRANSPORT`, `AUTH_REQUIRED`, `ALLOW_UNAUTHENTICATED_STDIO` and `CONNECTION_PROFILES` in `env`. (`ALLOW_UNAUTHENTICATED_STDIO` is the variable's pre-release name: the server on main reads only `TRUST_LOCAL_STDIO` (`src/config.ts` line 225; renamed in microsoft/documentdb-mcp PR #83, merged 2026-05-27), so that line is a no-op and stdio works here only because `AUTH_REQUIRED` is `false`. The old name comes from the Learn MCP Toolkit page, which still uses it.) documentdb-mcp ships its write and management tools turned off by default (`src/config.ts` lines 212-213), which is intentional and documented (its README, and `skills/mcp-setup/SKILL.md` in the Agent Kit). So every builder call to `documentdb_create_index` is refused with:
 
 ```
 Management tools are disabled by default. Set ENABLE_MANAGEMENT_TOOLS=true to opt in.
@@ -50,13 +50,13 @@ This is also the root cause behind drafts 108 and 112 (documentdb-mcp items); th
 
 ## Proposed change
 
-**1. `mcp.json`**: enable the tools the build stage needs (the URI stays an environment placeholder):
+**1. `mcp.json`**: enable the tools the build stage needs, and use the variable name the server actually reads (the URI stays an environment placeholder):
 
 ```json
 "env": {
   "TRANSPORT": "stdio",
   "AUTH_REQUIRED": "false",
-  "ALLOW_UNAUTHENTICATED_STDIO": "true",
+  "TRUST_LOCAL_STDIO": "true",
   "ENABLE_MANAGEMENT_TOOLS": "true",
   "ENABLE_WRITE_TOOLS": "true",
   "CONNECTION_PROFILES": "{\"default\":{\"authMode\":\"connectionString\",\"uri\":\"${DOCUMENTDB_URI}\"}}"
@@ -64,6 +64,8 @@ This is also the root cause behind drafts 108 and 112 (documentdb-mcp items); th
 ```
 
 Add one sentence to `_comment`: "ENABLE_MANAGEMENT_TOOLS and ENABLE_WRITE_TOOLS are opt-ins in documentdb-mcp; they are on here because the build stage is expected to create indexes and seed data against the experiment cluster."
+
+The rename of `ALLOW_UNAUTHENTICATED_STDIO` to `TRUST_LOCAL_STDIO` is a separate, settled fact (findings/phase4/DECISIONS.md, topics 12 and 13): the server on main (commit b967704) reads only `TRUST_LOCAL_STDIO` (`src/config.ts:225`) and refuses stdio with "stdio transport is disabled when AUTH_REQUIRED=true. Set TRUST_LOCAL_STDIO=true ..." (`src/server.ts:37`) when the old name is used with the default `AUTH_REQUIRED`. The harness is unaffected today because it sets `AUTH_REQUIRED=false`, but the dead variable should go so the file does not teach the Learn page's stale name. Sources: https://github.com/microsoft/documentdb-mcp/pull/83; https://learn.microsoft.com/en-us/azure/documentdb/mcp-toolkit (still shows the old name; a Learn fix is tracked separately, not in this PR).
 
 **2. `loop/findings.py`** (around line 169): stop attributing harness-caused refusals to the MCP server:
 
@@ -94,9 +96,9 @@ else:
 
 1. Intent of the experiment (for the harness owner): should the build stage have management and write tools (step 1), or are they deliberately off to measure driver fallback? The rest of the PR applies either way.
 2. Is turning on write and management tools against the shared experiment cluster acceptable to whoever owns that cluster?
-3. Every `documentdb_create_index` call was refused before validation, so it is untested whether the tool accepts a `cosmosSearch` vector index (`vector-ivf`, `vector-hnsw`, `vector-diskann`) end to end. [needs SME confirmation] Can a documentdb-mcp maintainer confirm, so the re-run is not blocked by a second failure?
+3. Every `documentdb_create_index` call was refused before validation, so it is untested whether the tool accepts a `cosmosSearch` vector index (`vector-ivf`, `vector-hnsw`, `vector-diskann`) end to end. The engine side is settled (findings/phase4/DECISIONS.md, vector indexes: parameter ranges and the 2,000/4,000/16,000 dimension caps are documented on Learn, and the engine test reported 2026-11-25 confirmed that the 4,000 half-precision ceiling is enforced); what is open is only whether the MCP tool's `documentdb_create_index` schema and validation pass a `cosmosSearchOptions` definition through unchanged. [needs SME confirmation] Can a documentdb-mcp maintainer confirm, so the re-run is not blocked by a second failure?
 
-None of the reviewer's SME-flagged claims (change-stream limits, `$jsonSchema` enum support, 16500/429 behaviour, driver version floors, HNSW/IVF limits) appear in this PR. The retryWrites question is answered (2026-11-25, see findings/phase4/DECISIONS.md: retryable writes are not supported and `retrywrites=false` is required) and does not touch this PR.
+None of the reviewer's SME-flagged claims (change-stream limits, `$jsonSchema` enum support, 16500/429 behaviour, driver version floors, HNSW/IVF limits) appear in this PR. The retryWrites question is answered (2026-11-25, see findings/phase4/DECISIONS.md: retryable writes are not supported and `retrywrites=false` is required) and does not touch this PR. The `ALLOW_UNAUTHENTICATED_STDIO` / `TRUST_LOCAL_STDIO` rename is settled in DECISIONS.md (topics 12 and 13) and is applied in step 1 above.
 
 ## Source drafts
 

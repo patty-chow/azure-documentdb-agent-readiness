@@ -20,7 +20,7 @@ merged_from:
   - K05
   - K06
   - K31
-open_questions: 10
+open_questions: 4
 ---
 
 # vector-search skill: `number[]` storage rule, copy-paste IVF/HNSW/DiskANN index templates with `$search` as the primary query path, idempotent ensure-index from app code, and a response-shape rule (score, no raw vectors)
@@ -107,13 +107,15 @@ db.runCommand({ createIndexes: "<collection>", indexes: [{ name: "embedding_vect
 
 The mongosh helper form `db.<coll>.createIndex({ embedding: "cosmosSearch" }, { name, cosmosSearchOptions: {...} })` is equivalent; show it once next to the command form. `similarity` is `COS`, `L2` or `IP`. For app code, link to vector-ensure-index.
 
-**Tunables** [needs SME confirmation] (from the Learn vector-search page; see open question 1):
+**Tunables** (every range and default is from the Learn vector-search page's per-algorithm tabs, https://learn.microsoft.com/en-us/azure/documentdb/vector-search; the M30 floor for HNSW and DiskANN is from the limitations page):
 
 | kind | recommended tier / scale | build keys (range, default) | query key in `$search.cosmosSearch` | for more recall |
 |---|---|---|---|---|
-| `vector-ivf` | M10/M20, under ~10k vectors | `numLists`: 1 for demos (brute force, most accurate); `documentCount/1000` up to 1M docs; use DiskANN above 1M. Sized from the document count, so re-tune (drop and recreate) as the collection grows | `nProbes` (default 1, ≤ `numLists`) | raise `nProbes` |
+| `vector-ivf` | M10/M20, under ~10k vectors | `numLists`: 1 for demos (brute force, most accurate); `documentCount/1000` up to 1M docs; above 1M use DiskANN (the page's Important box; its field table says `sqrt(documentCount)`, see open question 1). Sized from the document count, so create it after loading and re-tune (drop and recreate) as the collection grows | `nProbes` (default 1, ≤ `numLists`) | raise `nProbes` |
 | `vector-hnsw` | M30+, up to ~50k vectors; can be built on an empty collection | `m` 2-100 (default 16); `efConstruction` 4-1000 (default 64, ≥ 2*`m`) | `efSearch` (default 40) | raise `m` / `efConstruction` / `efSearch`; large HNSW builds can exhaust memory, so prefer DiskANN or a larger tier |
 | `vector-diskann` | M30+, 500k+ vectors | `maxDegree` 20-2048 (default 32); `lBuild` 10-500 (default 50) | `lSearch` 10-1000 (default 40, ≥ `k`) | raise `maxDegree` / `lBuild` / `lSearch` |
+
+Local parity: the `documentdb-local` container has only `vector-ivf` and `vector-hnsw` (no DiskANN, no `pq` compression; 2,000 dimensions uncompressed, 4,000 with `compression: "half"`), so the templates and the ensure helper must let `kind` be configured (see local-prod-parity).
 
 **Incorrect** (these are Atlas / MongoDB 7 shapes, not DocumentDB vector indexes):
 
@@ -129,15 +131,15 @@ db.products.createIndex({ cosmosSearch: "cosmosSearch" }, { cosmosSearchOptions:
 // ^ indexes a field literally named "cosmosSearch"; queries on "embedding" fail with "Similarity index not found"
 ```
 
-Follow it with one sentence: a vector index is an ordinary `createIndex` / `createIndexes` call whose key is `{ <field>: "cosmosSearch" }` with `cosmosSearchOptions`, queried with `$search: { cosmosSearch: {...} }`. `createSearchIndexes` is the full-text search index command (preview, enabled per cluster [needs SME confirmation], see open question 3). The two meet only at query time, in hybrid search (see `fts-hybrid-search`).
+Follow it with one sentence: a vector index is an ordinary `createIndex` / `createIndexes` call whose key is `{ <field>: "cosmosSearch" }` with `cosmosSearchOptions`, queried with `$search: { cosmosSearch: {...} }`. `createSearchIndexes` is the full-text search index command. Full-text search is in preview and is enabled per cluster (portal: Settings > Features > Full-text search > Enable, or add `FullTextSearch` to `properties.previewFeatures` with the Azure CLI, Bicep or Terraform; wait ten minutes before creating a search index). On a cluster where it is not enabled, `createSearchIndexes` fails with `CommandNotSupported` (code 115, "Search index creation is not supported yet"); that is a configuration state, not a reason to retry with another index shape. The two meet only at query time, in hybrid search (see `fts-hybrid-search`).
 
 **Common mistakes** (each one occurred in the experiment's builds):
 - `path` belongs in the `$search.cosmosSearch` query, not in `cosmosSearchOptions`.
 - DiskANN keys (`maxDegree`, `lBuild`) on an HNSW index, or HNSW keys on DiskANN: use the template for the kind you chose.
 - `vector-ivf` with a large `numLists` (for example 100) on a handful of demo documents: use `numLists: 1` and re-tune as the collection grows.
-- `dimensions` must equal the embedding length. [needs SME confirmation] Without compression the maximum is 2,000 dimensions. Half-precision (HNSW/IVF) raises it to 4,000, and DiskANN with product quantization raises it to 16,000. A 3,072-dimension model therefore needs one of those options.
+- `dimensions` must equal the embedding length. Without compression the maximum is 2,000 dimensions. Half-precision (`compression: "half"`, HNSW/IVF) raises it to 4,000 (the engine rejects 4,001 with "field cannot have more than 4000 dimensions for vector index"), and DiskANN with product quantization raises it to 16,000 (Learn vector-search, half-precision, product-quantization and limitations pages). A 3,072-dimension model therefore needs one of those options. The 8,000 figure on the select-algorithm quickstarts is wrong and is being corrected.
 - Vectors must be stored as `number[]` (see vector-normalize-embeddings).
-- Only one vector index is allowed per path [needs SME confirmation, see open question 6]. `IndexOptionsConflict` means an index on the same key already exists with a different name or options: reuse its name, or drop and recreate it.
+- Only one vector index is allowed per path ("You can create only one index per vector path", Learn vector-search and limitations pages). If `createIndexes` fails because an index on the same key already exists with a different name or options (the experiment saw `IndexOptionsConflict`; the exact error is undocumented, see open question 2), reuse its name, or drop and recreate it deliberately.
 
 ### `skills/vector-search/vector-ensure-index.md` (new)
 
@@ -172,7 +174,7 @@ def ensure_vector_index(db, coll, field, dims, similarity="COS", kind=None, name
             return ix["name"]
     opts = {"kind": kind, "dimensions": dims, "similarity": similarity}
     if kind == "vector-ivf":
-        # numLists is sized from the document count; see open question 2 on build order
+        # numLists is sized from the document count: create the IVF index after loading (Learn vector-search)
         opts["numLists"] = int(os.getenv("IVF_NUM_LISTS", max(1, c.estimated_document_count() // 1000)))
     elif kind == "vector-hnsw":
         m = int(os.getenv("HNSW_M", 16))
@@ -206,8 +208,9 @@ assert hits, "vector query returned no results (are vectors stored as number[]?)
 Text bullets in the file:
 - The key is `{ <field>: "cosmosSearch" }`. Payloads per kind are in vector-index-templates, and storage rules are in vector-normalize-embeddings.
 - Use one `EMBEDDING_DIMS` value for both the embedder and this function. Run the dimension check before `createIndexes` so placeholder vectors (for example 3 floats against 1536) fail with a clear message, not `expected 1536 dimensions, not 3`.
-- Only one vector index per path, so changing `dimensions` or `kind` means drop and recreate [needs SME confirmation, see open question 6].
-- HNSW can be built on an empty collection. IVF's `numLists` depends on the document count: create IVF after loading the data, or start with `numLists: 1` for a demo and recreate it later [needs SME confirmation, see open question 2].
+- Only one vector index per path (Learn vector-search, limitations), so changing `dimensions` or `kind` means drop and recreate.
+- HNSW can be built on an empty collection (Learn vector-search, HNSW column). IVF's `numLists` depends on the document count, so create or re-create the IVF index after loading the data (start with `numLists: 1` for a demo and recreate it later); a product-quantization index should also be created after the collection has data (Learn product-quantization page, note).
+- A newly created index can return empty results for 2 to 3 minutes while it builds (Learn quickstart-nodejs-select-algorithm, Troubleshooting), so run the probe query in the seed script after a short wait, or retry it, instead of failing app startup on an empty result.
 - For the scalar filter/pre-filter indexes created alongside the vector index, run `explain("executionStats")` on the representative filter query and fail on COLLSCAN. Do not use a COLLSCAN string check to test the vector index, because a `$search` without a vector index errors instead of scanning.
 - ORM schema declarations (Mongoose `autoIndex`, Beanie `Indexed()`) do not replace this call for a vector index. Call it from the seed/startup script.
 - The MCP tool is fine for interactive work once `ENABLE_MANAGEMENT_TOOLS=true`, but a repository must not depend on it (see mcp-setup → Gated tools).
@@ -217,7 +220,7 @@ Text bullets in the file:
 Same rule format, Category Vector Search, Priority HIGH. **Why it matters:** a `cosmosSearch` index exists so that Azure DocumentDB does the nearest-neighbour search. Pulling documents with `find()` and ranking them in the app reads the whole collection on every query, ignores the index and teaches the wrong pattern. It is acceptable only as an explicitly labelled fallback for offline tests with a mocked collection.
 
 Rule:
-1. Check that a `cosmosSearch` index exists on the embedding field with `listIndexes` (`collection.list_indexes()` in PyMongo, `collection.indexes()` in Node.js). It appears as `key: { <field>: "cosmosSearch" }`, with its options, including `kind`, under `cosmosSearch` [needs SME confirmation, see open question 4].
+1. Check that a `cosmosSearch` index exists on the embedding field with `listIndexes` (`collection.list_indexes()` in PyMongo, `collection.indexes()` in Node.js). It appears as `key: { <field>: "cosmosSearch" }`, with its options, including `kind`, under `cosmosSearch` (Learn vector-search, "Get vector index definitions"); the ensure helper also reads `cosmosSearchOptions` defensively.
 2. If it exists, query with `$search` + `cosmosSearch` and project `searchScore` (see vector-knn-query and vector-search-response-shape). This is the only production path. Choose the search parameter by kind: `lSearch` for `vector-diskann`, `efSearch` for `vector-hnsw`, `nProbes` for `vector-ivf`.
 3. If it is missing, create it from the app with the driver (see vector-ensure-index) or fail loudly. An unavailable MCP tool is not a reason to skip the index, because the driver can create it. Do not fall back silently.
 4. Client-side cosine is allowed only behind an explicit opt-in (for example `VECTOR_SEARCH_MODE=client` or a test fixture). It must log a WARNING naming the missing index, the response must carry `search_source: "fallback"` (see vector-search-response-shape), and the README must label it a test-only fallback.
@@ -359,7 +362,7 @@ empty query and assert 400; assert no result contains an `embedding` key by defa
 - [Vector search queries](https://learn.microsoft.com/azure/documentdb/vector-search)
 ````
 
-[needs SME confirmation] The query-time knob names in the Correct example's comment (`efSearch` for `vector-hnsw`, `nProbes` for `vector-ivf`) and their limits must be confirmed before merge (open question 1). Maintainers may keep or drop the HTTP status mapping (open question 9).
+The query-time knob names in the Correct example's comment (`lSearch` for `vector-diskann`, `efSearch` for `vector-hnsw`, `nProbes` for `vector-ivf`) and their defaults come from the Learn vector-search page's per-algorithm tabs. Maintainers may keep or drop the HTTP status mapping (open question 3).
 
 ### `skills/vector-search/vector-normalize-embeddings.md`
 
@@ -369,7 +372,9 @@ empty query and assert 400; assert no result contains an `embedding` key by defa
 - Store the vector as a plain array of numbers (`number[]`: `vec.tolist()` / `[float(x) for x in vec]`
   in Python, `Array.from(float32)` in Node.js). BSON Binary / packed-float32 vectors (Atlas
   "BinData vector" style) and packed/base64 strings are not indexed by `cosmosSearch`; those
-  documents are left out of every `$search` result, with no error at insert or index time.
+  documents are left out of every `$search` result, with no error at insert or index time
+  (the value is stored and returned intact; only indexing skips it). A BSON Binary *query*
+  vector is rejected with "expected an array type field".
 ```
 
 2. Add an Incorrect/Correct pair:
@@ -394,7 +399,7 @@ doc["embedding"] = [float(x) for x in vec]
 ### `skills/vector-search/vector-choose-index-type.md`
 
 1. Link to vector-index-templates, so HNSW/IVF readers are not left with DiskANN-only key names.
-2. Add after the table [needs SME confirmation: HNSW and IVF limits, see open question 1]:
+2. Add after the table (ranges and defaults from the Learn vector-search page):
 
 ```markdown
 ### Sizing at creation time
@@ -402,7 +407,7 @@ doc["embedding"] = [float(x) for x in vec]
 |---|---|
 | small demo / new scenario | `1` (brute force), then tune |
 | up to 1M | `documentCount / 1000` (minimum 1) |
-| above 1M | use `vector-diskann` |
+| above 1M | use `vector-diskann` (the page's Important box; see open question 1) |
 
 `nProbes` defaults to 1 and cannot exceed `numLists`. HNSW: `m` default 16 (2-100), `efConstruction` default 64 (4-1000, at least `2*m`), query `efSearch` default 40; defaults are valid, but choose and record values deliberately. Compute it, don't guess it: `n = coll.count_documents({}); num_lists = max(1, n // 1000)`. Re-tune by drop and recreate.
 ```
@@ -413,7 +418,7 @@ doc["embedding"] = [float(x) for x in vec]
 2. Add `knnBeta` to the Incorrect block next to `$vectorSearch`.
 3. Add an Incorrect block: `find({}, {embedding: 1})` + cosine in the app, "with a fallback if the index is missing". State that client-side ranking is acceptable only for unit tests with a mocked collection, never as a runtime path.
 4. Make the Correct pipeline canonical and complete: `$search.cosmosSearch { path, vector, k, lSearch | efSearch | nProbes, filter }` → `$project { _id: 1, title: 1, sourceId: 1, score: { $meta: "searchScore" } }` → `$limit k`. The inclusion projection already leaves out the embedding, so do **not** add `embedding: 0` to it, because mixing inclusion and exclusion is rejected. If an exclusion-style projection is preferred, use exclusion only (`{ embedding: 0 }` in a separate `$project`, or `$unset: "embedding"`). Say why the embedding is left out: several samples returned 1536 floats per hit.
-5. Add a short query-key table next to the existing DiskANN table: `vector-hnsw` → `efSearch` (default 40); `vector-ivf` → `nProbes` (default 1, ≤ `numLists`). Build keys stay in vector-index-templates. Keep the kit's existing "verify exact names against current docs" hedge [needs SME confirmation, see open question 1].
+5. Add a short query-key table next to the existing DiskANN table: `vector-hnsw` → `efSearch` (default 40); `vector-ivf` → `nProbes` (default 1, ≤ `numLists`); `vector-diskann` → `lSearch` (10-1000, default 40, `k` ≤ `lSearch`). Build keys stay in vector-index-templates. Replace the kit's existing "verify exact names against current docs" hedge with a link to the Learn vector-search page's per-algorithm tabs, which are the source of these names.
 6. Add a PyMongo version of the pipeline under the JS one (`list(coll.aggregate([...]))`).
 7. Tips: "Never replace this stage with `find()` + in-process cosine; if the index is missing, see vector-prefer-server-side-search." and "`lSearch` applies to `vector-diskann`; use `efSearch` for `vector-hnsw` and `nProbes` for `vector-ivf`."
 
@@ -428,9 +433,9 @@ Add `index-query-to-index-worksheet` (first) and `index-ensure-script-lifecycle`
 
 ### `skills/indexing/index-ensure-script-lifecycle.md` (new, Priority HIGH)
 
-- Every app ships one version-controlled, idempotent `scripts/ensure_indexes.{py,js}` (or `schema/01_indexes.js`). It uses driver `createIndexes` with explicit names and runs as a deploy or seed step. B-tree, compound, TTL and 2dsphere indexes (and `vector-hnsw`) can be created before the bulk load. For `vector-ivf`, see vector-ensure-index and open question 2.
+- Every app ships one version-controlled, idempotent `scripts/ensure_indexes.{py,js}` (or `schema/01_indexes.js`). It uses driver `createIndexes` with explicit names and runs as a deploy or seed step. B-tree, compound, TTL and 2dsphere indexes (and `vector-hnsw`) can be created before the bulk load. `vector-ivf` (and any product-quantization index) is created after the load, because `numLists` is sized from the document count (see vector-ensure-index).
 - Seeds are idempotent by construction: use a deterministic `_id` (for example `f"order-{i:06d}"`) or `UpdateOne(filter, {"$set": doc}, upsert=True)` inside `bulk_write(ops, ordered=False)`, in batches of 500-1000. Never call `insert_many` with generated ids and label it idempotent.
-- An identical name+spec `createIndexes` is a no-op. A same-name call with different options must fail loudly, never be swallowed: drop or rename deliberately [needs SME confirmation, see open question 7].
+- Neither the response to an identical name+spec `createIndexes` call nor the error for a same-name call with different options is documented (see open question 2), so the script tolerates both outcomes: it treats a successful repeat call as a no-op, and treats any error (the experiment saw `IndexOptionsConflict`) as a stop signal that is surfaced, never swallowed: drop or rename deliberately.
 - Runtime code only verifies (`listIndexes`) and fails fast or warns. It never calls `createIndex` in query helpers, aggregation paths or workers.
 - ODMs: Mongoose `mongoose.connect(..., { autoIndex: false })` + `await Model.syncIndexes(); // do not rely on autoIndex` in the script. Beanie: do not rely on `init_beanie` creating indexes in production. Call out the trap seen in the run: `autoIndex:false` + schema `index: true` + field missing from the script = the index never exists.
 - **MCP fallback:** `create_index` is a management tool and is off by default (`ENABLE_MANAGEMENT_TOOLS=true`, see mcp-setup → Gated tools). If it errors, don't retry the payload or defer to "manual portal creation". Write the index into the ensure script with the driver and run it.
@@ -455,11 +460,12 @@ def bootstrap(db, docs, batch=500):
     assert "orders_customer_date" in names, names
     plan = db.command("explain", {"find": "orders", "filter": {"customerId": "c-1"}},
                       verbosity="executionStats")
-    # check the whole plan: DocumentDB's explain layout differs from MongoDB's
+    # check the whole plan: for find it is at queryPlanner.winningPlan; for aggregate it sits at
+    # stages[0].$cursor.queryPlanner.winningPlan (Learn how-to-read-explain-output)
     assert "COLLSCAN" not in str(plan), "query is not using an index"
 ```
 
-[needs SME confirmation, see open question 8: the whole-plan COLLSCAN check.]
+The whole-plan `COLLSCAN` check works on Azure DocumentDB: Learn's explain page lists `COLLSCAN`, `IXSCAN` and `FETCH` as the common `winningPlan.stage` values, and the experiment observed `winningPlan.stage: "COLLSCAN"` for both a find explain (`runs/01-anti-money-laundering-pattern-detector/20261124-200112`) and an aggregate explain (`runs/12-cross-border-payment-audit-trail/20261124-201744`) on the managed cluster. Walk the `stages[].$cursor` branch for aggregate explains. The explain layout of a `$search`/`cosmosSearch` pipeline was not observed, which is one more reason not to test the vector index with a `COLLSCAN` string check.
 
 ### `skills/indexing/index-query-to-index-worksheet.md` (new, Priority CRITICAL)
 
@@ -535,11 +541,11 @@ Its tier table lists `vector-hnsw` and `vector-ivf` with no parameters. Mirror t
 
 ### `skills/query-optimization/query-explain-plan.md`
 
-Link to `indexing/index-query-to-index-worksheet` and `indexing/index-ensure-script-lifecycle`.
+Link to `indexing/index-query-to-index-worksheet` and `indexing/index-ensure-script-lifecycle`. Also link https://learn.microsoft.com/en-us/azure/documentdb/how-to-read-explain-output (the rule currently links only MongoDB's explain docs) and state that an aggregate explain's plan sits at `stages[].$cursor.queryPlanner.winningPlan`. Related kit text contradicted by Learn and by the experiment's explains: `scripts/perf-advisor.sh` lines 406-407 and `testing/scenarios/ecommerce-missing-index/SCENARIO.md` line 21 say DocumentDB "never emits a literal COLLSCAN stage"; it does (see the explain note under index-ensure-script-lifecycle), so correct that sentence in the same PR.
 
 ### `skills/local-deployment/local-prod-parity.md`
 
-Next to the `schema/01_indexes.js` example, link to `indexing/index-ensure-script-lifecycle` and `vector-search/vector-ensure-index`.
+Next to the `schema/01_indexes.js` example, link to `indexing/index-ensure-script-lifecycle` and `vector-search/vector-ensure-index`. Add one parity sentence: the `documentdb-local` image supports only `vector-ivf` and `vector-hnsw` (no `vector-diskann`, no `pq` compression; 2,000 dimensions uncompressed, 4,000 with `compression: "half"`), so an ensure script that defaults to `vector-diskann` on Azure needs `VECTOR_INDEX_KIND=vector-hnsw` locally (OSS `$vectorSearch` reference, https://documentdb.io/docs/reference/operators/aggregation/$vectorsearch/; engine `pg_documentdb/src/vector/vector_index_kind_impl.c`).
 
 ### `skills/full-text-search/fts-basic-search.md` (optional)
 
@@ -579,18 +585,23 @@ Cross-link to `vector-search/vector-search-response-shape` next to the existing 
 - `runs/13-product-q-a-chatbot-rag/20261124-184527/doc-gaps.md`: no guidance on a citation/sources format for RAG
 - `runs/11-correspondent-banking-risk-screener/20261124-201541/doc-gaps.md`: `$search` without `searchScore`; fallback not flagged to callers
 
+## Resolved
+
+- Vector index ranges, defaults and query knobs (was open question 1): settled from the Learn vector-search page's per-algorithm tabs: HNSW `m` 2-100 (default 16), `efConstruction` 4-1000 (default 64, at least `2*m`), `efSearch` default 40; IVF `numLists` = documentCount/1000 up to 1M documents (start at 1 for demos), `nProbes` default 1 and at most `numLists`; DiskANN `maxDegree` 20-2048 (default 32), `lBuild` 10-500 (default 50), `lSearch` 10-1000 (default 40) with `k` at most `lSearch`; HNSW and DiskANN need M30 or higher. Sources: https://learn.microsoft.com/en-us/azure/documentdb/vector-search; https://learn.microsoft.com/en-us/azure/documentdb/limitations (vector search section; release note 2025-07-15). Only the IVF-above-1M rule stays open (open question 1).
+- Dimension limits (was part of open question 1): 2,000 without compression, 4,000 with `compression: "half"` on HNSW or IVF, 16,000 with product quantization on DiskANN; confirmed by the DocumentDB product owner on 2026-11-25, who also reported that the engine rejects a half-precision HNSW index with 4,001 dimensions ("field cannot have more than 4000 dimensions for vector index") and accepts 4,000; the 8,000 figure on the select-algorithm quickstarts is wrong (it comes from `ai/includes/choosing-algorithm.md` in github.com/Azure-Samples/documentdb-samples). Sources: https://learn.microsoft.com/en-us/azure/documentdb/vector-search; https://learn.microsoft.com/en-us/azure/documentdb/half-precision; https://learn.microsoft.com/en-us/azure/documentdb/product-quantization; https://learn.microsoft.com/en-us/azure/documentdb/limitations; product owner answer 2026-11-25.
+- IVF build order (was open question 2): HNSW can be created on an empty collection; IVF `numLists` depends on the document count, so create or re-create it after loading; a product-quantization index should be created after the collection has data; a new index can return empty results for 2 to 3 minutes while it builds. Sources: https://learn.microsoft.com/en-us/azure/documentdb/vector-search (HNSW column); https://learn.microsoft.com/en-us/azure/documentdb/product-quantization (note); https://learn.microsoft.com/en-us/azure/documentdb/quickstart-nodejs-select-algorithm (Troubleshooting).
+- Full-text search status and the `CommandNotSupported` error (was open question 3): full-text search is in preview, enabled per cluster self-serve (portal Settings > Features > Full-text search > Enable, or Azure CLI PATCH of `properties.previewFeatures` adding `FullTextSearch`, or Bicep/Terraform), with a ten-minute wait before creating a search index; `createSearchIndexes` on a cluster without the preview returns `CommandNotSupported`, code 115, "Search index creation is not supported yet" (observed; no Learn page documents the error). Whether code 115 is also returned during the ten-minute activation window is open for engineering but does not affect this filing. Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview (2026-11-04, updated 2026-11-17); https://devblogs.microsoft.com/documentdb/?p=259; `runs/07-voice-of-customer-sentiment-hub/20261124-204049`.
+- `listIndexes` key for vector options (was open question 4): the options are reported under `cosmosSearch`. Source: https://learn.microsoft.com/en-us/azure/documentdb/vector-search ("Get vector index definitions").
+- BSON Binary vectors (was open question 5): Learn requires an array of numbers and says a document whose vector has another type is not indexed and is silently absent from results; the engine stores and returns BSON binary subtype 9 intact and index-side search on it is a separate, untracked feature; the experiment saw binary vectors inserted but never returned and a binary query vector rejected with "expected an array type field". Sources: https://learn.microsoft.com/en-us/azure/documentdb/vector-search (DiskANN field table; IVF Important box); https://github.com/documentdb/documentdb/issues/109 (closed completed 2026-04-28); `runs/11-visual-similarity-search-image-embeddings/20261124-184225`.
+- One vector index per path (was open question 6): current behaviour, "Indexing applies to only one vector per path. You can create only one index per vector path." Sources: https://learn.microsoft.com/en-us/azure/documentdb/vector-search (features list); https://learn.microsoft.com/en-us/azure/documentdb/limitations.
+- Whole-plan `COLLSCAN` check (was open question 8): it works, provided the walker descends into `stages[].$cursor` for aggregate explains; Learn lists `COLLSCAN`, `IXSCAN` and `FETCH` as the common `winningPlan.stage` values and the experiment observed `COLLSCAN` for find and aggregate explains on the managed cluster; the explain layout of a `cosmosSearch` pipeline was not observed. Sources: https://learn.microsoft.com/en-us/azure/documentdb/how-to-read-explain-output; https://learn.microsoft.com/en-us/azure/documentdb/how-to-index; `runs/01-anti-money-laundering-pattern-detector/20261124-200112`; `runs/12-cross-border-payment-audit-trail/20261124-201744`.
+
 ## Open questions
 
-1. [needs SME confirmation] Confirm the HNSW and IVF limits, defaults and query-knob names: `m` 2-100/16; `efConstruction` 4-1000/64 and ≥ 2*`m`; `efSearch` default 40; IVF `numLists` = documentCount/1000 up to 1M, with DiskANN (not `sqrt(n)`, which draft 086 suggested) recommended above 1M; `nProbes` default 1 and ≤ `numLists`; DiskANN `lSearch` 10-1000 with `k` ≤ `lSearch`. Also confirm the tier guidance (IVF on M10/M20, HNSW/DiskANN on M30+, about 50k vectors for HNSW) and the 2,000/4,000/16,000 dimension limits.
-2. [needs SME confirmation] IVF build order: should the kit say to build IVF after loading data (because `numLists` depends on the document count), or to create it on an empty collection as Learn's own examples do, starting with `numLists: 1` and recreating later?
-3. [needs SME confirmation] Is full-text search (`createSearchIndexes`) still in preview and enabled per cluster? Is `CommandNotSupported` ("Search index creation is not supported yet") the expected response when it is off?
-4. [needs SME confirmation] Does `listIndexes` report vector options under `cosmosSearch`, `cosmosSearchOptions` or both on current server versions? The existence check and the ensure helper depend on this. The helper reads both.
-5. [needs SME confirmation] Learn names `double[]` as the example of a non-indexed type. Are BSON Binary vectors (subtype 0x09) definitely excluded the same way, and should the error builds saw ("expected an array type field") be documented?
-6. [needs SME confirmation] Is "only one vector index per path" current behaviour? The templates' common-mistakes list and the ensure helper rely on it.
-7. [needs SME confirmation] What error does DocumentDB return for a same-name index with different options (`IndexOptionsConflict`, code 85?), and is an identical `createIndexes` call a no-op (`note: "all indexes already exist"`)?
-8. [needs SME confirmation] Does checking that `explain` contains no `COLLSCAN` anywhere in the plan work reliably with DocumentDB's explain layout?
-9. Maintainers: should the HTTP status mapping (400 for an empty query, 502 for an embedding failure) live in this kit, or should the response-shape rule keep only the score, no-vectors and fallback-flag parts and leave error mapping to sample templates?
-10. Maintainers: land this as one PR, or split the indexing half (`skills/indexing/*`, `mcp-setup`, `query-optimizer`, `query-explain-plan`, `local-prod-parity`) into its own PR, as the reviewer allowed?
+1. [needs SME confirmation] IVF above one million documents: the Learn vector-search IVF field table says `numLists = sqrt(documentCount)` above 1M, while the Important box under it says to use DiskANN instead. The filing follows the Important box (`documentCount/1000` up to 1M, DiskANN above). Confirm which rule the kit should state.
+2. Maintainers: the error DocumentDB returns for a same-name index with different options, and whether an identical `createIndexes` call is a no-op, are undocumented (DECISIONS.md: not an SME item). The ensure helper and the lifecycle rule are written to tolerate both outcomes; decide whether to keep `IndexOptionsConflict` (observed in the experiment's runs) as an example or to name no error code.
+3. Maintainers: should the HTTP status mapping (400 for an empty query, 502 for an embedding failure) live in this kit, or should the response-shape rule keep only the score, no-vectors and fallback-flag parts and leave error mapping to sample templates?
+4. Maintainers: land this as one PR, or split the indexing half (`skills/indexing/*`, `mcp-setup`, `query-optimizer`, `query-explain-plan`, `local-prod-parity`) into its own PR, as the reviewer allowed?
 
 ## Source drafts
 

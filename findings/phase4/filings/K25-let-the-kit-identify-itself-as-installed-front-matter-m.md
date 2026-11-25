@@ -79,7 +79,7 @@ Run folders from the experiment; the readiness output is `02-readiness.json`, fi
 ## Open questions
 
 1. Which version number should `VERSION` start at: `0.1.0` (plugin manifests) or `0.2.0` (CHANGELOG heading)? Maintainers to decide.
-2. Is `npx skills add Azure/documentdb-agent-kit` the intended long-term skills-only path? It works today, but the CHANGELOG once called it a non-functional placeholder; please confirm before the CHANGELOG wording is changed.
+2. Is `npx skills add Azure/documentdb-agent-kit` the intended long-term skills-only path? It works today, but the CHANGELOG once called it a non-functional placeholder; please confirm before the CHANGELOG wording is changed. Maintainers to decide.
 
 No service-behavior claims in this PR needed SME confirmation. The harness-side fix (telling the checker the skills came from the kit) is tracked separately in the experiment harness.
 

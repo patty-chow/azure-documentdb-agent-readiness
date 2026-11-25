@@ -3,13 +3,13 @@ id: H09
 title: "Build image: install Bicep via az and allow local az bicep build/lint"
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
-status: needs_sme
+status: ready
 hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P1
 sample_count: 19
 member_drafts:
   - 067-harness-build-image-lacks-the-iac-toolchain-bicep-cli-terraf.md
-open_questions: 2
+open_questions: 1
 ---
 
 # Build image: install Bicep via az and allow local az bicep build/lint
@@ -52,7 +52,7 @@ az bicep install >/dev/null 2>&1 || az bicep upgrade >/dev/null 2>&1
 az bicep version
 ```
 
-The Azure CLI installs a self-contained Bicep under `~/.azure/bin` and does not add it to PATH, so this makes `az bicep ...` work, not a bare `bicep`. `az` is already required, so there is no new dependency. Do not install Terraform in the image (see step 3).
+The Azure CLI (2.20.0 or later) installs a self-contained Bicep CLI under `~/.azure/bin` and does not add it to PATH (Learn, bicep/install), so this makes `az bicep ...` work, not a bare `bicep`. `az` is already required, so there is no new dependency. Do not install Terraform in the image (see step 3).
 
 **2. `factory/tools/shell.py`**: allow only the local `az bicep` subcommands. Do **not** add `"bicep"` to `AZ_READ_VERBS`: the any-word check would then also allow `az bicep publish`, which pushes a module to an Azure Container Registry (a write).
 
@@ -106,7 +106,10 @@ and change the example fallback to "compile Bicep through `az bicep build`, whic
 
 **6. Tests**: in `tests/test_units.py` (near lines 47-48) add `az bicep build --file main.bicep` -> allowed and `az bicep publish --file m.bicep --target br:...` -> refused. The `ToolReadiness(name="bicep", ... workaround="az bicep build")` fixture in `tests/test_pipeline_offline.py` (line 75) then matches real behavior.
 
-Optional follow-up, separate from this PR: in `Azure/documentdb-agent-kit`, `skills/azure-deployment/SKILL.md` Step 6a could add one sentence saying Azure CLI deployments compile the Bicep file locally with a Bicep copy the CLI installs on first use, so no standalone `bicep` on PATH is needed, and that when there is no network to download it, `az bicep install` (or copying the binary into `~/.azure/bin`) fixes the offline case, with `az bicep build --file main.bicep` producing the ARM JSON for review.
+Optional follow-up, separate from this PR: in `Azure/documentdb-agent-kit`, `skills/azure-deployment/SKILL.md`:
+
+- Step 6a: add one sentence saying Azure CLI deployments compile the Bicep file on the client with a Bicep copy the CLI installs on first use (Learn, bicep/install: "Azure CLI automatically installs the Bicep CLI when a command is executed that needs it"; bicep/overview: "During deployment, the Bicep CLI converts a Bicep file into a Resource Manager JSON template"), so no standalone `bicep` on PATH is needed, and that when there is no network to download it, `az bicep install` (or copying the binary into `~/.azure/bin`) fixes the offline case, with `az bicep build --file main.bicep` producing the ARM JSON for review.
+- Step 0 (preflight, lines 15-45): check `az bicep version` instead of looking for a standalone `bicep` on PATH; today the preflight never checks it (DECISIONS.md, topic 11). The missing `az extension add --name documentdb` / Azure CLI 2.75.0 checks on the same lines belong to K34.
 
 ## Evidence
 
@@ -116,10 +119,13 @@ Optional follow-up, separate from this PR: in `Azure/documentdb-agent-kit`, `ski
 - `runs/19-insider-threat-detection-pipeline/20261124-202818/05-audit.md`: IaC requirement `not_met`, no Bicep/Terraform files in the app.
 - `runs/19-insider-threat-detection-pipeline/20261124-202818/doc-gaps.md`: no IaC example in the repo or the agent-kit templates.
 
+## Resolved
+
+- Does Azure CLI compile Bicep on the client? Yes: the Azure CLI installs a self-contained Bicep CLI (not on PATH) and the Bicep CLI transpiles the file to an ARM JSON template on the client before deployment, so `az bicep version` is the right preflight and `az bicep build`/`lint` are local operations. Sources: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install (ms.date 2026-07-23); https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/overview (ms.date 2026-01-08); https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/deploy-cli (ms.date 2026-05-27); DECISIONS.md topic 11.
+
 ## Open questions
 
-1. Is it acceptable for `az bicep build`/`restore` to pull registry modules into the local cache under the no-writes policy, or should `restore` be left out of the allowlist?
-2. For the optional agent-kit follow-up: confirm that Azure CLI deployments compile Bicep on the client with the CLI-managed Bicep copy (as Learn's Bicep install and Bicep CLI pages state), not server-side, before that sentence is added to the skill. [needs SME confirmation]
+1. Harness policy (maintainer decision): is it acceptable for `az bicep build`/`restore` to pull registry modules into the local cache under the no-writes policy, or should `restore` be left out of the allowlist?
 
 ## Source drafts
 

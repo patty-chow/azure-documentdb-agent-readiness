@@ -1,0 +1,415 @@
+{
+  "test": "transactions-labels",
+  "database": "t_txn",
+  "started_utc": "2026-11-25T20:08:13.408335+00:00",
+  "finished_utc": "2026-11-25T20:09:25.549001+00:00",
+  "target": "documentdb-local container ddb-engine-test (ghcr.io/documentdb/documentdb/documentdb-local:latest), localhost:10260, TLS self-signed",
+  "engine_version": "7.0.0",
+  "buildInfo": {
+    "version": "7.0.0",
+    "versionArray": [
+      7,
+      0,
+      0,
+      0
+    ],
+    "gitVersion": null,
+    "modules": null
+  },
+  "driver": "pymongo 4.20.1",
+  "evidence_scope": "Observed on the open-source documentdb engine + gateway at the buildInfo version above (documentdb-local). This is evidence about the open-source engine/gateway only; it does not prove managed Azure DocumentDB behaviour.",
+  "steps": [
+    {
+      "step": "0a buildInfo",
+      "command": "db.adminCommand({buildInfo: 1})",
+      "response": {
+        "version": "7.0.0",
+        "versionArray": [
+          7,
+          0,
+          0,
+          0
+        ],
+        "gitVersion": null,
+        "modules": null,
+        "ok": 1.0
+      },
+      "reading": "Version reported by the documentdb-local gateway; all facts below are about this engine/gateway build, not the managed service."
+    },
+    {
+      "step": "0b hello",
+      "command": "db.adminCommand({hello: 1})",
+      "response": {
+        "maxWireVersion": 21,
+        "minWireVersion": 0,
+        "logicalSessionTimeoutMinutes": 30,
+        "maxWriteBatchSize": 25000,
+        "isWritablePrimary": true,
+        "setName": null,
+        "msg": "isdbgrid"
+      },
+      "reading": "Wire version, session timeout and batch size advertised by the gateway (logicalSessionTimeoutMinutes must be present for the driver to allow sessions/transactions)."
+    },
+    {
+      "step": "0c pymongo",
+      "command": "import pymongo; pymongo.__version__",
+      "response": "4.20.1",
+      "reading": "Driver used for every step."
+    },
+    {
+      "step": "0d setup",
+      "command": "db.docs.drop(); db.docs.insertOne({_id: 1, v: 0})",
+      "response": {
+        "inserted": 1
+      },
+      "reading": "Fresh collection with one document that both transactions will update."
+    },
+    {
+      "step": "1a session A: update in txn",
+      "command": "sA.startTransaction(); db.docs.updateOne({_id:1},{$set:{v:1,by:'A'}}, {session: sA})",
+      "response": {
+        "matched": 1,
+        "modified": 1,
+        "txnNumber": "1"
+      },
+      "reading": "Transaction A holds the row lock on _id 1."
+    },
+    {
+      "step": "1b session B: update same doc in txn (A uncommitted)",
+      "command": "sB.startTransaction(); db.docs.updateOne({_id:1},{$set:{v:2,by:'B'}}, {session: sB})  // waited up to 3s",
+      "response": {
+        "still_blocked_after_3s": false,
+        "result_so_far": {
+          "error": {
+            "exception": "OperationFailure",
+            "message": "canceling statement due to lock timeout, full error: {'ok': 0.0, 'code': 112, 'codeName': 'WriteConflict', 'errmsg': 'canceling statement due to lock timeout'}",
+            "code": 112,
+            "codeName": "WriteConflict",
+            "errmsg": "canceling statement due to lock timeout",
+            "errorLabels": null,
+            "raw": {
+              "ok": 0.0,
+              "code": 112,
+              "codeName": "WriteConflict",
+              "errmsg": "canceling statement due to lock timeout"
+            }
+          },
+          "elapsed_s": 0.026
+        }
+      },
+      "reading": "B's update returned before A committed; see result."
+    },
+    {
+      "step": "1c commit A",
+      "command": "sA.commitTransaction()",
+      "response": {
+        "result": {
+          "ok": 1
+        },
+        "t_since_B_started_s": 0.027
+      },
+      "reading": "A commits while B is waiting/has failed."
+    },
+    {
+      "step": "1d session B: outcome of the conflicting update",
+      "command": "(result of B's updateOne after A committed)",
+      "response": {
+        "thread_finished": true,
+        "error": {
+          "exception": "OperationFailure",
+          "message": "canceling statement due to lock timeout, full error: {'ok': 0.0, 'code': 112, 'codeName': 'WriteConflict', 'errmsg': 'canceling statement due to lock timeout'}",
+          "code": 112,
+          "codeName": "WriteConflict",
+          "errmsg": "canceling statement due to lock timeout",
+          "errorLabels": null,
+          "raw": {
+            "ok": 0.0,
+            "code": 112,
+            "codeName": "WriteConflict",
+            "errmsg": "canceling statement due to lock timeout"
+          }
+        },
+        "elapsed_s": 0.026
+      },
+      "reading": "THE KEY OBSERVATION: exact code/codeName/errmsg and whether errorLabels (TransientTransactionError) is present on a write conflict."
+    },
+    {
+      "step": "1e abort B after its error",
+      "command": "sB.abortTransaction()",
+      "response": {
+        "ok": 1
+      },
+      "reading": "Driver-side abort of the failed transaction B (pymongo may skip the server call if it already considers the txn aborted)."
+    },
+    {
+      "step": "1f final document",
+      "command": "db.docs.findOne({_id:1})",
+      "response": {
+        "_id": 1,
+        "v": 1,
+        "by": "A"
+      },
+      "reading": "Which transaction's write survived."
+    },
+    {
+      "step": "1g write conflict, raw wire reply",
+      "command": "B: {update:'docs', updates:[...], lsid, txnNumber, autocommit:false} sent verbatim after A's update; then A commits",
+      "response": {
+        "commitA": {
+          "ok": 1
+        },
+        "reply": {
+          "ok": 0.0,
+          "code": 112,
+          "codeName": "WriteConflict",
+          "errmsg": "canceling statement due to lock timeout"
+        },
+        "elapsed_s": 0.021
+      },
+      "reading": "Raw server reply for the conflicting write (shows exactly which fields, e.g. errorLabels, the gateway puts on the wire)."
+    },
+    {
+      "step": "1h raw abortTransaction for B",
+      "command": "{abortTransaction:1, lsid, txnNumber, autocommit:false} on admin",
+      "response": {
+        "ok": 0.0,
+        "code": 251,
+        "codeName": "NoSuchTransaction",
+        "errmsg": "Cannot continue transaction 2"
+      },
+      "reading": "What abortTransaction returns for a transaction that failed with a write conflict."
+    },
+    {
+      "step": "2 readConcern snapshot",
+      "command": "s.startTransaction({readConcern: {level: 'snapshot'}}); db.docs.find({_id:1}, {session: s}); s.commitTransaction()",
+      "response": {
+        "exception": "OperationFailure",
+        "message": "'Snapshot' read concern is not supported, full error: {'ok': 0.0, 'code': 115, 'codeName': 'CommandNotSupported', 'errmsg': \"'Snapshot' read concern is not supported\"}",
+        "code": 115,
+        "codeName": "CommandNotSupported",
+        "errmsg": "'Snapshot' read concern is not supported",
+        "errorLabels": null,
+        "raw": {
+          "ok": 0.0,
+          "code": 115,
+          "codeName": "CommandNotSupported",
+          "errmsg": "'Snapshot' read concern is not supported"
+        }
+      },
+      "reading": "Transaction with readConcern level 'snapshot' rejected: see code/codeName/errmsg."
+    },
+    {
+      "step": "2 readConcern majority",
+      "command": "s.startTransaction({readConcern: {level: 'majority'}}); db.docs.find({_id:1}, {session: s}); s.commitTransaction()",
+      "response": {
+        "find_result": [
+          {
+            "_id": 1,
+            "v": 11,
+            "by": "A2"
+          }
+        ],
+        "commit": {
+          "ok": 1
+        }
+      },
+      "reading": "Transaction started with readConcern level 'majority' was accepted (find + commit succeeded)."
+    },
+    {
+      "step": "2 readConcern local",
+      "command": "s.startTransaction({readConcern: {level: 'local'}}); db.docs.find({_id:1}, {session: s}); s.commitTransaction()",
+      "response": {
+        "find_result": [
+          {
+            "_id": 1,
+            "v": 11,
+            "by": "A2"
+          }
+        ],
+        "commit": {
+          "ok": 1
+        }
+      },
+      "reading": "Transaction started with readConcern level 'local' was accepted (find + commit succeeded)."
+    },
+    {
+      "step": "3a driver: commit, commit again, abort after commit",
+      "command": "s.commitTransaction(); s.commitTransaction(); s.abortTransaction()",
+      "response": {
+        "commit1": {
+          "ok": 1
+        },
+        "commit2": {
+          "ok": 1,
+          "note": "pymongo re-sent commitTransaction (attempt 2 upgrades writeConcern to w:'majority', wtimeout 10000)"
+        },
+        "abort_after_commit": {
+          "exception": "InvalidOperation",
+          "message": "Cannot call abortTransaction after calling commitTransaction",
+          "errorLabels": []
+        }
+      },
+      "reading": "Driver-level behaviour: second commit is a retry (server reply recorded), abort-after-commit is refused client-side by pymongo if InvalidOperation appears."
+    },
+    {
+      "step": "3b raw: commitTransaction x2 (+ majority wc retry form), then abortTransaction",
+      "command": "{commitTransaction:1, lsid, txnNumber, autocommit:false} twice; same with writeConcern {w:'majority',wtimeout:10000}; then {abortTransaction:1, lsid, txnNumber, autocommit:false}",
+      "response": {
+        "commit1": {
+          "ok": 1.0
+        },
+        "commit2": {
+          "ok": 1.0
+        },
+        "commit2_majority_wc": {
+          "ok": 1.0
+        },
+        "abort_after_commit": {
+          "ok": 0.0,
+          "code": 256,
+          "codeName": "TransactionCommitted",
+          "errmsg": "Transaction 7 already committed"
+        }
+      },
+      "reading": "Exact server replies: whether a repeated commit is idempotent and what abort-after-commit returns (code/codeName/errmsg/errorLabels)."
+    },
+    {
+      "step": "3c raw: abortTransaction x2, then commitTransaction after abort",
+      "command": "{abortTransaction:1,...} twice; then {commitTransaction:1,...}",
+      "response": {
+        "abort1": {
+          "ok": 1.0
+        },
+        "abort2": {
+          "ok": 0.0,
+          "code": 251,
+          "codeName": "NoSuchTransaction",
+          "errmsg": "Cannot continue transaction 8"
+        },
+        "commit_after_abort": {
+          "ok": 0.0,
+          "code": 251,
+          "codeName": "NoSuchTransaction",
+          "errmsg": "Cannot continue transaction 8"
+        }
+      },
+      "reading": "Companion to 3b: idempotency of abort and the error for commit-after-abort."
+    },
+    {
+      "step": "4a write after 36 s idle in txn",
+      "command": "s.startTransaction(); updateOne(...); sleep(36.0s); updateOne({_id:1},{$set:{idle:'after'}}, {session: s})",
+      "response": {
+        "slept_s": 36.0,
+        "write_result": {
+          "exception": "OperationFailure",
+          "message": "[ActivityId=ae7792db-38b3-4e0e-a2b8-701a233025b8] An unexpected internal error has occurred., full error: {'ok': 0.0, 'code': 1, 'codeName': 'InternalError', 'errmsg': '[ActivityId=ae7792db-38b3-4e0e-a2b8-701a233025b8] An unexpected internal error has occurred.'}",
+          "code": 1,
+          "codeName": "InternalError",
+          "errmsg": "[ActivityId=ae7792db-38b3-4e0e-a2b8-701a233025b8] An unexpected internal error has occurred.",
+          "errorLabels": null,
+          "raw": {
+            "ok": 0.0,
+            "code": 1,
+            "codeName": "InternalError",
+            "errmsg": "[ActivityId=ae7792db-38b3-4e0e-a2b8-701a233025b8] An unexpected internal error has occurred."
+          }
+        }
+      },
+      "reading": "Error (code, codeName, errmsg, errorLabels) a client gets when writing in a transaction that sat idle past the 30 s transaction lifetime."
+    },
+    {
+      "step": "4b commit after idle timeout",
+      "command": "s.commitTransaction()",
+      "response": {
+        "exception": "OperationFailure",
+        "message": "[ActivityId=ae7792db-38b3-4e0e-a2b8-701a2dfc6514] An unexpected internal error has occurred., full error: {'ok': 0.0, 'code': 1, 'codeName': 'InternalError', 'errmsg': '[ActivityId=ae7792db-38b3-4e0e-a2b8-701a2dfc6514] An unexpected internal error has occurred.'}",
+        "code": 1,
+        "codeName": "InternalError",
+        "errmsg": "[ActivityId=ae7792db-38b3-4e0e-a2b8-701a2dfc6514] An unexpected internal error has occurred.",
+        "errorLabels": null,
+        "raw": {
+          "ok": 0.0,
+          "code": 1,
+          "codeName": "InternalError",
+          "errmsg": "[ActivityId=ae7792db-38b3-4e0e-a2b8-701a2dfc6514] An unexpected internal error has occurred."
+        }
+      },
+      "reading": "Commit response for the expired transaction."
+    },
+    {
+      "step": "4c abort after idle timeout",
+      "command": "s.abortTransaction()",
+      "response": {
+        "exception": "InvalidOperation",
+        "message": "Cannot call abortTransaction after calling commitTransaction",
+        "errorLabels": []
+      },
+      "reading": "Abort response for the expired transaction (pymongo may short-circuit)."
+    },
+    {
+      "step": "4d raw: write, commit, abort after 36 s idle",
+      "command": "{update:'docs',..., lsid, txnNumber, autocommit:false} after sleep(36); then raw commitTransaction; then raw abortTransaction",
+      "response": {
+        "update": {
+          "ok": 0.0,
+          "code": 1,
+          "codeName": "InternalError",
+          "errmsg": "[ActivityId=ae7792db-38b3-4e0e-a2b8-701a7e4a49e9] An unexpected internal error has occurred."
+        },
+        "commit": {
+          "ok": 0.0,
+          "code": 1,
+          "codeName": "InternalError",
+          "errmsg": "[ActivityId=ae7792db-38b3-4e0e-a2b8-701a3f3aa0c5] An unexpected internal error has occurred."
+        },
+        "abort": {
+          "ok": 0.0,
+          "code": 251,
+          "codeName": "NoSuchTransaction",
+          "errmsg": "Cannot continue transaction 10"
+        }
+      },
+      "reading": "Exact wire replies for the expired transaction, including whether errorLabels is present."
+    },
+    {
+      "step": "5 final state",
+      "command": "db.docs.findOne({_id:1})",
+      "response": {
+        "_id": 1,
+        "v": 0,
+        "by": "A2"
+      },
+      "reading": "Final document after all steps (idle-transaction writes must not have been applied)."
+    },
+    {
+      "step": "6 gateway/postgres log evidence (container logs, read-only)",
+      "command": "./logs.sh 15m   # docker logs --timestamps ddb-engine-test, filtered to t_txn / transaction lines, ANSI stripped",
+      "response": {
+        "key_lines": [
+          "2026-11-25T20:08:13.457130661Z 2026-11-25T20:08:13.457027Z ERROR  documentdb_gateway_core::responses::pg: Lock not available error during transaction. activity_id=\"5615db26-d49d-4b99-89e2-1758046cdbe2\"",
+          "2026-11-25T20:08:13.481638755Z 2026-11-25T20:08:13.481524Z ERROR  documentdb_gateway_core::responses::pg: Lock not available error during transaction. activity_id=\"5615db26-d49d-4b99-89e2-175835702e2f\"",
+          "2026-11-25T20:08:43.507728989Z 2026-11-25T20:08:43.506727Z  WARN deadpool.postgres: Connection error: db error",
+          "2026-11-25T20:08:44.150988278Z [POSTGRES] 2026-11-25 20:08:43.506 UTC [549] FATAL:  terminating connection due to idle-in-transaction timeout",
+          "2026-11-25T20:08:49.510890915Z 2026-11-25T20:08:49.510424Z ERROR  documentdb_gateway_core::postgres::conn_mgmt::query_dispatch: Error executing postgres request: Request failed with kind Gateway, code InternalError, error_message_internal: Non db postgres error: connection closed",
+          "2026-11-25T20:08:49.514262783Z 2026-11-25T20:08:49.513913Z ERROR documentdb_gateway_core::context::transaction::gateway_transaction: Failed to drop a transaction: connection closed",
+          "2026-11-25T20:08:49.514294533Z 2026-11-25T20:08:49.513956Z ERROR documentdb_gateway_core::postgres::conn_mgmt::connection: Failed to roll back abandoned transaction: connection closed",
+          "2026-11-25T20:09:19.520693481Z 2026-11-25T20:09:19.520145Z  WARN deadpool.postgres: Connection error: db error",
+          "2026-11-25T20:09:20.232323644Z [POSTGRES] 2026-11-25 20:09:19.519 UTC [930] FATAL:  terminating connection due to idle-in-transaction timeout",
+          "2026-11-25T20:09:25.539662347Z 2026-11-25T20:09:25.538876Z ERROR  documentdb_gateway_core::postgres::conn_mgmt::query_dispatch: Error executing postgres request: Request failed with kind Gateway, code InternalError, error_message_internal: Non db postgres error: connection closed",
+          "2026-11-25T20:09:25.542440750Z 2026-11-25T20:09:25.542115Z ERROR documentdb_gateway_core::context::transaction::gateway_transaction: Failed to drop a transaction: connection closed",
+          "2026-11-25T20:09:25.542468750Z 2026-11-25T20:09:25.542146Z ERROR documentdb_gateway_core::postgres::conn_mgmt::connection: Failed to roll back abandoned transaction: connection closed"
+        ],
+        "full_excerpt_file": "gateway-log-excerpt.txt"
+      },
+      "reading": "Write conflict: gateway logs 'Lock not available error during transaction' and maps it to 112 WriteConflict 'canceling statement due to lock timeout' (~25 ms, so the gateway runs the transaction with a very short PostgreSQL lock_timeout). Idle transaction: PostgreSQL itself logs 'FATAL: terminating connection due to idle-in-transaction timeout' exactly 30 s after the last statement (20:08:13.5 -> 20:08:43.506; 20:08:49.5 -> 20:09:19.519), the gateway pool logs 'deadpool.postgres: Connection error: db error', and the client's next statement fails with code 1 InternalError 'Non db postgres error: connection closed' followed by 'Failed to drop a transaction / Failed to roll back abandoned transaction: connection closed'."
+    }
+  ],
+  "fatal": null,
+  "summary": {
+    "write_conflict": "Second transaction's update on the same document fails immediately (about 25 ms, before the first commits) with {ok:0, code:112, codeName:'WriteConflict', errmsg:'canceling statement due to lock timeout'} and NO errorLabels field at all (verified on the raw wire reply). So drivers' withTransaction/TransientTransactionError retry does not trigger; apps must retry code 112 themselves. The first transaction commits fine; the failed transaction's later abortTransaction returns 251 NoSuchTransaction 'Cannot continue transaction N'.",
+    "readConcern": "snapshot in a transaction -> 115 CommandNotSupported \"'Snapshot' read concern is not supported\" (no errorLabels); majority and local accepted (find + commit ok).",
+    "commit_twice": "commitTransaction is idempotent: second (and w:'majority' retry-form) commitTransaction return {ok:1}. abortTransaction after commit -> 256 TransactionCommitted 'Transaction N already committed'. abortTransaction twice -> second returns 251 NoSuchTransaction; commitTransaction after abort -> 251 NoSuchTransaction. pymongo itself refuses abort-after-commit client-side (InvalidOperation) before reaching the server.",
+    "idle_timeout": "After 36 s idle the next write in the transaction fails with {ok:0, code:1, codeName:'InternalError', errmsg:'[ActivityId=...] An unexpected internal error has occurred.'} with no errorLabels; commitTransaction on that session returns the same code 1 InternalError; a subsequent abortTransaction returns 251 NoSuchTransaction. Container logs show PostgreSQL killed the backend with 'terminating connection due to idle-in-transaction timeout' at exactly 30 s. The expired transaction's writes were not applied (final document unchanged). This is NOT the clean 251 NoSuchTransaction that issue #756 anticipates.",
+    "scope": "All observed on documentdb-local (gateway buildInfo version 7.0.0, image ghcr.io/documentdb/documentdb/documentdb-local:latest, pymongo 4.20.1); evidence about the open-source engine/gateway only, not proof of managed Azure DocumentDB behaviour."
+  }
+}

@@ -17,7 +17,7 @@ member_drafts:
 merged_from:
   - K03
   - K35
-open_questions: 11
+open_questions: 3
 ---
 
 # security and connection skills: Microsoft Entra ID (MONGODB-OIDC) data-plane auth with runnable per-driver examples, and a rule for sensitive data in AI/LLM applications
@@ -108,8 +108,10 @@ class AzureIdentityTokenCallback(OIDCCallback):
     def fetch(self, context: OIDCCallbackContext) -> OIDCCallbackResult:
         return OIDCCallbackResult(access_token=self.credential.get_token(SCOPE).token)
 
+# HOST is the hostname from the connection string the portal or CLI returns
+# (<cluster>.mongocluster.cosmos.azure.com); never build it from the cluster name.
 client = MongoClient(
-    f"mongodb+srv://{CLUSTER}.global.mongocluster.cosmos.azure.com/",
+    f"mongodb+srv://{HOST}/",
     tls=True, retryWrites=False, maxIdleTimeMS=120000,
     authMechanism="MONGODB-OIDC",
     authMechanismProperties={"OIDC_CALLBACK": AzureIdentityTokenCallback(DefaultAzureCredential())},
@@ -122,7 +124,8 @@ const { MongoClient } = require("mongodb");
 const { DefaultAzureCredential } = require("@azure/identity");
 const SCOPE = "https://ossrdbms-aad.database.windows.net/.default";
 const credential = new DefaultAzureCredential();
-const client = new MongoClient(`mongodb+srv://${CLUSTER}.global.mongocluster.cosmos.azure.com/`, {
+// HOST: hostname from the portal/CLI connection string (<cluster>.mongocluster.cosmos.azure.com)
+const client = new MongoClient(`mongodb+srv://${HOST}/`, {
   tls: true, retryWrites: false, maxIdleTimeMS: 120000,
   authMechanism: "MONGODB-OIDC",
   authMechanismProperties: {
@@ -131,17 +134,22 @@ const client = new MongoClient(`mongodb+srv://${CLUSTER}.global.mongocluster.cos
       // expiresOnTimestamp is in milliseconds
       return { accessToken: t.token, expiresInSeconds: Math.max(0, Math.floor((t.expiresOnTimestamp - Date.now()) / 1000)) };
     },
-    ALLOWED_HOSTS: ["*.azure.com"],
+    // Required: the Node driver checks ALLOWED_HOSTS for every custom OIDC callback and its
+    // default list has no Azure domain. Checked against the SRV-resolved node hosts, so it must
+    // be a wildcard; keep it on the service domain, never "*".
+    ALLOWED_HOSTS: ["*.mongocluster.cosmos.azure.com"],
   },
 });
 ```
 
-Mongoose: pass the same options to `mongoose.connect(uri, options)`; they go through to the driver.
+Mongoose: pass the same options to `mongoose.connect(uri, options)`; they go through to the driver. PyMongo does not check `ALLOWED_HOSTS` for machine callbacks, so the Python snippet needs none.
+
+Driver floors for `MONGODB-OIDC`: PyMongo 4.7, Node `mongodb` 6.7.0, Java 5.1, .NET `MongoDB.Driver` 2.25 (3.x is current). `AsyncMongoClient` exists from PyMongo 4.9 (beta) and is GA from 4.13.
 
 **Fall back to SCRAM-SHA-256 only when** the cluster does not have Entra enabled, the runtime has no Azure identity (for example a CI machine outside Azure without `az login`), or the client is a third-party tool that cannot run an OIDC callback. Then use a least-privilege secondary user created by an admin, never the built-in admin. `DefaultAzureCredential` covers `az login` locally and managed identity in Azure, so the same Entra code runs in both places.
 
-Learn lists both host forms: `<cluster>.global.mongocluster.cosmos.azure.com` or `<cluster>.mongocluster.cosmos.azure.com` (see Open question 8 on when `.global.` is required). mongosh/Compass on an Azure host with a managed identity:
-`mongodb+srv://<client-id>@<cluster>.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=MONGODB-OIDC&retrywrites=false&maxIdleTimeMS=120000&authMechanismProperties=ENVIRONMENT:azure,TOKEN_RESOURCE:https://ossrdbms-aad.database.windows.net`
+Host: copy the connection string from the portal (Cluster > Settings > Connection strings) or `az documentdb mongocluster list-connection-strings`. On a single cluster the Self string (`<cluster>.mongocluster.cosmos.azure.com`) and the Global read-write string (`<cluster>.global.mongocluster.cosmos.azure.com`) are interchangeable. If the cluster has or may get a cross-region replica, use the Global read-write string for writes so that a promotion needs no code change; the Self string of the old primary becomes read-only after promotion, and replica clusters expose only a Self string. Never construct the host from the cluster name. mongosh/Compass on an Azure host with a managed identity:
+`mongodb+srv://<client-id>@<cluster>.mongocluster.cosmos.azure.com/?tls=true&authMechanism=MONGODB-OIDC&retrywrites=false&maxIdleTimeMS=120000&authMechanismProperties=ENVIRONMENT:azure,TOKEN_RESOURCE:https://ossrdbms-aad.database.windows.net`
 
 Do not tell users Entra ID is "control-plane only" or unsupported on the MongoDB wire protocol; that was Azure Cosmos DB for MongoDB (RU), not Azure DocumentDB. Cluster setup, user registration, other drivers: `documentdb-security` › security-entra-rbac. Full walkthrough: https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control
 ````
@@ -174,27 +182,29 @@ After the singleton rule, add: "Authentication: SCRAM-SHA-256 or Microsoft Entra
   - **There are no account keys.** Native auth is a SCRAM user + password. Cosmos DB "primary key" and "resource token" auth do not exist here.
   - **Entra is opt-in per cluster.** Enable it with `az documentdb mongocluster update --name <cluster> --resource-group <rg> --auth-allowed-modes NativeAuth MicrosoftEntraID`. Keep `NativeAuth` until an Entra principal has connected. Check the result with `az documentdb mongocluster show ... --query properties.authConfig`.
   - **Enabling the mode grants nobody access.** Azure role assignments on the `mongoClusters` resource control management only. Data access comes from MongoDB roles on a principal registered inside the cluster.
-  - **Administrator (`root` on `admin`).** Register with `az documentdb mongocluster microsoft-entra-user assign --cluster-name <cluster> --resource-group <rg> --object-id <object-id> --type <principal-type> --role db=admin role=root`, or with the ARM/Bicep `Microsoft.DocumentDB/mongoClusters/users` resource (`identityProvider.type: MicrosoftEntraID`, `principalType: user | servicePrincipal`; the resource name is the principal's object ID). The ARM endpoint supports administrative registration only.
+  - **Administrator (`root` on `admin`).** Register with `az documentdb mongocluster microsoft-entra-user assign --cluster-name <cluster> --resource-group <rg> --object-id <object-id> --type <User|ServicePrincipal> --role db=admin role=root` (an idempotent upsert; the `documentdb` extension needs Azure CLI 2.75.0+), or with the ARM/Bicep `Microsoft.DocumentDB/mongoClusters/users` resource (`identityProvider.type: MicrosoftEntraID`, `principalType: user | servicePrincipal`; the resource name is the principal's object ID), or with Terraform `azurerm_mongo_cluster_user` (azurerm >= 4.55.0). `--type` accepts exactly `User` and `ServicePrincipal`; a service principal or managed identity takes `ServicePrincipal` with its **object ID** (`principalId` from `az identity show`, or the owning resource's `identity.principalId` for a system-assigned identity), never the application/client ID. The ARM endpoint supports administrative registration only.
   - **Nonadministrative (least privilege).** An Entra admin runs `createUser` with the principal's **object ID**, not its client ID:
-    - roles `clusterAdmin` + `readWriteAnyDatabase`, or `readAnyDatabase` for read-only;
+    - roles `clusterAdmin` + `readWriteAnyDatabase` together (they cannot be assigned separately; `clusterAdmin` in this pair grants no user-management rights), or `readAnyDatabase` alone for read-only. These are the only accepted built-in combinations; anything else fails with "Roles specified are invalid. Only readAnyDatabase or readWriteAnyDatabase+clusterAdmin are allowed built-in roles."
     - `customData: { IdentityProvider: { type: "MicrosoftEntraID", properties: { principalType: "servicePrincipal" } } }`.
 
-    Verify with `db.getSiblingDB("admin").runCommand({ usersInfo: 1 })`. ARM user listings do not show these database-only users.
+    Verify with `db.getSiblingDB("admin").runCommand({ usersInfo: 1 })` (or, as the identity itself, `connectionStatus` with `showPrivileges: true`). ARM user listings do not show these database-only users.
 - **Add a second "Incorrect" block** listing the mechanisms that fail:
   - an Entra token passed as a SCRAM password;
   - `MONGODB-AZUREAD`;
   - `PLAIN`, `GSSAPI` or `MONGODB-X509` with `authSource=$external`;
   - raw `OAUTHBEARER`;
-  - an Atlas human-flow OIDC configuration copied unchanged (no callback and no `TOKEN_RESOURCE` for the `ossrdbms-aad` resource).
+  - an Atlas human-flow OIDC configuration copied unchanged (no callback and no `TOKEN_RESOURCE` for the `ossrdbms-aad` resource);
+  - a Node `MONGODB-OIDC` client with a custom callback and no `ALLOWED_HOSTS`: the driver's default list has no Azure domain, so every connection fails with `MongoInvalidArgumentError: Host ... is not valid for OIDC authentication with ALLOWED_HOSTS of ...`.
 
   Note that `$external` itself is correct for MONGODB-OIDC; drivers set it by default.
 - **Replace the "Correct" block** with:
   - the prerequisites above;
   - "Python and Node: see `documentdb-connection` › Authentication modes";
-  - the .NET form from Learn: `MongoCredential.CreateOidcCredential(new AzureIdentityTokenHandler(new DefaultAzureCredential(), tenantId))`, where the handler implements `IOidcCallback` for the same scope.
+  - the .NET form from Learn: `MongoCredential.CreateOidcCredential(new AzureIdentityTokenHandler(new DefaultAzureCredential(), tenantId))`, where the handler implements `IOidcCallback` for the same scope;
+  - the Java form from Learn's [Build a Java console app](https://learn.microsoft.com/azure/documentdb/how-to-build-java-console-app): a `MongoCredential.OidcCallback` whose `onRequest()` calls `DefaultAzureCredential.getTokenSync()` for scope `https://ossrdbms-aad.database.windows.net/.default` and returns `new OidcCallbackResult(token)`, passed as `MongoCredential.createOidcCredential(null).withMechanismProperty("OIDC_CALLBACK", oidcCallback)` (`mongodb-driver-sync` 5.4.0, `azure-identity` 1.15.4 on that page; the Entra ID page itself has only Python, TypeScript and C# tabs).
 
-  Add a Java `OIDC_CALLBACK_KEY` example only after verification (Open question 2). Next to the existing Learn link, add the *Manage secondary Microsoft Entra ID identities* section of the same page. Remove the "or the current documented mechanism" and "verify current driver support" comments.
-- **Fix the SCRAM least-privilege example.** Replace `readWrite` on `orders` with a listed role (`readAnyDatabase` / `readWriteAnyDatabase`) or a database-scoped custom role (preview). Say that secondary users are created with `mongosh` as the admin, never by the app at startup.
+  Next to the existing Learn link, add the *Manage secondary Microsoft Entra ID identities* section of the same page. Remove the "or the current documented mechanism" and "verify current driver support" comments.
+- **Fix the SCRAM least-privilege example.** `readWrite` on `orders` is rejected by the engine ("Roles specified are invalid ..."). Replace it with `readAnyDatabase` (read-only), with `readWriteAnyDatabase` + `clusterAdmin` granted together (read-write), or with a custom role created with `createRole` (custom roles and database- or collection-level privileges are in preview; `updateRole` is unsupported, use `grantPrivilegesToRole` / `revokePrivilegesFromRole`). Say that secondary users are created with `mongosh` as the admin, never by the app at startup.
 - **Raise the rule priority to HIGH.** The model's default answer is wrong, so this rule corrects that answer rather than polishing an already-correct one.
 
 ### 5. New file `skills/security/security-redact-logs.md`
@@ -258,7 +268,8 @@ In RAG and agent applications, DocumentDB documents flow into prompts, logs and 
 ## Encryption
 
 Azure DocumentDB encrypts all data, backups and logs at rest with AES-256; use [security-cmk-encryption](security-cmk-encryption.md) when you must control the key, and [security-entra-rbac](security-entra-rbac.md) for identity.
-<!-- MAINTAINERS: add one sentence stating whether client-side field-level encryption (explicit and automatic) and Queryable Encryption are supported on Azure DocumentDB. If not: "Use application-level encryption of individual fields instead; encrypted fields cannot be filtered or indexed server-side." -->
+
+Client-side field-level encryption (explicit CSFLE, where the application encrypts fields with the driver's `ClientEncryption` API before writing) is listed as supported for Azure DocumentDB ([Azure DocumentDB vs MongoDB Atlas](https://learn.microsoft.com/azure/documentdb/compare-mongodb-atlas), security table); there is no Learn how-to, so treat drivers and key providers as unvalidated. Automatic CSFLE (`autoEncryption` with a schema map) is not documented. Queryable Encryption is not supported: the engine rejects `encryptedFields` on `createCollection` ("encryptedFields not supported yet"). Encrypted fields cannot be filtered or indexed server-side; keep them out of query predicates and vector or search indexes.
 
 ## References
 
@@ -292,12 +303,12 @@ Add a cross-link to `security-redact-logs.md`.
   > **Microsoft Entra ID auth** (recommended for production). New clusters allow native auth only. Run `az documentdb mongocluster update ... --auth-allowed-modes NativeAuth MicrosoftEntraID`, then register each identity as described in `documentdb-security` › security-entra-rbac. Azure role assignments never let a driver connect. Connection code: `documentdb-connection` › Authentication modes. CMK / diagnostics: `documentdb-security`, `documentdb-monitoring`.
 - **`SKILL.md` Step 6b:** add `"authConfig": { "allowedModes": ["NativeAuth"] }` to the `az resource create --properties` JSON, with a comment explaining how to add `MicrosoftEntraID`.
 - **`references/bicep-cluster-template.md`:** add `param authAllowedModes array = ['NativeAuth']` and `authConfig: { allowedModes: authAllowedModes }` under `properties`.
-- **`references/terraform-cluster-template.md`:** add the equivalent setting (Open question 6).
+- **`references/terraform-cluster-template.md`:** add `authentication_methods = var.authentication_methods` on `azurerm_mongo_cluster` with `variable "authentication_methods" { default = ["NativeAuth"] }` (allowed values `NativeAuth`, `MicrosoftEntraID`; azurerm >= 4.55.0; `administrator_username` stays required while `NativeAuth` is present). Note that `azurerm_mongo_cluster_user` (same release) registers an Entra administrator (`identity_provider_type = "MicrosoftEntraID"`, `principal_type = "user" | "servicePrincipal"`, role `root`), so no `azapi` resource is needed for either step. Today the template never sets this, so Entra ID cannot be enabled from the kit's IaC path.
 
 ### 10. `skills/mcp-setup/SKILL.md`
 
-- **Before the `CONNECTION_PROFILES` example, add:** "Use `authMode: "entra"` only if `az documentdb mongocluster show ... --query properties.authConfig.allowedModes` contains `MicrosoftEntraID` **and** the identity running the server is registered as a cluster user. Otherwise use `connectionString`."
-- **Extend "Auth errors":** "For Entra, confirm `MicrosoftEntraID` is in `allowedModes` and that the principal appears in `usersInfo` (or in the cluster's Entra admin list)."
+- **Before the `CONNECTION_PROFILES` example, add:** "Use `authMode: "entra"` only if `az documentdb mongocluster show ... --query properties.authConfig.allowedModes` contains `MicrosoftEntraID` **and** the identity running the server is registered as a cluster user. Otherwise use `connectionString`. Always set `allowedHosts: ["*.mongocluster.cosmos.azure.com"]` on an `entra` profile: the server passes it through as the driver's `ALLOWED_HOSTS`, and without it the Node driver's default list (no Azure domain) rejects every Azure host. Either portal connection string (Self or Global read-write) may be used as `endpoint`; the wildcard matches both."
+- **Extend "Auth errors":** "For Entra, confirm `MicrosoftEntraID` is in `allowedModes` and that the principal appears in `usersInfo` (or in the cluster's Entra admin list). `MongoInvalidArgumentError: Host ... is not valid for OIDC authentication with ALLOWED_HOSTS` means the profile has no `allowedHosts`."
 
 ### 11. `docs/SKILLS.md`
 
@@ -321,20 +332,22 @@ Run folders from the experiment (one run). For the auth runs see `02-readiness.j
 ## Resolved
 
 - retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+- **Driver floors for MONGODB-OIDC** (facts; whether the skill states them is a maintainer decision, see Open question 1): PyMongo 4.7 (changelog 4.7.0, 2024-04-24), Node `mongodb` 6.7.0 (release notes v6.7, 2024-05-29), Java driver 5.1 (`createOidcCredential` Javadoc `@since 5.1`; r5.0.0 has no OIDC), .NET `MongoDB.Driver` 2.25.0 (release 2024-04-12, CSHARP-4448); `AsyncMongoClient` exists from PyMongo 4.9 (beta) and is GA from 4.13. Sources: DECISIONS.md topic 4 items 4.1-4.5 (mongo-python-driver changelog and PyPI; node-mongodb-native release v6.7.0 and npm registry; mongo-java-driver MongoCredential.java at master and r5.0.0; mongo-csharp-driver release v2.25.0; PyMongo release notes 4.9 and 4.13).
+- **Java callback**: Learn publishes one, so the filing adds it (section 4). `how-to-build-java-console-app` (updated 2026-11-23) implements `MongoCredential.OidcCallback` calling `DefaultAzureCredential.getTokenSync()` for the `ossrdbms-aad` scope and uses `createOidcCredential(null).withMechanismProperty("OIDC_CALLBACK", ...)` with `mongodb-driver-sync` 5.4.0 and `azure-identity` 1.15.4; not exercised by this experiment. Sources: https://learn.microsoft.com/en-us/azure/documentdb/how-to-build-java-console-app; https://github.com/Azure-Samples/documentdb-samples/tree/main/ai/vector-search-java (also connects with MONGODB-OIDC).
+- **Roles for nonadministrative Entra identities**: grant `readWriteAnyDatabase` and `clusterAdmin` together; `readAnyDatabase` is the only standalone built-in. The RBAC page (updated 2026-11-23) says the two "must be granted together", and the engine's `ValidateAndObtainUserRole()` accepts exactly {clusterAdmin, readWriteAnyDatabase}, {readAnyDatabase}, or readWriteAnyDatabase alone only behind a flag whose compiled default is off. Whether Azure runs that flag on (which would make the secondary-users page's standalone table right) stays an engineering question in DECISIONS.md, but granting both is accepted in either state, so the filing follows the RBAC page. Sources: https://learn.microsoft.com/en-us/azure/documentdb/how-to-connect-role-based-access-control; https://github.com/documentdb/documentdb/blob/main/pg_documentdb/src/commands/users.c; https://github.com/documentdb/documentdb/blob/main/pg_documentdb/src/configs/feature_flag_configs.c; https://learn.microsoft.com/en-us/azure/documentdb/secondary-users.
+- **`--type` for `microsoft-entra-user assign`**: exactly `User` and `ServicePrincipal`; a service principal or managed identity is registered with `--type ServicePrincipal` and its object ID (`principalId`), not the client ID; the CLI maps the flag onto the ARM users resource's `principalType` and sends `--object-id` as the `users/{principalId}` path segment. Sources: https://learn.microsoft.com/en-us/cli/azure/documentdb/mongocluster/microsoft-entra-user#az-documentdb-mongocluster-microsoft-entra-user-assign; https://github.com/Azure/azure-cli-extensions/blob/main/src/documentdb/azext_documentdb/custom.py; https://learn.microsoft.com/en-us/azure/documentdb/how-to-connect-role-based-access-control (object-ID paragraph and REST/Bicep/Terraform principal-type rule).
+- **`ALLOWED_HOSTS` value**: both `*.azure.com` (Learn) and `*.mongocluster.cosmos.azure.com` (MCP README, kit README, Mongoose tutorial) match both host forms; the kit recommends the narrower `*.mongocluster.cosmos.azure.com`. The Node driver checks `ALLOWED_HOSTS` after SRV resolution for every custom OIDC callback and its default list has no Azure domain, so the property is required in Node; PyMongo checks it only for human callbacks. Sources: https://github.com/mongodb/node-mongodb-native/blob/main/src/mongo_client.ts and src/cmap/auth/mongo_credentials.ts (DEFAULT_ALLOWED_HOSTS); https://github.com/mongodb/specifications/blob/master/source/auth/auth.md; https://github.com/mongodb/mongo-python-driver/blob/master/pymongo/auth_oidc_shared.py; https://learn.microsoft.com/en-us/azure/documentdb/tutorial-nodejs-mongoose; microsoft/documentdb-mcp src/context/documentdb.ts:37.
+- **Terraform `authConfig`**: `azurerm_mongo_cluster` exposes `authentication_methods` (`NativeAuth`, `MicrosoftEntraID`) since azurerm 4.55.0 (2025-12-04, #31100, renamed from `auth_config_allowed_modes` in #31209), and `azurerm_mongo_cluster_user` (same release, #31205) registers an Entra administrator; `azapi` is optional. Sources: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/mongo_cluster; https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/mongo_cluster_user; https://github.com/hashicorp/terraform-provider-azurerm/blob/main/CHANGELOG-v4.md (4.55.0).
+- **Learn TypeScript sample units**: the Learn sample is wrong. `expiresOnTimestamp` is epoch milliseconds (`@azure/core-auth`) and `expiresInSeconds` is seconds (Node driver), so `expiresOnTimestamp - Math.floor(Date.now()/1000)` is off by a factor of about 1,000; the correct form is the JavaScript pivot's `Math.floor((expiresOnTimestamp - Date.now()) / 1000)`, which this filing's snippet uses. Runtime impact is nil today because the Node driver's TokenCache never reads the value. The doc fix is recorded in DECISIONS.md (topic 5 Learn fixes) for the Learn filings, not this kit PR. Sources: https://learn.microsoft.com/en-us/azure/documentdb/how-to-connect-role-based-access-control (TypeScript tab); https://learn.microsoft.com/en-us/azure/documentdb/how-to-build-nodejs-console-app (TS vs JS pivot); https://learn.microsoft.com/en-us/javascript/api/@azure/core-auth/accesstoken; https://www.mongodb.com/docs/drivers/node/current/security/authentication/oidc/; https://github.com/mongodb/node-mongodb-native/blob/main/src/cmap/auth/mongodb_oidc/token_cache.ts.
+- **When the `.global.` host is required**: never. On a single cluster the Self (`<cluster>.mongocluster.cosmos.azure.com`) and Global read-write (`<cluster>.global.mongocluster.cosmos.azure.com`) strings are interchangeable ("you can use either connection string indiscriminately"); the Global string exists only on the primary and keeps writes working across a replica promotion, while the old primary's Self string becomes read-only and replica clusters expose only Self strings. Kit default snippets show the plain host with that note and tell agents to take the host from the returned connection string, never to construct it from the cluster name (section 1a updated). Sources: https://learn.microsoft.com/en-us/azure/documentdb/how-to-connect-role-based-access-control ('Get cluster credentials'); https://learn.microsoft.com/en-us/azure/documentdb/how-to-cluster-replica#use-connection-strings; https://learn.microsoft.com/en-us/azure/documentdb/cross-region-replication; https://learn.microsoft.com/en-us/azure/documentdb/how-to-private-link; https://learn.microsoft.com/en-us/azure/documentdb/tutorial-nodejs-mongoose; https://learn.microsoft.com/en-us/training/modules/create-configure-azure-documentdb-cluster/3-connect-to-cluster.
+- **Explicit CSFLE and Queryable Encryption**: explicit client-side field-level encryption is listed as supported (compare-mongodb-atlas security table "✅ Yes"; release notes 2025-10-10 "[Preview] schema enforcement with CSFLE integration"), with no Learn how-to; Queryable Encryption is not supported, the engine rejects `encryptedFields` ("encryptedFields not supported yet", create_collection_view.c:526-529). `security-ai-sensitive-data.md` now states this (section 6). Automatic CSFLE stays open (Open question 2). Sources: https://learn.microsoft.com/en-us/azure/documentdb/compare-mongodb-atlas; https://learn.microsoft.com/en-us/azure/documentdb/release-notes; https://github.com/documentdb/documentdb (CHANGELOG.md v0.107-0; pg_documentdb/src/configs/feature_flag_configs.c:600-601; pg_documentdb/src/commands/create_collection_view.c:526-529); https://www.mongodb.com/docs/manual/core/csfle/reference/compatibility.md; https://www.mongodb.com/docs/manual/core/queryable-encryption/fundamentals/encrypt-and-query.md.
+- **Learn follow-up for CSFLE**: yes; DECISIONS.md records it as a Learn fix for the Learn filings (add a CSFLE/QE sentence to [Secure your cluster](https://learn.microsoft.com/azure/documentdb/security), qualify the bare checkmark on compare-mongodb-atlas, and change the `compactStructuredEncryptionData | N/A` row on compatibility-query-language to "No"). No SME needed; not part of this kit PR. Sources: DECISIONS.md topic 13 'Learn and reference fixes'.
 
 ## Open questions
 
-1. [needs SME confirmation] **Minimum driver versions for MONGODB-OIDC.** Drafts cite Node `mongodb` 6.7.0 and PyMongo 4.7.0, from the driver release notes; PyMongo 4.9+ is needed for `AsyncMongoClient`; .NET and Java minimums are unverified. Should the skill state minimums at all?
-2. [needs SME confirmation] **Java callback.** The Java `OIDC_CALLBACK_KEY` callback is not on Learn. Should we add a verified Java example or leave Java out?
-3. [needs SME confirmation] **Roles for nonadministrative Entra identities.** The Entra page says `readWriteAnyDatabase` and `clusterAdmin` must be granted together. The secondary-users page lists them as separate roles, with a `validate ... repair` caveat for `readWriteAnyDatabase`. Which is current?
-4. [needs SME confirmation] **`--type` value for `microsoft-entra-user assign`.** Learn's example shows `User`. The drafts disagree on whether a managed identity or service principal takes `ServicePrincipal`. What are the accepted values?
-5. [needs SME confirmation] **`ALLOWED_HOSTS` value.** Learn uses `*.azure.com`, while microsoft/documentdb-mcp uses `*.mongocluster.cosmos.azure.com`. Which should the kit recommend?
-6. [needs SME confirmation] **Terraform `authConfig`.** What is the `azurerm_mongo_cluster` attribute for `authConfig.allowedModes`, and is it exposed in provider 4.x? If not, is `azapi_update_resource` the recommended route?
-7. [needs SME confirmation] **Learn TypeScript sample units.** Learn's sample computes `expiresInSeconds` as `expiresOnTimestamp - Date.now()/1000`, which subtracts seconds from milliseconds. The snippet here converts to seconds first. Is the Learn sample wrong? If so, it should get separate doc feedback.
-8. [needs SME confirmation] **When the `.global.` host is required.** Learn lists both host forms. Draft 041 says to use `<cluster>.global.mongocluster.cosmos.azure.com` when the cluster has a cross-region replica and that either works otherwise; draft 017 says the non-global host works for a single cluster. Is that the rule, and should the kit's default snippets use the non-global host to match the canonical connection string?
-9. [needs SME confirmation] **CSFLE and Queryable Encryption.** Are client-side field-level encryption (explicit and automatic) and Queryable Encryption supported on Azure DocumentDB? No public Learn page or `documentdb-mcp` source says either way; `security-ai-sensitive-data.md` leaves a maintainer placeholder rather than asserting one.
-10. [needs SME confirmation] **PHI endpoint wording.** Is pointing to an Azure OpenAI / Foundry deployment for PHI acceptable wording? The rule cites the Foundry data-privacy page but deliberately makes no compliance claim (for example HIPAA coverage); please confirm with the responsible team before merge.
-11. [needs SME confirmation] **Learn follow-up for CSFLE.** Should a short note on CSFLE support also go on the Learn [Secure your cluster](https://learn.microsoft.com/azure/documentdb/security) page, so builders outside the kit get the same answer?
+1. **Should the kit state driver version minimums at all?** Maintainer decision (DECISIONS.md topic 4, 4.11-open). The floors themselves are settled (see Resolved). DECISIONS.md's best guess, which this filing follows: state floors only where a feature is gated (MONGODB-OIDC: PyMongo 4.7, Node 6.7.0, Java 5.1, .NET 2.25; `AsyncMongoClient` GA: PyMongo 4.13) and otherwise say "resolve the current stable release and pin exactly". The observed cost of saying nothing was 13 runs failing on nonexistent npm versions and 5 on Motor/Beanie 1 stacks.
+2. [needs SME confirmation] **Automatic CSFLE.** Is automatic client-side field-level encryption (driver `autoEncryption` with a schema map or server-side `$jsonSchema` `encrypt`, via mongocryptd or crypt_shared) supported and validated on Azure DocumentDB? Learn has only a bare checkmark and a [Preview] release note about "schema enforcement with CSFLE integration"; nothing says which drivers or libmongocrypt versions were tested, whether `listCollections` returns the `encrypt` validator, or how the preview is enabled (the engine flag defaults to true, but the release-notes banner says [Preview] items need a support request). Until answered, section 6 says only that automatic CSFLE is not documented.
+3. [needs SME confirmation] **PHI endpoint wording.** Is "for PHI, use an endpoint covered by your organisation's agreements, for example an Azure OpenAI / Foundry deployment" (linking the Foundry data-privacy page) acceptable wording with no compliance claim? This is a legal/comms judgement for the DocumentDB and Foundry teams, not a fact a source settles; Microsoft's HIPAA page stresses that BAA coverage comes through the Product Terms for in-scope services and does not by itself make a customer compliant. DECISIONS.md's best guess: acceptable as drafted; if reviewers want a compliance pointer, link the [HIPAA offering page](https://learn.microsoft.com/azure/compliance/offerings/offering-hipaa-us) and "Cloud services in audit scope" rather than asserting coverage for DocumentDB or Azure OpenAI.
 
 ## Source drafts
 

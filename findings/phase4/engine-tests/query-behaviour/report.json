@@ -1,0 +1,2749 @@
+{
+  "test": "query-behaviour",
+  "database": "t_query",
+  "started_utc": "2026-11-25T20:08:35.814578+00:00",
+  "finished_utc": "2026-11-25T20:08:45.763863+00:00",
+  "target": {
+    "container": "ddb-engine-test (documentdb-local, ghcr.io/documentdb/documentdb/documentdb-local:latest)",
+    "uri_redacted": "mongodb://<redacted>@localhost:10260/?tls=true&tlsAllowInvalidCertificates=true&authMechanism=SCRAM-SHA-256&retryWrites=false",
+    "driver": "pymongo 4.20.1",
+    "buildInfo": {
+      "version": "7.0.0",
+      "versionArray": [
+        7,
+        0,
+        0,
+        0
+      ],
+      "bits": 64,
+      "maxBsonObjectSize": 16777216,
+      "ok": 1.0
+    },
+    "hello": {
+      "isWritablePrimary": true,
+      "msg": "isdbgrid",
+      "maxBsonObjectSize": 16777216,
+      "maxMessageSizeBytes": 48000000,
+      "maxWriteBatchSize": 25000,
+      "localTime": 1795637315836,
+      "logicalSessionTimeoutMinutes": 30,
+      "minWireVersion": 0,
+      "maxWireVersion": 21,
+      "readOnly": false,
+      "connectionId": 1050728649,
+      "saslSupportedMechs": [
+        "SCRAM-SHA-256"
+      ],
+      "internal": {
+        "documentdb_versions": [
+          "0.117-0",
+          "0.117.0"
+        ],
+        "kind": ""
+      },
+      "ok": 1.0
+    }
+  },
+  "evidence_scope": "Every observation below was made on the documentdb-local container at the version reported in target.buildInfo. It is evidence about the open-source engine and gateway at that version only and does not prove managed Azure DocumentDB behaviour.",
+  "decisions_context": {
+    "source": "/Users/julietai/claude/azure-documentdb-agent-readiness/findings/phase4/DECISIONS.md, topic 10 (Schema validation, TTL, indexing and query behaviour)",
+    "open_question_2": "Does the exact L08 example (two chained $setWindowFields stages with a cumulative documents ['unbounded','current'] window on $sum and $max, followed by $group with $last) run? -> section a",
+    "settled_allowDiskUse_noop": "allowDiskUse is in IgnoredCommonSpecFields (engine_source) -> section b checks acceptance",
+    "open_question_3": "Explain layout for a cosmosSearch pipeline and whether COLLSCAN/SORT stage names appear -> section c.5",
+    "settled_COLLSCAN_layout": "COLLSCAN check works if the walker descends into stages[].$cursor -> section c",
+    "settled_120s_default": "120 s default query limit, maxTimeMS overrides -> section d records the error code when maxTimeMS 1 expires"
+  },
+  "steps": [
+    {
+      "section": "setup",
+      "step": "0.1 drop existing collections in t_query",
+      "command": "for c in db.list_collection_names(): db.drop_collection(c)  # database t_query only",
+      "response": {
+        "ok": 1
+      },
+      "reading": "Owned database reset; no other database touched."
+    },
+    {
+      "section": "a",
+      "step": "a.0 seed sales collection",
+      "command": "db.sales.insert_many(24 docs: 3 regions x 8 days, fields region, ts (Date), amount)",
+      "response": {
+        "inserted": 24
+      },
+      "reading": "Seed data for window-function tests."
+    },
+    {
+      "section": "a",
+      "step": "a.1 chained $setWindowFields ($sum, then $max) + $sort + $group $last",
+      "command": "db.sales.aggregate([{\"$setWindowFields\": {\"partitionBy\": \"$region\", \"sortBy\": {\"ts\": 1}, \"output\": {\"runningTotal\": {\"$sum\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"current\"]}}}}}, {\"$setWindowFields\": {\"partitionBy\": \"$region\", \"sortBy\": {\"ts\": 1}, \"output\": {\"runningMax\": {\"$max\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"current\"]}}}}}, {\"$sort\": {\"region\": 1, \"ts\": 1}}, {\"$group\": {\"_id\": \"$region\", \"finalTotal\": {\"$last\": \"$runningTotal\"}, \"finalMax\": {\"$last\": \"$runningMax\"}, \"lastTs\": {\"$last\": \"$ts\"}, \"n\": {\"$sum\": 1}}}, {\"$sort\": {\"_id\": 1}}])",
+      "response": [
+        {
+          "_id": "east",
+          "finalTotal": 75,
+          "finalMax": 15,
+          "lastTs": {
+            "$date": "2026-01-08T00:00:00Z"
+          },
+          "n": 8
+        },
+        {
+          "_id": "north",
+          "finalTotal": 76,
+          "finalMax": 21,
+          "lastTs": {
+            "$date": "2026-01-08T00:00:00Z"
+          },
+          "n": 8
+        },
+        {
+          "_id": "west",
+          "finalTotal": 90,
+          "finalMax": 20,
+          "lastTs": {
+            "$date": "2026-01-08T00:00:00Z"
+          },
+          "n": 8
+        }
+      ],
+      "reading": "Two chained $setWindowFields stages with cumulative ['unbounded','current'] windows on $sum and $max followed by $group/$last ran; values match the client-side computation.",
+      "elapsed_ms": 3,
+      "expected": {
+        "east": {
+          "finalTotal": 75,
+          "finalMax": 15
+        },
+        "west": {
+          "finalTotal": 90,
+          "finalMax": 20
+        },
+        "north": {
+          "finalTotal": 76,
+          "finalMax": 21
+        }
+      }
+    },
+    {
+      "section": "a",
+      "step": "a.2 chained $setWindowFields + $group $last with no intermediate $sort",
+      "command": "db.sales.aggregate([{\"$setWindowFields\": {\"partitionBy\": \"$region\", \"sortBy\": {\"ts\": 1}, \"output\": {\"runningTotal\": {\"$sum\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"current\"]}}}}}, {\"$setWindowFields\": {\"partitionBy\": \"$region\", \"sortBy\": {\"ts\": 1}, \"output\": {\"runningMax\": {\"$max\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"current\"]}}}}}, {\"$group\": {\"_id\": \"$region\", \"finalTotal\": {\"$last\": \"$runningTotal\"}, \"finalMax\": {\"$last\": \"$runningMax\"}, \"lastTs\": {\"$last\": \"$ts\"}, \"n\": {\"$sum\": 1}}}, {\"$sort\": {\"_id\": 1}}])",
+      "response": [
+        {
+          "_id": "east",
+          "finalTotal": 75,
+          "finalMax": 15,
+          "lastTs": {
+            "$date": "2026-01-08T00:00:00Z"
+          },
+          "n": 8
+        },
+        {
+          "_id": "north",
+          "finalTotal": 76,
+          "finalMax": 21,
+          "lastTs": {
+            "$date": "2026-01-08T00:00:00Z"
+          },
+          "n": 8
+        },
+        {
+          "_id": "west",
+          "finalTotal": 90,
+          "finalMax": 20,
+          "lastTs": {
+            "$date": "2026-01-08T00:00:00Z"
+          },
+          "n": 8
+        }
+      ],
+      "reading": "Ran without error; $last picked the sortBy-last row in every partition (matches expected).",
+      "elapsed_ms": 1,
+      "expected": {
+        "east": {
+          "finalTotal": 75,
+          "finalMax": 15
+        },
+        "west": {
+          "finalTotal": 90,
+          "finalMax": 20
+        },
+        "north": {
+          "finalTotal": 76,
+          "finalMax": 21
+        }
+      }
+    },
+    {
+      "section": "a",
+      "step": "a.3 one $setWindowFields stage with $sum and $max cumulative windows (east partition rows)",
+      "command": "db.sales.aggregate([{\"$setWindowFields\": {\"partitionBy\": \"$region\", \"sortBy\": {\"ts\": 1}, \"output\": {\"runningTotal\": {\"$sum\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"current\"]}}, \"runningMax\": {\"$max\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"current\"]}}}}}, {\"$match\": {\"region\": \"east\"}}, {\"$sort\": {\"ts\": 1}}, {\"$project\": {\"_id\": 0, \"ts\": 1, \"amount\": 1, \"runningTotal\": 1, \"runningMax\": 1}}])",
+      "response": [
+        {
+          "ts": {
+            "$date": "2026-01-01T00:00:00Z"
+          },
+          "amount": 15,
+          "runningTotal": 15,
+          "runningMax": 15
+        },
+        {
+          "ts": {
+            "$date": "2026-01-02T00:00:00Z"
+          },
+          "amount": 4,
+          "runningTotal": 19,
+          "runningMax": 15
+        },
+        {
+          "ts": {
+            "$date": "2026-01-03T00:00:00Z"
+          },
+          "amount": 3,
+          "runningTotal": 22,
+          "runningMax": 15
+        },
+        {
+          "ts": {
+            "$date": "2026-01-04T00:00:00Z"
+          },
+          "amount": 5,
+          "runningTotal": 27,
+          "runningMax": 15
+        },
+        {
+          "ts": {
+            "$date": "2026-01-05T00:00:00Z"
+          },
+          "amount": 13,
+          "runningTotal": 40,
+          "runningMax": 15
+        },
+        {
+          "ts": {
+            "$date": "2026-01-06T00:00:00Z"
+          },
+          "amount": 14,
+          "runningTotal": 54,
+          "runningMax": 15
+        },
+        {
+          "ts": {
+            "$date": "2026-01-07T00:00:00Z"
+          },
+          "amount": 15,
+          "runningTotal": 69,
+          "runningMax": 15
+        },
+        {
+          "ts": {
+            "$date": "2026-01-08T00:00:00Z"
+          },
+          "amount": 6,
+          "runningTotal": 75,
+          "runningMax": 15
+        }
+      ],
+      "reading": "Single $setWindowFields with $sum and $max cumulative windows returned per-row running total and running max that match a client-side scan.",
+      "elapsed_ms": 1
+    },
+    {
+      "section": "a",
+      "step": "a.4 cumulative documents window with no sortBy",
+      "command": "db.sales.aggregate([{\"$setWindowFields\": {\"partitionBy\": \"$region\", \"output\": {\"runningTotal\": {\"$sum\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"current\"]}}}}}])",
+      "response": {
+        "exception": "OperationFailure",
+        "message": "Missing sortBy field for document-based window, full error: {'ok': 0.0, 'code': 5339901, 'codeName': 'Location5339901', 'errmsg': 'Missing sortBy field for document-based window'}",
+        "code": 5339901,
+        "codeName": "Location5339901",
+        "errmsg": "Missing sortBy field for document-based window",
+        "errorLabels": null,
+        "details": {
+          "ok": 0.0,
+          "code": 5339901,
+          "codeName": "Location5339901",
+          "errmsg": "Missing sortBy field for document-based window"
+        }
+      },
+      "reading": "Rejected as expected: code 5339901 Location5339901: Missing sortBy field for document-based window",
+      "elapsed_ms": 0
+    },
+    {
+      "section": "a",
+      "step": "a.5 ['unbounded','unbounded'] documents window with no sortBy",
+      "command": "db.sales.aggregate([{\"$setWindowFields\": {\"partitionBy\": \"$region\", \"output\": {\"regionTotal\": {\"$sum\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"unbounded\"]}}}}}, {\"$group\": {\"_id\": \"$region\", \"regionTotal\": {\"$first\": \"$regionTotal\"}}}, {\"$sort\": {\"_id\": 1}}])",
+      "response": [
+        {
+          "_id": "east",
+          "regionTotal": 75
+        },
+        {
+          "_id": "north",
+          "regionTotal": 76
+        },
+        {
+          "_id": "west",
+          "regionTotal": 90
+        }
+      ],
+      "reading": "Fully unbounded documents window without sortBy is accepted (only case EnsureSortRequirements allows).",
+      "elapsed_ms": 1
+    },
+    {
+      "section": "a",
+      "step": "a.6 output with no window and no sortBy",
+      "command": "db.sales.aggregate([{\"$setWindowFields\": {\"partitionBy\": \"$region\", \"output\": {\"regionTotal\": {\"$sum\": \"$amount\"}}}}, {\"$group\": {\"_id\": \"$region\", \"regionTotal\": {\"$first\": \"$regionTotal\"}}}, {\"$sort\": {\"_id\": 1}}])",
+      "response": [
+        {
+          "_id": "east",
+          "regionTotal": 75
+        },
+        {
+          "_id": "north",
+          "regionTotal": 76
+        },
+        {
+          "_id": "west",
+          "regionTotal": 90
+        }
+      ],
+      "reading": "No-window, no-sortBy output accepted (whole-partition aggregate).",
+      "elapsed_ms": 0
+    },
+    {
+      "section": "a",
+      "step": "a.7 range window ['unbounded','current'] with no sortBy",
+      "command": "db.sales.aggregate([{\"$setWindowFields\": {\"partitionBy\": \"$region\", \"output\": {\"t\": {\"$sum\": \"$amount\", \"window\": {\"range\": [\"unbounded\", \"current\"]}}}}}])",
+      "response": {
+        "exception": "OperationFailure",
+        "message": "Expected a single sort by field for range-based window, full error: {'ok': 0.0, 'code': 5339902, 'codeName': 'Location5339902', 'errmsg': 'Expected a single sort by field for range-based window'}",
+        "code": 5339902,
+        "codeName": "Location5339902",
+        "errmsg": "Expected a single sort by field for range-based window",
+        "errorLabels": null,
+        "details": {
+          "ok": 0.0,
+          "code": 5339902,
+          "codeName": "Location5339902",
+          "errmsg": "Expected a single sort by field for range-based window"
+        }
+      },
+      "reading": "Rejected: code 5339902 Location5339902: Expected a single sort by field for range-based window",
+      "elapsed_ms": 0
+    },
+    {
+      "section": "setup",
+      "step": "0.2 seed big collection",
+      "command": "db.big.insert_many(...) in batches of 10000: 200000 docs with fields i (int), rnd (double), grp (int), payload (120-char string), tags (array)",
+      "response": {
+        "inserted": 200000,
+        "count_documents": 200000,
+        "elapsed_ms": 4357
+      },
+      "reading": "200k-document collection for the sort, explain and maxTimeMS tests."
+    },
+    {
+      "section": "b",
+      "step": "b.1 aggregate full $sort on unindexed rnd over 200k docs, allowDiskUse=True",
+      "command": "db.big.aggregate([{\"$sort\": {\"rnd\": 1}}, {\"$group\": {\"_id\": null, \"n\": {\"$sum\": 1}, \"firstRnd\": {\"$first\": \"$rnd\"}, \"lastRnd\": {\"$last\": \"$rnd\"}}}], allowDiskUse=True)",
+      "response": [
+        {
+          "_id": null,
+          "n": 200000,
+          "firstRnd": 4.1787215626643e-06,
+          "lastRnd": 0.9999971321557771
+        }
+      ],
+      "reading": "Accepted and completed: sorted all 200000 docs (firstRnd 0.000004, lastRnd 0.999997); allowDiskUse=True raised no error.",
+      "elapsed_ms": 362
+    },
+    {
+      "section": "b",
+      "step": "b.2 aggregate full $sort on unindexed rnd over 200k docs, allowDiskUse=False",
+      "command": "db.big.aggregate([{\"$sort\": {\"rnd\": 1}}, {\"$group\": {\"_id\": null, \"n\": {\"$sum\": 1}, \"firstRnd\": {\"$first\": \"$rnd\"}, \"lastRnd\": {\"$last\": \"$rnd\"}}}], allowDiskUse=False)",
+      "response": [
+        {
+          "_id": null,
+          "n": 200000,
+          "firstRnd": 4.1787215626643e-06,
+          "lastRnd": 0.9999971321557771
+        }
+      ],
+      "reading": "Accepted and completed: sorted all 200000 docs (firstRnd 0.000004, lastRnd 0.999997); allowDiskUse=False raised no error.",
+      "elapsed_ms": 339
+    },
+    {
+      "section": "b",
+      "step": "b.3 raw aggregate command with allowDiskUse: 'yes' (wrong BSON type)",
+      "command": "db.command({'aggregate': 'big', 'pipeline': [{'$limit': 1}], 'cursor': {}, 'allowDiskUse': 'yes'})",
+      "response": {
+        "exception": "OperationFailure",
+        "message": "The BSON field 'allowDiskUse' has an incorrect type 'string'; it should be of type 'bool'., full error: {'ok': 0.0, 'code': 14, 'codeName': 'TypeMismatch', 'errmsg': \"The BSON field 'allowDiskUse' has an incorrect type 'string'; it should be of type 'bool'.\"}",
+        "code": 14,
+        "codeName": "TypeMismatch",
+        "errmsg": "The BSON field 'allowDiskUse' has an incorrect type 'string'; it should be of type 'bool'.",
+        "errorLabels": null,
+        "details": {
+          "ok": 0.0,
+          "code": 14,
+          "codeName": "TypeMismatch",
+          "errmsg": "The BSON field 'allowDiskUse' has an incorrect type 'string'; it should be of type 'bool'."
+        }
+      },
+      "reading": "Rejected non-boolean allowDiskUse: code 14 TypeMismatch: The BSON field 'allowDiskUse' has an incorrect type 'string'; it should be of type 'bool'. (so the field is at least type-validated).",
+      "elapsed_ms": 1
+    },
+    {
+      "section": "b",
+      "step": "b.4 find().sort('rnd').limit(3) with allow_disk_use=True",
+      "command": "db.big.find({}, {'_id':0,'rnd':1}).sort('rnd', 1).limit(3).allow_disk_use(True)",
+      "response": [
+        {
+          "rnd": 4.1787215626643e-06
+        },
+        {
+          "rnd": 7.678179499537308e-06
+        },
+        {
+          "rnd": 1.2879835491252933e-05
+        }
+      ],
+      "reading": "find with allowDiskUse accepted.",
+      "elapsed_ms": 76
+    },
+    {
+      "section": "c",
+      "step": "c.1 find on unindexed field rnd (executionStats)",
+      "command": "db.command({\"explain\": {\"find\": \"big\", \"filter\": {\"rnd\": {\"$gt\": 0.999}}}, \"verbosity\": \"executionStats\"})  # pymongo, database t_query",
+      "response": {
+        "summary": {
+          "top_level_keys": [
+            "command",
+            "executionStats",
+            "explainCommandExecTimeMillis",
+            "explainCommandPlanningTimeMillis",
+            "explainVersion",
+            "ok",
+            "queryPlanner"
+          ],
+          "explainVersion": 2.0,
+          "stage_names_in_order": [
+            "FETCH",
+            "IXSCAN",
+            "FETCH",
+            "IXSCAN"
+          ],
+          "stage_names_unique": [
+            "FETCH",
+            "IXSCAN"
+          ],
+          "winningPlan_paths": [
+            "queryPlanner.winningPlan"
+          ],
+          "executionStats_paths": [
+            "executionStats"
+          ],
+          "queryPlanner_paths": [
+            "queryPlanner"
+          ],
+          "has_COLLSCAN": false,
+          "has_IXSCAN": true,
+          "has_SORT": false,
+          "executionStats_top": {
+            "nReturned": 215,
+            "executionTimeMillis": 23.757,
+            "totalKeysExamined": 215,
+            "totalDocsExamined": 200000
+          }
+        },
+        "full_explain": {
+          "explainVersion": 2.0,
+          "command": "db.runCommand({explain: { 'find': 'big', 'filter': { 'rnd': { '$gt': 0.999 } } }})",
+          "explainCommandPlanningTimeMillis": 0.087,
+          "explainCommandExecTimeMillis": 23.817,
+          "queryPlanner": {
+            "namespace": "t_query.big",
+            "winningPlan": {
+              "stage": "FETCH",
+              "ns": "t_query.big",
+              "startupCost": 49.72,
+              "totalCost": 5339.12,
+              "runtimeFilterSet": [
+                {
+                  "rnd": {
+                    "$gt": 0.999
+                  }
+                }
+              ],
+              "estimatedTotalKeysExamined": 1397,
+              "inputStage": {
+                "stage": "IXSCAN",
+                "indexName": "_id_",
+                "isBitmap": true,
+                "indexUsage": {},
+                "startupCost": 0.0,
+                "totalCost": 49.37,
+                "estimatedTotalKeysExamined": 2793
+              }
+            },
+            "indexCosts": [
+              {
+                "namespace": "t_query.big",
+                "costs": [
+                  {
+                    "indexName": "_id_",
+                    "indexKeyString": "{\"_id\": 1}",
+                    "startupCost": 0.425,
+                    "totalCost": 49.372,
+                    "selectivity": 0.005,
+                    "estimatedPercentIndexPagesLoaded": 0.58,
+                    "estimatedTotalIndexEntries": 558657,
+                    "boundarySelectivity": 0.005
+                  }
+                ]
+              }
+            ]
+          },
+          "executionStats": {
+            "nReturned": 215,
+            "executionTimeMillis": 23.757,
+            "executionStartAtTimeMillis": 4.046,
+            "totalDocsExamined": 200000,
+            "totalKeysExamined": 215,
+            "executionStages": {
+              "stage": "FETCH",
+              "nReturned": 215,
+              "executionTimeMillis": 23.757,
+              "executionStartAtTimeMillis": 4.046,
+              "totalDocsExamined": 200000,
+              "totalKeysExamined": 215,
+              "exactBlocksRead": 6897,
+              "totalDocsRemovedByRuntimeFilter": 199785,
+              "numBlocksFromCache": 8104,
+              "inputStage": {
+                "stage": "IXSCAN",
+                "nReturned": 200000,
+                "executionTimeMillis": 3.565,
+                "executionStartAtTimeMillis": 3.565,
+                "indexName": "_id_",
+                "indexUsage": {},
+                "totalKeysExamined": 200000,
+                "numBlocksFromCache": 1207
+              }
+            }
+          },
+          "ok": 1.0
+        }
+      },
+      "reading": "find with no usable index: top-level keys ['command', 'executionStats', 'explainCommandExecTimeMillis', 'explainCommandPlanningTimeMillis', 'explainVersion', 'ok', 'queryPlanner']; stages seen ['FETCH', 'IXSCAN', 'FETCH', 'IXSCAN']; winningPlan at ['queryPlanner.winningPlan'].",
+      "elapsed_ms": 29
+    },
+    {
+      "section": "c",
+      "step": "c.2 createIndex on big.i",
+      "command": "db.big.create_index([('i', ASCENDING)], name='i_1')",
+      "response": "i_1",
+      "reading": "Index i_1 created on big.i.",
+      "elapsed_ms": 3008
+    },
+    {
+      "section": "c",
+      "step": "c.3 find on indexed field i (executionStats)",
+      "command": "db.command({\"explain\": {\"find\": \"big\", \"filter\": {\"i\": 123456}}, \"verbosity\": \"executionStats\"})  # pymongo, database t_query",
+      "response": {
+        "summary": {
+          "top_level_keys": [
+            "command",
+            "executionStats",
+            "explainCommandExecTimeMillis",
+            "explainCommandPlanningTimeMillis",
+            "explainVersion",
+            "ok",
+            "queryPlanner"
+          ],
+          "explainVersion": 2.0,
+          "stage_names_in_order": [
+            "FETCH",
+            "IXSCAN",
+            "FETCH",
+            "IXSCAN"
+          ],
+          "stage_names_unique": [
+            "FETCH",
+            "IXSCAN"
+          ],
+          "winningPlan_paths": [
+            "queryPlanner.winningPlan"
+          ],
+          "executionStats_paths": [
+            "executionStats"
+          ],
+          "queryPlanner_paths": [
+            "queryPlanner"
+          ],
+          "has_COLLSCAN": false,
+          "has_IXSCAN": true,
+          "has_SORT": false,
+          "executionStats_top": {
+            "nReturned": 1,
+            "executionTimeMillis": 0.071,
+            "totalKeysExamined": 1,
+            "totalDocsExamined": 1
+          }
+        },
+        "full_explain": {
+          "explainVersion": 2.0,
+          "command": "db.runCommand({explain: { 'find': 'big', 'filter': { 'i': 123456 } }})",
+          "explainCommandPlanningTimeMillis": 1.36,
+          "explainCommandExecTimeMillis": 0.141,
+          "queryPlanner": {
+            "namespace": "t_query.big",
+            "winningPlan": {
+              "stage": "FETCH",
+              "ns": "t_query.big",
+              "startupCost": 36.42,
+              "totalCost": 75.43,
+              "estimatedTotalKeysExamined": 500,
+              "inputStage": {
+                "stage": "IXSCAN",
+                "indexName": "i_1",
+                "isBitmap": true,
+                "indexUsage": {
+                  "indexKeyString": "{\"i\": 1}",
+                  "isMultiKey": false,
+                  "bounds": [
+                    "[\"i\": [123456, 123456]]"
+                  ]
+                },
+                "startupCost": 0.0,
+                "totalCost": 0.0,
+                "indexFilterSet": [
+                  {
+                    "i": {
+                      "$eq": 123456
+                    }
+                  }
+                ],
+                "estimatedTotalKeysExamined": 2000
+              }
+            },
+            "indexCosts": [
+              {
+                "namespace": "t_query.big",
+                "costs": [
+                  {
+                    "indexName": "_id_",
+                    "indexKeyString": "{\"_id\": 1}",
+                    "startupCost": 0.42,
+                    "totalCost": 35.92,
+                    "selectivity": 0.005,
+                    "estimatedPercentIndexPagesLoaded": 0.58,
+                    "estimatedTotalIndexEntries": 200000,
+                    "boundarySelectivity": 0.005
+                  }
+                ]
+              }
+            ]
+          },
+          "executionStats": {
+            "nReturned": 1,
+            "executionTimeMillis": 0.071,
+            "executionStartAtTimeMillis": 0.07,
+            "totalDocsExamined": 1,
+            "totalKeysExamined": 1,
+            "executionStages": {
+              "stage": "FETCH",
+              "nReturned": 1,
+              "executionTimeMillis": 0.071,
+              "executionStartAtTimeMillis": 0.07,
+              "totalDocsExamined": 1,
+              "totalKeysExamined": 1,
+              "exactBlocksRead": 1,
+              "numBlocksFromCache": 4,
+              "inputStage": {
+                "stage": "IXSCAN",
+                "nReturned": 1,
+                "executionTimeMillis": 0.055,
+                "executionStartAtTimeMillis": 0.055,
+                "indexName": "i_1",
+                "indexUsage": {
+                  "scanLoops": 1,
+                  "scanType": "regular",
+                  "scanKeys": [
+                    "key 1: [(isInequality: false, estimatedEntryCount: 1)]"
+                  ]
+                },
+                "totalKeysExamined": 1,
+                "numBlocksFromCache": 3
+              }
+            }
+          },
+          "ok": 1.0
+        }
+      },
+      "reading": "find on indexed field: top-level keys ['command', 'executionStats', 'explainCommandExecTimeMillis', 'explainCommandPlanningTimeMillis', 'explainVersion', 'ok', 'queryPlanner']; stages seen ['FETCH', 'IXSCAN', 'FETCH', 'IXSCAN']; winningPlan at ['queryPlanner.winningPlan'].",
+      "elapsed_ms": 22
+    },
+    {
+      "section": "c",
+      "step": "c.3b find on indexed field i with range + sort on rnd (executionStats)",
+      "command": "db.command({\"explain\": {\"find\": \"big\", \"filter\": {\"i\": {\"$gt\": 199000}}, \"sort\": {\"rnd\": -1}}, \"verbosity\": \"executionStats\"})  # pymongo, database t_query",
+      "response": {
+        "summary": {
+          "top_level_keys": [
+            "command",
+            "executionStats",
+            "explainCommandExecTimeMillis",
+            "explainCommandPlanningTimeMillis",
+            "explainVersion",
+            "ok",
+            "queryPlanner"
+          ],
+          "explainVersion": 2.0,
+          "stage_names_in_order": [
+            "SORT",
+            "FETCH",
+            "IXSCAN",
+            "SORT",
+            "FETCH",
+            "IXSCAN"
+          ],
+          "stage_names_unique": [
+            "FETCH",
+            "IXSCAN",
+            "SORT"
+          ],
+          "winningPlan_paths": [
+            "queryPlanner.winningPlan"
+          ],
+          "executionStats_paths": [
+            "executionStats"
+          ],
+          "queryPlanner_paths": [
+            "queryPlanner"
+          ],
+          "has_COLLSCAN": false,
+          "has_IXSCAN": true,
+          "has_SORT": true,
+          "executionStats_top": {
+            "nReturned": 999,
+            "executionTimeMillis": 2.186,
+            "totalKeysExamined": 999,
+            "totalDocsExamined": 999
+          }
+        },
+        "full_explain": {
+          "explainVersion": 2.0,
+          "command": "db.runCommand({explain: { 'find': 'big', 'filter': { 'i': { '$gt': 199000 } }, 'sort': { 'rnd': -1 } }})",
+          "explainCommandPlanningTimeMillis": 0.355,
+          "explainCommandExecTimeMillis": 2.292,
+          "queryPlanner": {
+            "namespace": "t_query.big",
+            "winningPlan": {
+              "stage": "SORT",
+              "startupCost": 81.87,
+              "totalCost": 82.29,
+              "sortKeysCount": 1,
+              "sortKey": [
+                {
+                  "rnd": -1
+                }
+              ],
+              "estimatedTotalKeysExamined": 167,
+              "inputStage": {
+                "stage": "FETCH",
+                "ns": "t_query.big",
+                "startupCost": 36.25,
+                "totalCost": 75.29,
+                "estimatedTotalKeysExamined": 167,
+                "inputStage": {
+                  "stage": "IXSCAN",
+                  "indexName": "i_1",
+                  "isBitmap": true,
+                  "indexUsage": {
+                    "indexKeyString": "{\"i\": 1}",
+                    "isMultiKey": false,
+                    "bounds": [
+                      "[\"i\": (199000, Infinity]]"
+                    ]
+                  },
+                  "startupCost": 0.0,
+                  "totalCost": 0.0,
+                  "indexFilterSet": [
+                    {
+                      "i": {
+                        "$gt": 199000
+                      }
+                    }
+                  ],
+                  "estimatedTotalKeysExamined": 2000
+                }
+              }
+            },
+            "indexCosts": [
+              {
+                "namespace": "t_query.big",
+                "costs": [
+                  {
+                    "indexName": "_id_",
+                    "indexKeyString": "{\"_id\": 1}",
+                    "startupCost": 0.42,
+                    "totalCost": 35.92,
+                    "selectivity": 0.005,
+                    "estimatedPercentIndexPagesLoaded": 0.58,
+                    "estimatedTotalIndexEntries": 200000,
+                    "boundarySelectivity": 0.005
+                  }
+                ]
+              }
+            ]
+          },
+          "executionStats": {
+            "nReturned": 999,
+            "executionTimeMillis": 2.186,
+            "executionStartAtTimeMillis": 2.128,
+            "totalDocsExamined": 999,
+            "totalKeysExamined": 999,
+            "executionStages": {
+              "stage": "SORT",
+              "nReturned": 999,
+              "executionTimeMillis": 2.186,
+              "executionStartAtTimeMillis": 2.128,
+              "totalDocsExamined": 999,
+              "totalKeysExamined": 999,
+              "sortMethod": "quicksort",
+              "totalDataSizeSortedBytesEstimate": 274,
+              "numBlocksFromCache": 50,
+              "inputStage": {
+                "stage": "FETCH",
+                "nReturned": 999,
+                "executionTimeMillis": 0.424,
+                "executionStartAtTimeMillis": 0.258,
+                "totalDocsExamined": 999,
+                "totalKeysExamined": 999,
+                "exactBlocksRead": 35,
+                "numBlocksFromCache": 44,
+                "inputStage": {
+                  "stage": "IXSCAN",
+                  "nReturned": 999,
+                  "executionTimeMillis": 0.243,
+                  "executionStartAtTimeMillis": 0.243,
+                  "indexName": "i_1",
+                  "indexUsage": {
+                    "scanLoops": 1000,
+                    "scanType": "ordered",
+                    "scanKeys": [
+                      "key 1: [(isInequality: true, estimatedEntryCount: 999)]"
+                    ]
+                  },
+                  "totalKeysExamined": 999,
+                  "numBlocksFromCache": 9
+                }
+              }
+            }
+          },
+          "ok": 1.0
+        }
+      },
+      "reading": "find on indexed range with in-memory sort: top-level keys ['command', 'executionStats', 'explainCommandExecTimeMillis', 'explainCommandPlanningTimeMillis', 'explainVersion', 'ok', 'queryPlanner']; stages seen ['SORT', 'FETCH', 'IXSCAN', 'SORT', 'FETCH', 'IXSCAN']; winningPlan at ['queryPlanner.winningPlan'].",
+      "elapsed_ms": 15
+    },
+    {
+      "section": "c",
+      "step": "c.4 aggregate $match (indexed i) + $sort (rnd) + $limit (executionStats)",
+      "command": "db.command({\"explain\": {\"aggregate\": \"big\", \"pipeline\": [{\"$match\": {\"i\": {\"$gt\": 199000}}}, {\"$sort\": {\"rnd\": -1}}, {\"$limit\": 10}], \"cursor\": {}}, \"verbosity\": \"executionStats\"})  # pymongo, database t_query",
+      "response": {
+        "summary": {
+          "top_level_keys": [
+            "command",
+            "explainCommandExecTimeMillis",
+            "explainCommandPlanningTimeMillis",
+            "explainVersion",
+            "ok",
+            "stages"
+          ],
+          "explainVersion": 2.0,
+          "stage_names_in_order": [
+            "FETCH",
+            "IXSCAN",
+            "FETCH",
+            "IXSCAN",
+            "SORT",
+            "SORT",
+            "LIMIT",
+            "LIMIT"
+          ],
+          "stage_names_unique": [
+            "FETCH",
+            "IXSCAN",
+            "LIMIT",
+            "SORT"
+          ],
+          "winningPlan_paths": [
+            "stages[0].$cursor.queryPlanner.winningPlan",
+            "stages[1].$sort.queryPlanner.winningPlan",
+            "stages[2].$limit.queryPlanner.winningPlan"
+          ],
+          "executionStats_paths": [
+            "stages[0].$cursor.executionStats",
+            "stages[1].$sort.executionStats",
+            "stages[2].$limit.executionStats"
+          ],
+          "queryPlanner_paths": [
+            "stages[0].$cursor.queryPlanner",
+            "stages[1].$sort.queryPlanner",
+            "stages[2].$limit.queryPlanner"
+          ],
+          "has_COLLSCAN": false,
+          "has_IXSCAN": true,
+          "has_SORT": true,
+          "stages_array_keys": [
+            [
+              "$cursor"
+            ],
+            [
+              "$sort"
+            ],
+            [
+              "$limit"
+            ]
+          ],
+          "executionStats_top": {
+            "nReturned": 999,
+            "executionTimeMillis": 0.282,
+            "totalKeysExamined": 999,
+            "totalDocsExamined": 999
+          }
+        },
+        "full_explain": {
+          "explainVersion": 2.0,
+          "command": "db.runCommand({explain: { 'aggregate': 'big', 'pipeline': [{ '$match': { 'i': { '$gt': 199000 } } }, { '$sort': { 'rnd': -1 } }, { '$limit': 10 }], 'cursor': {} }})",
+          "explainCommandPlanningTimeMillis": 0.112,
+          "explainCommandExecTimeMillis": 0.787,
+          "stages": [
+            {
+              "$cursor": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "FETCH",
+                    "ns": "t_query.big",
+                    "startupCost": 36.25,
+                    "totalCost": 75.29,
+                    "estimatedTotalKeysExamined": 167,
+                    "inputStage": {
+                      "stage": "IXSCAN",
+                      "indexName": "i_1",
+                      "isBitmap": true,
+                      "indexUsage": {
+                        "indexKeyString": "{\"i\": 1}",
+                        "isMultiKey": false,
+                        "bounds": [
+                          "[\"i\": (199000, Infinity]]"
+                        ]
+                      },
+                      "startupCost": 0.0,
+                      "totalCost": 0.0,
+                      "indexFilterSet": [
+                        {
+                          "i": {
+                            "$gt": 199000
+                          }
+                        }
+                      ],
+                      "estimatedTotalKeysExamined": 2000
+                    }
+                  },
+                  "indexCosts": [
+                    {
+                      "namespace": "t_query.big",
+                      "costs": [
+                        {
+                          "indexName": "_id_",
+                          "indexKeyString": "{\"_id\": 1}",
+                          "startupCost": 0.42,
+                          "totalCost": 35.92,
+                          "selectivity": 0.005,
+                          "estimatedPercentIndexPagesLoaded": 0.58,
+                          "estimatedTotalIndexEntries": 200000,
+                          "boundarySelectivity": 0.005
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "executionStats": {
+                  "nReturned": 999,
+                  "executionTimeMillis": 0.282,
+                  "executionStartAtTimeMillis": 0.174,
+                  "totalDocsExamined": 999,
+                  "totalKeysExamined": 999,
+                  "executionStages": {
+                    "stage": "FETCH",
+                    "nReturned": 999,
+                    "executionTimeMillis": 0.282,
+                    "executionStartAtTimeMillis": 0.174,
+                    "totalDocsExamined": 999,
+                    "totalKeysExamined": 999,
+                    "exactBlocksRead": 35,
+                    "numBlocksFromCache": 44,
+                    "inputStage": {
+                      "stage": "IXSCAN",
+                      "nReturned": 999,
+                      "executionTimeMillis": 0.166,
+                      "executionStartAtTimeMillis": 0.166,
+                      "indexName": "i_1",
+                      "indexUsage": {
+                        "scanLoops": 1000,
+                        "scanType": "ordered",
+                        "scanKeys": [
+                          "key 1: [(isInequality: true, estimatedEntryCount: 999)]"
+                        ]
+                      },
+                      "totalKeysExamined": 999,
+                      "numBlocksFromCache": 9
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "$sort": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "SORT",
+                    "startupCost": 79.31,
+                    "totalCost": 79.73,
+                    "sortKeysCount": 1,
+                    "sortKey": [
+                      {
+                        "rnd": -1
+                      }
+                    ],
+                    "estimatedTotalKeysExamined": 167
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 10,
+                  "executionTimeMillis": 0.766,
+                  "executionStartAtTimeMillis": 0.765,
+                  "totalDocsExamined": 10,
+                  "totalKeysExamined": 10,
+                  "executionStages": {
+                    "stage": "SORT",
+                    "nReturned": 10,
+                    "executionTimeMillis": 0.766,
+                    "executionStartAtTimeMillis": 0.765,
+                    "totalDocsExamined": 10,
+                    "totalKeysExamined": 10,
+                    "sortMethod": "top-N heapsort",
+                    "totalDataSizeSortedBytesEstimate": 29,
+                    "numBlocksFromCache": 44
+                  }
+                }
+              }
+            },
+            {
+              "$limit": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "LIMIT",
+                    "startupCost": 79.31,
+                    "totalCost": 79.34,
+                    "estimatedTotalKeysExamined": 10
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 10,
+                  "executionTimeMillis": 0.768,
+                  "executionStartAtTimeMillis": 0.766,
+                  "totalDocsExamined": 10,
+                  "totalKeysExamined": 10,
+                  "executionStages": {
+                    "stage": "LIMIT",
+                    "nReturned": 10,
+                    "executionTimeMillis": 0.768,
+                    "executionStartAtTimeMillis": 0.766,
+                    "totalDocsExamined": 10,
+                    "totalKeysExamined": 10,
+                    "numBlocksFromCache": 44
+                  }
+                }
+              }
+            }
+          ],
+          "ok": 1.0
+        }
+      },
+      "reading": "aggregate with $match/$sort: top-level keys ['command', 'explainCommandExecTimeMillis', 'explainCommandPlanningTimeMillis', 'explainVersion', 'ok', 'stages']; stages seen ['FETCH', 'IXSCAN', 'FETCH', 'IXSCAN', 'SORT', 'SORT', 'LIMIT', 'LIMIT']; winningPlan at ['stages[0].$cursor.queryPlanner.winningPlan', 'stages[1].$sort.queryPlanner.winningPlan', 'stages[2].$limit.queryPlanner.winningPlan'].",
+      "elapsed_ms": 10
+    },
+    {
+      "section": "c",
+      "step": "c.4b aggregate $match (unindexed rnd) + $sort (i) (executionStats)",
+      "command": "db.command({\"explain\": {\"aggregate\": \"big\", \"pipeline\": [{\"$match\": {\"rnd\": {\"$gt\": 0.999}}}, {\"$sort\": {\"i\": 1}}], \"cursor\": {}}, \"verbosity\": \"executionStats\"})  # pymongo, database t_query",
+      "response": {
+        "summary": {
+          "top_level_keys": [
+            "command",
+            "explainCommandExecTimeMillis",
+            "explainCommandPlanningTimeMillis",
+            "explainVersion",
+            "ok",
+            "stages"
+          ],
+          "explainVersion": 2.0,
+          "stage_names_in_order": [
+            "FETCH",
+            "IXSCAN",
+            "FETCH",
+            "IXSCAN",
+            "SORT",
+            "SORT"
+          ],
+          "stage_names_unique": [
+            "FETCH",
+            "IXSCAN",
+            "SORT"
+          ],
+          "winningPlan_paths": [
+            "stages[0].$cursor.queryPlanner.winningPlan",
+            "stages[1].$sort.queryPlanner.winningPlan"
+          ],
+          "executionStats_paths": [
+            "stages[0].$cursor.executionStats",
+            "stages[1].$sort.executionStats"
+          ],
+          "queryPlanner_paths": [
+            "stages[0].$cursor.queryPlanner",
+            "stages[1].$sort.queryPlanner"
+          ],
+          "has_COLLSCAN": false,
+          "has_IXSCAN": true,
+          "has_SORT": true,
+          "stages_array_keys": [
+            [
+              "$cursor"
+            ],
+            [
+              "$sort"
+            ]
+          ],
+          "executionStats_top": {
+            "nReturned": 215,
+            "executionTimeMillis": 31.204,
+            "totalKeysExamined": 215,
+            "totalDocsExamined": 200000
+          }
+        },
+        "full_explain": {
+          "explainVersion": 2.0,
+          "command": "db.runCommand({explain: { 'aggregate': 'big', 'pipeline': [{ '$match': { 'rnd': { '$gt': 0.999 } } }, { '$sort': { 'i': 1 } }], 'cursor': {} }})",
+          "explainCommandPlanningTimeMillis": 0.151,
+          "explainCommandExecTimeMillis": 31.328,
+          "stages": [
+            {
+              "$cursor": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "FETCH",
+                    "ns": "t_query.big",
+                    "startupCost": 35.96,
+                    "totalCost": 2755.99,
+                    "runtimeFilterSet": [
+                      {
+                        "rnd": {
+                          "$gt": 0.999
+                        }
+                      }
+                    ],
+                    "estimatedTotalKeysExamined": 167,
+                    "inputStage": {
+                      "stage": "IXSCAN",
+                      "indexName": "_id_",
+                      "isBitmap": true,
+                      "indexUsage": {},
+                      "startupCost": 0.0,
+                      "totalCost": 35.92,
+                      "estimatedTotalKeysExamined": 1000
+                    }
+                  },
+                  "indexCosts": [
+                    {
+                      "namespace": "t_query.big",
+                      "costs": [
+                        {
+                          "indexName": "_id_",
+                          "indexKeyString": "{\"_id\": 1}",
+                          "startupCost": 0.42,
+                          "totalCost": 35.92,
+                          "selectivity": 0.005,
+                          "estimatedPercentIndexPagesLoaded": 0.58,
+                          "estimatedTotalIndexEntries": 200000,
+                          "boundarySelectivity": 0.005
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "executionStats": {
+                  "nReturned": 215,
+                  "executionTimeMillis": 31.204,
+                  "executionStartAtTimeMillis": 6.179,
+                  "totalDocsExamined": 200000,
+                  "totalKeysExamined": 215,
+                  "executionStages": {
+                    "stage": "FETCH",
+                    "nReturned": 215,
+                    "executionTimeMillis": 31.204,
+                    "executionStartAtTimeMillis": 6.179,
+                    "totalDocsExamined": 200000,
+                    "totalKeysExamined": 215,
+                    "exactBlocksRead": 6897,
+                    "totalDocsRemovedByRuntimeFilter": 199785,
+                    "numBlocksFromCache": 8104,
+                    "inputStage": {
+                      "stage": "IXSCAN",
+                      "nReturned": 200000,
+                      "executionTimeMillis": 5.435,
+                      "executionStartAtTimeMillis": 5.435,
+                      "indexName": "_id_",
+                      "indexUsage": {},
+                      "totalKeysExamined": 200000,
+                      "numBlocksFromCache": 1207
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "$sort": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "SORT",
+                    "startupCost": 2762.57,
+                    "totalCost": 2762.99,
+                    "sortKeysCount": 1,
+                    "sortKey": [
+                      {
+                        "i": 1
+                      }
+                    ],
+                    "estimatedTotalKeysExamined": 167
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 215,
+                  "executionTimeMillis": 31.31,
+                  "executionStartAtTimeMillis": 31.304,
+                  "totalDocsExamined": 215,
+                  "totalKeysExamined": 215,
+                  "executionStages": {
+                    "stage": "SORT",
+                    "nReturned": 215,
+                    "executionTimeMillis": 31.31,
+                    "executionStartAtTimeMillis": 31.304,
+                    "totalDocsExamined": 215,
+                    "totalKeysExamined": 215,
+                    "sortMethod": "quicksort",
+                    "totalDataSizeSortedBytesEstimate": 78,
+                    "numBlocksFromCache": 8104
+                  }
+                }
+              }
+            }
+          ],
+          "ok": 1.0
+        }
+      },
+      "reading": "aggregate with unindexed $match and $sort: top-level keys ['command', 'explainCommandExecTimeMillis', 'explainCommandPlanningTimeMillis', 'explainVersion', 'ok', 'stages']; stages seen ['FETCH', 'IXSCAN', 'FETCH', 'IXSCAN', 'SORT', 'SORT']; winningPlan at ['stages[0].$cursor.queryPlanner.winningPlan', 'stages[1].$sort.queryPlanner.winningPlan'].",
+      "elapsed_ms": 35
+    },
+    {
+      "section": "c",
+      "step": "c.5a seed vec collection",
+      "command": "db.vec.insert_many(500 docs with 8-dim 'embedding' arrays)",
+      "response": {
+        "inserted": 500
+      },
+      "reading": "Seed data for the vector index."
+    },
+    {
+      "section": "c",
+      "step": "c.5b createIndexes cosmosSearch vector-ivf on vec.embedding",
+      "command": "db.command({\"createIndexes\": \"vec\", \"indexes\": [{\"name\": \"vec_ivf\", \"key\": {\"embedding\": \"cosmosSearch\"}, \"cosmosSearchOptions\": {\"kind\": \"vector-ivf\", \"numLists\": 2, \"similarity\": \"COS\", \"dimensions\": 8}}]})",
+      "response": {
+        "raw": {
+          "defaultShard": {
+            "numIndexesBefore": 1,
+            "numIndexesAfter": 2,
+            "createdCollectionAutomatically": false,
+            "ok": 1
+          }
+        },
+        "ok": 1
+      },
+      "reading": "vector-ivf index created; the createIndexes reply is wrapped as raw.defaultShard: numIndexesBefore 1 -> numIndexesAfter 2, ok 1.",
+      "elapsed_ms": 1005
+    },
+    {
+      "section": "c",
+      "step": "c.5c run the $search cosmosSearch pipeline (sanity)",
+      "command": "db.vec.aggregate([{\"$search\": {\"cosmosSearch\": {\"vector\": [-0.39236766102280574, 0.6033248533910893, -0.6181478083292562, 0.9270738711883737, -0.7653731365574175, -0.8389300015755634, 0.14627698851855087, 0.5544092533978495], \"path\": \"embedding\", \"k\": 5}, \"returnStoredSource\": true}}, {\"$project\": {\"_id\": 0, \"k\": 1, \"score\": {\"$meta\": \"searchScore\"}}}])",
+      "response": [
+        {
+          "k": 201,
+          "score": 0.9438603636706244
+        },
+        {
+          "k": 122,
+          "score": 0.8227666093775374
+        },
+        {
+          "k": 91,
+          "score": 0.8011600959397673
+        },
+        {
+          "k": 181,
+          "score": 0.7823915943116125
+        },
+        {
+          "k": 266,
+          "score": 0.7523627863919407
+        }
+      ],
+      "reading": "$search cosmosSearch returned 5 rows with searchScore.",
+      "elapsed_ms": 3
+    },
+    {
+      "section": "c",
+      "step": "c.5d explain $search cosmosSearch pipeline on vector-ivf index (executionStats)",
+      "command": "db.command({\"explain\": {\"aggregate\": \"vec\", \"pipeline\": [{\"$search\": {\"cosmosSearch\": {\"vector\": [-0.39236766102280574, 0.6033248533910893, -0.6181478083292562, 0.9270738711883737, -0.7653731365574175, -0.8389300015755634, 0.14627698851855087, 0.5544092533978495], \"path\": \"embedding\", \"k\": 5}, \"returnStoredSource\": true}}, {\"$project\": {\"_id\": 0, \"k\": 1, \"score\": {\"$meta\": \"searchScore\"}}}], \"cursor\": {}}, \"verbosity\": \"executionStats\"})  # pymongo, database t_query",
+      "response": {
+        "summary": {
+          "top_level_keys": [
+            "command",
+            "explainCommandExecTimeMillis",
+            "explainCommandPlanningTimeMillis",
+            "explainVersion",
+            "ok",
+            "stages"
+          ],
+          "explainVersion": 2.0,
+          "stage_names_in_order": [
+            "FETCH",
+            "IXSCAN",
+            "FETCH",
+            "IXSCAN",
+            "LIMIT",
+            "LIMIT",
+            "PROJECT",
+            "PROJECT"
+          ],
+          "stage_names_unique": [
+            "FETCH",
+            "IXSCAN",
+            "LIMIT",
+            "PROJECT"
+          ],
+          "winningPlan_paths": [
+            "stages[0].$cursor.queryPlanner.winningPlan",
+            "stages[1].$limit.queryPlanner.winningPlan",
+            "stages[2].$project.queryPlanner.winningPlan"
+          ],
+          "executionStats_paths": [
+            "stages[0].$cursor.executionStats",
+            "stages[1].$limit.executionStats",
+            "stages[2].$project.executionStats"
+          ],
+          "queryPlanner_paths": [
+            "stages[0].$cursor.queryPlanner",
+            "stages[1].$limit.queryPlanner",
+            "stages[2].$project.queryPlanner"
+          ],
+          "has_COLLSCAN": false,
+          "has_IXSCAN": true,
+          "has_SORT": false,
+          "stages_array_keys": [
+            [
+              "$cursor"
+            ],
+            [
+              "$limit"
+            ],
+            [
+              "$project"
+            ]
+          ],
+          "executionStats_top": {
+            "nReturned": 5,
+            "executionTimeMillis": 0.127,
+            "totalKeysExamined": 5,
+            "totalDocsExamined": 5
+          }
+        },
+        "full_explain": {
+          "explainVersion": 2.0,
+          "command": "db.runCommand({explain: { 'aggregate': 'vec', 'pipeline': [{ '$search': { 'cosmosSearch': { 'vector': [-0.39236766102280574, 0.6033248533910893, -0.6181478083292562, 0.9270738711883737, -0.7653731365574175, -0.8389300015755634, 0.14627698851855087, 0.5544092533978495], 'path': 'embedding', 'k': 5 }, 'returnStoredSource': true } }, { '$project': { '_id': 0, 'k': 1, 'score': { '$meta': 'searchScore' } } }], 'cursor': {} }})",
+          "explainCommandPlanningTimeMillis": 0.173,
+          "explainCommandExecTimeMillis": 0.195,
+          "stages": [
+            {
+              "$cursor": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "FETCH",
+                    "ns": "t_query.vec",
+                    "startupCost": 9.37,
+                    "totalCost": 80.96,
+                    "cosmosSearchCustomParams": {
+                      "nProbes": 2
+                    },
+                    "estimatedTotalKeysExamined": 2,
+                    "inputStage": {
+                      "stage": "IXSCAN",
+                      "indexName": "vec_ivf",
+                      "direction": "Forward",
+                      "indexUsage": {},
+                      "startupCost": 9.37,
+                      "totalCost": 80.96,
+                      "hasOrderBy": true,
+                      "estimatedTotalKeysExamined": 2
+                    }
+                  },
+                  "indexCosts": [
+                    {
+                      "namespace": "t_query.vec",
+                      "costs": [
+                        {
+                          "indexName": "_id_",
+                          "indexKeyString": "{\"_id\": 1}",
+                          "startupCost": 0.273,
+                          "totalCost": 4.287,
+                          "selectivity": 0.005,
+                          "estimatedPercentIndexPagesLoaded": 20.0,
+                          "estimatedTotalIndexEntries": 500,
+                          "boundarySelectivity": 0.005
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "executionStats": {
+                  "nReturned": 5,
+                  "executionTimeMillis": 0.127,
+                  "executionStartAtTimeMillis": 0.122,
+                  "totalDocsExamined": 5,
+                  "totalKeysExamined": 5,
+                  "executionStages": {
+                    "stage": "FETCH",
+                    "nReturned": 5,
+                    "executionTimeMillis": 0.127,
+                    "executionStartAtTimeMillis": 0.122,
+                    "totalDocsExamined": 5,
+                    "totalKeysExamined": 5,
+                    "numBlocksFromCache": 11,
+                    "inputStage": {
+                      "stage": "IXSCAN",
+                      "nReturned": 5,
+                      "executionTimeMillis": 0.126,
+                      "executionStartAtTimeMillis": 0.121,
+                      "indexName": "vec_ivf",
+                      "indexUsage": {},
+                      "totalKeysExamined": 5,
+                      "numBlocksFromCache": 11
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "$limit": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "LIMIT",
+                    "startupCost": 9.37,
+                    "totalCost": 80.98,
+                    "estimatedTotalKeysExamined": 2
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 5,
+                  "executionTimeMillis": 0.135,
+                  "executionStartAtTimeMillis": 0.125,
+                  "totalDocsExamined": 5,
+                  "totalKeysExamined": 5,
+                  "executionStages": {
+                    "stage": "LIMIT",
+                    "nReturned": 5,
+                    "executionTimeMillis": 0.135,
+                    "executionStartAtTimeMillis": 0.125,
+                    "totalDocsExamined": 5,
+                    "totalKeysExamined": 5,
+                    "numBlocksFromCache": 11
+                  }
+                }
+              }
+            },
+            {
+              "$project": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "PROJECT",
+                    "startupCost": 9.37,
+                    "totalCost": 81.03,
+                    "estimatedTotalKeysExamined": 2
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 5,
+                  "executionTimeMillis": 0.157,
+                  "executionStartAtTimeMillis": 0.139,
+                  "totalDocsExamined": 5,
+                  "totalKeysExamined": 5,
+                  "executionStages": {
+                    "stage": "PROJECT",
+                    "nReturned": 5,
+                    "executionTimeMillis": 0.157,
+                    "executionStartAtTimeMillis": 0.139,
+                    "totalDocsExamined": 5,
+                    "totalKeysExamined": 5,
+                    "numBlocksFromCache": 11
+                  }
+                }
+              }
+            }
+          ],
+          "ok": 1.0
+        }
+      },
+      "reading": "aggregate with $search cosmosSearch on vector-ivf: top-level keys ['command', 'explainCommandExecTimeMillis', 'explainCommandPlanningTimeMillis', 'explainVersion', 'ok', 'stages']; stages seen ['FETCH', 'IXSCAN', 'FETCH', 'IXSCAN', 'LIMIT', 'LIMIT', 'PROJECT', 'PROJECT']; winningPlan at ['stages[0].$cursor.queryPlanner.winningPlan', 'stages[1].$limit.queryPlanner.winningPlan', 'stages[2].$project.queryPlanner.winningPlan'].",
+      "elapsed_ms": 17
+    },
+    {
+      "section": "c",
+      "step": "c.5e explain $search cosmosSearch pipeline (queryPlanner verbosity)",
+      "command": "db.command({\"explain\": {\"aggregate\": \"vec\", \"pipeline\": [{\"$search\": {\"cosmosSearch\": {\"vector\": [-0.39236766102280574, 0.6033248533910893, -0.6181478083292562, 0.9270738711883737, -0.7653731365574175, -0.8389300015755634, 0.14627698851855087, 0.5544092533978495], \"path\": \"embedding\", \"k\": 5}, \"returnStoredSource\": true}}, {\"$project\": {\"_id\": 0, \"k\": 1, \"score\": {\"$meta\": \"searchScore\"}}}], \"cursor\": {}}, \"verbosity\": \"queryPlanner\"})  # pymongo, database t_query",
+      "response": {
+        "summary": {
+          "top_level_keys": [
+            "command",
+            "explainVersion",
+            "ok",
+            "stages"
+          ],
+          "explainVersion": 2.0,
+          "stage_names_in_order": [
+            "FETCH",
+            "IXSCAN",
+            "LIMIT",
+            "PROJECT"
+          ],
+          "stage_names_unique": [
+            "FETCH",
+            "IXSCAN",
+            "LIMIT",
+            "PROJECT"
+          ],
+          "winningPlan_paths": [
+            "stages[0].$cursor.queryPlanner.winningPlan",
+            "stages[1].$limit.queryPlanner.winningPlan",
+            "stages[2].$project.queryPlanner.winningPlan"
+          ],
+          "executionStats_paths": [],
+          "queryPlanner_paths": [
+            "stages[0].$cursor.queryPlanner",
+            "stages[1].$limit.queryPlanner",
+            "stages[2].$project.queryPlanner"
+          ],
+          "has_COLLSCAN": false,
+          "has_IXSCAN": true,
+          "has_SORT": false,
+          "stages_array_keys": [
+            [
+              "$cursor"
+            ],
+            [
+              "$limit"
+            ],
+            [
+              "$project"
+            ]
+          ]
+        },
+        "full_explain": {
+          "explainVersion": 2.0,
+          "command": "db.runCommand({explain: { 'aggregate': 'vec', 'pipeline': [{ '$search': { 'cosmosSearch': { 'vector': [-0.39236766102280574, 0.6033248533910893, -0.6181478083292562, 0.9270738711883737, -0.7653731365574175, -0.8389300015755634, 0.14627698851855087, 0.5544092533978495], 'path': 'embedding', 'k': 5 }, 'returnStoredSource': true } }, { '$project': { '_id': 0, 'k': 1, 'score': { '$meta': 'searchScore' } } }], 'cursor': {} }})",
+          "stages": [
+            {
+              "$cursor": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "FETCH",
+                    "ns": "t_query.vec",
+                    "startupCost": 9.37,
+                    "totalCost": 80.96,
+                    "cosmosSearchCustomParams": {
+                      "nProbes": 2
+                    },
+                    "estimatedTotalKeysExamined": 2,
+                    "inputStage": {
+                      "stage": "IXSCAN",
+                      "indexName": "vec_ivf",
+                      "direction": "Forward",
+                      "indexUsage": {},
+                      "startupCost": 9.37,
+                      "totalCost": 80.96,
+                      "hasOrderBy": true,
+                      "estimatedTotalKeysExamined": 2
+                    }
+                  },
+                  "indexCosts": [
+                    {
+                      "namespace": "t_query.vec",
+                      "costs": [
+                        {
+                          "indexName": "_id_",
+                          "indexKeyString": "{\"_id\": 1}",
+                          "startupCost": 0.273,
+                          "totalCost": 4.287,
+                          "selectivity": 0.005,
+                          "estimatedPercentIndexPagesLoaded": 20.0,
+                          "estimatedTotalIndexEntries": 500,
+                          "boundarySelectivity": 0.005
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$limit": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "LIMIT",
+                    "startupCost": 9.37,
+                    "totalCost": 80.98,
+                    "estimatedTotalKeysExamined": 2
+                  }
+                }
+              }
+            },
+            {
+              "$project": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "PROJECT",
+                    "startupCost": 9.37,
+                    "totalCost": 81.03,
+                    "estimatedTotalKeysExamined": 2
+                  }
+                }
+              }
+            }
+          ],
+          "ok": 1.0
+        }
+      },
+      "reading": "aggregate with $search cosmosSearch, queryPlanner verbosity: top-level keys ['command', 'explainVersion', 'ok', 'stages']; stages seen ['FETCH', 'IXSCAN', 'LIMIT', 'PROJECT']; winningPlan at ['stages[0].$cursor.queryPlanner.winningPlan', 'stages[1].$limit.queryPlanner.winningPlan', 'stages[2].$project.queryPlanner.winningPlan'].",
+      "elapsed_ms": 12
+    },
+    {
+      "section": "c",
+      "step": "c.6 explain the chained $setWindowFields pipeline (executionStats)",
+      "command": "db.command({\"explain\": {\"aggregate\": \"sales\", \"pipeline\": [{\"$setWindowFields\": {\"partitionBy\": \"$region\", \"sortBy\": {\"ts\": 1}, \"output\": {\"runningTotal\": {\"$sum\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"current\"]}}}}}, {\"$setWindowFields\": {\"partitionBy\": \"$region\", \"sortBy\": {\"ts\": 1}, \"output\": {\"runningMax\": {\"$max\": \"$amount\", \"window\": {\"documents\": [\"unbounded\", \"current\"]}}}}}, {\"$sort\": {\"region\": 1, \"ts\": 1}}, {\"$group\": {\"_id\": \"$region\", \"finalTotal\": {\"$last\": \"$runningTotal\"}, \"finalMax\": {\"$last\": \"$runningMax\"}, \"lastTs\": {\"$last\": \"$ts\"}, \"n\": {\"$sum\": 1}}}, {\"$sort\": {\"_id\": 1}}], \"cursor\": {}}, \"verbosity\": \"executionStats\"})  # pymongo, database t_query",
+      "response": {
+        "summary": {
+          "top_level_keys": [
+            "command",
+            "explainCommandExecTimeMillis",
+            "explainCommandPlanningTimeMillis",
+            "explainVersion",
+            "ok",
+            "stages"
+          ],
+          "explainVersion": 2.0,
+          "stage_names_in_order": [
+            "FETCH",
+            "IXSCAN",
+            "FETCH",
+            "IXSCAN",
+            "SORT",
+            "SORT",
+            "SORT",
+            "PROJECTION_DEFAULT",
+            "COLLSCAN",
+            "SORT",
+            "PROJECTION_DEFAULT",
+            "COLLSCAN",
+            "SORT",
+            "PROJECTION_DEFAULT",
+            "COLLSCAN",
+            "SORT",
+            "PROJECTION_DEFAULT",
+            "COLLSCAN",
+            "GROUP",
+            "GROUPSORT",
+            "PROJECTION_DEFAULT",
+            "GROUP",
+            "GROUPSORT",
+            "PROJECTION_DEFAULT",
+            "SORT",
+            "PROJECTION_DEFAULT",
+            "SORT",
+            "PROJECTION_DEFAULT"
+          ],
+          "stage_names_unique": [
+            "COLLSCAN",
+            "FETCH",
+            "GROUP",
+            "GROUPSORT",
+            "IXSCAN",
+            "PROJECTION_DEFAULT",
+            "SORT"
+          ],
+          "winningPlan_paths": [
+            "stages[0].$cursor.queryPlanner.winningPlan",
+            "stages[1].$sort.queryPlanner.winningPlan",
+            "stages[2].$sort.queryPlanner.winningPlan",
+            "stages[3].$sort.queryPlanner.winningPlan",
+            "stages[4].$group.queryPlanner.winningPlan",
+            "stages[5].$sort.queryPlanner.winningPlan"
+          ],
+          "executionStats_paths": [
+            "stages[0].$cursor.executionStats",
+            "stages[1].$sort.executionStats",
+            "stages[2].$sort.executionStats",
+            "stages[3].$sort.executionStats",
+            "stages[4].$group.executionStats",
+            "stages[5].$sort.executionStats"
+          ],
+          "queryPlanner_paths": [
+            "stages[0].$cursor.queryPlanner",
+            "stages[1].$sort.queryPlanner",
+            "stages[2].$sort.queryPlanner",
+            "stages[3].$sort.queryPlanner",
+            "stages[4].$group.queryPlanner",
+            "stages[5].$sort.queryPlanner"
+          ],
+          "has_COLLSCAN": true,
+          "has_IXSCAN": true,
+          "has_SORT": true,
+          "stages_array_keys": [
+            [
+              "$cursor"
+            ],
+            [
+              "$sort"
+            ],
+            [
+              "$sort"
+            ],
+            [
+              "$sort"
+            ],
+            [
+              "$group"
+            ],
+            [
+              "$sort"
+            ]
+          ],
+          "executionStats_top": {
+            "nReturned": 24,
+            "executionTimeMillis": 0.023,
+            "totalKeysExamined": 24,
+            "totalDocsExamined": 24
+          }
+        },
+        "full_explain": {
+          "explainVersion": 2.0,
+          "command": "db.runCommand({explain: { 'aggregate': 'sales', 'pipeline': [{ '$setWindowFields': { 'partitionBy': '$region', 'sortBy': { 'ts': 1 }, 'output': { 'runningTotal': { '$sum': '$amount', 'window': { 'documents': ['unbounded', 'current'] } } } } }, { '$setWindowFields': { 'partitionBy': '$region', 'sortBy': { 'ts': 1 }, 'output': { 'runningMax': { '$max': '$amount', 'window': { 'documents': ['unbounded', 'current'] } } } } }, { '$sort': { 'region': 1, 'ts': 1 } }, { '$group': { '_id': '$region', 'finalTotal': { '$last': '$runningTotal' }, 'finalMax': { '$last': '$runningMax' }, 'lastTs': { '$last': '$ts' }, 'n': { '$sum': 1 } } }, { '$sort': { '_id': 1 } }], 'cursor': {} }})",
+          "explainCommandPlanningTimeMillis": 0.263,
+          "explainCommandExecTimeMillis": 0.409,
+          "stages": [
+            {
+              "$cursor": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "FETCH",
+                    "ns": "t_query.sales",
+                    "startupCost": 4.18,
+                    "totalCost": 12.64,
+                    "estimatedTotalKeysExamined": 4,
+                    "inputStage": {
+                      "stage": "IXSCAN",
+                      "indexName": "_id_",
+                      "isBitmap": true,
+                      "indexUsage": {},
+                      "startupCost": 0.0,
+                      "totalCost": 4.18,
+                      "estimatedTotalKeysExamined": 4
+                    }
+                  },
+                  "indexCosts": [
+                    {
+                      "namespace": "t_query.sales",
+                      "costs": [
+                        {
+                          "indexName": "_id_",
+                          "indexKeyString": "{\"_id\": 1}",
+                          "startupCost": 0.15,
+                          "totalCost": 4.18,
+                          "selectivity": 0.005,
+                          "estimatedPercentIndexPagesLoaded": 50.0,
+                          "estimatedTotalIndexEntries": 810,
+                          "boundarySelectivity": 0.005
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "executionStats": {
+                  "nReturned": 24,
+                  "executionTimeMillis": 0.023,
+                  "executionStartAtTimeMillis": 0.021,
+                  "totalDocsExamined": 24,
+                  "totalKeysExamined": 24,
+                  "executionStages": {
+                    "stage": "FETCH",
+                    "nReturned": 24,
+                    "executionTimeMillis": 0.023,
+                    "executionStartAtTimeMillis": 0.021,
+                    "totalDocsExamined": 24,
+                    "totalKeysExamined": 24,
+                    "exactBlocksRead": 1,
+                    "numBlocksFromCache": 2,
+                    "inputStage": {
+                      "stage": "IXSCAN",
+                      "nReturned": 24,
+                      "executionTimeMillis": 0.013,
+                      "executionStartAtTimeMillis": 0.013,
+                      "indexName": "_id_",
+                      "indexUsage": {},
+                      "totalKeysExamined": 24,
+                      "numBlocksFromCache": 1
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "$sort": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "SORT",
+                    "startupCost": 12.7,
+                    "totalCost": 12.71,
+                    "sortKeysCount": 2,
+                    "sortKey": [
+                      {
+                        "ts": 1
+                      }
+                    ],
+                    "estimatedTotalKeysExamined": 4
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 24,
+                  "executionTimeMillis": 0.075,
+                  "executionStartAtTimeMillis": 0.072,
+                  "totalDocsExamined": 24,
+                  "totalKeysExamined": 24,
+                  "executionStages": {
+                    "stage": "SORT",
+                    "nReturned": 24,
+                    "executionTimeMillis": 0.075,
+                    "executionStartAtTimeMillis": 0.072,
+                    "totalDocsExamined": 24,
+                    "totalKeysExamined": 24,
+                    "sortMethod": "quicksort",
+                    "totalDataSizeSortedBytesEstimate": 27,
+                    "numBlocksFromCache": 2
+                  }
+                }
+              }
+            },
+            {
+              "$sort": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "SORT",
+                    "startupCost": 12.94,
+                    "totalCost": 12.95,
+                    "sortKeysCount": 2,
+                    "sortKey": [
+                      {
+                        "ts": 1
+                      }
+                    ],
+                    "estimatedTotalKeysExamined": 4,
+                    "inputStage": {
+                      "stage": "PROJECTION_DEFAULT",
+                      "startupCost": 12.7,
+                      "totalCost": 12.9,
+                      "estimatedTotalKeysExamined": 4,
+                      "inputStage": {
+                        "stage": "COLLSCAN",
+                        "startupCost": 12.7,
+                        "totalCost": 12.8,
+                        "estimatedTotalKeysExamined": 4
+                      }
+                    }
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 24,
+                  "executionTimeMillis": 0.167,
+                  "executionStartAtTimeMillis": 0.164,
+                  "totalDocsExamined": 24,
+                  "totalKeysExamined": 24,
+                  "executionStages": {
+                    "stage": "SORT",
+                    "nReturned": 24,
+                    "executionTimeMillis": 0.167,
+                    "executionStartAtTimeMillis": 0.164,
+                    "totalDocsExamined": 24,
+                    "totalKeysExamined": 24,
+                    "sortMethod": "quicksort",
+                    "totalDataSizeSortedBytesEstimate": 28,
+                    "numBlocksFromCache": 2,
+                    "inputStage": {
+                      "stage": "PROJECTION_DEFAULT",
+                      "nReturned": 24,
+                      "executionTimeMillis": 0.158,
+                      "executionStartAtTimeMillis": 0.094,
+                      "totalDocsExamined": 24,
+                      "totalKeysExamined": 24,
+                      "numBlocksFromCache": 2,
+                      "inputStage": {
+                        "stage": "COLLSCAN",
+                        "nReturned": 24,
+                        "executionTimeMillis": 0.103,
+                        "executionStartAtTimeMillis": 0.083,
+                        "totalDocsExamined": 24,
+                        "totalKeysExamined": 24,
+                        "numBlocksFromCache": 2
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "$sort": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "SORT",
+                    "startupCost": 13.28,
+                    "totalCost": 13.29,
+                    "sortKeysCount": 2,
+                    "sortKey": [
+                      {
+                        "region": 1
+                      },
+                      {
+                        "ts": 1
+                      }
+                    ],
+                    "estimatedTotalKeysExamined": 4,
+                    "inputStage": {
+                      "stage": "PROJECTION_DEFAULT",
+                      "startupCost": 12.94,
+                      "totalCost": 13.24,
+                      "estimatedTotalKeysExamined": 4,
+                      "inputStage": {
+                        "stage": "COLLSCAN",
+                        "startupCost": 12.94,
+                        "totalCost": 13.12,
+                        "estimatedTotalKeysExamined": 4
+                      }
+                    }
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 24,
+                  "executionTimeMillis": 0.288,
+                  "executionStartAtTimeMillis": 0.286,
+                  "totalDocsExamined": 24,
+                  "totalKeysExamined": 24,
+                  "executionStages": {
+                    "stage": "SORT",
+                    "nReturned": 24,
+                    "executionTimeMillis": 0.288,
+                    "executionStartAtTimeMillis": 0.286,
+                    "totalDocsExamined": 24,
+                    "totalKeysExamined": 24,
+                    "sortMethod": "quicksort",
+                    "totalDataSizeSortedBytesEstimate": 28,
+                    "numBlocksFromCache": 2,
+                    "inputStage": {
+                      "stage": "PROJECTION_DEFAULT",
+                      "nReturned": 24,
+                      "executionTimeMillis": 0.278,
+                      "executionStartAtTimeMillis": 0.174,
+                      "totalDocsExamined": 24,
+                      "totalKeysExamined": 24,
+                      "numBlocksFromCache": 2,
+                      "inputStage": {
+                        "stage": "COLLSCAN",
+                        "nReturned": 24,
+                        "executionTimeMillis": 0.22,
+                        "executionStartAtTimeMillis": 0.17,
+                        "totalDocsExamined": 24,
+                        "totalKeysExamined": 24,
+                        "numBlocksFromCache": 2
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "$group": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "GROUP",
+                    "startupCost": 13.38,
+                    "totalCost": 13.54,
+                    "aggStrategy": "Sorted",
+                    "groupKey": [
+                      {
+                        "": "$region"
+                      }
+                    ],
+                    "estimatedTotalKeysExamined": 4,
+                    "inputStage": {
+                      "stage": "GROUPSORT",
+                      "startupCost": 13.38,
+                      "totalCost": 13.39,
+                      "sortKeysCount": 1,
+                      "sortKey": [
+                        {
+                          "": "$region"
+                        }
+                      ],
+                      "estimatedTotalKeysExamined": 4,
+                      "inputStage": {
+                        "stage": "PROJECTION_DEFAULT",
+                        "startupCost": 13.28,
+                        "totalCost": 13.34,
+                        "estimatedTotalKeysExamined": 4
+                      }
+                    }
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 3,
+                  "executionTimeMillis": 0.354,
+                  "executionStartAtTimeMillis": 0.333,
+                  "totalDocsExamined": 3,
+                  "totalKeysExamined": 3,
+                  "executionStages": {
+                    "stage": "GROUP",
+                    "nReturned": 3,
+                    "executionTimeMillis": 0.354,
+                    "executionStartAtTimeMillis": 0.333,
+                    "totalDocsExamined": 3,
+                    "totalKeysExamined": 3,
+                    "numBlocksFromCache": 2,
+                    "inputStage": {
+                      "stage": "GROUPSORT",
+                      "nReturned": 24,
+                      "executionTimeMillis": 0.305,
+                      "executionStartAtTimeMillis": 0.302,
+                      "totalDocsExamined": 24,
+                      "totalKeysExamined": 24,
+                      "sortMethod": "quicksort",
+                      "totalDataSizeSortedBytesEstimate": 28,
+                      "numBlocksFromCache": 2,
+                      "inputStage": {
+                        "stage": "PROJECTION_DEFAULT",
+                        "nReturned": 24,
+                        "executionTimeMillis": 0.299,
+                        "executionStartAtTimeMillis": 0.287,
+                        "totalDocsExamined": 24,
+                        "totalKeysExamined": 24,
+                        "numBlocksFromCache": 2
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "$sort": {
+                "queryPlanner": {
+                  "winningPlan": {
+                    "stage": "SORT",
+                    "startupCost": 13.63,
+                    "totalCost": 13.64,
+                    "sortKeysCount": 1,
+                    "sortKey": [
+                      {
+                        "_id": 1
+                      }
+                    ],
+                    "estimatedTotalKeysExamined": 4,
+                    "inputStage": {
+                      "stage": "PROJECTION_DEFAULT",
+                      "startupCost": 13.38,
+                      "totalCost": 13.59,
+                      "estimatedTotalKeysExamined": 4
+                    }
+                  }
+                },
+                "executionStats": {
+                  "nReturned": 3,
+                  "executionTimeMillis": 0.362,
+                  "executionStartAtTimeMillis": 0.36,
+                  "totalDocsExamined": 3,
+                  "totalKeysExamined": 3,
+                  "executionStages": {
+                    "stage": "SORT",
+                    "nReturned": 3,
+                    "executionTimeMillis": 0.362,
+                    "executionStartAtTimeMillis": 0.36,
+                    "totalDocsExamined": 3,
+                    "totalKeysExamined": 3,
+                    "sortMethod": "quicksort",
+                    "totalDataSizeSortedBytesEstimate": 25,
+                    "numBlocksFromCache": 2,
+                    "inputStage": {
+                      "stage": "PROJECTION_DEFAULT",
+                      "nReturned": 3,
+                      "executionTimeMillis": 0.356,
+                      "executionStartAtTimeMillis": 0.334,
+                      "totalDocsExamined": 3,
+                      "totalKeysExamined": 3,
+                      "numBlocksFromCache": 2
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "ok": 1.0
+        }
+      },
+      "reading": "aggregate with two $setWindowFields stages: top-level keys ['command', 'explainCommandExecTimeMillis', 'explainCommandPlanningTimeMillis', 'explainVersion', 'ok', 'stages']; stages seen ['FETCH', 'IXSCAN', 'FETCH', 'IXSCAN', 'SORT', 'SORT', 'SORT', 'PROJECTION_DEFAULT', 'COLLSCAN', 'SORT', 'PROJECTION_DEFAULT', 'COLLSCAN', 'SORT', 'PROJECTION_DEFAULT', 'COLLSCAN', 'SORT', 'PROJECTION_DEFAULT', 'COLLSCAN', 'GROUP', 'GROUPSORT', 'PROJECTION_DEFAULT', 'GROUP', 'GROUPSORT', 'PROJECTION_DEFAULT', 'SORT', 'PROJECTION_DEFAULT', 'SORT', 'PROJECTION_DEFAULT']; winningPlan at ['stages[0].$cursor.queryPlanner.winningPlan', 'stages[1].$sort.queryPlanner.winningPlan', 'stages[2].$sort.queryPlanner.winningPlan', 'stages[3].$sort.queryPlanner.winningPlan', 'stages[4].$group.queryPlanner.winningPlan', 'stages[5].$sort.queryPlanner.winningPlan'].",
+      "elapsed_ms": 15
+    },
+    {
+      "section": "d",
+      "step": "d.0 baseline: same predicate with no maxTimeMS (count via find)",
+      "command": "len(list(db.big.find({\"$and\": [{\"payload\": {\"$regex\": \"q.*z.*q.*z\"}}, {\"rnd\": {\"$lt\": 0.5}}, {\"$expr\": {\"$gt\": [{\"$strLenCP\": \"$payload\"}, 119]}}]}, {'_id': 1})))",
+      "response": {
+        "matched": 68160
+      },
+      "reading": "Predicate scans all 200k docs without a time limit and matched 68160 docs; elapsed_ms is the baseline.",
+      "elapsed_ms": 206
+    },
+    {
+      "section": "d",
+      "step": "d.1 find with max_time_ms=1 on the slow predicate",
+      "command": "list(db.big.find({\"$and\": [{\"payload\": {\"$regex\": \"q.*z.*q.*z\"}}, {\"rnd\": {\"$lt\": 0.5}}, {\"$expr\": {\"$gt\": [{\"$strLenCP\": \"$payload\"}, 119]}}]}, {'_id': 1}).max_time_ms(1))",
+      "response": {
+        "matched": 68160
+      },
+      "reading": "find with maxTimeMS 1 completed and returned all 68160 matches in 191 ms with no error; the whole 200k scan (first batch of 101 via find, remainder via one getMore without maxTimeMS, as pymongo sends it) exceeded 1 ms yet no MaxTimeMSExpired was raised.",
+      "elapsed_ms": 191
+    },
+    {
+      "section": "d",
+      "step": "d.2 raw find command with maxTimeMS: 1",
+      "command": "db.command({'find': 'big', 'filter': {\"$and\": [{\"payload\": {\"$regex\": \"q.*z.*q.*z\"}}, {\"rnd\": {\"$lt\": 0.5}}, {\"$expr\": {\"$gt\": [{\"$strLenCP\": \"$payload\"}, 119]}}]}, 'projection': {'_id': 1}, 'maxTimeMS': 1})",
+      "response": {
+        "cursor": {
+          "id": 6162720580978655,
+          "ns": "t_query.big",
+          "firstBatch": [
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c3e"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c40"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c41"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c45"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c46"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c4c"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c4d"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c54"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c56"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c5a"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c5d"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c5f"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c60"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c61"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c63"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c65"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c67"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c6b"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c70"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c71"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c72"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c75"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c79"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c7e"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c80"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c8a"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c8b"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c8e"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c91"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c95"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c99"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c9d"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497c9f"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ca1"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ca2"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ca4"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ca6"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497caa"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cb0"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cb1"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cb2"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cb5"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cbb"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cc2"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cc7"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ccb"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ccc"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ccf"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cd0"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cd5"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cd7"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cdb"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cdd"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cde"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ce0"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ce4"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ce5"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ce6"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ce7"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ce9"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497ceb"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cf1"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cf2"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cf6"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cf7"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cf8"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497cfa"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d03"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d09"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d0a"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d0c"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d0f"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d10"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d11"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d12"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d17"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d21"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d22"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d23"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d28"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d2a"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d2d"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d2e"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d32"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d3a"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d3d"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d3f"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d43"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d46"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d47"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d4a"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d4b"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d4c"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d51"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d55"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d5a"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d5e"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d62"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d65"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d66"
+              }
+            },
+            {
+              "_id": {
+                "$oid": "6b074043a30fe772a2497d67"
+              }
+            }
+          ]
+        },
+        "ok": 1.0
+      },
+      "reading": "Raw find command with maxTimeMS 1 returned a 101-doc first batch and an open cursor in 2 ms without error; the first batch is produced by streaming matches, so the command itself finished under the limit.",
+      "elapsed_ms": 2
+    },
+    {
+      "section": "d",
+      "step": "d.3 aggregate with maxTimeMS=1 on the slow predicate",
+      "command": "list(db.big.aggregate([{'$match': {\"$and\": [{\"payload\": {\"$regex\": \"q.*z.*q.*z\"}}, {\"rnd\": {\"$lt\": 0.5}}, {\"$expr\": {\"$gt\": [{\"$strLenCP\": \"$payload\"}, 119]}}]}}, {'$count': 'n'}], maxTimeMS=1))",
+      "response": {
+        "exception": "ExecutionTimeout",
+        "message": "Query exceeded command timeout of 1ms, full error: {'ok': 0.0, 'code': 50, 'codeName': 'ExceededTimeLimit', 'errmsg': 'Query exceeded command timeout of 1ms'}",
+        "code": 50,
+        "codeName": "ExceededTimeLimit",
+        "errmsg": "Query exceeded command timeout of 1ms",
+        "errorLabels": null,
+        "details": {
+          "ok": 0.0,
+          "code": 50,
+          "codeName": "ExceededTimeLimit",
+          "errmsg": "Query exceeded command timeout of 1ms"
+        }
+      },
+      "reading": "maxTimeMS expired: code 50 ExceededTimeLimit: Query exceeded command timeout of 1ms; errorLabels=None. This is MongoDB code 50 MaxTimeMSExpired.",
+      "elapsed_ms": 2
+    },
+    {
+      "section": "d",
+      "step": "d.4 count_documents with maxTimeMS=1 on the slow predicate",
+      "command": "db.big.count_documents({\"$and\": [{\"payload\": {\"$regex\": \"q.*z.*q.*z\"}}, {\"rnd\": {\"$lt\": 0.5}}, {\"$expr\": {\"$gt\": [{\"$strLenCP\": \"$payload\"}, 119]}}]}, maxTimeMS=1)",
+      "response": {
+        "exception": "ExecutionTimeout",
+        "message": "Query exceeded command timeout of 1ms, full error: {'ok': 0.0, 'code': 50, 'codeName': 'ExceededTimeLimit', 'errmsg': 'Query exceeded command timeout of 1ms'}",
+        "code": 50,
+        "codeName": "ExceededTimeLimit",
+        "errmsg": "Query exceeded command timeout of 1ms",
+        "errorLabels": null,
+        "details": {
+          "ok": 0.0,
+          "code": 50,
+          "codeName": "ExceededTimeLimit",
+          "errmsg": "Query exceeded command timeout of 1ms"
+        }
+      },
+      "reading": "maxTimeMS expired: code 50 ExceededTimeLimit: Query exceeded command timeout of 1ms; errorLabels=None. This is MongoDB code 50 MaxTimeMSExpired.",
+      "elapsed_ms": 2
+    },
+    {
+      "section": "d",
+      "step": "d.5 control: find with max_time_ms=120000 on the slow predicate",
+      "command": "len(list(db.big.find({\"$and\": [{\"payload\": {\"$regex\": \"q.*z.*q.*z\"}}, {\"rnd\": {\"$lt\": 0.5}}, {\"$expr\": {\"$gt\": [{\"$strLenCP\": \"$payload\"}, 119]}}]}, {'_id': 1}).max_time_ms(120000)))",
+      "response": {
+        "matched": 68160
+      },
+      "reading": "Control: with maxTimeMS 120000 the find matches 68160 docs in about 200 ms, the same as d.1 with maxTimeMS 1, so on this engine the find/getMore path did not enforce maxTimeMS 1 while aggregate and count did (d.3, d.4).",
+      "elapsed_ms": 199
+    }
+  ],
+  "run2_incident": {
+    "what": "An extended rerun (steps c.1b, c.1c, c.1d, d.6-d.11 added to run.py) was started at about 20:11 UTC. It dropped the t_query collections and began re-seeding 200k docs; the 7th insert_many batch failed.",
+    "driver_error": {
+      "code": 14031,
+      "codeName": "OutOfDiskSpace",
+      "errmsg": "could not write to file \"pg_wal/xlogtemp.1556\": No space left on device"
+    },
+    "postgres_log": [
+      "2026-11-25 20:11:09.942 UTC [1556] PANIC:  could not write to file \"pg_wal/xlogtemp.1556\": No space left on device",
+      "2026-11-25 20:11:09.949 UTC [97] LOG:  server process (PID 1556) was terminated by signal 6: Aborted",
+      "2026-11-25 20:11:10.030 UTC [1566] FATAL:  could not extend file \"base/5/19395\": No space left on device",
+      "2026-11-25 20:11:10.032 UTC [97] LOG:  database system is shut down"
+    ],
+    "after_crash": "Every new connection fails during SCRAM authentication with {ok: 0, code: 1, codeName: 'InternalError', errmsg: '[ActivityId=...] An unexpected internal error has occurred.'}; gateway log: 'Pool error due to generic postgres error: error connecting to server'.",
+    "disk_state": "docker exec df -h: overlay / and /dev/vdb1 /data both 25G size, 24G used, 0 available (100%). /data holds only 284M (base 96M, pg_wal 177M, core 12M); docker system df shows 14.17GB images (2.8GB reclaimable), 9.07GB volumes (4.29GB reclaimable). The pressure comes from other Docker resources on this Mac, not from this test's data.",
+    "action_taken": "None on the container or Docker: the task forbids dropping the container, and pruning other images/volumes is a destructive action outside this test's scope that needs the user's explicit permission. The container was left running (gateway up, PostgreSQL down).",
+    "consequence": "Steps c.1b-c.1d and d.6-d.11 exist in run.py but have no recorded results; rerun run.py once the Docker disk has free space. All 32 steps below are from run 1, which completed before the disk filled."
+  },
+  "conclusions": {
+    "a_setWindowFields": "Observed on documentdb-local (buildInfo version 7.0.0): two chained $setWindowFields stages, each with a cumulative documents ['unbounded','current'] window ($sum, then $max), followed by $group with $last, ran and returned values equal to a client-side computation, with and without an explicit $sort before $group (a.1, a.2). A single stage with both $sum and $max cumulative windows also matched (a.3). A documents window without sortBy is rejected with code 5339901 Location5339901 'Missing sortBy field for document-based window' (a.4); a range window without sortBy with code 5339902 Location5339902 'Expected a single sort by field for range-based window' (a.7); ['unbounded','unbounded'] without sortBy and no-window/no-sortBy outputs are accepted (a.5, a.6). Explain of the pipeline lists the window stages as '$sort' entries in the stages array (c.6).",
+    "b_allowDiskUse": "aggregate with a full in-memory $sort of 200k docs on an unindexed field succeeded with allowDiskUse true (362 ms) and false (339 ms) with identical results; find.allow_disk_use(True) also accepted. A non-boolean allowDiskUse is rejected with code 14 TypeMismatch, so the field is type-validated even though its value has no observable effect here.",
+    "c_explain": "Top-level find explain: keys command, executionStats, explainCommandExecTimeMillis, explainCommandPlanningTimeMillis, explainVersion (2), ok, queryPlanner; winningPlan at queryPlanner.winningPlan. Aggregate explain: keys command, explainCommandExecTimeMillis, explainCommandPlanningTimeMillis, explainVersion, ok, stages; each stages[i] has one key ($cursor, $sort, $limit, $project, $group) holding its own queryPlanner.winningPlan and executionStats, so the plan lives at stages[0].$cursor.queryPlanner.winningPlan. Stage names seen: FETCH, IXSCAN, SORT, LIMIT, PROJECT, PROJECTION_DEFAULT, GROUP, GROUPSORT, COLLSCAN. An unindexed predicate on the 200k collection did NOT produce COLLSCAN: it produced FETCH (runtimeFilterSet) over IXSCAN indexName '_id_' isBitmap true, totalDocsExamined 200000, totalKeysExamined 215 (c.1). COLLSCAN appeared only inside the $setWindowFields ('$sort') sub-plans on the 24-doc collection (c.6). The vector pipeline explain (c.5d/c.5e) has the same stages[] layout: stages[0].$cursor winningPlan FETCH with cosmosSearchCustomParams {nProbes: 2} over IXSCAN indexName 'vec_ivf', direction Forward, hasOrderBy true, then $limit and $project stages; no SORT and no COLLSCAN stage. A K32-style recursive walk for 'stage' keys finds these names; a COLLSCAN-only check would miss the _id_ IXSCAN full scan on this engine.",
+    "d_maxTimeMS": "aggregate and count_documents with maxTimeMS 1 over 200k docs failed with code 50, codeName 'ExceededTimeLimit', errmsg 'Query exceeded command timeout of 1ms', no errorLabels (pymongo raises ExecutionTimeout). Code 50 is MongoDB's MaxTimeMSExpired, but the codeName string differs from MongoDB's (MongoDB uses ExceededTimeLimit for code 262). find with maxTimeMS 1 did NOT fail: cursor iteration returned all 68160 matches in about 190 ms (d.1), and the raw find returned its first batch in 2 ms (d.2); the remainder was fetched by getMore, which pymongo sends without maxTimeMS, so on this engine the limit was not carried across the cursor. Steps d.6-d.9 (predicates that force the full scan inside the find command) were written but not executed because of the disk incident.",
+    "scope": "All of the above is evidence about the open-source engine and gateway in documentdb-local at buildInfo version 7.0.0 (image ghcr.io/documentdb/documentdb/documentdb-local:latest); it does not prove managed Azure DocumentDB behaviour."
+  }
+}

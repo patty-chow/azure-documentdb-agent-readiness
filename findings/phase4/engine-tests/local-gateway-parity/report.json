@@ -1,0 +1,674 @@
+{
+  "test": "local-gateway-parity",
+  "database": "t_parity",
+  "container": "ddb-engine-test",
+  "started_utc": "2026-11-25T20:09:02.249610+00:00",
+  "finished_utc": "2026-11-25T20:09:04.559184+00:00",
+  "uri": "mongodb://testadmin:<redacted>@localhost:10260/?tls=true&tlsAllowInvalidCertificates=true&authMechanism=SCRAM-SHA-256&retryWrites=false",
+  "engine_version": "7.0.0",
+  "extension_versions": {
+    "documentdb_extended_rum": "0.117-0",
+    "documentdb_core": "0.117-0",
+    "documentdb": "0.117-0"
+  },
+  "scope_note": "Every fact here was observed on the documentdb-local container (open-source engine and gateway at the buildInfo/pg_extension version above). It is evidence about the open-source engine and gateway only; it does not prove how the managed Azure DocumentDB service behaves.",
+  "summary": {
+    "createSearchIndexes": "not supported: code 115 CommandNotSupported 'Command 'createSearchIndexes' not supported.'",
+    "$search text": "not supported: code 40324 UnrecognizedCommand 'Unrecognized $search option: text'",
+    "$listSearchIndexes": "not supported: code 115 CommandNotSupported '$listSearchIndexes stage is not enabled'",
+    "collection.watch() change stream": "not supported: code 115 CommandNotSupported 'Stage $changeStream is not supported yet in native pipeline'",
+    "vector-diskann index": "not supported: code 67 CannotCreateIndex 'Error in specification { \"name\" : \"v_diskann\", \"key\" : { \"v\" : \"cosmosSearch\" }, \"cosmosSearchOptions\" : { \"kind\" : \"vector-diskann\", \"dimensions\" : 3, \"similarity\" : \"COS\", \"maxDegree\" : 32, \"lBuild\" : 50 } }:Invalid search index kind vector-diskann'",
+    "vector-hnsw index (control)": "supported",
+    "$rankFusion": "not supported: code 40324 UnrecognizedCommand 'Pipeline stage name not recognized: $rankFusion'",
+    "currentOp": "supported",
+    "serverStatus": "not supported: code 115 CommandNotSupported 'Command 'serverStatus' not supported.'",
+    "connectionStatus showPrivileges": "supported"
+  },
+  "steps": [
+    {
+      "step": "00-buildInfo",
+      "command": "db('admin').command({\"buildInfo\": 1})",
+      "response": {
+        "version": "7.0.0",
+        "versionArray": [
+          7,
+          0,
+          0,
+          0
+        ],
+        "bits": 64,
+        "maxBsonObjectSize": 16777216,
+        "ok": 1.0
+      },
+      "supported": true,
+      "reading": "Gateway reports version 7.0.0 (gitVersion None); all later facts are about this engine/gateway build, not the managed service."
+    },
+    {
+      "step": "00-hello",
+      "command": "db('admin').command({\"hello\": 1})",
+      "response": {
+        "isWritablePrimary": true,
+        "msg": "isdbgrid",
+        "maxBsonObjectSize": 16777216,
+        "maxMessageSizeBytes": 48000000,
+        "maxWriteBatchSize": 25000,
+        "localTime": 1795637342273,
+        "logicalSessionTimeoutMinutes": 30,
+        "minWireVersion": 0,
+        "maxWireVersion": 21,
+        "readOnly": false,
+        "connectionId": 1996483143,
+        "saslSupportedMechs": [
+          "SCRAM-SHA-256"
+        ],
+        "internal": {
+          "documentdb_versions": [
+            "0.117-0",
+            "0.117.0"
+          ],
+          "kind": ""
+        },
+        "ok": 1.0
+      },
+      "supported": true,
+      "reading": "hello: maxWireVersion 21, saslSupportedMechs ['SCRAM-SHA-256'], isWritablePrimary True."
+    },
+    {
+      "step": "00-extension-version-postgres-role",
+      "command": "docker exec ddb-engine-test psql -X -U postgres -p 9712 -d postgres -tAc select extname, extversion from pg_extension where extname like 'documentdb%'",
+      "response": {
+        "returncode": 2,
+        "stdout": "",
+        "stderr": "psql: error: connection to server on socket \"/var/run/postgresql/.s.PGSQL.9712\" failed: FATAL:  role \"postgres\" does not exist"
+      },
+      "supported": false,
+      "reading": "psql as role 'postgres' failed: psql: error: connection to server on socket \"/var/run/postgresql/.s.PGSQL.9712\" failed: FATAL:  role \"postgres\" does not exist"
+    },
+    {
+      "step": "00-extension-version",
+      "command": "docker exec ddb-engine-test psql -X -U documentdb -p 9712 -d postgres -tAc select extname, extversion from pg_extension where extname like 'documentdb%'",
+      "response": {
+        "returncode": 0,
+        "stdout": "documentdb_extended_rum|0.117-0\ndocumentdb_core|0.117-0\ndocumentdb|0.117-0",
+        "stderr": ""
+      },
+      "supported": true,
+      "reading": "documentdb extension versions (role documentdb): documentdb_extended_rum|0.117-0; documentdb_core|0.117-0; documentdb|0.117-0"
+    },
+    {
+      "step": "00-all-extensions",
+      "command": "docker exec ddb-engine-test psql -X -U documentdb -p 9712 -d postgres -tAc select extname, extversion from pg_extension order by 1",
+      "response": {
+        "returncode": 0,
+        "stdout": "documentdb|0.117-0\ndocumentdb_core|0.117-0\ndocumentdb_extended_rum|0.117-0\npg_cron|1.6\nplpgsql|1.0\npostgis|3.6.4\ntsm_system_rows|1.0\nvector|0.8.6",
+        "stderr": ""
+      },
+      "supported": true,
+      "reading": "Every extension installed in the container's PostgreSQL: documentdb|0.117-0; documentdb_core|0.117-0; documentdb_extended_rum|0.117-0; pg_cron|1.6; plpgsql|1.0; postgis|3.6.4; tsm_system_rows|1.0; vector|0.8.6"
+    },
+    {
+      "step": "00-pg-version",
+      "command": "docker exec ddb-engine-test psql -X -U documentdb -p 9712 -d postgres -tAc select version()",
+      "response": {
+        "returncode": 0,
+        "stdout": "PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+        "stderr": ""
+      },
+      "supported": true,
+      "reading": "PostgreSQL server: PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit"
+    },
+    {
+      "step": "00-access-methods",
+      "command": "docker exec ddb-engine-test psql -X -U documentdb -p 9712 -d postgres -tAc select amname from pg_am order by 1",
+      "response": {
+        "returncode": 0,
+        "stdout": "brin\nbtree\ndocumentdb_extended_rum\ndocumentdb_rum\ngin\ngist\nhash\nheap\nhnsw\nivfflat\nspgist",
+        "stderr": ""
+      },
+      "supported": true,
+      "reading": "Index access methods available: brin, btree, documentdb_extended_rum, documentdb_rum, gin, gist, hash, heap, hnsw, ivfflat, spgist (no diskann access method is installed)."
+    },
+    {
+      "step": "00-image-identity",
+      "command": "docker inspect ddb-engine-test --format {{.Config.Image}} {{.Image}} {{index .Config.Labels \"org.opencontainers.image.version\"}} ; docker image inspect ghcr.io/documentdb/documentdb/documentdb-local:latest --format {{.RepoDigests}}",
+      "response": {
+        "inspect": "ghcr.io/documentdb/documentdb/documentdb-local:latest sha256:a22772de11861a97d395eecdbe6fbaedd245498b015e748ca409f526430ca781 0.117.0",
+        "repoDigests": "[ghcr.io/documentdb/documentdb/documentdb-local@sha256:a22772de11861a97d395eecdbe6fbaedd245498b015e748ca409f526430ca781]"
+      },
+      "supported": true,
+      "reading": "Container image tag, image id, OCI version label and repo digest; the local ':latest' is whatever was pulled, not necessarily the current registry ':latest'."
+    },
+    {
+      "step": "01-seed",
+      "command": "drop_database('t_parity'); db('t_parity').docs.insert_many(<3 docs with title, body, v[3]>)",
+      "response": {
+        "inserted_ids": [
+          1,
+          2,
+          3
+        ]
+      },
+      "supported": true,
+      "reading": "Seeded three documents in t_parity.docs."
+    },
+    {
+      "step": "02-createSearchIndexes",
+      "command": "db('t_parity').command({\"createSearchIndexes\": \"docs\", \"indexes\": [{\"name\": \"fts_default\", \"definition\": {\"mappings\": {\"dynamic\": true}}}]})",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "Command 'createSearchIndexes' not supported., full error: {'ok': 0.0, 'code': 115, 'codeName': 'CommandNotSupported', 'errmsg': \"Command 'createSearchIndexes' not supported.\"}",
+        "code": 115,
+        "codeName": "CommandNotSupported",
+        "errmsg": "Command 'createSearchIndexes' not supported.",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 115,
+          "codeName": "CommandNotSupported",
+          "errmsg": "Command 'createSearchIndexes' not supported."
+        }
+      },
+      "supported": false,
+      "reading": "createSearchIndexes is refused by the local gateway: code 115 CommandNotSupported 'Command 'createSearchIndexes' not supported.'."
+    },
+    {
+      "step": "02b-createSearchIndexes-static-mapping",
+      "command": "db('t_parity').command({\"createSearchIndexes\": \"docs\", \"indexes\": [{\"name\": \"fts_title\", \"definition\": {\"mappings\": {\"dynamic\": false, \"fields\": {\"title\": {\"type\": \"string\"}}}}}]})",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "Command 'createSearchIndexes' not supported., full error: {'ok': 0.0, 'code': 115, 'codeName': 'CommandNotSupported', 'errmsg': \"Command 'createSearchIndexes' not supported.\"}",
+        "code": 115,
+        "codeName": "CommandNotSupported",
+        "errmsg": "Command 'createSearchIndexes' not supported.",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 115,
+          "codeName": "CommandNotSupported",
+          "errmsg": "Command 'createSearchIndexes' not supported."
+        }
+      },
+      "supported": false,
+      "reading": "Static-mapping form is refused the same way: code 115 CommandNotSupported 'Command 'createSearchIndexes' not supported.'."
+    },
+    {
+      "step": "03-search-text",
+      "command": "db('t_parity').docs.aggregate([{\"$search\": {\"index\": \"fts_default\", \"text\": {\"query\": \"hello\", \"path\": \"title\"}}}, {\"$project\": {\"title\": 1}}])",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "Unrecognized $search option: text, full error: {'ok': 0.0, 'code': 40324, 'codeName': 'UnrecognizedCommand', 'errmsg': 'Unrecognized $search option: text'}",
+        "code": 40324,
+        "codeName": "UnrecognizedCommand",
+        "errmsg": "Unrecognized $search option: text",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 40324,
+          "codeName": "UnrecognizedCommand",
+          "errmsg": "Unrecognized $search option: text"
+        }
+      },
+      "supported": false,
+      "reading": "$search with a text operator is rejected: code 40324 UnrecognizedCommand 'Unrecognized $search option: text'."
+    },
+    {
+      "step": "03b-search-text-no-index",
+      "command": "db('t_parity').docs.aggregate([{\"$search\": {\"text\": {\"query\": \"fox\", \"path\": \"body\"}}}])",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "Unrecognized $search option: text, full error: {'ok': 0.0, 'code': 40324, 'codeName': 'UnrecognizedCommand', 'errmsg': 'Unrecognized $search option: text'}",
+        "code": 40324,
+        "codeName": "UnrecognizedCommand",
+        "errmsg": "Unrecognized $search option: text",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 40324,
+          "codeName": "UnrecognizedCommand",
+          "errmsg": "Unrecognized $search option: text"
+        }
+      },
+      "supported": false,
+      "reading": "$search text without index is rejected: code 40324 UnrecognizedCommand 'Unrecognized $search option: text'."
+    },
+    {
+      "step": "04-listSearchIndexes",
+      "command": "db('t_parity').docs.aggregate([{\"$listSearchIndexes\": {}}])",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "$listSearchIndexes stage is not enabled, full error: {'ok': 0.0, 'code': 115, 'codeName': 'CommandNotSupported', 'errmsg': '$listSearchIndexes stage is not enabled'}",
+        "code": 115,
+        "codeName": "CommandNotSupported",
+        "errmsg": "$listSearchIndexes stage is not enabled",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 115,
+          "codeName": "CommandNotSupported",
+          "errmsg": "$listSearchIndexes stage is not enabled"
+        }
+      },
+      "supported": false,
+      "reading": "$listSearchIndexes is rejected: code 115 CommandNotSupported '$listSearchIndexes stage is not enabled'."
+    },
+    {
+      "step": "05-changeStream-watch",
+      "command": "db('t_parity').docs.watch([]) ; then insert_one({_id: 100, title: 'cs-probe'}) in a thread ; stream.try_next() until one event or 20 s",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "Stage $changeStream is not supported yet in native pipeline, full error: {'ok': 0.0, 'code': 115, 'codeName': 'CommandNotSupported', 'errmsg': 'Stage $changeStream is not supported yet in native pipeline'}",
+        "code": 115,
+        "codeName": "CommandNotSupported",
+        "errmsg": "Stage $changeStream is not supported yet in native pipeline",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 115,
+          "codeName": "CommandNotSupported",
+          "errmsg": "Stage $changeStream is not supported yet in native pipeline"
+        }
+      },
+      "supported": false,
+      "reading": "collection.watch() fails at open: code 115 CommandNotSupported 'Stage $changeStream is not supported yet in native pipeline'; no event could be read."
+    },
+    {
+      "step": "05b-aggregate-changeStream-raw",
+      "command": "db('t_parity').docs.aggregate([{\"$changeStream\": {}}])",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "Stage $changeStream is not supported yet in native pipeline, full error: {'ok': 0.0, 'code': 115, 'codeName': 'CommandNotSupported', 'errmsg': 'Stage $changeStream is not supported yet in native pipeline'}",
+        "code": 115,
+        "codeName": "CommandNotSupported",
+        "errmsg": "Stage $changeStream is not supported yet in native pipeline",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 115,
+          "codeName": "CommandNotSupported",
+          "errmsg": "Stage $changeStream is not supported yet in native pipeline"
+        }
+      },
+      "supported": false,
+      "reading": "Raw $changeStream aggregate rejected: code 115 CommandNotSupported 'Stage $changeStream is not supported yet in native pipeline'."
+    },
+    {
+      "step": "06-vector-diskann",
+      "command": "db('t_parity').command({\"createIndexes\": \"docs\", \"indexes\": [{\"name\": \"v_diskann\", \"key\": {\"v\": \"cosmosSearch\"}, \"cosmosSearchOptions\": {\"kind\": \"vector-diskann\", \"dimensions\": 3, \"similarity\": \"COS\", \"maxDegree\": 32, \"lBuild\": 50}}]})",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "Error in specification { \"name\" : \"v_diskann\", \"key\" : { \"v\" : \"cosmosSearch\" }, \"cosmosSearchOptions\" : { \"kind\" : \"vector-diskann\", \"dimensions\" : 3, \"similarity\" : \"COS\", \"maxDegree\" : 32, \"lBuild\" : 50 } }:Invalid search index kind vector-diskann, full error: {'ok': 0.0, 'code': 67, 'codeName': 'CannotCreateIndex', 'errmsg': 'Error in specification { \"name\" : \"v_diskann\", \"key\" : { \"v\" : \"cosmosSearch\" }, \"cosmosSearchOptions\" : { \"kind\" : \"vector-diskann\", \"dimensions\" : 3, \"similarity\" : \"COS\", \"maxDegree\" : 32, \"lBuild\" : 50 } }:Invalid search index kind vector-diskann'}",
+        "code": 67,
+        "codeName": "CannotCreateIndex",
+        "errmsg": "Error in specification { \"name\" : \"v_diskann\", \"key\" : { \"v\" : \"cosmosSearch\" }, \"cosmosSearchOptions\" : { \"kind\" : \"vector-diskann\", \"dimensions\" : 3, \"similarity\" : \"COS\", \"maxDegree\" : 32, \"lBuild\" : 50 } }:Invalid search index kind vector-diskann",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 67,
+          "codeName": "CannotCreateIndex",
+          "errmsg": "Error in specification { \"name\" : \"v_diskann\", \"key\" : { \"v\" : \"cosmosSearch\" }, \"cosmosSearchOptions\" : { \"kind\" : \"vector-diskann\", \"dimensions\" : 3, \"similarity\" : \"COS\", \"maxDegree\" : 32, \"lBuild\" : 50 } }:Invalid search index kind vector-diskann"
+        }
+      },
+      "supported": false,
+      "reading": "vector-diskann is rejected: code 67 CannotCreateIndex 'Error in specification { \"name\" : \"v_diskann\", \"key\" : { \"v\" : \"cosmosSearch\" }, \"cosmosSearchOptions\" : { \"kind\" : \"vector-diskann\", \"dimensions\" : 3, \"similarity\" : \"COS\", \"maxDegree\" : 32, \"lBuild\" : 50 } }:Invalid search index kind vector-diskann'."
+    },
+    {
+      "step": "06b-control-vector-hnsw",
+      "command": "db('t_parity').command({\"createIndexes\": \"docs\", \"indexes\": [{\"name\": \"v_hnsw\", \"key\": {\"v\": \"cosmosSearch\"}, \"cosmosSearchOptions\": {\"kind\": \"vector-hnsw\", \"dimensions\": 3, \"similarity\": \"COS\", \"m\": 16, \"efConstruction\": 64}}]})",
+      "response": {
+        "raw": {
+          "defaultShard": {
+            "numIndexesBefore": 1,
+            "numIndexesAfter": 2,
+            "createdCollectionAutomatically": false,
+            "ok": 1
+          }
+        },
+        "ok": 1
+      },
+      "supported": true,
+      "reading": "Control: vector-hnsw index created, so the cosmosSearch index path itself works locally."
+    },
+    {
+      "step": "07-rankFusion",
+      "command": "db('t_parity').docs.aggregate([{\"$rankFusion\": {\"input\": {\"pipelines\": {\"byId\": [{\"$sort\": {\"_id\": 1}}], \"byTitle\": [{\"$sort\": {\"title\": 1}}]}}}}, {\"$limit\": 3}])",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "Pipeline stage name not recognized: $rankFusion, full error: {'ok': 0.0, 'code': 40324, 'codeName': 'UnrecognizedCommand', 'errmsg': 'Pipeline stage name not recognized: $rankFusion'}",
+        "code": 40324,
+        "codeName": "UnrecognizedCommand",
+        "errmsg": "Pipeline stage name not recognized: $rankFusion",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 40324,
+          "codeName": "UnrecognizedCommand",
+          "errmsg": "Pipeline stage name not recognized: $rankFusion"
+        }
+      },
+      "supported": false,
+      "reading": "$rankFusion is rejected: code 40324 UnrecognizedCommand 'Pipeline stage name not recognized: $rankFusion'."
+    },
+    {
+      "step": "08-currentOp",
+      "command": "db('admin').command({\"currentOp\": 1})",
+      "response": {
+        "inprog": [
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000000164,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000000165,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "idleSessionInTransaction",
+            "opid": "10000000930:1795637329517528",
+            "op_prefix": 10000000930,
+            "secs_idle": 15,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": true,
+            "type": "op",
+            "opid": "10000001257:1795637344545882",
+            "op_prefix": 10000001257,
+            "currentOpTime": {
+              "$date": "2026-11-25T20:09:05Z"
+            },
+            "secs_running": 0,
+            "command": {},
+            "op": "command",
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000001300,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000001299,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000000102,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000000103,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000000105,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000000104,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000000098,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000000099,
+            "waitingForLock": false
+          },
+          {
+            "shard": "shard_0",
+            "active": false,
+            "type": "unknown",
+            "opid": "",
+            "op_prefix": 10000000101,
+            "waitingForLock": false
+          }
+        ],
+        "ok": 1.0
+      },
+      "supported": true,
+      "reading": "currentOp returned 13 inprog entries."
+    },
+    {
+      "step": "08b-aggregate-currentOp",
+      "command": "db('admin').command({\"aggregate\": 1, \"pipeline\": [{\"$currentOp\": {}}], \"cursor\": {}})",
+      "response": {
+        "cursor": {
+          "id": 0,
+          "ns": "admin.$cmd.aggregate",
+          "firstBatch": [
+            {
+              "shard": "shard_0",
+              "active": true,
+              "type": "op",
+              "opid": "10000001257:1795637344552012",
+              "op_prefix": 10000001257,
+              "currentOpTime": {
+                "$date": "2026-11-25T20:09:05Z"
+              },
+              "secs_running": 0,
+              "command": {
+                "aggregate": ""
+              },
+              "op": "command",
+              "waitingForLock": false
+            }
+          ]
+        },
+        "ok": 1.0
+      },
+      "supported": true,
+      "reading": "$currentOp aggregation returned 1 entries."
+    },
+    {
+      "step": "09-serverStatus",
+      "command": "db('admin').command({\"serverStatus\": 1})",
+      "error": {
+        "exception": "OperationFailure",
+        "message": "Command 'serverStatus' not supported., full error: {'ok': 0.0, 'code': 115, 'codeName': 'CommandNotSupported', 'errmsg': \"Command 'serverStatus' not supported.\"}",
+        "code": 115,
+        "codeName": "CommandNotSupported",
+        "errmsg": "Command 'serverStatus' not supported.",
+        "errorLabels": [],
+        "details": {
+          "ok": 0.0,
+          "code": 115,
+          "codeName": "CommandNotSupported",
+          "errmsg": "Command 'serverStatus' not supported."
+        }
+      },
+      "supported": false,
+      "reading": "serverStatus rejected: code 115 CommandNotSupported 'Command 'serverStatus' not supported.'."
+    },
+    {
+      "step": "10-connectionStatus-showPrivileges",
+      "command": "db('admin').command({\"connectionStatus\": 1, \"showPrivileges\": true})",
+      "response": {
+        "authInfo": {
+          "authenticatedUsers": [
+            {
+              "user": "testadmin",
+              "db": "admin"
+            }
+          ],
+          "authenticatedUserRoles": [
+            {
+              "role": "readWriteAnyDatabase",
+              "db": "admin"
+            },
+            {
+              "role": "clusterAdmin",
+              "db": "admin"
+            }
+          ],
+          "authenticatedUserPrivileges": [
+            {
+              "resource": {
+                "db": "",
+                "collection": ""
+              },
+              "actions": [
+                "analyzeShardKey",
+                "changeStream",
+                "collStats",
+                "createCollection",
+                "createIndex",
+                "dbStats",
+                "dropCollection",
+                "dropDatabase",
+                "dropIndex",
+                "enableSharding",
+                "find",
+                "getDatabaseVersion",
+                "getShardVersion",
+                "indexStats",
+                "insert",
+                "killCursors",
+                "listCollections",
+                "listIndexes",
+                "remove",
+                "reshardCollection",
+                "splitVector",
+                "unshardCollection",
+                "update"
+              ]
+            },
+            {
+              "resource": {
+                "cluster": true
+              },
+              "actions": [
+                "compact",
+                "connPoolStats",
+                "dropConnections",
+                "getChangeStreamState",
+                "getClusterParameter",
+                "getCmdLineOpts",
+                "getDefaultRWConcern",
+                "getLog",
+                "getParameter",
+                "getShardMap",
+                "hostInfo",
+                "killAnyCursor",
+                "killAnySession",
+                "killop",
+                "listDatabases",
+                "listSessions",
+                "listShards",
+                "serverStatus",
+                "setChangeStreamState"
+              ]
+            }
+          ]
+        },
+        "ok": 1
+      },
+      "supported": true,
+      "reading": "connectionStatus returned authenticatedUsers [{'user': 'testadmin', 'db': 'admin'}], roles [{'role': 'readWriteAnyDatabase', 'db': 'admin'}, {'role': 'clusterAdmin', 'db': 'admin'}], 2 privilege entries."
+    },
+    {
+      "step": "10b-connectionStatus-plain",
+      "command": "db('admin').command({\"connectionStatus\": 1})",
+      "response": {
+        "authInfo": {
+          "authenticatedUsers": [
+            {
+              "user": "testadmin",
+              "db": "admin"
+            }
+          ],
+          "authenticatedUserRoles": [
+            {
+              "role": "readWriteAnyDatabase",
+              "db": "admin"
+            },
+            {
+              "role": "clusterAdmin",
+              "db": "admin"
+            }
+          ]
+        },
+        "ok": 1
+      },
+      "supported": true,
+      "reading": "Plain connectionStatus returned keys ['authenticatedUserRoles', 'authenticatedUsers']."
+    },
+    {
+      "step": "11-listIndexes",
+      "command": "db('t_parity').command({\"listIndexes\": \"docs\"})",
+      "response": {
+        "cursor": {
+          "id": 0,
+          "ns": "t_parity.docs",
+          "firstBatch": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "v": "cosmosSearch"
+              },
+              "name": "v_hnsw",
+              "cosmosSearchOptions": {
+                "kind": "vector-hnsw",
+                "dimensions": 3,
+                "similarity": "COS",
+                "m": 16,
+                "efConstruction": 64
+              }
+            }
+          ]
+        },
+        "ok": 1.0
+      },
+      "supported": true,
+      "reading": "Indexes present at the end: ['_id_', 'v_hnsw']."
+    }
+  ]
+}

@@ -1,0 +1,624 @@
+{
+  "test": "ttl-semantics",
+  "database": "t_ttl",
+  "collection": "docs",
+  "target": "documentdb-local container ddb-engine-test on localhost:10260 (open-source engine + gateway)",
+  "engine_version": "7.0.0",
+  "buildInfo": {
+    "version": "7.0.0",
+    "versionArray": [
+      7,
+      0,
+      0,
+      0
+    ],
+    "bits": 64,
+    "maxBsonObjectSize": 16777216,
+    "ok": 1.0
+  },
+  "ranAt": "2026-11-25T20:07:00.129+00:00",
+  "pollEverySeconds": 15,
+  "pollMaxSeconds": 240,
+  "expireAfterSeconds": 5,
+  "steps": [
+    {
+      "step": "buildInfo",
+      "command": "db.adminCommand({buildInfo: 1})",
+      "at": "2026-11-25T20:07:00.117+00:00",
+      "ok": true,
+      "response": {
+        "version": "7.0.0",
+        "versionArray": [
+          7,
+          0,
+          0,
+          0
+        ],
+        "bits": 64,
+        "maxBsonObjectSize": 16777216,
+        "ok": 1.0
+      },
+      "reading": "Engine reports version 7.0.0 (gitVersion None); evidence below is about this open-source build only."
+    },
+    {
+      "step": "drop collection (clean rerun)",
+      "command": "db.docs.drop()",
+      "at": "2026-11-25T20:07:00.125+00:00",
+      "ok": true,
+      "response": {
+        "ok": 1.0,
+        "dropped": "docs"
+      },
+      "reading": "Collection dropped (or did not exist) so the run starts clean."
+    },
+    {
+      "step": "create TTL index on exp",
+      "command": "db.docs.createIndex({exp: 1}, {expireAfterSeconds: 5})",
+      "at": "2026-11-25T20:07:00.125+00:00",
+      "ok": true,
+      "response": "exp_ttl",
+      "reading": "Single-field TTL index 'exp_ttl' created with expireAfterSeconds=5."
+    },
+    {
+      "step": "listIndexes after TTL create",
+      "command": "db.docs.getIndexes()",
+      "at": "2026-11-25T20:07:00.128+00:00",
+      "ok": true,
+      "response": [
+        {
+          "v": 2,
+          "key": {
+            "_id": 1
+          },
+          "name": "_id_"
+        },
+        {
+          "v": 2,
+          "key": {
+            "exp": 1
+          },
+          "name": "exp_ttl",
+          "expireAfterSeconds": 5,
+          "storageEngine": {
+            "enableOrderedIndex": true
+          }
+        }
+      ],
+      "reading": "2 index(es) listed; exp_ttl carries expireAfterSeconds=[5]."
+    },
+    {
+      "step": "insertMany test documents",
+      "command": "db.docs.insertMany([...7 docs: past Date, future Date(+90s), string, number, missing, array of Dates, null...])",
+      "at": "2026-11-25T20:07:00.129+00:00",
+      "ok": true,
+      "response": {
+        "insertedIds": [
+          "past_date_60s",
+          "future_date_90s",
+          "string_value",
+          "number_value",
+          "missing_field",
+          "array_of_dates",
+          "null_value"
+        ],
+        "insertedAt": "2026-11-25T20:07:00.129+00:00",
+        "expiryDeadlines": {
+          "past_date_60s": "2026-11-25T20:06:05.129+00:00",
+          "future_date_90s": "2026-11-25T20:08:35.129+00:00"
+        }
+      },
+      "reading": "Seven documents inserted; the past Date is already eligible for purge, the future Date becomes eligible at insert+95 s."
+    },
+    {
+      "step": "create compound TTL index (two fields)",
+      "command": "db.docs.createIndex({a: 1, b: 1}, {expireAfterSeconds: 5})",
+      "at": "2026-11-25T20:07:00.130+00:00",
+      "ok": false,
+      "response": {
+        "type": "OperationFailure",
+        "errmsg": "Error in specification { \"expireAfterSeconds\" : 5, \"name\" : \"ab_ttl\", \"key\" : { \"a\" : 1, \"b\" : 1 } }:TTL indexes work only on single fields, and compound indexes are incompatible with TTL functionality.",
+        "code": 67,
+        "codeName": "CannotCreateIndex",
+        "errorLabels": []
+      },
+      "reading": "Compound TTL index rejected with code 67 CannotCreateIndex: Error in specification { \"expireAfterSeconds\" : 5, \"name\" : \"ab_ttl\", \"key\" : { \"a\" : 1, \"b\" : 1 } }:TTL indexes work only on single fields, and compound indexes are incompatible with TTL functionality."
+    },
+    {
+      "step": "create second TTL index on another field",
+      "command": "db.docs.createIndex({exp2: 1}, {expireAfterSeconds: 5})",
+      "at": "2026-11-25T20:07:00.130+00:00",
+      "ok": true,
+      "response": "exp2_ttl",
+      "reading": "Second TTL index 'exp2_ttl' on a different field accepted; multiple single-field TTL indexes per collection are allowed."
+    },
+    {
+      "step": "create TTL index with non-numeric expireAfterSeconds",
+      "command": "db.docs.createIndex({exp3: 1}, {expireAfterSeconds: 'abc'})",
+      "at": "2026-11-25T20:07:02.140+00:00",
+      "ok": false,
+      "response": {
+        "type": "OperationFailure",
+        "errmsg": "Error in specification { \"expireAfterSeconds\" : \"abc\", \"name\" : \"exp3_bad\", \"key\" : { \"exp3\" : 1 } }:The 'expireAfterSeconds' option for a TTL index must be a numeric value, but a different data type was provided: string.",
+        "code": 67,
+        "codeName": "CannotCreateIndex",
+        "errorLabels": []
+      },
+      "reading": "Non-numeric expireAfterSeconds rejected with code 67 CannotCreateIndex: Error in specification { \"expireAfterSeconds\" : \"abc\", \"name\" : \"exp3_bad\", \"key\" : { \"exp3\" : 1 } }:The 'expireAfterSeconds' option for a TTL index must be a numeric value, but a different data type was provided: string."
+    },
+    {
+      "step": "listIndexes after all createIndex attempts",
+      "command": "db.docs.getIndexes()",
+      "at": "2026-11-25T20:07:02.141+00:00",
+      "ok": true,
+      "response": [
+        {
+          "v": 2,
+          "key": {
+            "_id": 1
+          },
+          "name": "_id_"
+        },
+        {
+          "v": 2,
+          "key": {
+            "exp": 1
+          },
+          "name": "exp_ttl",
+          "expireAfterSeconds": 5,
+          "storageEngine": {
+            "enableOrderedIndex": true
+          }
+        },
+        {
+          "v": 2,
+          "key": {
+            "exp2": 1
+          },
+          "name": "exp2_ttl",
+          "expireAfterSeconds": 5,
+          "storageEngine": {
+            "enableOrderedIndex": true
+          }
+        }
+      ],
+      "reading": "Indexes present: ['_id_', 'exp_ttl', 'exp2_ttl']."
+    },
+    {
+      "step": "poll collection every 15 s for up to 4 min",
+      "command": "repeat every 15s: db.docs.find({}, {_id: 1})  (plus insertOne of probe docs after each observed purge)",
+      "at": "2026-11-25T20:07:02.142+00:00",
+      "ok": true,
+      "response": {
+        "polls": [
+          {
+            "poll": 0,
+            "at": "2026-11-25T20:07:02.142+00:00",
+            "secondsAfterInsert": 2.0,
+            "count": 7,
+            "present": [
+              "array_of_dates",
+              "future_date_90s",
+              "missing_field",
+              "null_value",
+              "number_value",
+              "past_date_60s",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 1,
+            "at": "2026-11-25T20:07:17.153+00:00",
+            "secondsAfterInsert": 17.0,
+            "count": 7,
+            "present": [
+              "array_of_dates",
+              "future_date_90s",
+              "missing_field",
+              "null_value",
+              "number_value",
+              "past_date_60s",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 2,
+            "at": "2026-11-25T20:07:32.164+00:00",
+            "secondsAfterInsert": 32.0,
+            "count": 7,
+            "present": [
+              "array_of_dates",
+              "future_date_90s",
+              "missing_field",
+              "null_value",
+              "number_value",
+              "past_date_60s",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 3,
+            "at": "2026-11-25T20:07:47.171+00:00",
+            "secondsAfterInsert": 47.0,
+            "count": 7,
+            "present": [
+              "array_of_dates",
+              "future_date_90s",
+              "missing_field",
+              "null_value",
+              "number_value",
+              "past_date_60s",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 4,
+            "at": "2026-11-25T20:08:02.185+00:00",
+            "secondsAfterInsert": 62.1,
+            "count": 5,
+            "present": [
+              "future_date_90s",
+              "missing_field",
+              "null_value",
+              "number_value",
+              "string_value"
+            ],
+            "goneSinceLastPoll": [
+              "array_of_dates",
+              "past_date_60s"
+            ],
+            "probe2InsertedAt": "2026-11-25T20:08:02.189+00:00"
+          },
+          {
+            "poll": 5,
+            "at": "2026-11-25T20:08:17.197+00:00",
+            "secondsAfterInsert": 77.1,
+            "count": 6,
+            "present": [
+              "future_date_90s",
+              "missing_field",
+              "null_value",
+              "number_value",
+              "probe2_past_date",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 6,
+            "at": "2026-11-25T20:08:32.205+00:00",
+            "secondsAfterInsert": 92.1,
+            "count": 6,
+            "present": [
+              "future_date_90s",
+              "missing_field",
+              "null_value",
+              "number_value",
+              "probe2_past_date",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 7,
+            "at": "2026-11-25T20:08:47.214+00:00",
+            "secondsAfterInsert": 107.1,
+            "count": 6,
+            "present": [
+              "future_date_90s",
+              "missing_field",
+              "null_value",
+              "number_value",
+              "probe2_past_date",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 8,
+            "at": "2026-11-25T20:09:02.225+00:00",
+            "secondsAfterInsert": 122.1,
+            "count": 4,
+            "present": [
+              "missing_field",
+              "null_value",
+              "number_value",
+              "string_value"
+            ],
+            "goneSinceLastPoll": [
+              "future_date_90s",
+              "probe2_past_date"
+            ],
+            "probe3InsertedAt": "2026-11-25T20:09:02.235+00:00"
+          },
+          {
+            "poll": 9,
+            "at": "2026-11-25T20:09:17.246+00:00",
+            "secondsAfterInsert": 137.1,
+            "count": 5,
+            "present": [
+              "missing_field",
+              "null_value",
+              "number_value",
+              "probe3_past_date",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 10,
+            "at": "2026-11-25T20:09:32.268+00:00",
+            "secondsAfterInsert": 152.1,
+            "count": 5,
+            "present": [
+              "missing_field",
+              "null_value",
+              "number_value",
+              "probe3_past_date",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 11,
+            "at": "2026-11-25T20:09:47.285+00:00",
+            "secondsAfterInsert": 167.2,
+            "count": 5,
+            "present": [
+              "missing_field",
+              "null_value",
+              "number_value",
+              "probe3_past_date",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 12,
+            "at": "2026-11-25T20:10:02.299+00:00",
+            "secondsAfterInsert": 182.2,
+            "count": 4,
+            "present": [
+              "missing_field",
+              "null_value",
+              "number_value",
+              "string_value"
+            ],
+            "goneSinceLastPoll": [
+              "probe3_past_date"
+            ]
+          },
+          {
+            "poll": 13,
+            "at": "2026-11-25T20:10:17.309+00:00",
+            "secondsAfterInsert": 197.2,
+            "count": 4,
+            "present": [
+              "missing_field",
+              "null_value",
+              "number_value",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 14,
+            "at": "2026-11-25T20:10:32.319+00:00",
+            "secondsAfterInsert": 212.2,
+            "count": 4,
+            "present": [
+              "missing_field",
+              "null_value",
+              "number_value",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 15,
+            "at": "2026-11-25T20:10:47.339+00:00",
+            "secondsAfterInsert": 227.2,
+            "count": 4,
+            "present": [
+              "missing_field",
+              "null_value",
+              "number_value",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          },
+          {
+            "poll": 16,
+            "at": "2026-11-25T20:11:02.346+00:00",
+            "secondsAfterInsert": 242.2,
+            "count": 4,
+            "present": [
+              "missing_field",
+              "null_value",
+              "number_value",
+              "string_value"
+            ],
+            "goneSinceLastPoll": []
+          }
+        ],
+        "disappeared": {
+          "array_of_dates": {
+            "observedGoneAt": "2026-11-25T20:08:02.185+00:00",
+            "secondsAfterInsert": 62.1,
+            "windowStart": "2026-11-25T20:07:47.171+00:00"
+          },
+          "past_date_60s": {
+            "observedGoneAt": "2026-11-25T20:08:02.185+00:00",
+            "secondsAfterInsert": 62.1,
+            "windowStart": "2026-11-25T20:07:47.171+00:00"
+          },
+          "future_date_90s": {
+            "observedGoneAt": "2026-11-25T20:09:02.225+00:00",
+            "secondsAfterInsert": 122.1,
+            "windowStart": "2026-11-25T20:08:47.214+00:00"
+          },
+          "probe2_past_date": {
+            "observedGoneAt": "2026-11-25T20:09:02.225+00:00",
+            "secondsAfterInsert": 122.1,
+            "windowStart": "2026-11-25T20:08:47.214+00:00"
+          },
+          "probe3_past_date": {
+            "observedGoneAt": "2026-11-25T20:10:02.299+00:00",
+            "secondsAfterInsert": 182.2,
+            "windowStart": "2026-11-25T20:09:47.285+00:00"
+          }
+        },
+        "finalDocuments": [
+          {
+            "_id": "missing_field",
+            "kind": "field absent"
+          },
+          {
+            "_id": "null_value",
+            "kind": "null"
+          },
+          {
+            "_id": "number_value",
+            "kind": "number (epoch ms, in the past)"
+          },
+          {
+            "_id": "string_value",
+            "kind": "string"
+          }
+        ]
+      },
+      "reading": "Disappeared: array_of_dates at +62.1s, past_date_60s at +62.1s, future_date_90s at +122.1s, probe2_past_date at +122.1s, probe3_past_date at +182.2s; still present at end: ['missing_field', 'null_value', 'number_value', 'string_value']."
+    },
+    {
+      "step": "fine-grained purge timing (1 s polling) - could not run",
+      "command": "python fine_probe.py  (db.docs.insertOne({_id:'fine_probe', exp:<now-60s>}) then countDocuments every 1 s)",
+      "at": "2026-11-25T20:12:13Z (first attempt), 2026-11-25T20:12:27Z (second attempt)",
+      "ok": false,
+      "response": {
+        "code": 1,
+        "codeName": "InternalError",
+        "errmsg": "[ActivityId=ca8b5441-ea76-4910-a6aa-9f3a60b7acd9] An unexpected internal error has occurred.",
+        "errorLabels": [],
+        "raisedDuring": "SCRAM-SHA-256 saslStart on connection open (pymongo OperationFailure)",
+        "gatewayLog": "gateway.auth:postgres.execute ... Error executing postgres request: Request failed with kind Pool, code InternalError, error_message_internal: Pool error due to generic postgres error: error connecting to server",
+        "postgresLog": [
+          "2026-11-25 20:11:09.942 UTC [1556] PANIC:  could not write to file \"pg_wal/xlogtemp.1556\": No space left on device",
+          "2026-11-25 20:11:09.949 UTC [97] DETAIL:  Failed process was running: SELECT * FROM documentdb_api.insert($1, $2, $3, NULL)  (backend 1556 was serving database t_query, not t_ttl)",
+          "2026-11-25 20:11:10.030 UTC [1566] FATAL:  could not extend file \"base/5/19395\": No space left on device",
+          "2026-11-25 20:11:10.032 UTC [97] LOG:  database system is shut down"
+        ],
+        "df_data": "/dev/vdb1 25G 24G 0 100% /data"
+      },
+      "reading": "The supplementary 1-second probe never ran: PostgreSQL inside the container had PANICked at 20:11:09 UTC (7 s after this test's polling ended at 20:11:02) on 'No space left on device' while another test's bulk insert into database t_query was running, so the gateway returns code 1 InternalError at authentication; the container was left as-is (not restarted) because it is shared."
+    },
+    {
+      "step": "pg_cron TTL job timestamps from the PostgreSQL log (read-only, inside the container)",
+      "command": "docker exec ddb-engine-test grep -n 'cron job 1 ' /data/pglog.log   (job 1 = CALL documentdb_api_internal.delete_expired_rows())",
+      "at": "2026-11-25T20:13Z",
+      "ok": true,
+      "response": {
+        "jobCommand": "CALL documentdb_api_internal.delete_expired_rows();",
+        "starts_utc": [
+          "2026-11-25 20:03:00.010",
+          "2026-11-25 20:04:00.012",
+          "2026-11-25 20:05:00.010",
+          "2026-11-25 20:06:00.003",
+          "2026-11-25 20:07:00.006",
+          "2026-11-25 20:08:00.005",
+          "2026-11-25 20:09:00.004",
+          "2026-11-25 20:10:00.016",
+          "2026-11-25 20:11:00.012"
+        ],
+        "completed_utc": [
+          "2026-11-25 20:03:00.034",
+          "2026-11-25 20:04:00.025",
+          "2026-11-25 20:05:00.026",
+          "2026-11-25 20:06:00.009",
+          "2026-11-25 20:07:00.010",
+          "2026-11-25 20:08:00.023",
+          "2026-11-25 20:09:00.030",
+          "2026-11-25 20:10:00.035",
+          "2026-11-25 20:11:00.025"
+        ],
+        "ttlIndexCreatedAt_utc": "2026-11-25 20:07:00.128 (pglog: 'database t_ttl has collections: false' / 'Creating ... documents_25 for the sentinel database t_ttl')",
+        "excerptFile": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/engine-tests/ttl-semantics/pglog_ttl_excerpt.txt"
+      },
+      "reading": "The purger is pg_cron job 1 firing once a minute at hh:mm:00 (+3 to +16 ms) and completing in 4 to 26 ms; every disappearance observed by the Mongo-side polling falls in the 15 s window that contains the next hh:mm:00 run."
+    }
+  ],
+  "purgeTiming": {
+    "past_date_60s": {
+      "insertedAt": "2026-11-25T20:07:00.129+00:00",
+      "alreadyEligibleAtInsert": true,
+      "goneBetweenSecondsAfterInsert": [
+        47.0,
+        62.1
+      ]
+    },
+    "probe2_past_date": {
+      "insertedAt": "2026-11-25T20:08:02.189+00:00",
+      "alreadyEligibleAtInsert": true,
+      "goneBetweenSecondsAfterInsert": [
+        45.0,
+        60.0
+      ]
+    },
+    "probe3_past_date": {
+      "insertedAt": "2026-11-25T20:09:02.235+00:00",
+      "alreadyEligibleAtInsert": true,
+      "goneBetweenSecondsAfterInsert": [
+        45.0,
+        60.1
+      ]
+    },
+    "future_date_90s": {
+      "eligibleAt": "2026-11-25T20:08:35.129+00:00",
+      "goneBetweenSecondsAfterEligible": [
+        12.1,
+        27.1
+      ]
+    }
+  },
+  "caveat": "Everything here was observed on documentdb-local at the buildInfo version above. It is evidence about the open-source engine and gateway defaults (pg_cron every-minute documentdb_ttl_task), not proof of managed Azure DocumentDB behaviour, whose GUC values are not published.",
+  "purgeCadence": {
+    "observed": "Once per minute, at the top of the wall-clock minute (pg_cron '* * * * *'); each run completed in under 30 ms on this tiny collection.",
+    "correlation": [
+      {
+        "doc": "past_date_60s (eligible at insert, inserted 20:07:00.129, 120 ms after the 20:07:00.006 run)",
+        "purgedBy": "20:08:00.005 run",
+        "lagAfterEligible_s": "~60 (missed the run that had just started)"
+      },
+      {
+        "doc": "array_of_dates (one element 60 s past, one 1 day ahead)",
+        "purgedBy": "20:08:00.005 run",
+        "note": "array element compared individually: any expired Date element expires the document"
+      },
+      {
+        "doc": "future_date_90s (eligible 20:08:35.129)",
+        "purgedBy": "20:09:00.004 run",
+        "lagAfterEligible_s": "~25"
+      },
+      {
+        "doc": "probe2_past_date (inserted 20:08:02.189)",
+        "purgedBy": "20:09:00.004 run",
+        "lagAfterEligible_s": "~58"
+      },
+      {
+        "doc": "probe3_past_date (inserted 20:09:02.235)",
+        "purgedBy": "20:10:00.016 run",
+        "lagAfterEligible_s": "~58"
+      }
+    ],
+    "neverPurgedWithin4min": [
+      "string_value (ISO string)",
+      "number_value (epoch ms int)",
+      "missing_field",
+      "null_value"
+    ],
+    "boundOnLag": "0 to ~60 s after eligibility on this build with an otherwise idle purger; the 'up to 60 s continuous batching' only matters when a single run cannot finish its batches."
+  },
+  "notes": "Steps 1-10 ran 20:07:00-20:11:02 UTC and completed normally. At 20:11:09 UTC PostgreSQL in the shared container crashed on ENOSPC (/data 100% full) during another test's bulk insert (t_query / t_bulk_rerun backends); from then on every new connection fails at saslStart with code 1 InternalError. The container was not restarted or dropped by this test. Collection t_ttl.docs still holds string_value, number_value, missing_field, null_value (plus nothing else) as of the last successful poll. All observations are about documentdb-local (gateway buildInfo version 7.0.0, PostgreSQL 17 image ghcr.io/documentdb/documentdb/documentdb-local:latest pulled before 2026-11-25 20:02 UTC) and its default GUCs; they do not prove managed Azure DocumentDB cadence."
+}

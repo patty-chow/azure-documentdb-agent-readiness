@@ -3,7 +3,7 @@ id: K34
 title: "azure-deployment skill: name az documentdb mongocluster as the CLI group with a tooling preflight, fix the mongo-cluster typo, and add an author-IaC-only (no deploy) path"
 repo: Azure/documentdb-agent-kit
 type: pr
-status: needs_sme
+status: ready
 priority: P1
 sample_count: 100
 member_drafts:
@@ -15,7 +15,7 @@ member_drafts:
 merged_from:
   - K34
   - K02
-open_questions: 6
+open_questions: 2
 ---
 
 # azure-deployment skill: name `az documentdb mongocluster` as the CLI group with a tooling preflight, fix the `mongo-cluster` typo, and add an author-IaC-only (no deploy) path
@@ -31,7 +31,7 @@ open_questions: 6
 - The strings `az documentdb mongocluster`, `az extension add --name documentdb` and "not `az cosmosdb`" appear nowhere in the skills, `AGENTS.md`, `README.md` or `docs/SKILLS.md`.
 - The only CLI-group mention in the repo is wrong: `skills/storage/storage-premium-ssdv2-limitations.md:28` reads `az documentdb mongo-cluster restore`, which the CLI rejects (the group is the single token `mongocluster`). Its trailing comment ("set storage.type in the restore template") is also stale: `restore` takes `--storage-type` directly.
 
-Because the service was formerly "Azure Cosmos DB for MongoDB vCore", models strongly assume the cluster lives under `az cosmosdb` in the core CLI. `az cosmosdb create --kind MongoDB` creates a request-unit `Microsoft.DocumentDB/databaseAccounts` account, a different resource with a different capacity model (vCore tiers vs request units), flags and connection string. There is also an older `az cosmosdb mongocluster` group in the separate `cosmosdb-preview` extension, with different flags (`--administrator-login`, `--shard-node-tier`, ...) and no `list-connection-strings`, `restore`, `replica` or `microsoft-entra-user`. Mixing the two groups' flags produces commands that fail. The kit is the only thing in an agent's loop that could override this prior, and today it does not.
+Because the service was formerly "Azure Cosmos DB for MongoDB vCore", models strongly assume the cluster lives under `az cosmosdb` in the core CLI. `az cosmosdb create --kind MongoDB` creates a request-unit `Microsoft.DocumentDB/databaseAccounts` account, a different resource with a different capacity model (vCore tiers vs request units), flags and connection string. There is also an older `az cosmosdb mongocluster` group in the separate `cosmosdb-preview` extension, with different flags (`--administrator-login`, `--shard-node-tier`, ...), pinned to management API 2024-03-01-preview, and no `list-connection-strings`, `restore`, `replica`, `identity` or `microsoft-entra-user`. It is still a live Preview group, not deprecated, but every Learn Azure DocumentDB page (quickstart-cli, how-to-scale-cluster, development-loop) uses `az documentdb mongocluster`. Mixing the two groups' flags produces commands that fail. The kit is the only thing in an agent's loop that could override this prior, and today it does not.
 
 **No entry point for writing IaC without deploying (from K34).**
 
@@ -76,10 +76,16 @@ Azure DocumentDB clusters (`Microsoft.DocumentDB/mongoClusters`) are managed by 
     az documentdb mongocluster ...
 
 It is a single token (not `mongo-cluster`, not `mongodb cluster`) and ships in the
-**`documentdb` extension** (preview; Azure CLI >= 2.75.0), not in core `az`. Install it
-explicitly; first-use auto-install can prompt and stall a non-interactive shell:
+**`documentdb` extension** (Azure CLI >= 2.75.0), not in core `az`. The version that
+`az extension add --name documentdb` installs today (1.0.0) is a stable release; the Learn
+reference page is generated from the newer 1.1.0bX preview line and so marks every command
+Preview. Install the extension explicitly rather than relying on first-use auto-install
+(which prompts in an interactive shell and silently installs the stable version when there
+is no TTY), so the version in use is known:
 
     az extension add --name documentdb --upgrade
+
+Learn's own CLI quickstart uses this group: https://learn.microsoft.com/azure/documentdb/quickstart-cli
 
 Commands: `check-name-availability`, `create`, `show`, `list`, `update`, `delete`, `wait`,
 `restore`, `list-connection-strings`, `reset-password`; subgroups `firewall-rule`,
@@ -88,9 +94,11 @@ Reference: https://learn.microsoft.com/cli/azure/documentdb/mongocluster
 
 **Do not use `az cosmosdb`.** `az cosmosdb create --kind MongoDB` creates a
 `Microsoft.DocumentDB/databaseAccounts` (request-unit) account, not a cluster.
-Do not emit `az cosmosdb mongocluster` either: it is an older group in the separate
-`cosmosdb-preview` extension with a different flag set and fewer commands, not an alias;
-never mix its flags with `az documentdb mongocluster`. If extensions cannot be installed,
+Do not emit `az cosmosdb mongocluster` either: it is an older, still-Preview group in the
+separate `cosmosdb-preview` extension (not deprecated, but superseded) with a different flag
+set, an older API version and fewer commands, not an alias; never mix its flags with
+`az documentdb mongocluster`. Both groups manage the same `Microsoft.DocumentDB/mongoClusters`
+resource, so a cluster created with the old group is managed with the new one. If extensions cannot be installed,
 fall back to `az resource ... --resource-type Microsoft.DocumentDB/mongoClusters
 --api-version 2025-09-01` (Step 6b fallback), never to `az cosmosdb`.
 ```
@@ -132,8 +140,10 @@ az documentdb mongocluster create \
   --resource-group <rg> --name <cluster> --location <region> \
   --admin-user <admin> --admin-password "$DOCDB_ADMIN_PASSWORD" \
   --tier M10 --storage-size 32 --shard-count 1 \
-  --high-availability Disabled --public-network-access Enabled --no-wait
-# --server-version is optional and defaults to the latest version
+  --high-availability Disabled --public-network-access Enabled \
+  --server-version 8.0 --no-wait
+# --server-version is optional (the service defaults to the latest version, 8.0 today);
+# pass it explicitly, as Learn's quickstart-cli and the kit's templates (serverVersion '8.0') do.
 az documentdb mongocluster wait --resource-group <rg> --name <cluster> --created
 
 # "Allow Azure services" = 0.0.0.0 for both ends
@@ -181,13 +191,15 @@ Step 2 ("Pick the connection target"), under "**Azure DocumentDB connection stri
 
 "After deployment": add the same `list-connection-strings` one-liner before the existing `az resource show ... --query "properties.connectionString"` block, and keep that block as the fallback.
 
+Prerequisites (line 29): change "Azure CLI 2.60 or later" to "Azure CLI 2.75.0 or later (the minimum for the `documentdb` extension; Bicep deploys alone need 2.20.0)". The extension's `azext.minCliCoreVersion` is 2.75.0 and the Learn reference note says the same.
+
 ### 7. Skills with `mongoClusters` Bicep blocks
 
 `storage-choose-premium-ssdv2.md`, `storage-disk-hydration-sequencing.md`, `ha-enable-for-production.md`, `ha-cross-region-replica.md`, `security-private-endpoint.md`, `security-cmk-encryption.md`, `storage-tier-iops-caps.md`, `monitoring-metrics-alerts.md`: add "Prerequisites: see azure-deployment Step 0, check 7."
 
 **Not changed:** `examples/azure-deployment/deploy.sh`/`.ps1` (they use Bicep) and the `references/` templates. Some findings asked to "document both aliases"; this PR does not, because naming one group is the point.
 
-**Follow-ups outside this repo:** a cross-link or deprecation note on `az cosmosdb mongocluster` belongs in Azure/azure-cli-extensions help text, and a "Which CLI group" callout belongs on the Learn CLI quickstart. The companion change to the experiment's build instructions (asking for IaC) belongs to the experiment harness, which is owned by a colleague; coordinate with them rather than filing it directly.
+**Follow-ups outside this repo:** a "superseded by `az documentdb mongocluster`" note and cross-link in the `az cosmosdb mongocluster` help text (which generates its Learn reference page) belongs in Azure/azure-cli-extensions (filing X01; the group is not deprecated, so the note should not say so); the `az documentdb mongocluster` Learn reference should say which extension version it documents, since it shows Preview while the default install is stable 1.0.0; the Azure CLI extensions overview should state that dynamic install does not prompt without a TTY and skips preview versions by default; and a "Which CLI group" callout belongs on the Learn CLI quickstart (quickstart-cli). The companion change to the experiment's build instructions (asking for IaC) belongs to the experiment harness, which is owned by a colleague; coordinate with them rather than filing it directly.
 
 ## Evidence
 
@@ -206,15 +218,15 @@ Run folders in the experiment harness:
 ## Resolved
 
 - retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+- `az cosmosdb mongocluster` deprecated or superseded: not deprecated, a live Preview group with no `deprecate_info` and no Learn deprecation marker, superseded in practice by `az documentdb mongocluster` (every Learn DocumentDB page uses the new group; the old one pins API 2024-03-01-preview and lacks list-connection-strings, restore, replica, identity and microsoft-entra-user). Sources: https://learn.microsoft.com/en-us/cli/azure/cosmosdb/mongocluster; Azure/azure-cli-extensions src/cosmosdb-preview/azext_cosmosdb_preview/commands.py lines 437-449; https://learn.microsoft.com/en-us/azure/documentdb/quickstart-cli (DECISIONS.md, SME topic 11).
+- `documentdb` extension Preview status and CLI floor: 2.75.0 is the right minimum (`azext.minCliCoreVersion` 2.75.0 on every published version; Learn reference note); the version a fresh `az extension add --name documentdb` installs (1.0.0) is a stable release (PR Azure/azure-cli-extensions#10316), while the 1.1.0bX line and the generated Learn page are Preview, so the kit must not call the group unconditionally Preview or GA. Sources: https://learn.microsoft.com/en-us/cli/azure/documentdb/mongocluster; src/documentdb/HISTORY.rst and azext_metadata.json; https://aka.ms/azure-cli-extension-index-v1 (DECISIONS.md, SME topic 11).
+- First-use dynamic install in non-interactive shells: it does not prompt; without a TTY the CLI defaults to `yes_without_prompt`, logs that the extension will be installed first and continues (installing the stable version), and only an explicit `extension.use_dynamic_install=yes_prompt` with no TTY exits with NoTTYError, so the explicit `az extension add` step is for a known, pinned version rather than to avoid a stall. Source: Azure/azure-cli src/azure-cli-core/azure/cli/core/extension/dynamic_install.py lines 112-148 and 212-236 (DECISIONS.md, SME topic 11).
+- Pinning `--server-version`: the documented values are 5.0, 6.0, 7.0 and 8.0, the service default is the latest available version (8.0 today), and every current Learn provisioning page (quickstart-cli `--server-version 8.0`, quickstart-bicep, quickstart-terraform, development-loop) sets 8.0 explicitly, as do the kit's templates, so the one-shot passes `--server-version 8.0`. Sources: https://learn.microsoft.com/en-us/azure/documentdb/faq; https://learn.microsoft.com/en-us/azure/documentdb/quickstart-cli; https://learn.microsoft.com/en-us/azure/templates/microsoft.documentdb/mongoclusters; aaz _create.py lines 165-168 (DECISIONS.md, SME topic 11).
 
 ## Open questions
 
-1. [needs SME confirmation] Is `az cosmosdb mongocluster` (cosmosdb-preview) deprecated or only superseded? Learn does not mark it deprecated. This PR calls it "older; do not use" and makes no deprecation claim.
-2. [needs SME confirmation] Is the `documentdb` extension still preview, and is 2.75.0 the right minimum CLI version? The callout says "preview".
-3. [needs SME confirmation] Does first-use dynamic install prompt in non-interactive shells by default? The explicit `az extension add` step rests on this.
-4. [needs SME confirmation] Should the kit pin a `--server-version`? The member drafts disagree: one used `8.0`, another removed it because Learn lists no accepted values and the flag defaults to latest. This PR omits it.
-5. Step 8 ordering: this PR makes the CLI command the main route (for agents) with the portal as fallback. Reviewers should confirm that over keeping the portal first.
-6. Sample counts: the original IaC draft said 20 of 100 samples failed the IaC requirement; a recount of the audit files shows all 100 failed, and 20 is the number where the gap was raised as a kit finding. Most IaC misses were attributed to the build instructions, and the "missing bicep" reports partly come from the harness checking PATH (harness fix filed separately). These numbers should be re-measured after the experiment's build instructions and harness are fixed and before they are quoted outside the team.
+1. Step 8 ordering (maintainer decision): this PR makes the CLI command the main route (for agents) with the portal as fallback. Reviewers should confirm that over keeping the portal first.
+2. Sample counts: the original IaC draft said 20 of 100 samples failed the IaC requirement; a recount of the audit files shows all 100 failed, and 20 is the number where the gap was raised as a kit finding. Most IaC misses were attributed to the build instructions, and the "missing bicep" reports partly come from the harness checking PATH (harness fix filed separately). These numbers should be re-measured after the experiment's build instructions and harness are fixed and before they are quoted outside the team.
 
 ## Source drafts
 

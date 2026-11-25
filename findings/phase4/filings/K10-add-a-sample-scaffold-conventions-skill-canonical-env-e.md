@@ -3,14 +3,14 @@ id: K10
 title: "Add a sample-scaffold conventions skill: canonical .env.example contract, README checklist and helpers"
 repo: Azure/documentdb-agent-kit
 type: pr
-status: needs_sme
+status: ready
 priority: P1
 sample_count: 74
 member_drafts:
   - 081-agent-kit-sample-scaffold-conventions-complete-env-example-w.md
   - 012-believes-the-connection-string-is-the-legacy-cosmos-db-for-m.md
   - 087-sample-conventions-page-canonical-env-example-env-var-names-.md
-open_questions: 3
+open_questions: 2
 ---
 
 # Add a sample-scaffold conventions skill: canonical `.env.example` contract, README checklist and helpers
@@ -59,7 +59,11 @@ Body: a "Before you publish" checklist linking to the files below, and the core 
 
 ```dotenv
 # ---- Azure DocumentDB (required) ----
-# Copy from portal -> cluster -> Connection strings, or `az documentdb mongocluster list-connection-strings`.
+# Copy from portal -> cluster -> Settings -> Connection strings, `az documentdb mongocluster list-connection-strings`,
+# or `az documentdb mongocluster show --query properties.connectionString` (the default Self string). Never build the host from the cluster name.
+# The portal offers two strings. On a single cluster the Self string (<cluster>.mongocluster.cosmos.azure.com) and the
+# Global read-write string (<cluster>.global.mongocluster.cosmos.azure.com) are interchangeable. If the cluster has or may
+# get a cross-region replica, use the Global read-write string for writes; the old primary's Self string turns read-only after a promotion.
 # Keep retrywrites=false: Azure DocumentDB does not support retryable writes (the server does not de-duplicate a retried write).
 DOCUMENTDB_URI=mongodb+srv://<user>:<pw>@<cluster>.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000
 DATABASE_NAME=sample_app
@@ -100,7 +104,8 @@ ENABLE_MANAGEMENT_TOOLS=false
 
 - Names in `env.example` are canonical; no `MODEL`, `MODEL_NAME`, `OPENAI_MODEL`, `EMBEDDING_DIM`, `DB_NAME`, `MONGODB_URI` drift.
 - Placeholders only; `.env` gitignored, `.env.example` committed; secrets never stored in documents.
-- **Connection placeholder rule:** use the shape above. Never write a cloud `mongodb://` URI with a port, `replicaSet=globaldb`, an account key, or a `.mongo.cosmos.azure.com` / `.documents.azure.com` host; those belong to Azure Cosmos DB RU-based accounts, a different service. Prefer `tls=true` over the legacy `ssl=true` alias. `localhost:10260` is the local gateway only.
+- **Connection placeholder rule:** use the shape above. Never write a cloud `mongodb://` URI with a port, `replicaSet=globaldb`, an account key, or a `.mongo.cosmos.azure.com` / `.documents.azure.com` host; those belong to Azure Cosmos DB RU-based accounts, a different service. The only Azure DocumentDB hosts are `<cluster>.mongocluster.cosmos.azure.com` (portal label "Self (always this cluster)") and `<cluster>.global.mongocluster.cosmos.azure.com` ("Global read-write"); a `.mongocluster.documentdb.azure.com` suffix does not exist. Copy the string the portal, CLI or REST API returns and never construct the host from the cluster name (Learn Mongoose tutorial, "Verify the cluster from a terminal"). Prefer `tls=true` over the legacy `ssl=true` alias. `localhost:10260` is the local gateway only.
+- **Self vs Global read-write rule:** on a single cluster either string works ("you can use either connection string indiscriminately", Learn RBAC page). If the cluster has or may get a cross-region replica, use the Global read-write string for writes so a promotion needs no code change; the former primary's Self string becomes read-only after promotion, and replica clusters expose only a Self string. Reads may use either. In-region HA failover changes neither string. Sources: Learn how-to-connect-role-based-access-control ("Get cluster credentials"), how-to-cluster-replica ("Use connection strings"), how-to-private-link (replica note), availability-disaster-recovery-under-hood (summary table footnote); decision in findings/phase4/DECISIONS.md (host forms).
 - **retryWrites rule:** Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). Helpers and samples never set `retryWrites: true` in client options (see documentdb/documentdb#767; decision in findings/phase4/DECISIONS.md).
 - Optional lint for a sample's test script:
   ```bash
@@ -131,7 +136,7 @@ Module-level `get_client()` / `get_db()` singletons that read `DOCUMENTDB_URI` a
   Add the kind-specific build options from the vector-search skill, quoting the documented ranges and defaults; for the default `vector-hnsw`: `m` 2 to 100 (default 16), `efConstruction` 4 to 1000 and at least `2m` (default 64), `efSearch` default 40 at query time. `listIndexes` reports these options under `cosmosSearch`, which the Verify step can check.
 - Before creating the index, embed one probe string and assert its length equals `EMBEDDING_DIMS`.
 - Stub mode: `embed()` returns a deterministic, L2-normalized `number[]` of length `EMBEDDING_DIMS` (not semantic); `chat()` returns a canned, schema-valid reply. Tests run with the stub; a `test:live` script sets `LLM_PROVIDER=openai` and is skipped when no key is set.
-- Keys: read from env only, never logged, echoed or stored with prompts. When a sample exposes LLM calls over HTTP, add a simple per-process rate limiter. Model-provider calls get exponential backoff on 429/5xx and bounded concurrency, both overridable by env (two lines; database retries are K07).
+- Keys: read from env only, never logged, echoed or stored with prompts. When a sample exposes LLM calls over HTTP, add a simple per-process rate limiter. Model-provider calls get exponential backoff on the provider's HTTP 429/5xx and bounded concurrency, both overridable by env (two lines). This is the model provider's rate limit, not a database signal: Azure DocumentDB returns no 429 or 16500 throttling code, so database retry logic must not key on those (database retries are K07).
 - Embedder outage: persist `embedding: null, needs_embedding: true`, index `{ needs_embedding: 1 }`, ship a `backfill` script. Store `embeddingModel` / `embeddingDims` per document as in `vector-normalize-embeddings.md`.
 - LLM write-back: audit fields `{ model_id, prompt_hash, generated_at, agent_names[], deterministic_score, llm_score, raw_output_ref }` applied with one atomic `$set`.
 - Agent memory: persist identifiers (`conversation_id`, `last_entity_id`) and resolved time ranges as BSON dates, not free text, so they can be indexed and range-queried; model a workflow run as one document per run with `status` and `resume_from`, indexed on `{ status: 1, updated_at: 1 }`. Monitors and trackers keep a per-entity current-state collection with a unique id (link `data-modeling`).
@@ -139,7 +144,8 @@ Module-level `get_client()` / `get_db()` singletons that read `DOCUMENTDB_URI` a
 
 ### 7. Edits to existing files
 
-- `skills/connection/SKILL.md`, under "Connection String Format", add: "**Not Cosmos DB for MongoDB (RU).** Azure DocumentDB publishes an SRV string on `<cluster>.mongocluster.cosmos.azure.com`, so no port appears. `replicaSet=globaldb`, port `10255` and `.mongo.cosmos.azure.com` hosts belong to RU-based accounts. Copy the string from the portal or CLI; do not assemble it by hand."
+- `skills/connection/SKILL.md`, under "Connection String Format", add: "**Not Cosmos DB for MongoDB (RU).** Azure DocumentDB publishes `mongodb+srv://` strings on `<cluster>.mongocluster.cosmos.azure.com` (Self) and `<cluster>.global.mongocluster.cosmos.azure.com` (Global read-write), so no port appears. On a single cluster the two are interchangeable; if the cluster has or may get a cross-region replica, use the Global read-write string for writes, since the old primary's Self string becomes read-only after promotion. `replicaSet=globaldb`, port `10255` and `.mongo.cosmos.azure.com` hosts belong to RU-based accounts. Copy the string from the portal, CLI or REST API; never construct the host from the cluster name." (Sources: Learn how-to-connect-role-based-access-control, how-to-cluster-replica, tutorial-nodejs-mongoose.)
+- `skills/azure-deployment/SKILL.md` (line 288 shows the `.global.` form as "Form of the connection string" with no explanation, while `skills/connection/SKILL.md`, `skills/mcp-setup/SKILL.md`, `README.md`, `GEMINI.md`, `install.sh`, `install.ps1` and `docs/installation/macos.md` show the plain form): switch it to the plain form and add the same one-line Self/Global note, so every kit snippet agrees.
 - `compat/PROMPT.md`, `compat/QUICKSTART.md`, `scenarios/ecommerce-advanced/README.md`, `compat/src/database.js`, `scenarios/ecommerce-advanced/scripts/load.mjs`: `MONGODB_URI` -> `DOCUMENTDB_URI` (optionally read the old name as a fallback for one release).
 - One-line pointers to `documentdb-sample-scaffold` in `local-deployment/SKILL.md`, `local-env-driven-config.md`, `connection/SKILL.md`, `driver/SKILL.md`, `vector-search/SKILL.md` and `mcp-setup/SKILL.md`.
 - New row in the `AGENTS.md` "Interactive / workflow skills" table, a line under "Routing hints for agents" ("Building or scaffolding a sample app" -> `documentdb-sample-scaffold`), a row in the `docs/SKILLS.md` "Standalone SKILL.md skills" table, and a `CHANGELOG.md` entry.
@@ -167,12 +173,12 @@ Run folders in the experiment repository (`runs/`):
   - Build order for seed scripts: HNSW on an empty collection; IVF and product quantization after loading; empty results for 2 to 3 minutes while a new index builds (vector-search HNSW column; product-quantization page note; quickstart-nodejs-select-algorithm Troubleshooting).
   - `listIndexes` reports vector options under `cosmosSearch` (vector-search, "Get vector index definitions").
   - Same-name index behaviour is undocumented and not an SME item; the ensure-index step tolerates both outcomes (DECISIONS.md, "Not an SME item").
+- Global read-write host: settled 2026-11-25 from Learn, no SME needed (DECISIONS.md, "Host forms"). The `.global.` host is never required; it is the Global read-write string the portal offers on the primary cluster beside the Self string, on a single cluster the two are interchangeable, and a cluster that has or may get a cross-region replica should use the Global read-write string for writes because the old primary's Self string becomes read-only after promotion; the host is copied from the portal, CLI or REST API, never constructed from the cluster name. The template now carries that comment and the plain (Self) host as its default. Sources: Learn how-to-connect-role-based-access-control ("Get cluster credentials"), how-to-cluster-replica ("Use connection strings"), cross-region-replication, availability-disaster-recovery-under-hood (summary table footnote), how-to-private-link (replica note), tutorial-nodejs-mongoose ("Verify the cluster from a terminal"). What error a client on the Global string sees during a promotion is still open for engineering (DECISIONS.md, topics 2 and 3) and does not affect this template.
 
 ## Open questions
 
-1. **Global read-write host.** One draft proposed a template comment pointing clusters with cross-region replication to a `<cluster>.global.mongocluster.cosmos.azure.com` string for writes, taken from the kit's high-availability skill. It is left out here until the host form and guidance are confirmed. [needs SME confirmation]
-2. **Default models.** Are `gpt-4o-mini` and `text-embedding-3-small` / 1536 acceptable sample defaults for the kit, or should the kit name none and require `CHAT_MODEL` / `EMBEDDING_MODEL` to be set?
-3. **Variable names.** The drafts proposed `DATABASE_NAME` vs `DB_NAME`, `LLM_PROVIDER` vs `MODEL_PROVIDER`, and separate `AZURE_OPENAI_CHAT_DEPLOYMENT` / `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` vs reusing `CHAT_MODEL` / `EMBEDDING_MODEL` as deployment names. This PR picks `DATABASE_NAME`, `LLM_PROVIDER` and the reuse. Sibling PRs currently use other database-name variables (`DOCUMENTDB_DATABASE` in K07, `DB_NAME` in K08, K09 and K37); one name must be chosen and applied across all of them before filing. Do maintainers prefer otherwise?
+1. **Default models.** Are `gpt-4o-mini` and `text-embedding-3-small` / 1536 acceptable sample defaults for the kit, or should the kit name none and require `CHAT_MODEL` / `EMBEDDING_MODEL` to be set? Maintainer decision.
+2. **Variable names.** The drafts proposed `DATABASE_NAME` vs `DB_NAME`, `LLM_PROVIDER` vs `MODEL_PROVIDER`, and separate `AZURE_OPENAI_CHAT_DEPLOYMENT` / `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` vs reusing `CHAT_MODEL` / `EMBEDDING_MODEL` as deployment names. This PR picks `DATABASE_NAME`, `LLM_PROVIDER` and the reuse. Sibling PRs currently use other database-name variables (`DOCUMENTDB_DATABASE` in K07, `DB_NAME` in K08, K09 and K37); one name must be chosen and applied across all of them before filing. Do maintainers prefer otherwise?
 
 ## Source drafts
 

@@ -12,7 +12,7 @@ member_drafts:
 merged_from:
   - K13
   - K14
-open_questions: 4
+open_questions: 2
 ---
 
 # Add a "Which DocumentDB is this?" naming block, state the vCore plus storage billing model (no request units), and retire stale "Cosmos DB for MongoDB vCore" strings
@@ -43,13 +43,13 @@ The kit never tells an agent what Azure DocumentDB used to be called, which simi
 In one 100-sample agent-readiness run (gpt-5-mini building Azure DocumentDB sample apps with this kit plus the DocumentDB, Azure and Learn MCP servers), each run first answered cold quiz questions. Two of them failed in almost every sample, and both failures trace to the same missing statement of identity:
 
 - **Billing (from K13): 88 of 100 samples.** "How is capacity provisioned and billed?" was answered wrong or partly wrong in every recorded answer. Each answer asserted RU/s provisioning with manual or autoscale throughput, and some added a serverless RU mode; most confused the service with Azure Cosmos DB for MongoDB (RU), a few with Azure Cosmos DB for NoSQL. Once the agent read `learn.microsoft.com/azure/documentdb/pricing-explained`, its answer was correct, so Learn is not the gap; the kit simply never states the fact.
-  - The wrong belief leaked into the agent's code audits, which load the kit: RU and autoscale "best practices" appeared in roughly 46 of 221 audits, and about 32 checks were marked "violated" for things such as not logging `requestCharge` or lacking rate limiting "to avoid RU spikes". These are false findings for a `Microsoft.DocumentDB/mongoClusters` resource. The audit figures may be partly inflated by the experiment harness grading against RU-API practices (Open question 2) and are provisional until a re-run after that harness fix. [needs SME confirmation]
+  - The wrong belief leaked into the agent's code audits, which load the kit: RU and autoscale "best practices" appeared in roughly 46 of 221 audits, and about 32 checks were marked "violated" for things such as not logging `requestCharge` or lacking rate limiting "to avoid RU spikes". These are false findings for a `Microsoft.DocumentDB/mongoClusters` resource. The audit figures may be partly inflated by the experiment harness grading against RU-API practices (Open question 1) and are provisional until a re-run after that harness fix. [needs SME confirmation]
   - Generated code contained no RU settings, so today's damage is wrong advice and wrong audit verdicts rather than broken deployments.
 - **Naming and lineage (from K14): 82 distinct samples** (93 flagged runs: 89 partly wrong, 1 wrong, 3 not verifiable). The question was "What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project?" The typical wrong answer: the 2014-2017 Azure DocumentDB became Azure Cosmos DB, so "Azure DocumentDB" today must be the MongoDB compatibility layer on the RU-based Cosmos DB account. Of the 93 flags, 77 were confusion with the legacy vCore naming, 14 with the open-source project, and 2 were unclassified.
   - Agents that grounded on this kit's `azure-deployment` skill still called the service "the precursor to Cosmos DB" and cited `microsoft/documentdb`, because the kit gives them nothing better.
   - Build risk recorded in the runs: reaching for `az cosmosdb`, `Microsoft.DocumentDB/databaseAccounts`, RU throughput settings and RU quickstarts instead of `az documentdb mongocluster`, `Microsoft.DocumentDB/mongoClusters` and vCore tier sizing.
 
-Together the two failures cover 96 distinct samples. Learn already answers both correctly (the overview's "Naming and history" section, `pricing-explained`, `compute-storage`), so no Learn change is requested. The agent reads `AGENTS.md` on every task and `azure-deployment` Step 0.5 on every deployment, and the kit is loaded before the agent writes anything, so one explicit statement in each gives the model something concrete to override its prior. Counts come from a single experiment run and should be read as indicative.
+Together the two failures cover 96 distinct samples. Learn already answers both correctly (the overview's "Naming and history" section, `pricing-explained`, `compute-storage`), so this PR requests no Learn change (the Learn gaps found while confirming the billing facts are listed under `CHANGELOG.md` below). The agent reads `AGENTS.md` on every task and `azure-deployment` Step 0.5 on every deployment, and the kit is loaded before the agent writes anything, so one explicit statement in each gives the model something concrete to override its prior. Counts come from a single experiment run and should be read as indicative.
 
 ## Proposed change (one PR, file by file)
 
@@ -62,7 +62,7 @@ Together the two failures cover 96 distinct samples. Learn already answers both 
 ## Which DocumentDB is this?
 
 - **Formerly:** *vCore-based Azure Cosmos DB for MongoDB*. Existing clusters, connection strings and APIs did not change with the rename.
-- **Resource type:** `Microsoft.DocumentDB/mongoClusters`, billed by vCore tier and storage, not request units. It is **not** *Azure Cosmos DB for MongoDB (RU)*, a different service on `Microsoft.DocumentDB/databaseAccounts`. `az cosmosdb` account commands and RU/throughput guidance do not apply here; use `az documentdb mongocluster` (documentdb CLI extension).
+- **Resource type:** `Microsoft.DocumentDB/mongoClusters`, billed by vCore tier and storage, not request units. It is **not** *Azure Cosmos DB for MongoDB (RU)*, a different service on `Microsoft.DocumentDB/databaseAccounts`. `az cosmosdb` account commands and RU/throughput guidance do not apply here; use `az documentdb mongocluster` (documentdb CLI extension, Azure CLI 2.75.0 or later). The older `az cosmosdb mongocluster` preview group targets the same `mongoClusters` resource type but is superseded by `az documentdb mongocluster`.
 - **Not Amazon DocumentDB**, an unrelated AWS service.
 - **Not the original Azure DocumentDB (2014-2017)**, which became Azure Cosmos DB. Today's Azure DocumentDB is built on the open-source, PostgreSQL-based [DocumentDB](https://github.com/documentdb/documentdb) engine.
 
@@ -72,10 +72,10 @@ When a user or an older document says "Cosmos DB for MongoDB vCore", treat it as
 
 ### How it is billed
 
-Azure DocumentDB is billed for **compute (cluster tier: vCores + memory, per shard) plus provisioned storage (GiB per month, per shard)**, scaled independently; tiers are Free, burstable M10/M20/M25, and M30 through M200. It has **no request units (RU/s), no autoscale RU, no provisioned-throughput API and no serverless capacity mode** - those belong to the separate Azure Cosmos DB for MongoDB (RU) and Azure Cosmos DB for NoSQL services. Do not carry over `Microsoft.DocumentDB/databaseAccounts` throughput settings, `requestCharge` instrumentation or 429/RU budgeting advice; the resource type here is `Microsoft.DocumentDB/mongoClusters`.
+Azure DocumentDB is billed for **compute (cluster tier: vCores + memory, per shard, priced per hour) plus provisioned storage (GiB per month, per shard)**, scaled independently; with high availability enabled each primary shard has a standby shard with the same compute and storage, which is billed too. Tiers are Free, burstable M10/M20/M25, and M30 through M200. It has **no request units (RU/s), no autoscale RU, no provisioned-throughput API and no serverless capacity mode** - those belong to the separate Azure Cosmos DB for MongoDB (RU) and Azure Cosmos DB for NoSQL services. Do not carry over `Microsoft.DocumentDB/databaseAccounts` throughput settings, `requestCharge` instrumentation or 429/RU budgeting advice; the resource type here is `Microsoft.DocumentDB/mongoClusters`.
 ```
 
-(The billing paragraph was proposed by K13 as an addition to the intro paragraph; placing it under the naming block keeps the intro sentence short and puts both identity facts in one place. The detailed billing facts are subject to Open question 1.)
+(The billing paragraph was proposed by K13 as an addition to the intro paragraph; placing it under the naming block keeps the intro sentence short and puts both identity facts in one place. The detailed billing facts are confirmed against current Learn pages and the Azure pricing page; see Resolved.)
 
 ### `README.md`
 
@@ -85,7 +85,7 @@ Azure DocumentDB is billed for **compute (cluster tier: vCores + memory, per sha
 ### Which DocumentDB is this?
 
 - **Formerly:** *vCore-based Azure Cosmos DB for MongoDB*. Existing clusters, connection strings and APIs did not change with the rename.
-- **Resource type:** `Microsoft.DocumentDB/mongoClusters`, billed by vCore tier and storage, not request units. It is **not** *Azure Cosmos DB for MongoDB (RU)*, a different service on `Microsoft.DocumentDB/databaseAccounts`. `az cosmosdb` account commands and RU/throughput guidance do not apply here; use `az documentdb mongocluster` (documentdb CLI extension).
+- **Resource type:** `Microsoft.DocumentDB/mongoClusters`, billed by vCore tier and storage, not request units. It is **not** *Azure Cosmos DB for MongoDB (RU)*, a different service on `Microsoft.DocumentDB/databaseAccounts`. `az cosmosdb` account commands and RU/throughput guidance do not apply here; use `az documentdb mongocluster` (documentdb CLI extension, Azure CLI 2.75.0 or later). The older `az cosmosdb mongocluster` preview group targets the same `mongoClusters` resource type but is superseded by `az documentdb mongocluster`.
 - **Not Amazon DocumentDB**, an unrelated AWS service.
 - **Not the original Azure DocumentDB (2014-2017)**, which became Azure Cosmos DB. Today's Azure DocumentDB is built on the open-source, PostgreSQL-based [DocumentDB](https://github.com/documentdb/documentdb) engine.
 
@@ -100,9 +100,9 @@ See [Naming and history](https://learn.microsoft.com/azure/documentdb/overview#n
 
 2. **Step 0.5, after "Ask the user **before** anything else in Step 1. The answer drives every default. Never assume." (line 55):** add
 
-   > The tier you choose is the compute billing unit (vCores + RAM, billed per hour for each shard); storage (GiB per shard) is billed separately, scaled independently, and can be increased but not decreased. There is no RU/s, autoscale RU or serverless option to configure - if the user asks for "throughput" or "RUs", explain that capacity is the M-tier (plus shards and storage) and point them to [Compute and storage](https://learn.microsoft.com/azure/documentdb/compute-storage) and [Pricing explained](https://learn.microsoft.com/azure/documentdb/pricing-explained).
+   > The tier you choose is the compute billing unit (vCores + RAM, billed per hour for each shard, and again for each standby shard when HA is enabled); storage (GiB per shard) is billed separately, scaled independently, and can be increased but not decreased. Compute can be scaled up or down, except that a cluster scaled to M30 or higher cannot return to a burstable tier (M10/M20/M25). There is no RU/s, autoscale RU or serverless option to configure - if the user asks for "throughput" or "RUs", explain that capacity is the M-tier (plus shards and storage) and point them to [Compute and storage](https://learn.microsoft.com/azure/documentdb/compute-storage) and [Pricing explained](https://learn.microsoft.com/azure/documentdb/pricing-explained).
 
-3. **Parameter table, line 153:** add `M25` to the full tier list (`M10`, `M20`, `M25`, `M30`, `M40`, `M50`, `M60`, `M80`, `M200`); `compute-storage` lists it as a burstable tier. [needs SME confirmation, see Open question 1]
+3. **Parameter table, line 153:** add `M25` to the full tier list (`M10`, `M20`, `M25`, `M30`, `M40`, `M50`, `M60`, `M80`, `M200`). `compute-storage` (ms.date 2026-07-27) lists M10, M20 and M25 as burstable tiers (M25: 2 burstable vCores, 8 GiB), and `limitations` (updated 2026-11-17) groups "M10, M20, and M25" as the single-shard Dev/Test tiers without in-region HA.
 
 ### `skills/connection/SKILL.md`
 
@@ -125,11 +125,11 @@ See [Naming and history](https://learn.microsoft.com/azure/documentdb/overview#n
 
 ### `skills/local-deployment/local-choose-deployment-method.md`
 
-- **Line 45:** link URL `https://github.com/microsoft/documentdb` -> `https://github.com/documentdb/documentdb`.
+- **Line 45:** link URL `https://github.com/microsoft/documentdb` -> `https://github.com/documentdb/documentdb`. The engine, the `documentdb-local` image (`ghcr.io/documentdb/documentdb/documentdb-local`) and the docs (documentdb.io) live under the `documentdb` GitHub organization; `microsoft/documentdb` is the legacy location, and the kit's own CHANGELOG entry of 2026-10-19 records the move.
 
 ### `skills/local-deployment/local-docker-compose-setup.md`
 
-- **Line 73:** link URL -> `https://github.com/documentdb/documentdb`, or the `ghcr.io/documentdb/documentdb/documentdb-local` package page, since the link is labelled "GHCR" (Open question 4).
+- **Line 73:** link URL -> `https://github.com/documentdb/documentdb`, or the `ghcr.io/documentdb/documentdb/documentdb-local` package page, since the link is labelled "GHCR". Either way the target is under the `documentdb` organization, not `microsoft/documentdb`; which of the two is a maintainer choice (Open question 2).
 
 ### `CONTRIBUTING.md`
 
@@ -145,7 +145,7 @@ See [Naming and history](https://learn.microsoft.com/azure/documentdb/overview#n
 
 Leave existing history (including line 220) as is; add a new entry for this PR per `CONTRIBUTING.md`.
 
-No Learn change is requested: `overview`, `pricing-explained` and `compute-storage` already state the naming history, the vCore plus storage model, and that the service does not charge request units.
+No Learn change is part of this PR: `overview`, `pricing-explained` and `compute-storage` already state the naming history, the vCore plus storage model, and that the service does not charge request units. Three Learn gaps found while confirming the billing facts are recorded in DECISIONS.md (topic 11) for the Learn filings, not here: the FAQ's "How does pricing work" answer omits that the tier and storage are billed for every physical shard (and again for each standby shard with HA); no Learn page states in words that regular tiers are billed per node per hour (only the autoscale page and the Azure pricing page's Hour/Month toggle show it); and the Azure pricing page tags only M25 as burstable while `compute-storage` marks M10, M20 and M25.
 
 ## Evidence
 
@@ -161,14 +161,17 @@ Run folders under `runs/` in the experiment repository:
 - `runs/09-lead-scoring-agent/20261124-204408/02-readiness.json` - describes the service as a compatibility layer on Cosmos storage; build risk "pick RU-based practices and APIs".
 - `runs/02-ai-powered-product-recommendations/20261124-181835/02-readiness.json` - wrong lineage; risk of wrong templates, CLI commands and API shapes.
 
-Naming facts are taken from the Learn overview's "Naming and history" section and the Azure DocumentDB FAQ; billing facts from `pricing-explained` and `compute-storage`.
+Naming facts are taken from the Learn overview's "Naming and history" section and the Azure DocumentDB FAQ ("The rename didn't change existing clusters, connection strings, or APIs.", ms.date 2026-11-06); billing facts from `pricing-explained`, `compute-storage` (ms.date 2026-07-27), `how-to-scale-cluster` (updated 2026-11-05), `high-availability` (ms.date 2026-10-28), `free-tier` (updated 2026-06-02), `limitations` (updated 2026-11-17), the FAQ and the Azure pricing page for Azure DocumentDB, as confirmed in DECISIONS.md (topic 11).
+
+## Resolved
+
+- **Billing details (per shard, hourly compute, storage grow-only, Free tier, M25 burstable).** All confirmed current: compute and storage apply to each shard and to each standby shard under HA, the pricing page prices compute per node with an Hour/Month toggle and the autoscale page states hourly billing (for the autoscale tier); storage "can only be increased, not decreased"; the Free tier is one lifetime cluster per subscription with 32 GB storage in limited regions; and M10, M20 and M25 are the burstable tiers (a cluster scaled to M30+ cannot go back to them). Sources (DECISIONS.md topic 11): `compute-storage` (ms.date 2026-07-27), `how-to-scale-cluster` (updated 2026-11-05), `high-availability` (ms.date 2026-10-28), the Azure pricing page for Azure DocumentDB, `autoscale`, `faq` (updated 2026-11-07), `free-tier` (updated 2026-06-02), `limitations` (updated 2026-11-17).
+- **Canonical engine link.** `github.com/documentdb/documentdb` is the engine's home: the image (`ghcr.io/documentdb/documentdb/documentdb-local`) and docs (documentdb.io) live under the `documentdb` GitHub organization, the old `ghcr.io/microsoft/documentdb` image has had no new tags since 2025-08-25, and the kit's CHANGELOG (2026-10-19) records the move off it; `microsoft/documentdb` is legacy. Sources (DECISIONS.md topic 12): kit CHANGELOG.md lines 3-11; GHCR tag listing observed 2026-11-25; documentdb.io/docs/documentdb-local/.
 
 ## Open questions
 
-1. The billing text adds details beyond "vCores plus storage, no RUs": billing per shard, per-hour compute, storage that can grow but not shrink, the Free tier and M25 as a burstable tier. These match the current Learn pages (`pricing-explained`, `compute-storage`), but please confirm they are current before merging, since the sentences will be read as authoritative by agents. [needs SME confirmation]
-2. Part of the audit-stage noise (the roughly 32 false "violated" checks) may come from the experiment harness grading against RU-API practices, which is being fixed separately. The cold-answer failures (88 and 82 samples) stand on their own; the audit figures should not be quoted externally until a re-run after that harness fix. [needs SME confirmation]
-3. Is `github.com/documentdb/documentdb` the link the team wants agents to use for the engine everywhere, with `microsoft/documentdb` treated as legacy?
-4. For `local-docker-compose-setup.md` line 73, should the link go to the engine repository or to the GHCR `documentdb-local` package page?
+1. Part of the audit-stage noise (the roughly 32 false "violated" checks) may come from the experiment harness grading against RU-API practices, which is being fixed separately. The cold-answer failures (88 and 82 samples) stand on their own; the audit figures should not be quoted externally until a re-run after that harness fix. [needs SME confirmation]
+2. For `local-docker-compose-setup.md` line 73, should the link go to the engine repository (`github.com/documentdb/documentdb`) or to the GHCR `documentdb-local` package page? Both are under the `documentdb` organization; this is a maintainer preference.
 
 The naming statements themselves (from K14) were not flagged as needing SME confirmation; each mirrors Learn.
 

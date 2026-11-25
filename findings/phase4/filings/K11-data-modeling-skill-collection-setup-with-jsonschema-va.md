@@ -11,7 +11,7 @@ member_drafts:
   - 071-swift-message-sample-stores-monetary-amounts-as-float-withou.md
   - 123-data-modeling-document-design-conventions-and-query-patterns.md
   - 102-write-path-integrity-non-idempotent-and-non-atomic-writes-in.md
-open_questions: 2
+open_questions: 1
 ---
 
 # data-modeling skill: collection setup with $jsonSchema validators, Decimal128 money, BSON dates, and idempotent atomic writes
@@ -20,7 +20,7 @@ open_questions: 2
 
 `skills/data-modeling/SKILL.md` has five rules: embed-vs-reference, 16 MB limit, denormalize reads, schema versioning, large-field split. Nothing in the skill tells an agent what to do when it **creates a collection** or **writes a business record**:
 
-- No `$jsonSchema` validator guidance. Azure DocumentDB supports validators through `createCollection`/`collMod` (`validationLevel`, `validationAction`), with a subset of keywords. The kit has no mention of it.
+- No `$jsonSchema` validator guidance. Azure DocumentDB supports validators through `createCollection`/`collMod` (`validationLevel`, `validationAction`) with a subset of keywords, as a preview feature (Learn release notes, 2025-10-10); a cluster where it is not enabled answers `CommandNotSupported` "validator not supported yet". The kit mentions neither the feature nor the error.
 - No field-type guidance. Nothing says to store money as Decimal128 or integer minor units (`grep -ri decimal128 skills/` returns nothing) or to store timestamps as BSON `Date`.
 - No lifetime decision per collection. TTL appears only as an index type in `skills/indexing/index-ttl-expiry.md`, and that file lists "short-lived audit logs" as a TTL use case with no warning against TTL on ledgers or compliance audit trails.
 - `$push`/`$each`/`$slice` appears only once, as an optional snippet in `model-16mb-limit.md`. It is not applied to state-machine history. `schemaVersion` is presented as a migration aid, not something to write on every insert. Nothing covers persisting agent memory.
@@ -64,7 +64,8 @@ Add the six new files to the Rules list. Extend the `description` with: "…sche
 ### 2. New `data-modeling/model-schema-validation.md` (HIGH)
 
 - **Why it matters:** Implicit collections accept any document shape. A validator rejects bad ids, timestamps, status values and wrong-length embedding arrays at the server. A vector whose length does not match the index `dimensions` silently produces wrong results (see `vector-search/vector-create-diskann-index`).
-- **Supported keywords:** `bsonType`, `required`, `properties`, `items`, `minItems`/`maxItems`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, and others. Link the Learn keyword table: https://learn.microsoft.com/en-us/documentdb/query/operators/evaluation-query/$jsonschema . Constrain string values with `pattern` (see Open questions on `enum`).
+- **Preview status:** Collection validators are a preview feature (Learn release notes, 2025-10-10: "[Preview] Add schema validation support for $jsonSchema during rule creation or modification"). On a cluster where it is not enabled, `createCollection`/`collMod` with `validator`, `validationLevel` or `validationAction` fails with `CommandNotSupported` "validator not supported yet" (engine `pg_documentdb/src/metadata/collection.c`, EnableSchemaValidation gate). The setup script must catch that error, log that validators are not enabled on the cluster, and continue; the enablement path is not documented on Learn (see Open questions). Validation applies to `insert`, `update`, `findAndModify` and the `$merge`/`$out` stages, and `bypassDocumentValidation` skips it (Learn compatibility page).
+- **Supported keywords:** `bsonType`, `required`, `properties`, `items`, `minItems`/`maxItems`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, and others. Link the Learn keyword table: https://learn.microsoft.com/en-us/documentdb/query/operators/evaluation-query/$jsonschema . Not supported: `additionalProperties`, `allOf`/`anyOf`/`not`, `patternProperties`, `dependencies`, `minProperties`/`maxProperties`, `$ref`, `format`, `default`; `type: "integer"` and dot-notation property paths are rejected, so use `bsonType: "int"`/`"long"` and nested `properties`. Constrain string values with `pattern` (or `$in` in application logic): Learn lists `enum` and `oneOf` as unsupported; the open-source engine parses both since July 2026, but whether managed clusters run that build is unconfirmed (see Open questions), so the rule does not use them.
 - **Incorrect:** `await db.collection("leads").insertMany(docs)` with no validator.
 - **Correct:**
 
@@ -93,7 +94,7 @@ Add the PyMongo equivalent (`create_collection(..., validator=...)`, `command("c
 
 ### 4. New `data-modeling/model-dates-bson-utc.md` (MEDIUM)
 
-Store timestamps as BSON `Date` (UTC), never as strings or local time. TTL indexes only expire `Date` values. Query with `$gte`/`$lt` ranges. Bucket by local time with `$dateTrunc`/`$dateToParts` and a `timezone` argument. In compound indexes, put the date field after the equality fields (ESR order, see `indexing`).
+Store timestamps as BSON `Date` (UTC), never as strings or local time. TTL indexes are single-field and only expire BSON `Date` values: numbers, strings and missing fields are never deleted, and expiry lags by up to about a minute (engine `ttl_index.c` and `create_indexes.c`; Learn release notes 2025-10-10). Query with `$gte`/`$lt` ranges. Bucket by local time with `$dateTrunc`/`$dateToParts` and a `timezone` argument. In compound indexes, put the date field after the equality fields (ESR order, see `indexing`).
 
 ### 5. New `data-modeling/model-immutable-audit-records.md` (MEDIUM)
 
@@ -107,13 +108,13 @@ Use two collections. `raw_turns` holds one document per turn, with a validator, 
 
 Use draft 102's rule text as is. Its first sentence ("Azure DocumentDB does not support retryable writes ...") is correct; replace it with the canonical one-liner from `findings/phase4/DECISIONS.md`: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)." Follow it with: "Every retry your application issues must be safe to repeat." Cite documentdb/documentdb#767 for the de-duplication gap. Do not claim that `retryWrites=true` causes connection errors; that is not established. Sections:
 
-- Unique index on the business key, partial when the key is optional, with a note to test partial unique indexes on your cluster.
+- Unique index on the business key, created before loading data (expect a unique index build to block writes). When the key is optional, use `{ unique: true, partialFilterExpression: { key: { $exists: true } } }`: the engine accepts unique partial indexes whose filter uses `$exists: true`, `$gt`-style comparisons, exact `$type`, top-level `$and`/`$or` or `$in` with scalars; it rejects `$exists: false` and mixing `partialFilterExpression` with `sparse` (engine `create_indexes.c` and regression tests; Learn's indexing page says only "unless the filter qualifies").
 - Upsert with `$setOnInsert` for create-once fields such as `createdAt`.
 - One atomic `findOneAndUpdate` instead of find → mutate → `save()`: version in the filter, `$inc` the version, `$push` with `$slice`. Include a Beanie example covering `get_motor_collection()` in 1.x and `get_pymongo_collection()` in 2.x, and a Mongoose guarded decrement.
-- A version-in-filter retry loop, with the statement that Azure DocumentDB has no `_etag`/`If-Match`.
-- `withTransaction` only for multi-document changes, with external side effects kept outside the callback (it may run more than once).
+- A version-in-filter retry loop, with the statement that `_etag`/`If-Match` belong to Cosmos DB for NoSQL: optimistic concurrency on Azure DocumentDB is an application pattern (own version field in the update filter), not a service feature.
+- `withTransaction` only for multi-document changes, kept well inside the 30-second transaction lifetime (Learn limitations), with no `createIndexes` or other DDL inside it (refused with code 263) and no explicit `readConcern`/`writeConcern` in the transaction options. The service returns `WriteConflict` (code 112) and `NoSuchTransaction` (251) without the `TransientTransactionError` label (documentdb/documentdb#339, #836), so `withTransaction` does not retry them: catch 112 and 251 and re-run the whole transaction in application code with bounded attempts and backoff. Keep external side effects outside the callback, because that re-run executes it again.
 - Side effects only after `upsertedCount === 1`.
-- Inspect `bulkWrite` `writeErrors`, treating E11000 as "already applied".
+- Inspect `bulkWrite` `writeErrors`, treating E11000 as "already applied", and chunk `insertMany`/`bulkWrite` at or below 25,000 writes per request (Learn limitations: batches over 25,000 writes fail). Collection-level `bulkWrite()` works; the compatibility page's `bulkWrite: No` row is the MongoDB 8.0 database-level command.
 - Validate LLM output (type, enum and range) before `$set`, and append it to a capped history array with the model id.
 
 ### 8. `data-modeling/model-16mb-limit.md`
@@ -126,7 +127,7 @@ Add: "Write `schemaVersion` on every insert and seed document. For pipeline-prod
 
 ### 10. `indexing/index-ttl-expiry.md`
 
-Add one line: "TTL suits short-lived operational logs, not ledgers or compliance audit trails. See data-modeling/model-immutable-audit-records."
+Add one line: "TTL suits short-lived operational logs, not ledgers or compliance audit trails. See data-modeling/model-immutable-audit-records." Also correct lines 12, 42 and 92 (and the matching `~60s` on `indexing/index-pattern-cookbook.md:238`): "a background thread deletes expired documents roughly every 60 seconds" describes the old behaviour; write "expiry lags by up to about a minute" and cite the Learn release note of 2025-10-10 (TTL deletions run continuously for up to 60 seconds, preview) and the engine source for the single-field and Date-only rules, since Learn has no TTL page.
 
 ### 11. `driver/SKILL.md`
 
@@ -147,10 +148,13 @@ Not in this PR: the `retryWrites: true` values in `connection/SKILL.md`, `driver
 
 retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
 
+`enum` and the other keywords Learn lists as unsupported: Learn's list is current for the documentation and `pattern` is the right constraint; the open-source engine's main branch parses `enum` (merged 2026-07-23) and `oneOf` (merged 2026-07-16), while `additionalProperties`, `allOf`, `anyOf`, `not`, `patternProperties`, `dependencies`, `minProperties` and `maxProperties` still fail with "Unknown $jsonSchema keyword", and collection validators themselves are a gated preview (release notes 2025-10-10) that returns `CommandNotSupported` "validator not supported yet" until enabled. Sources: https://learn.microsoft.com/en-us/documentdb/query/operators/evaluation-query/$jsonschema ; https://learn.microsoft.com/en-us/azure/documentdb/release-notes ; https://learn.microsoft.com/en-us/azure/documentdb/compatibility-query-language ; engine `pg_documentdb/src/jsonschema/bson_json_schema_tree.c` and `pg_documentdb/src/metadata/collection.c` (findings/phase4/DECISIONS.md, topic 10).
+
+Partial unique index with `$exists: true`: accepted. The engine creates unique indexes with a `partialFilterExpression` and allows `$exists` in the filter when its value is true (also `$gt`-style comparisons, exact `$type`, top-level `$and`/`$or`, scalar `$in`), and rejects `$exists: false` and mixing `partialFilterExpression` with `sparse`; Learn's "unless the filter qualifies" is undefined and is a Learn fix, not a rule change. Sources: engine `pg_documentdb/src/commands/create_indexes.c` and regression tests `commands_create_indexes_background_unique_tests.out` and `bson_aggregation_stage_merge_tests.out`; https://learn.microsoft.com/en-us/azure/documentdb/indexing (findings/phase4/DECISIONS.md, topic 10).
+
 ## Open questions
 
-1. [needs SME confirmation] The Learn `$jsonSchema` page lists `enum` (and `additionalProperties`, `allOf`/`anyOf`/`oneOf`/`not`, `patternProperties`, `min/maxProperties`, `dependencies`) as unsupported. Is that current? The rule uses `pattern`, which works either way. If `enum` is supported, the rule should say so.
-2. [needs SME confirmation] Learn says partial indexes do not support `UNIQUE` "unless the filter qualifies". Is `{ unique: true, partialFilterExpression: { key: { $exists: true } } }` accepted? If it is not, the rule should tell agents to make the key required instead.
+1. [needs SME confirmation] Which engine build the managed service runs, so whether `$jsonSchema` `enum` and `oneOf` (engine main since July 2026, still listed as unsupported on Learn) are live on Azure clusters, and what the self-serve path is to enable collection validators (`validator`/`validationLevel`/`validationAction`) on a cluster. Until answered, the rule says: preview, enablement not documented on Learn, expect `CommandNotSupported` "validator not supported yet" until enabled, and uses `pattern`/`$in` instead of `enum`.
 
 ## Source drafts
 

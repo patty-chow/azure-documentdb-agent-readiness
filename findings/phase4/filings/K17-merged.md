@@ -14,7 +14,7 @@ merged_from:
   - K17
   - K18
   - K19
-open_questions: 6
+open_questions: 1
 ---
 
 # full-text-search skill: Azure AI Search is not required, document preview enablement with `CommandNotSupported` fail-fast, and add the server-side `$unionWith` RRF hybrid pipeline
@@ -29,7 +29,7 @@ All counts come from one experiment run: gpt-5-mini built 100 Azure DocumentDB s
 
 1. **It never says Azure AI Search is not needed** (from K17). The skill never names the architecture agents bring over from Azure Cosmos DB for NoSQL and Cosmos DB for MongoDB (RU): sync documents into Azure AI Search (formerly Azure Cognitive Search) through a change feed, indexer or custom ETL, and run BM25 and hybrid ranking there. `grep -rniE 'ai search|cognitive|cosmos db for nosql|external search' skills/` returns no hits. The single-store fact is only implicit: `SKILL.md` says "Combine BM25 and vector search (RRF) on the same collection", and `fts-hybrid-search.md` says both index types work on the same collection. `fts-hybrid-search.md` References links only `vector-search` and `overview`, and `skills/indexing/index-text-prefer-textsearch.md` links the bare `https://learn.microsoft.com/azure/documentdb/` root. Learn already states the point: `full-text-search-overview` says the engine works without a separate search cluster, and `full-text-search-hybrid` ("Architecture: two indexes, one collection") says there is no replication or synchronization layer and both index types are included at no extra cost.
 
-2. **It never says full-text search must be enabled first** (from K19). Nothing in `SKILL.md` or `fts-create-search-index.md` says that full-text search is a **preview** feature, **off by default**, that must be enabled per cluster before `createSearchIndexes` or `$search` works [needs SME confirmation: current preview/GA status]; that Learn says to wait **about 10 minutes** after enabling; or that on a cluster without the feature `createSearchIndexes` returns `{ ok: 0, code: 115, codeName: "CommandNotSupported", errmsg: "Search index creation is not supported yet" }` (seen in run logs; Learn does not document this string) [needs SME confirmation]. A grep for `preview`, `enable`, `FullTextSearch`, `CommandNotSupported` or `prerequisite` over `skills/full-text-search/` and `knowledge-base/` finds only an unrelated `dynamic: true` guideline. Learn documents the steps ([Enable full-text search](https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search): portal Settings > Features > Full-text search > Enable; an `az rest` PATCH adding `FullTextSearch` to `properties.previewFeatures` on `Microsoft.DocumentDB/mongoClusters`, api-version `2024-07-01`; AzAPI and Bicep variants).
+2. **It never says full-text search must be enabled first** (from K19). Nothing in `SKILL.md` or `fts-create-search-index.md` says that full-text search is a **preview** feature (the Learn overview, updated 2026-11-17, says it "remains in preview" while `$text` and classic text indexes are GA), **off by default**, that must be enabled per cluster before `createSearchIndexes` or `$search` works; that Learn says to wait **10 minutes** after enabling before creating a search index or running a query; or that on a cluster without the feature `createSearchIndexes` returns `{ ok: 0, code: 115, codeName: "CommandNotSupported", errmsg: "Search index creation is not supported yet" }` (observed in run logs against a cluster without the preview enabled; Learn does not document this string). A grep for `preview`, `enable`, `FullTextSearch`, `CommandNotSupported` or `prerequisite` over `skills/full-text-search/` and `knowledge-base/` finds only an unrelated `dynamic: true` guideline. Learn documents the steps ([Enable full-text search](https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search): portal Settings > Features > Full-text search > Enable; an `az rest` PATCH adding `FullTextSearch` to `properties.previewFeatures` on `Microsoft.DocumentDB/mongoClusters`, api-version `2024-07-01`; AzAPI and Bicep variants). Enablement is self-serve; the release-notes line saying preview features need a support request is stale.
 
 3. **It teaches only client-side hybrid fusion** (from K18). `fts-hybrid-search.md` runs the keyword `$search` arm, runs the `cosmosSearch` vector arm, then fuses the arrays with a JavaScript `rrf()` helper. Its intro says you can "execute both queries in one round trip and combine them in the application", but the example makes two aggregation calls, so it is not one round trip. Nothing in the kit mentions `$unionWith` or server-side fusion (`grep -rniE 'unionWith|server-side'` over `skills/` and `knowledge-base/` finds two unrelated lines). The Learn page [Hybrid search in Azure DocumentDB](https://learn.microsoft.com/azure/documentdb/full-text-search-hybrid) documents both a client-side helper and "Server-side RRF with `$unionWith`", recommending server-side for one round trip and no fusion code, and client-side when fusing more ranked lists. Per-arm weighting works in both.
 
@@ -56,18 +56,18 @@ Together: the kit should say in one place that search runs in the cluster (no AI
 ```markdown
 ## Prerequisite: enable the full-text search preview on the cluster
 
-Full-text search (`createSearchIndexes` + `$search`) is a **preview** feature and is **off by default**. Enable it once per cluster before creating a search index or running `$search`:
+Full-text search (`createSearchIndexes` + `$search`) is a **preview** feature and is **off by default**. Enablement is self-serve (no support request). Enable it once per cluster before creating a search index or running `$search`:
 
 - **Azure portal:** open the cluster > **Settings** > **Features** > **Full-text search** > **Enable**.
 - **ARM / CLI / IaC:** add `"FullTextSearch"` to `properties.previewFeatures` on the `Microsoft.DocumentDB/mongoClusters` resource (api-version `2024-07-01`), preserving any other preview features already listed. Exact `az rest`, Terraform (AzAPI) and Bicep snippets: https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search
-- **Wait ~10 minutes** after enabling. Seeing `FullTextSearch` in the resource configuration does not mean activation has finished.
+- **Wait 10 minutes** after enabling before creating a search index or running a query. Seeing `FullTextSearch` in the resource configuration does not mean activation has finished.
 
-Learn documents no cluster-tier restriction for full-text search (unlike HNSW/DiskANN vector indexes); the preview flag is the documented prerequisite. The GA `$text` operator and `{ field: "text" }` indexes are unaffected by the flag and are **not** a substitute.
+Full-text search has no cluster-tier restriction (the Learn limitations page lists none; HNSW and DiskANN vector indexes, by contrast, need M30 or higher); the preview flag is the only prerequisite. The GA `$text` operator and `{ field: "text" }` indexes are unaffected by the flag and are **not** a substitute.
 
 **In generated samples:** do not assume the flag is on. Treat `createSearchIndexes` failing with `code: 115` / `codeName: "CommandNotSupported"` (errmsg `Search index creation is not supported yet`) as "feature not enabled yet": fail fast with a message that names the portal path and the Learn anchor above, and do not silently fall back to a `{ field: "text" }` index.
 ```
 
-If open question 1 finds full-text search is GA, reword this section to whatever enablement remains and drop the "preview" wording.
+Settled 2026-11-25: full-text search is preview, not GA (Learn overview updated 2026-11-17; DocumentDB blog post of 2026-11-17), so the "preview" wording stays.
 
 **b. Add after the "Key syntax points" list, before `## Rules`** (from K17):
 
@@ -83,7 +83,7 @@ The Azure Cosmos DB for NoSQL / RU pattern of syncing documents into **Azure AI 
 **Correct**: `runCommand({ createSearchIndexes })` + `$search` for BM25, `createIndex` with a `cosmosSearch` key for vectors, both on the same collection; fuse with RRF ([fts-hybrid-search](fts-hybrid-search.md)).
 ```
 
-("no extra cost" is subject to open question 3.)
+("no extra cost" is Learn's own wording: the hybrid page says "Both full-text and vector search are included with your cluster at no extra cost", and the DocumentDB blog post of 2026-11-17 says there is no separate feature charge.)
 
 **c. Replace the `fts-hybrid-search` rule line** (from K18) with:
 
@@ -98,7 +98,7 @@ The Azure Cosmos DB for NoSQL / RU pattern of syncing documents into **Azure AI 
 ```markdown
 ## Prerequisite
 
-Full-text search is in preview and must be enabled on the cluster first (portal: Settings > Features > Full-text search > Enable, or `previewFeatures: ["FullTextSearch"]` via ARM). Allow ~10 minutes after enabling. See https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search. On a cluster without the flag, `createSearchIndexes` returns `code 115 CommandNotSupported: "Search index creation is not supported yet"`.
+Full-text search is in preview and must be enabled on the cluster first (self-serve; portal: Settings > Features > Full-text search > Enable, or `previewFeatures: ["FullTextSearch"]` via ARM). Allow 10 minutes after enabling before creating a search index or running a query. See https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search. On a cluster without the flag, `createSearchIndexes` returns `code 115 CommandNotSupported: "Search index creation is not supported yet"`.
 ```
 
 **b. Append to `## Correct`** (Node.js shown; in pymongo check `OperationFailure.code`):
@@ -111,7 +111,7 @@ try {
     throw new Error(
       "Full-text search is not enabled on this Azure DocumentDB cluster. " +
       "Enable it (portal: Settings > Features > Full-text search > Enable, or add " +
-      "\"FullTextSearch\" to previewFeatures), wait ~10 minutes, then rerun. " +
+      "\"FullTextSearch\" to previewFeatures), wait 10 minutes, then rerun. " +
       "https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search"
     );
   }
@@ -119,7 +119,10 @@ try {
 }
 ```
 
-**c. Add to the guidelines list:** "**Check the preview flag before you debug index syntax.** `CommandNotSupported` means the feature is off (or still activating), not that the index definition is wrong."
+**c. Add two items to the guidelines list:**
+
+- "**Check the preview flag before you debug index syntax.** `CommandNotSupported` (code 115) means full-text search is not enabled yet on the cluster, not that the index definition is wrong. If you enabled it less than 10 minutes ago, wait and retry." (Whether the same code is returned during the activation window is open question 1; the wording above holds either way.)
+- "**Wait for the index to be ready.** After `createSearchIndexes` returns, poll `$listSearchIndexes` until the index reports `status: "READY"` and `queryable: true` before running `$search`." The Learn keyword and structured-search pages and the limitations page ("Search-index management supports creation and listing") use `$listSearchIndexes` this way; the compatibility table row marking it unsupported is stale. Our runs never called it, so this rests on documentation.
 
 **d. Add to `## References`:**
 
@@ -130,9 +133,9 @@ try {
 
 **a. Replace the intro sentence** that starts "Azure DocumentDB supports both index types on the same collection..." with (from K18; also carries K17's "no external search service" point):
 
-> Azure DocumentDB supports both index types on the same collection, so hybrid search needs no external search service. Fuse the two arms with Reciprocal Rank Fusion (RRF) in one of two ways. **Server-side** fusion runs in one aggregation pipeline (`$unionWith` + `$group`): one round trip and no fusion code. **Client-side** fusion runs both arms and fuses them in the app, which makes it easy to add more ranked lists. `$search` `compound` is not yet available (see `fts-multifield-index`), so the keyword arm is a single `text` clause either way.
+> Azure DocumentDB supports both index types on the same collection, so hybrid search needs no external search service. Fuse the two arms with Reciprocal Rank Fusion (RRF) in one of two ways. **Server-side** fusion runs in one aggregation pipeline (`$unionWith` + `$group`): one round trip and no fusion code. **Client-side** fusion runs both arms and fuses them in the app, which makes it easy to add more ranked lists. The keyword arm is a single `text` clause or a `compound` clause (`must` / `should` / `mustNot` / `filter`; only `minimumShouldMatch` is unsupported).
 
-The last sentence is subject to open question 2; if `compound` is now available, drop it.
+(`compound` is available per the Learn structured-search page and the overview's "What's available today"; the kit's existing "not available yet" statements are wrong, see change 5.)
 
 **b. Rename the existing step 2** to "Option A: client-side RRF (extra ranked lists)". Leave its code unchanged.
 
@@ -181,7 +184,7 @@ To weight an arm, multiply that arm's `$divide` expression by a weight `w`, for 
 | Server-side `$unionWith` (Option B) | Default for two arms, weighted or not. One round trip, no fusion code, and only the projected fields of the fused top N leave the server. |
 | Client-side `rrf()` (Option A) | You fuse a third list (a phrase arm, another retriever, business signals) without rewriting the pipeline each time, or you cache one arm's results separately. |
 
-**e. Tips.** Keep the existing tips (20-100 candidates per arm, weight multiplier, embedding cache, and the "when `compound` ships" tip, which is subject to open question 2). Say that `DEPTH` and `K` apply to both options. The weight tip today reads `score += w / (k + rank)`; rewrite it with the same formula the helper uses: `score += w / (k + rank + 1)`. Add one tip: each arm can use its own RRF `k`. Do not say which arm should get the larger `k` (open question 4).
+**e. Tips.** Keep the existing tips (20-100 candidates per arm, weight multiplier, embedding cache). Rewrite the "when `compound` ships" tip in the present tense: `compound` is available, so a keyword arm that needs several clauses uses `compound` with `must` / `should` / `mustNot` / `filter` (`minimumShouldMatch` is unsupported). Say that `DEPTH` and `K` apply to both options. The weight tip today reads `score += w / (k + rank)`; rewrite it with the same formula the helper uses: `score += w / (k + rank + 1)`. Add one tip: each arm can use its own RRF `k`, and a **smaller** `k` penalizes that arm's lower-ranked hits more aggressively (with score 1/(k + rank), k = 10 makes rank 1 worth about 5.5 times rank 50; k = 60 about 1.8 times); the Learn hybrid page's example gives the vector arm k = 60 and the keyword arm k = 10. Do not copy the Learn tuning bullet's phrase "a larger k for the keyword query": its example is right and the word "larger" is wrong (a Learn fix, outside this PR).
 
 **f. Replace the References section** (K17's list, which also covers K18's request to link the Learn hybrid page):
 
@@ -203,10 +206,13 @@ Likewise, don't reach for Azure AI Search (Cognitive Search) by reflex: that pat
 
 In References, replace the bare `https://learn.microsoft.com/azure/documentdb/` link with `https://learn.microsoft.com/azure/documentdb/full-text-search-overview`.
 
+### 5. `compound` availability across `skills/full-text-search/` (settled 2026-11-25)
+
+`SKILL.md`, `fts-multifield-index.md` and `fts-hybrid-search.md` say `$search` `compound` is "not available yet". It is available: the Learn structured-search page and the overview's "What's available today" list `compound` with `must`, `should`, `mustNot` and `filter`; only `compound.minimumShouldMatch` is unsupported. Replace each "not available yet" statement with that fact, and reframe `fts-multifield-index.md`'s workaround so that a multi-field keyword query is shown as one `compound` clause where that is simpler than a multi-field index. Sources: https://learn.microsoft.com/azure/documentdb/full-text-search-structured, https://learn.microsoft.com/azure/documentdb/full-text-search-overview.
+
 ### Out of scope
 
 - Samples that used `createSearchIndexes` to create vector indexes (those belong to `createIndexes` + `cosmosSearch`); separate vector-search item.
-- The `compound` drift between `SKILL.md` / `fts-multifield-index.md` / `fts-hybrid-search.md` ("not available yet") and the current Learn overview (lists `compound` with `equals`, `range`, `exists`, `in`); fix separately once open question 2 is answered.
 
 ## Evidence
 
@@ -228,14 +234,18 @@ Run folders in the experiment harness repository:
 14. `runs/15-financial-advisor-chatbot-rag/20261124-192021/02-readiness.json`: build-risk note about missing preview flag (K19)
 15. `runs/04-natural-language-product-search/20261124-183232/app/indexes/README.md`: template with no enablement step (K19)
 
+## Resolved
+
+1. Preview or GA: full-text search is in preview, not GA (`$text` and classic text indexes are GA); enablement is self-serve (portal Settings > Features > Full-text search > Enable, `az rest` PATCH of `properties.previewFeatures` adding `FullTextSearch`, Terraform AzAPI or Bicep) and Learn says to wait 10 minutes before creating a search index or running a query; the release-notes line saying preview features need a support request is stale. Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview (dated 2026-11-04, updated 2026-11-17); DocumentDB blog post of 2026-11-17 (https://devblogs.microsoft.com/documentdb/?p=259); https://learn.microsoft.com/en-us/azure/documentdb/release-notes (stale sentence).
+2. `compound` availability: `compound` is available with `must`, `should`, `mustNot` and `filter`; only `compound.minimumShouldMatch` is unsupported, so the kit's "not available yet" statements are wrong (change 5). Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-structured; https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview ("What's available today").
+3. No extra cost: Learn states "Both full-text and vector search are included with your cluster at no extra cost", and the blog post says there is no separate feature charge, so change 1b states it without a qualifier. Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-hybrid; DocumentDB blog post of 2026-11-17.
+4. RRF `k` direction: the Learn example (k = 60 for the vector arm, k = 10 for the keyword arm) is right and the word "larger" in the tuning bullet is wrong, because with score 1/(k + rank) a smaller k penalizes lower ranks more (k = 10: rank 1 scores about 5.5 times rank 50; k = 60: about 1.8 times); a Learn doc fix, no SME needed, and change 3e now states the direction. Source: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-hybrid (tuning bullet and example).
+5. Code 115 on a cluster without the preview: `CommandNotSupported`, code 115, "Search index creation is not supported yet" was observed when `createSearchIndexes` ran against a cluster without the preview enabled; no Learn page documents it, so this filing cites the observation and Learn should document the error next to the enablement steps (the activation-window half of the original question stays open below). Sources: `runs/07-voice-of-customer-sentiment-hub/20261124-204049` and `runs/11-correspondent-banking-risk-screener/20261124-201541` (Evidence items 7 and 8); DECISIONS.md topic 7.
+6. Tier restriction: the Learn limitations page lists no tier restriction for full-text search (HNSW and DiskANN vector indexes need M30 or higher; the limitations page's free-tier line saying HNSW needs M40 is stale), so change 1a states it as fact. Sources: https://learn.microsoft.com/en-us/azure/documentdb/limitations; release note 2025-07-15 (https://learn.microsoft.com/en-us/azure/documentdb/release-notes).
+
 ## Open questions
 
-1. Is full-text search still in preview, and does it still need `FullTextSearch` enabled under `previewFeatures` with a ~10-minute wait, or has it reached GA (or a GA date been set)? Learn shows it as preview today. If GA, change the prerequisite text in changes 1a and 2a to whatever enablement remains and drop the "preview" wording. [needs SME confirmation]
-2. Is `$search` `compound` still unavailable? `SKILL.md`, `fts-multifield-index.md` and `fts-hybrid-search.md` say it is not available yet, and the proposed hybrid intro (3a) repeats that, but the current Learn `full-text-search-overview` lists `compound` (with `equals`, `range`, `exists`, `in`) as available. [needs SME confirmation]
-3. Are full-text and vector indexes included at no extra cost on every vCore tier, as the Learn hybrid page says, so the kit can state this without a qualifier (change 1b)? [needs SME confirmation]
-4. The Learn tuning bullet says to use "larger k for the keyword query", but its example gives the keyword arm the smaller value (k = 10). Which direction is correct? Until engineering answers, this PR leaves the direction out (change 3e), and the Learn page may need its own fix. [needs SME confirmation]
-5. Is `code 115 CommandNotSupported` / "Search index creation is not supported yet" the stable, intended error for a cluster without the feature, and also during the ~10-minute activation window? It was observed in run logs only; Learn does not document it. [needs SME confirmation]
-6. Is there truly no tier or SKU restriction on full-text search? Learn's limitations page lists none; the proposed text says only that Learn documents none. [needs SME confirmation]
+1. Is `code 115 CommandNotSupported` / "Search index creation is not supported yet" also returned during the 10-minute activation window after enabling the preview, or a different error? Not blocking: changes 1a and 2 tell agents to wait 10 minutes and to treat code 115 as "feature not enabled yet". [needs SME confirmation]
 
 ## Source drafts
 

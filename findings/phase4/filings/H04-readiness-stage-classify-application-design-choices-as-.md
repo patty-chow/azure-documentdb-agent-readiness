@@ -128,7 +128,7 @@ Out of scope: a generic seed-data recipe for the agent kit's data-modeling skill
 
 ## Open questions
 
-This change makes no claims about Azure DocumentDB itself, so no item needs SME confirmation, and the retryWrites question does not arise.
+This change makes no claims about Azure DocumentDB itself, so no item needs SME confirmation, and the retryWrites question does not arise. DECISIONS.md (2026-11-25) records no settled or open SME item that touches this filing; the three items below are maintainer decisions for the harness repository.
 
 1. `loop/` exists only in the samples-loop fork, not upstream `main`. Should step 6 land in the fork, with steps 1-5 and 7-8 upstream?
 2. Should the two labels share one name (`builder_decision` for gaps, `design_choice` for confusions), so reports and triage group them together?

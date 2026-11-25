@@ -9,7 +9,7 @@ sample_count: 23
 member_drafts:
   - 074-connect-and-authenticate-canonical-srv-connection-string-exp.md
   - 046-entra-id-mongodb-oidc-and-cosmossearchoptions-how-to-pages-s.md
-open_questions: 5
+open_questions: 2
 ---
 
 # Quickstarts: explain the SRV connection string and add a "Choose an authentication method" section that surfaces the Entra ID samples
@@ -18,18 +18,19 @@ open_questions: 5
 
 ## What happens today
 
-- **The quickstarts paste the `mongodb+srv://` string into code with no explanation.** "Get cluster credentials" is portal-only: it does not mention `az documentdb mongocluster list-connection-strings` (`documentdb` extension) or warn that Azure Cosmos DB for MongoDB (RU) strings (`:10255`, `replicaSet=globaldb`) do not work here.
+- **The quickstarts paste the `mongodb+srv://` string into code with no explanation.** "Get cluster credentials" is portal-only: it does not mention `az documentdb mongocluster list-connection-strings` (`documentdb` extension) or warn that Azure Cosmos DB for MongoDB (RU) strings (`:10255`, `replicaSet=globaldb`) do not work here. The code hard-codes `<your-cluster-name>.global.mongocluster.cosmos.azure.com` while the text says to copy "the Connection string field", although the portal shows two fields (Self (always this cluster) and Global read-write) and the mongosh, Cloud Shell and training-unit pages use the plain `<cluster>.mongocluster.cosmos.azure.com` host. Neither form is wrong; no quickstart says that two exist or when each one matters.
 - **The quickstarts show only SCRAM-SHA-256.** Neither mentions Microsoft Entra ID or `MONGODB-OIDC`, or links the RBAC how-to. The Mongoose quickstart's production note does exist; these two quickstarts lack it.
 - **The Entra code exists but is hard to find.** It is the last section of the ~6,400-word RBAC how-to, under a heading that names no driver or package, so searches land on "Enable Microsoft Entra ID authentication" instead.
 - **That section is incomplete:**
   - The Python snippet has no imports.
   - There is no JavaScript or Mongoose tab (the full Mongoose example is only in `tutorial-nodejs-mongoose`).
   - There are no driver minimums, environment variables or troubleshooting.
-  - The TypeScript sample subtracts seconds from `expiresOnTimestamp`, which is in milliseconds.
+  - The TypeScript sample subtracts seconds from `expiresOnTimestamp`, which is in milliseconds (`@azure/core-auth` documents the field as epoch milliseconds; the driver expects `expiresInSeconds`). The JavaScript pivot of `how-to-build-nodejs-console-app` already has the correct arithmetic.
+  - The Node.js sample sets `ALLOWED_HOSTS: ['*.azure.com']`, while `tutorial-nodejs-mongoose` and the MCP README use `*.mongocluster.cosmos.azure.com`; nothing explains what the list is checked against.
 
 ## Why it matters
 
-In one experiment run, gpt-5-mini built 100 sample apps (Node `mongodb`, Mongoose, PyMongo, Motor) with the DocumentDB Agent Kit and the Learn MCP server. All counts come from that run [needs SME confirmation] (see question 4).
+In one experiment run, gpt-5-mini built 100 sample apps (Node `mongodb`, Mongoose, PyMongo, Motor) with the DocumentDB Agent Kit and the Learn MCP server. All counts come from that single run, which had known harness defects; recount after the re-run before quoting them externally (see question 1).
 
 - **23 distinct samples (24 in-scope findings) filed this gap.** This is reconciled across both drafts: 20 samples from one draft and 4 from the other, with one sample in both. Two more bucketed findings are out of scope (a retry/backoff request, and the PyMongo `cosmosSearchOptions` ask handled in item 4).
 - **Cold answers before grounding** (latest readiness record for each of 101 samples; these reflect model priors, not page defects):
@@ -45,21 +46,22 @@ In one experiment run, gpt-5-mini built 100 sample apps (Node `mongodb`, Mongoos
 - Add the CLI command.
 - Add a table for each part of the string:
   - `mongodb+srv://`: SRV lookup, so no port.
-  - Host: `<cluster>.mongocluster.cosmos.azure.com`.
+  - Host: `<cluster>.mongocluster.cosmos.azure.com` (the portal's Self string) or `<cluster>.global.mongocluster.cosmos.azure.com` (the Global read-write string). On a single cluster the two are interchangeable. If the cluster has or may get a cross-region replica, use the Global read-write string for writes so that a promotion needs no code change; the old primary's Self string becomes read-only after promotion, and replica clusters expose only a Self string. Never construct the host from the cluster name; use the string the portal, CLI or REST API returns.
   - `tls=true`: required.
   - `authMechanism=SCRAM-SHA-256`: native auth (`MONGODB-OIDC` for Entra ID).
   - `retrywrites=false`: required. Proposed text: "Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys)."
   - `maxIdleTimeMS=120000`: recommended.
 - Explain why `retrywrites=false` is required, with the de-duplication reason (documentdb/documentdb#767). Every quickstart carries the setting today, but no Learn page explains it.
 - Add a Note: "Connection strings from Azure Cosmos DB for MongoDB (RU) do not work with Azure DocumentDB clusters." Tell readers to copy the string from the portal or the CLI, and link the RBAC how-to's "Get cluster credentials" option table.
+- Make the code and the text agree on the host: either keep the hard-coded `.global.` host and add the one-sentence Self/Global explanation above, or switch to the plain host so the quickstarts match mongosh, Cloud Shell, the training unit and the REST API's default connection string. Name both portal fields (Self (always this cluster), Global read-write) wherever the reader is told to copy "the Connection string field".
 
 **2. Quickstarts, new H3 "Choose an authentication method":**
 - **Native (SCRAM-SHA-256):** for development and demos. Read it from an environment variable, keep it in Key Vault, and prefer a least-privilege secondary user over the admin user.
 - **Microsoft Entra ID (`MONGODB-OIDC`):** for anything deployed to Azure.
-  - Enable it with `authConfig.allowedModes`, then register the identity with `az documentdb mongocluster microsoft-entra-user assign`.
+  - Enable it with `authConfig.allowedModes` (`az documentdb mongocluster update --auth-allowed-modes NativeAuth MicrosoftEntraID`; Terraform `authentication_methods`, azurerm 4.55.0 or later), then register the identity with `az documentdb mongocluster microsoft-entra-user assign` (`--type User` for a person; `--type ServicePrincipal --object-id <principalId>` for a service principal or managed identity, using the object ID, not the application/client ID).
   - The free tier does not support it.
   - Link to the RBAC code section.
-  - Optionally add a short `DefaultAzureCredential` snippet per pivot (scope `https://ossrdbms-aad.database.windows.net/.default`, `tls: true`, `retryWrites: false`), with one closing line: `DefaultAzureCredential` uses the `az login` session locally and the managed identity when deployed; set `AZURE_CLIENT_ID` for a user-assigned identity.
+  - Optionally add a short `DefaultAzureCredential` snippet per pivot (scope `https://ossrdbms-aad.database.windows.net/.default`, `tls: true`, `retryWrites: false`; in Node.js also `ALLOWED_HOSTS: ['*.mongocluster.cosmos.azure.com']`, which the Node driver requires for a custom `OIDC_CALLBACK` and PyMongo does not check for machine callbacks), with one closing line: `DefaultAzureCredential` uses the `az login` session locally and the managed identity when deployed; set `AZURE_CLIENT_ID` for a user-assigned identity. State the driver floors: PyMongo 4.7, Node.js driver 6.7.0.
 - Reuse the production Important note from `quickstart-nodejs-mongoose`: password authentication is for the free tier and quick evaluation; for production, use a paid cluster with Microsoft Entra ID and a least-privilege managed identity.
 
 **3. RBAC how-to, code section:**
@@ -67,19 +69,23 @@ In one experiment run, gpt-5-mini built 100 sample apps (Node `mongodb`, Mongoos
 - Move it above the secondary-identities section, or give it its own page.
 - Fix the samples:
   - Add the Python imports.
-  - Fix TypeScript to `Math.floor((expiresOnTimestamp - Date.now()) / 1000)`.
-  - Add JavaScript and Mongoose tabs, or a link to the tutorial.
-- Add Requirements (driver minimums [needs SME confirmation], see question 1), environment variables (`DOCUMENTDB_URI` without credentials, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`) and Troubleshooting:
+  - Fix TypeScript to `Math.floor((expiresOnTimestamp - Date.now()) / 1000)`, as the JavaScript pivot of `how-to-build-nodejs-console-app` already does; fix the TypeScript pivot of that page too.
+  - Change the Node.js sample's `ALLOWED_HOSTS: ['*.azure.com']` to `['*.mongocluster.cosmos.azure.com']` so the page agrees with `tutorial-nodejs-mongoose` and the MCP README. Both patterns match both host forms (a leading `*.` matches nested subdomains), but the tighter one is the better default. Add the tutorial's explanation: the driver checks the hosts returned by DNS SRV resolution, not just the cluster hostname in the URI, so the entry must be a wildcard on the service domain; never use `*`.
+  - Add JavaScript and Mongoose tabs, or a link to the tutorial, and link the Java callback on `how-to-build-java-console-app` (the page has only Python, TypeScript and C# tabs today).
+- Add Requirements (driver minimums for `MONGODB-OIDC`: PyMongo 4.7, Node.js driver 6.7.0, Java driver 5.1, .NET driver 2.25.0; for Mongoose, the versions `tutorial-nodejs-mongoose` lists as tested, 7.8.0 and 9.12.1; and a statement of whether Microsoft Entra ID needs a particular cluster compatibility version, since MongoDB's driver docs scope `MONGODB-OIDC` to Atlas and Enterprise Advanced 7.0 or later and no Learn page says what Azure DocumentDB requires), environment variables (`DOCUMENTDB_URI` without credentials, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`) and Troubleshooting:
   - `allowedModes` is missing `MicrosoftEntraID`.
   - The identity is unregistered.
   - The scope is wrong.
   - `retryWrites` was dropped or set to `true`: Azure DocumentDB does not support retryable writes; the server does not de-duplicate a retried write (documentdb/documentdb#767), so a retried non-idempotent write can be applied twice. Keep `retrywrites=false`.
-  - `ALLOWED_HOSTS` is wrong.
+  - `ALLOWED_HOSTS` is missing or wrong (Node.js only): the Node driver validates `ALLOWED_HOSTS` after SRV resolution for every custom `OIDC_CALLBACK`, and its default list has no Azure domain, so a connection without it fails with `MongoInvalidArgumentError: Host '...' is not valid for OIDC authentication with ALLOWED_HOSTS of ...`. Use `['*.mongocluster.cosmos.azure.com']`.
 - Cross-link back to the quickstarts.
+- Other fixes on the same page that a reader choosing an authentication method hits:
+  - The Terraform pivot of "Enable Microsoft Entra ID authentication" sets `authentication_enabled = true`, which is not an argument of `azurerm_mongo_cluster`; the argument is `authentication_methods = ["NativeAuth", "MicrosoftEntraID"]` (azurerm 4.55.0 or later), and `azurerm_mongo_cluster_user` exists for the administrator registration the pivot does with azapi.
+  - The overview sentence "A cluster must have native authentication enabled; the supported configurations are native-only or Microsoft Entra ID authentication only or native and Microsoft Entra ID authentication" contradicts itself; say which configurations are supported.
 
 **4. `vector-search`, Python coverage** (from 046; fold into the Learn vector-search filing if that lands first):
 - Under the HNSW and IVF tabs, add the Python `db.command({...})` form the DiskANN tab already has (same `createIndexes` document with `kind: "vector-hnsw"` or `"vector-ivf"`).
-- Add one sentence that PyMongo can also pass the spec through `collection.create_index([("<field>", "cosmosSearch")], name=..., cosmosSearchOptions={...})` [needs SME confirmation] (see question 5), and repeat that vectors must be `number[]` to be indexed.
+- Add one sentence that PyMongo can also pass the spec through `collection.create_index([("<field>", "cosmosSearch")], name=..., cosmosSearchOptions={...})` [needs SME confirmation] (see question 2), and repeat that vectors must be `number[]` to be indexed.
 
 Out of scope here:
 - The Agent Kit's OIDC placeholder and host suffix are tracked in Azure/documentdb-agent-kit.
@@ -95,18 +101,14 @@ Out of scope here:
 ## Resolved
 
 - retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+- Driver minimums: settled 2026-11-25 (DECISIONS.md, SME topic 4, items 4.1 to 4.4). The `MONGODB-OIDC` floors are PyMongo 4.7, Node.js driver 6.7.0, Java driver 5.1 and .NET driver 2.25.0, from the drivers' own changelogs and releases; Learn publishes no floor today. Sources: https://raw.githubusercontent.com/mongodb/mongo-python-driver/master/doc/changelog.rst (4.7.0); https://github.com/mongodb/node-mongodb-native/releases/tag/v6.7.0; https://github.com/mongodb/mongo-java-driver/releases/tag/r5.1.0 and MongoCredential.java (`@since 5.1`); https://github.com/mongodb/mongo-csharp-driver/releases/tag/v2.25.0. Which versions the quickstarts were tested with stays open in filing L01, not here.
+- `ALLOWED_HOSTS`: settled 2026-11-25 (DECISIONS.md, SME topics 3 and 5). Both `*.azure.com` (RBAC page) and `*.mongocluster.cosmos.azure.com` (Mongoose tutorial, MCP README) match both host forms because a leading `*.` matches nested subdomains; the tighter pattern is the better default and the pages should agree. The Node driver checks the list after SRV resolution for custom callbacks and rejects Azure hosts without it; PyMongo does not check it for machine callbacks. Sources: https://learn.microsoft.com/en-us/azure/documentdb/tutorial-nodejs-mongoose ("Connect Mongoose to Azure DocumentDB", troubleshooting); https://github.com/mongodb/specifications/blob/master/source/auth/auth.md (ALLOWED_HOSTS); https://github.com/mongodb/node-mongodb-native/blob/main/src/mongo_client.ts and src/utils.ts (hostMatchesWildcards); https://github.com/mongodb/mongo-python-driver/blob/master/pymongo/auth_oidc_shared.py.
+- `global` host: settled 2026-11-25 (DECISIONS.md, SME topic 3). The `.global.` host is never required: on a single cluster the Self and Global read-write strings are interchangeable; use the Global read-write string for writes on a cluster that has or may get a cross-region replica so a promotion needs no code change; replica clusters expose only Self strings; take the host from the returned connection string, never construct it. Sources: https://learn.microsoft.com/en-us/azure/documentdb/how-to-connect-role-based-access-control ("Get cluster credentials"); https://learn.microsoft.com/en-us/azure/documentdb/how-to-cluster-replica#use-connection-strings; https://learn.microsoft.com/en-us/azure/documentdb/cross-region-replication; https://learn.microsoft.com/en-us/azure/documentdb/tutorial-nodejs-mongoose ("Verify the cluster from a terminal"); https://learn.microsoft.com/en-us/training/modules/create-configure-azure-documentdb-cluster/3-connect-to-cluster.
 
 ## Open questions
 
-1. **Driver minimums** [needs SME confirmation]:
-   - One draft proposes PyMongo 4.7+ (Motor 3.x running on PyMongo 4.7+) and Node.js driver 6.7+ (Mongoose 8.x).
-   - `tutorial-nodejs-mongoose` lists tested versions 7.8.0 and 9.12.1.
-
-   Which floors should Learn publish?
-2. **`ALLOWED_HOSTS`** [needs SME confirmation]: the RBAC page uses `['*.azure.com']` and the tutorial uses `['*.mongocluster.cosmos.azure.com']`. One draft keeps the first, the other tightens it. Which is correct?
-3. **`global` host** [needs SME confirmation]: when should a quickstart reader use the `global` host form rather than the plain cluster host?
-4. **Counts** [needs SME confirmation]: they come from one run that had harness artifacts. Confirm them before quoting externally.
-5. **PyMongo `create_index` pass-through** [needs SME confirmation]: does PyMongo's `create_index(..., cosmosSearchOptions=...)` produce a valid vector index on a cluster? The draft relies on PyMongo passing extra keyword arguments into the index spec and asks for verification before publishing.
+1. **Counts** (internal, not an SME question): they come from one run that had harness artifacts. Recount after the re-run before quoting them externally.
+2. **PyMongo `create_index` pass-through** [needs SME confirmation]: does PyMongo's `create_index(..., cosmosSearchOptions=...)` produce a valid vector index on a cluster? The draft relies on PyMongo passing extra keyword arguments into the index spec and asks for verification before publishing.
 
 ## Source drafts
 

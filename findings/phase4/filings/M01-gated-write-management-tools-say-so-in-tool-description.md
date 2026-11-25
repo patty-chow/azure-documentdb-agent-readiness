@@ -121,7 +121,7 @@ This approach keeps every tool discoverable and tells the agent about the gate b
   - A note that on HTTP/SSE the caller also needs the matching Entra role, and that `TRUST_LOCAL_STDIO=true` skips the role check but not these flags.
   - The exact refusal text an agent will see, so it can be matched when searching the docs.
   - An `env` fragment for a trusted local/dev run, `"ENABLE_WRITE_TOOLS": "true", "ENABLE_MANAGEMENT_TOOLS": "true"`, with a note that the server must be restarted and that the flags stay off for shared or HTTP deployments.
-  - The driver fallback, noting that it uses the caller's own database credentials and is the normal data-plane path (no MCP server or Azure control plane needed), for example (an HNSW spec with only `similarity` and `dimensions` is valid; the build parameters fall back to the documented defaults `m` 16, `efConstruction` 64, `efSearch` 40, and 1,536 dimensions is within the 2,000 limit for an uncompressed index, 4,000 with `compression: "half"`):
+  - The driver fallback, noting that it uses the caller's own database credentials and is the normal data-plane path (no MCP server or Azure control plane needed), for example (an HNSW spec with only `similarity` and `dimensions` is valid; the build parameters fall back to the documented defaults `m` 16, `efConstruction` 64, `efSearch` 40, and 1,536 dimensions is within the 2,000 limit for an uncompressed index, 4,000 with `compression: "half"`; `vector-hnsw` and `vector-diskann` need an M30 or higher cluster tier per the Learn limitations page, so on the free and burstable tiers use `vector-ivf`):
     ```js
     await db.collection("docs").createIndexes([{
       name: "vec_idx",
@@ -138,7 +138,7 @@ The default stays off, consistent with `docs/design-doc.md` and `docs/permission
 
 - `skills/mcp-setup/SKILL.md`: the opt-in note is one line (154-155). Add a Troubleshooting bullet (section at line 191) keyed on the exact refusal text: add the flag to the server `env` and restart, or do the operation in app code with the driver (`createIndexes` with `cosmosSearchOptions` works there).
 - The `indexing` and `vector-search` skills: when the MCP tool is unavailable, fall back to driver `createIndexes` and wait for the build (a new vector index can return empty results for 2 to 3 minutes), then verify with `list_indexes`/`explain`. Quote the documented HNSW parameters (`m` 2 to 100, default 16; `efConstruction` 4 to 1000 and at least 2m, default 64; `efSearch` default 40) and the dimension limits (2,000 uncompressed; 4,000 with `compression: "half"` on HNSW and IVF; 16,000 with product quantization on DiskANN).
-- The shipped `mcp.json` and `gemini-extension.json`: add a `_comment` explaining why `ENABLE_MANAGEMENT_TOOLS` is `"false"` and how to turn it on for a build session.
+- The shipped `mcp.json` and `gemini-extension.json`: add a `_comment` explaining why `ENABLE_MANAGEMENT_TOOLS` is `"false"` and how to turn it on for a build session. The same two files launch `npx -y documentdb-mcp-server`, an unscoped npm name Microsoft has not published (Learn mcp-toolkit: "No published npm package yet") and which a third-party package of unknown provenance occupied on 2026-11-24; when these files are touched, switch the launch target to `npx -y github:microsoft/documentdb-mcp` as `skills/mcp-setup/SKILL.md`, Learn and the repo README already do (findings/phase4/DECISIONS.md, topic 13; tracked in its own filing).
 
 ## Evidence
 
@@ -157,7 +157,8 @@ Paths are run folders from the experiment.
 - Vector-index facts: settled 2026-11-25 from the Learn vector-search, half-precision, product-quantization and limitations pages and engine issue documentdb/documentdb#109, see findings/phase4/DECISIONS.md.
   - The README driver-fallback example (`vector-hnsw` with only `similarity` and `dimensions`) is valid as written: `m`, `efConstruction` and `efSearch` are optional and default to 16, 64 and 40 (vector-search page, HNSW tab).
   - HNSW parameter limits: `m` 2 to 100, `efConstruction` 4 to 1000 and at least 2m (vector-search page, HNSW tab).
-  - 1,536 dimensions is within the 2,000 limit for an uncompressed index; 4,000 with `compression: "half"` on HNSW or IVF; 16,000 with product quantization on DiskANN (vector-search "Features and limitations", half-precision, product-quantization and limitations pages).
+  - 1,536 dimensions is within the 2,000 limit for an uncompressed index; 4,000 with `compression: "half"` on HNSW or IVF; 16,000 with product quantization on DiskANN (vector-search "Features and limitations", half-precision, product-quantization and limitations pages). Confirmed by the product owner on 2026-11-25; the engine enforces the 4,000 half-precision ceiling (a `vector-hnsw` index with `compression: "half"` and 4,001 dimensions fails with "field cannot have more than 4000 dimensions for vector index"). The 8,000 figure on the select-algorithm quickstarts is wrong and is being corrected separately.
+  - Tier: `vector-hnsw` and `vector-diskann` need an M30 or higher cluster tier (limitations page; the free-tier line saying M40 is stale), so the README fallback example notes that free and burstable tiers must use `vector-ivf`.
   - "Wait for the build" in the fallback text: a new vector index can return empty results for 2 to 3 minutes while it builds (quickstart-nodejs-select-algorithm, Troubleshooting).
 
 ## Open questions

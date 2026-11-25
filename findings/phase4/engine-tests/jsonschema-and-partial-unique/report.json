@@ -1,0 +1,876 @@
+{
+  "test": "jsonschema-and-partial-unique",
+  "database": "t_schema",
+  "target": "documentdb-local container ddb-engine-test, localhost:10260 (TLS, self-signed), MongoDB wire protocol",
+  "engine_version": {
+    "buildInfo": {
+      "version": "7.0.0",
+      "versionArray": [
+        7,
+        0,
+        0,
+        0
+      ],
+      "maxBsonObjectSize": 16777216
+    },
+    "buildInfo_note": "buildInfo.version 7.0.0 is the MongoDB compatibility version the gateway advertises (hello.maxWireVersion 21), not the engine release.",
+    "container_image": "ghcr.io/documentdb/documentdb/documentdb-local:latest",
+    "image_version_label": "0.117.0",
+    "image_revision": "28cc012070ce798361ed265251ec159180b7889f",
+    "image_created": "2026-09-25T12:42:08Z",
+    "postgres": "PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2)",
+    "serverStatus": "CommandNotSupported (115): 'Command 'serverStatus' not supported.'"
+  },
+  "evidence_scope": "Observed on documentdb-local; evidence about the open-source engine and gateway at the buildInfo version above. Does not prove managed Azure DocumentDB behaviour.",
+  "run_at": "2026-11-25T12:07:00-0800",
+  "steps": [
+    {
+      "step": "buildInfo",
+      "command": "db.adminCommand({buildInfo: 1})",
+      "response": {
+        "version": "7.0.0",
+        "versionArray": [
+          7,
+          0,
+          0,
+          0
+        ],
+        "maxBsonObjectSize": 16777216
+      },
+      "reading": "Version string the gateway reports; all facts below are about the open-source engine/gateway at this version, not the managed service."
+    },
+    {
+      "step": "hello",
+      "command": "db.adminCommand({hello: 1})",
+      "response": {
+        "maxWireVersion": 21,
+        "minWireVersion": 0,
+        "maxWriteBatchSize": 25000,
+        "maxBsonObjectSize": 16777216
+      },
+      "reading": "Wire-version advertised by the gateway."
+    },
+    {
+      "step": "drop t_schema (setup)",
+      "command": "db.getSiblingDB('t_schema').dropDatabase()",
+      "response": {
+        "result": {
+          "ok": 1
+        },
+        "ms": 0
+      },
+      "reading": "Test database dropped so the run is repeatable."
+    },
+    {
+      "step": "A0 create collection with baseline validator (bsonType/required/properties)",
+      "command": "db.createCollection('v_baseline', {validator: {\"$jsonSchema\": {\"bsonType\": \"object\", \"required\": [\"name\"], \"properties\": {\"name\": {\"bsonType\": \"string\"}}}}})",
+      "response": {
+        "result": {
+          "ok": 1.0
+        },
+        "ms": 4
+      },
+      "reading": "Collection validators are enabled on this build: create accepted a baseline $jsonSchema."
+    },
+    {
+      "step": "A0b listCollections options for v_baseline",
+      "command": "db.getCollectionInfos({name:'v_baseline'})[0].options",
+      "response": {
+        "result": {
+          "validator": {
+            "$jsonSchema": {
+              "bsonType": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "bsonType": "string"
+                }
+              }
+            }
+          },
+          "validationLevel": "strict",
+          "validationAction": "error"
+        },
+        "ms": 0
+      },
+      "reading": "Stored options: {\"validator\": {\"$jsonSchema\": {\"bsonType\": \"object\", \"required\": [\"name\"], \"properties\": {\"name\": {\"bsonType\": \"string\"}}}}, \"validationLevel\": \"strict\", \"validationAction\": \"error\"}"
+    },
+    {
+      "step": "A0c insert violating doc into v_baseline (missing required name)",
+      "command": "db.v_baseline.insertOne({x:1})",
+      "response": {
+        "error": {
+          "exception": "WriteError",
+          "code": 121,
+          "codeName": null,
+          "errmsg": "Document failed validation",
+          "errorLabels": [],
+          "raw": "{\"index\": 0, \"code\": 121, \"errmsg\": \"Document failed validation\"}",
+          "ms": 0
+        }
+      },
+      "reading": "Violating insert rejected: 121 None 'Document failed validation'."
+    },
+    {
+      "step": "A0d insert violating doc with bypassDocumentValidation",
+      "command": "db.v_baseline.insertOne({x:1}, {bypassDocumentValidation:true})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe0ef3c7035e5e08e0b"
+          }
+        },
+        "ms": 0
+      },
+      "reading": "bypassDocumentValidation lets the violating document through."
+    },
+    {
+      "step": "A1.enum create collection with $jsonSchema using enum",
+      "command": "db.createCollection('v_enum', {validator: {\"$jsonSchema\": {\"bsonType\": \"object\", \"properties\": {\"status\": {\"enum\": [\"new\", \"done\"]}}}}})",
+      "response": {
+        "result": {
+          "ok": 1.0
+        },
+        "ms": 5
+      },
+      "reading": "create accepted a validator using 'enum'."
+    },
+    {
+      "step": "A2.enum insert valid doc",
+      "command": "db.v_enum.insertOne({\"status\": \"new\"})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe0ef3c7035e5e08e0c"
+          }
+        },
+        "ms": 0
+      },
+      "reading": "Valid document accepted."
+    },
+    {
+      "step": "A3.enum insert violating doc",
+      "command": "db.v_enum.insertOne({\"status\": \"bogus\"})",
+      "response": {
+        "error": {
+          "exception": "WriteError",
+          "code": 121,
+          "codeName": null,
+          "errmsg": "Document failed validation",
+          "errorLabels": [],
+          "raw": "{\"index\": 0, \"code\": 121, \"errmsg\": \"Document failed validation\"}",
+          "ms": 0
+        }
+      },
+      "reading": "Violating document rejected: 121 None 'Document failed validation' -> 'enum' is enforced."
+    },
+    {
+      "step": "A4.enum collMod validator using enum onto plain collection",
+      "command": "db.runCommand({collMod:'cm_enum', validator: {\"$jsonSchema\": {\"bsonType\": \"object\", \"properties\": {\"status\": {\"enum\": [\"new\", \"done\"]}}}}})",
+      "response": {
+        "result": {
+          "ok": 1
+        },
+        "ms": 2
+      },
+      "reading": "collMod accepted a validator using 'enum'."
+    },
+    {
+      "step": "A1.additionalProperties create collection with $jsonSchema using additionalProperties",
+      "command": "db.createCollection('v_additionalProperties', {validator: {\"$jsonSchema\": {\"bsonType\": \"object\", \"properties\": {\"a\": {\"bsonType\": \"int\"}}, \"additionalProperties\": false}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: additionalProperties",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: additionalProperties\"}",
+          "ms": 0
+        }
+      },
+      "reading": "create rejected 'additionalProperties': 9 FailedToParse 'Unknown $jsonSchema keyword: additionalProperties'."
+    },
+    {
+      "step": "A4.additionalProperties collMod validator using additionalProperties onto plain collection",
+      "command": "db.runCommand({collMod:'cm_additionalProperties', validator: {\"$jsonSchema\": {\"bsonType\": \"object\", \"properties\": {\"a\": {\"bsonType\": \"int\"}}, \"additionalProperties\": false}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: additionalProperties",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: additionalProperties\"}",
+          "ms": 0
+        }
+      },
+      "reading": "collMod rejected 'additionalProperties': 9 FailedToParse 'Unknown $jsonSchema keyword: additionalProperties'."
+    },
+    {
+      "step": "A1.allOf create collection with $jsonSchema using allOf",
+      "command": "db.createCollection('v_allOf', {validator: {\"$jsonSchema\": {\"allOf\": [{\"required\": [\"a\"]}, {\"required\": [\"b\"]}]}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: allOf",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: allOf\"}",
+          "ms": 0
+        }
+      },
+      "reading": "create rejected 'allOf': 9 FailedToParse 'Unknown $jsonSchema keyword: allOf'."
+    },
+    {
+      "step": "A4.allOf collMod validator using allOf onto plain collection",
+      "command": "db.runCommand({collMod:'cm_allOf', validator: {\"$jsonSchema\": {\"allOf\": [{\"required\": [\"a\"]}, {\"required\": [\"b\"]}]}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: allOf",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: allOf\"}",
+          "ms": 0
+        }
+      },
+      "reading": "collMod rejected 'allOf': 9 FailedToParse 'Unknown $jsonSchema keyword: allOf'."
+    },
+    {
+      "step": "A1.anyOf create collection with $jsonSchema using anyOf",
+      "command": "db.createCollection('v_anyOf', {validator: {\"$jsonSchema\": {\"anyOf\": [{\"required\": [\"a\"]}, {\"required\": [\"b\"]}]}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: anyOf",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: anyOf\"}",
+          "ms": 0
+        }
+      },
+      "reading": "create rejected 'anyOf': 9 FailedToParse 'Unknown $jsonSchema keyword: anyOf'."
+    },
+    {
+      "step": "A4.anyOf collMod validator using anyOf onto plain collection",
+      "command": "db.runCommand({collMod:'cm_anyOf', validator: {\"$jsonSchema\": {\"anyOf\": [{\"required\": [\"a\"]}, {\"required\": [\"b\"]}]}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: anyOf",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: anyOf\"}",
+          "ms": 0
+        }
+      },
+      "reading": "collMod rejected 'anyOf': 9 FailedToParse 'Unknown $jsonSchema keyword: anyOf'."
+    },
+    {
+      "step": "A1.oneOf create collection with $jsonSchema using oneOf",
+      "command": "db.createCollection('v_oneOf', {validator: {\"$jsonSchema\": {\"oneOf\": [{\"required\": [\"a\"]}, {\"required\": [\"b\"]}]}}})",
+      "response": {
+        "result": {
+          "ok": 1.0
+        },
+        "ms": 1
+      },
+      "reading": "create accepted a validator using 'oneOf'."
+    },
+    {
+      "step": "A2.oneOf insert valid doc",
+      "command": "db.v_oneOf.insertOne({\"a\": 1})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe0ef3c7035e5e08e0e"
+          }
+        },
+        "ms": 0
+      },
+      "reading": "Valid document accepted."
+    },
+    {
+      "step": "A3.oneOf insert violating doc",
+      "command": "db.v_oneOf.insertOne({\"a\": 1, \"b\": 1})",
+      "response": {
+        "error": {
+          "exception": "WriteError",
+          "code": 121,
+          "codeName": null,
+          "errmsg": "Document failed validation",
+          "errorLabels": [],
+          "raw": "{\"index\": 0, \"code\": 121, \"errmsg\": \"Document failed validation\"}",
+          "ms": 0
+        }
+      },
+      "reading": "Violating document rejected: 121 None 'Document failed validation' -> 'oneOf' is enforced."
+    },
+    {
+      "step": "A4.oneOf collMod validator using oneOf onto plain collection",
+      "command": "db.runCommand({collMod:'cm_oneOf', validator: {\"$jsonSchema\": {\"oneOf\": [{\"required\": [\"a\"]}, {\"required\": [\"b\"]}]}}})",
+      "response": {
+        "result": {
+          "ok": 1
+        },
+        "ms": 0
+      },
+      "reading": "collMod accepted a validator using 'oneOf'."
+    },
+    {
+      "step": "A1.not create collection with $jsonSchema using not",
+      "command": "db.createCollection('v_not', {validator: {\"$jsonSchema\": {\"not\": {\"required\": [\"forbidden\"]}}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: not",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: not\"}",
+          "ms": 0
+        }
+      },
+      "reading": "create rejected 'not': 9 FailedToParse 'Unknown $jsonSchema keyword: not'."
+    },
+    {
+      "step": "A4.not collMod validator using not onto plain collection",
+      "command": "db.runCommand({collMod:'cm_not', validator: {\"$jsonSchema\": {\"not\": {\"required\": [\"forbidden\"]}}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: not",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: not\"}",
+          "ms": 0
+        }
+      },
+      "reading": "collMod rejected 'not': 9 FailedToParse 'Unknown $jsonSchema keyword: not'."
+    },
+    {
+      "step": "A1.patternProperties create collection with $jsonSchema using patternProperties",
+      "command": "db.createCollection('v_patternProperties', {validator: {\"$jsonSchema\": {\"patternProperties\": {\"^x_\": {\"bsonType\": \"int\"}}}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: patternProperties",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: patternProperties\"}",
+          "ms": 0
+        }
+      },
+      "reading": "create rejected 'patternProperties': 9 FailedToParse 'Unknown $jsonSchema keyword: patternProperties'."
+    },
+    {
+      "step": "A4.patternProperties collMod validator using patternProperties onto plain collection",
+      "command": "db.runCommand({collMod:'cm_patternProperties', validator: {\"$jsonSchema\": {\"patternProperties\": {\"^x_\": {\"bsonType\": \"int\"}}}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: patternProperties",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: patternProperties\"}",
+          "ms": 0
+        }
+      },
+      "reading": "collMod rejected 'patternProperties': 9 FailedToParse 'Unknown $jsonSchema keyword: patternProperties'."
+    },
+    {
+      "step": "A1.dependencies create collection with $jsonSchema using dependencies",
+      "command": "db.createCollection('v_dependencies', {validator: {\"$jsonSchema\": {\"dependencies\": {\"a\": [\"b\"]}}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: dependencies",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: dependencies\"}",
+          "ms": 0
+        }
+      },
+      "reading": "create rejected 'dependencies': 9 FailedToParse 'Unknown $jsonSchema keyword: dependencies'."
+    },
+    {
+      "step": "A4.dependencies collMod validator using dependencies onto plain collection",
+      "command": "db.runCommand({collMod:'cm_dependencies', validator: {\"$jsonSchema\": {\"dependencies\": {\"a\": [\"b\"]}}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: dependencies",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: dependencies\"}",
+          "ms": 0
+        }
+      },
+      "reading": "collMod rejected 'dependencies': 9 FailedToParse 'Unknown $jsonSchema keyword: dependencies'."
+    },
+    {
+      "step": "A1.minProperties create collection with $jsonSchema using minProperties",
+      "command": "db.createCollection('v_minProperties', {validator: {\"$jsonSchema\": {\"minProperties\": 2}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: minProperties",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: minProperties\"}",
+          "ms": 0
+        }
+      },
+      "reading": "create rejected 'minProperties': 9 FailedToParse 'Unknown $jsonSchema keyword: minProperties'."
+    },
+    {
+      "step": "A4.minProperties collMod validator using minProperties onto plain collection",
+      "command": "db.runCommand({collMod:'cm_minProperties', validator: {\"$jsonSchema\": {\"minProperties\": 2}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: minProperties",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: minProperties\"}",
+          "ms": 0
+        }
+      },
+      "reading": "collMod rejected 'minProperties': 9 FailedToParse 'Unknown $jsonSchema keyword: minProperties'."
+    },
+    {
+      "step": "A1.maxProperties create collection with $jsonSchema using maxProperties",
+      "command": "db.createCollection('v_maxProperties', {validator: {\"$jsonSchema\": {\"maxProperties\": 2}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: maxProperties",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: maxProperties\"}",
+          "ms": 0
+        }
+      },
+      "reading": "create rejected 'maxProperties': 9 FailedToParse 'Unknown $jsonSchema keyword: maxProperties'."
+    },
+    {
+      "step": "A4.maxProperties collMod validator using maxProperties onto plain collection",
+      "command": "db.runCommand({collMod:'cm_maxProperties', validator: {\"$jsonSchema\": {\"maxProperties\": 2}}})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 9,
+          "codeName": "FailedToParse",
+          "errmsg": "Unknown $jsonSchema keyword: maxProperties",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 9, \"codeName\": \"FailedToParse\", \"errmsg\": \"Unknown $jsonSchema keyword: maxProperties\"}",
+          "ms": 0
+        }
+      },
+      "reading": "collMod rejected 'maxProperties': 9 FailedToParse 'Unknown $jsonSchema keyword: maxProperties'."
+    },
+    {
+      "step": "B1 createIndexes unique + partialFilterExpression {key:{$exists:true}}",
+      "command": "db.pu_exists.createIndex({key:1}, {unique:true, partialFilterExpression:{key:{$exists:true}}, name:'uq_key_exists'})",
+      "response": {
+        "result": {
+          "raw": {
+            "defaultShard": {
+              "numIndexesBefore": 1,
+              "numIndexesAfter": 2,
+              "createdCollectionAutomatically": false,
+              "ok": 1
+            }
+          },
+          "ok": 1
+        },
+        "ms": 2004
+      },
+      "reading": "Accepted: numIndexesBefore=1 numIndexesAfter=2 ok=1 (gateway nests the result under raw.defaultShard)."
+    },
+    {
+      "step": "B1a listIndexes",
+      "command": "db.pu_exists.getIndexes()",
+      "response": {
+        "result": [
+          {
+            "v": 2,
+            "key": {
+              "_id": 1
+            },
+            "name": "_id_"
+          },
+          {
+            "v": 2,
+            "key": {
+              "key": 1
+            },
+            "name": "uq_key_exists",
+            "partialFilterExpression": {
+              "key": {
+                "$exists": true
+              }
+            },
+            "unique": true,
+            "storageEngine": {
+              "enableOrderedIndex": true
+            }
+          }
+        ],
+        "ms": 2
+      },
+      "reading": "Index spec as stored: [{\"v\": 2, \"key\": {\"_id\": 1}, \"name\": \"_id_\"}, {\"v\": 2, \"key\": {\"key\": 1}, \"name\": \"uq_key_exists\", \"partialFilterExpression\": {\"key\": {\"$exists\": true}}, \"unique\": true, \"storageEngine\": {\"enableOrderedIndex\": true}}]"
+    },
+    {
+      "step": "B1b insert {key:1}",
+      "command": "db.pu_exists.insertOne({key:1})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe2ef3c7035e5e08e10"
+          }
+        },
+        "ms": 2
+      },
+      "reading": "First keyed document accepted."
+    },
+    {
+      "step": "B1c insert duplicate {key:1}",
+      "command": "db.pu_exists.insertOne({key:1})",
+      "response": {
+        "error": {
+          "exception": "DuplicateKeyError",
+          "code": 11000,
+          "codeName": null,
+          "errmsg": "Duplicate key violation on the requested collection: Index 'uq_key_exists'",
+          "errorLabels": [],
+          "raw": "{\"index\": 0, \"code\": 11000, \"errmsg\": \"Duplicate key violation on the requested collection: Index 'uq_key_exists'\"}",
+          "ms": 5
+        }
+      },
+      "reading": "Duplicate rejected: 11000 None 'Duplicate key violation on the requested collection: Index 'uq_key_exists''."
+    },
+    {
+      "step": "B1d insert doc without key {other:1}",
+      "command": "db.pu_exists.insertOne({other:1})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe2ef3c7035e5e08e12"
+          }
+        },
+        "ms": 1
+      },
+      "reading": "Doc without key accepted (outside partial filter)."
+    },
+    {
+      "step": "B1e insert second doc without key {other:2}",
+      "command": "db.pu_exists.insertOne({other:2})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe2ef3c7035e5e08e13"
+          }
+        },
+        "ms": 0
+      },
+      "reading": "Second keyless doc accepted: missing-key docs are not treated as duplicate nulls."
+    },
+    {
+      "step": "B1f insert {key:null}",
+      "command": "db.pu_exists.insertOne({key:null})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe2ef3c7035e5e08e14"
+          }
+        },
+        "ms": 0
+      },
+      "reading": "First explicit null accepted."
+    },
+    {
+      "step": "B1g insert second {key:null}",
+      "command": "db.pu_exists.insertOne({key:null})",
+      "response": {
+        "error": {
+          "exception": "DuplicateKeyError",
+          "code": 11000,
+          "codeName": null,
+          "errmsg": "Duplicate key violation on the requested collection: Index 'uq_key_exists'",
+          "errorLabels": [],
+          "raw": "{\"index\": 0, \"code\": 11000, \"errmsg\": \"Duplicate key violation on the requested collection: Index 'uq_key_exists'\"}",
+          "ms": 4
+        }
+      },
+      "reading": "Second explicit null rejected: 11000 None 'Duplicate key violation on the requested collection: Index 'uq_key_exists'' -> null is inside the $exists:true filter (matches MongoDB semantics)."
+    },
+    {
+      "step": "B1h count docs",
+      "command": "db.pu_exists.countDocuments({})",
+      "response": {
+        "result": {
+          "count": 4
+        },
+        "ms": 0
+      },
+      "reading": "4 documents stored."
+    },
+    {
+      "step": "B2 createIndexes unique + partialFilterExpression {key:{$gt:0}}",
+      "command": "db.pu_gt.createIndex({key:1}, {unique:true, partialFilterExpression:{key:{$gt:0}}, name:'uq_key_gt0'})",
+      "response": {
+        "result": {
+          "raw": {
+            "defaultShard": {
+              "numIndexesBefore": 1,
+              "numIndexesAfter": 2,
+              "createdCollectionAutomatically": false,
+              "ok": 1
+            }
+          },
+          "ok": 1
+        },
+        "ms": 2011
+      },
+      "reading": "Accepted: numIndexesBefore=1 numIndexesAfter=2 ok=1 (gateway nests the result under raw.defaultShard)."
+    },
+    {
+      "step": "B2a listIndexes",
+      "command": "db.pu_gt.getIndexes()",
+      "response": {
+        "result": [
+          {
+            "v": 2,
+            "key": {
+              "_id": 1
+            },
+            "name": "_id_"
+          },
+          {
+            "v": 2,
+            "key": {
+              "key": 1
+            },
+            "name": "uq_key_gt0",
+            "partialFilterExpression": {
+              "key": {
+                "$gt": 0
+              }
+            },
+            "unique": true,
+            "storageEngine": {
+              "enableOrderedIndex": true
+            }
+          }
+        ],
+        "ms": 2
+      },
+      "reading": "Index spec as stored: [{\"v\": 2, \"key\": {\"_id\": 1}, \"name\": \"_id_\"}, {\"v\": 2, \"key\": {\"key\": 1}, \"name\": \"uq_key_gt0\", \"partialFilterExpression\": {\"key\": {\"$gt\": 0}}, \"unique\": true, \"storageEngine\": {\"enableOrderedIndex\": true}}]"
+    },
+    {
+      "step": "B2b insert {key:5}",
+      "command": "db.pu_gt.insertOne({key:5})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe4ef3c7035e5e08e16"
+          }
+        },
+        "ms": 2
+      },
+      "reading": "First positive key accepted."
+    },
+    {
+      "step": "B2c insert duplicate {key:5}",
+      "command": "db.pu_gt.insertOne({key:5})",
+      "response": {
+        "error": {
+          "exception": "DuplicateKeyError",
+          "code": 11000,
+          "codeName": null,
+          "errmsg": "Duplicate key violation on the requested collection: Index 'uq_key_gt0'",
+          "errorLabels": [],
+          "raw": "{\"index\": 0, \"code\": 11000, \"errmsg\": \"Duplicate key violation on the requested collection: Index 'uq_key_gt0'\"}",
+          "ms": 6
+        }
+      },
+      "reading": "Duplicate rejected: 11000 None 'Duplicate key violation on the requested collection: Index 'uq_key_gt0''."
+    },
+    {
+      "step": "B2d insert {key:0}",
+      "command": "db.pu_gt.insertOne({key:0})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe4ef3c7035e5e08e18"
+          }
+        },
+        "ms": 1
+      },
+      "reading": "key:0 accepted (outside filter)."
+    },
+    {
+      "step": "B2e insert duplicate {key:0}",
+      "command": "db.pu_gt.insertOne({key:0})",
+      "response": {
+        "result": {
+          "acknowledged": true,
+          "inserted_id": {
+            "$oid": "6b073fe4ef3c7035e5e08e19"
+          }
+        },
+        "ms": 1
+      },
+      "reading": "Duplicate key:0 accepted: docs outside $gt:0 are not uniqueness-checked."
+    },
+    {
+      "step": "B2f insert {key:-1} twice",
+      "command": "db.pu_gt.insertMany([{key:-1},{key:-1}])",
+      "response": {
+        "result": {
+          "inserted": 2
+        },
+        "ms": 1
+      },
+      "reading": "Two key:-1 docs accepted: negatives outside filter."
+    },
+    {
+      "step": "B2g insert two docs without key",
+      "command": "db.pu_gt.insertMany([{other:1},{other:2}])",
+      "response": {
+        "result": {
+          "inserted": 2
+        },
+        "ms": 1
+      },
+      "reading": "Two keyless docs accepted: missing key outside filter."
+    },
+    {
+      "step": "B2h insert {key:'str'} twice",
+      "command": "db.pu_gt.insertMany([{key:'s'},{key:'s'}])",
+      "response": {
+        "result": {
+          "inserted": 2
+        },
+        "ms": 1
+      },
+      "reading": "Two string keys accepted: strings do not satisfy numeric $gt:0 (type-bracketed comparison)."
+    },
+    {
+      "step": "B2i update {key:0} -> {key:5} (move into filter, collides)",
+      "command": "db.pu_gt.updateOne({key:0}, {$set:{key:5}})",
+      "response": {
+        "error": {
+          "exception": "DuplicateKeyError",
+          "code": 11000,
+          "codeName": null,
+          "errmsg": "Duplicate key violation on the requested collection: Index 'uq_key_gt0'",
+          "errorLabels": [],
+          "raw": "{\"index\": 0, \"code\": 11000, \"errmsg\": \"Duplicate key violation on the requested collection: Index 'uq_key_gt0'\"}",
+          "ms": 6
+        }
+      },
+      "reading": "Update rejected: 11000 None 'Duplicate key violation on the requested collection: Index 'uq_key_gt0'' -> uniqueness enforced on update into the filter."
+    },
+    {
+      "step": "B2j count docs",
+      "command": "db.pu_gt.countDocuments({})",
+      "response": {
+        "result": {
+          "count": 9
+        },
+        "ms": 0
+      },
+      "reading": "9 documents stored."
+    },
+    {
+      "step": "B3 createIndexes unique + partialFilterExpression {key:{$exists:false}}",
+      "command": "db.pu_extra.createIndex({key:1}, {unique:true, partialFilterExpression:{key:{$exists:false}}, name:'uq_key_notexists'})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 67,
+          "codeName": "CannotCreateIndex",
+          "errmsg": "Error in specification { \"key\" : { \"key\" : 1 }, \"name\" : \"uq_key_notexists\", \"unique\" : true, \"partialFilterExpression\" : { \"key\" : { \"$exists\" : false } } }:Expression not supported in partial index: key $exists false\n",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 67, \"codeName\": \"CannotCreateIndex\", \"errmsg\": \"Error in specification { \\\"key\\\" : { \\\"key\\\" : 1 }, \\\"name\\\" : \\\"uq_key_notexists\\\", \\\"unique\\\" : true, \\\"partialFilterExpression\\\" : { \\\"key\\\" : { \\\"$exists\\\" : false } } }:Expression not supported in partial index: key $exists false\\n\"}",
+          "ms": 0
+        }
+      },
+      "reading": "Rejected: 67 CannotCreateIndex 'Error in specification { \"key\" : { \"key\" : 1 }, \"name\" : \"uq_key_notexists\", \"unique\" : true, \"partialFilterExpression\" : { \"key\" : { \"$exists\" : false } } }:Expression not supported in partial index: key $exists false\n'."
+    },
+    {
+      "step": "B4 createIndexes unique + sparse + partialFilterExpression",
+      "command": "db.pu_extra.createIndex({key2:1}, {unique:true, sparse:true, partialFilterExpression:{key2:{$gt:0}}, name:'uq_sparse_pfe'})",
+      "response": {
+        "error": {
+          "exception": "OperationFailure",
+          "code": 197,
+          "codeName": "InvalidIndexSpecificationOption",
+          "errmsg": "Error in specification { \"key\" : { \"key2\" : 1 }, \"name\" : \"uq_sparse_pfe\", \"unique\" : true, \"sparse\" : true, \"partialFilterExpression\" : { \"key2\" : { \"$gt\" : 0 } } }:cannot mix \"partialFilterExpression\" and \"sparse\" options",
+          "errorLabels": [],
+          "raw": "{\"ok\": 0.0, \"code\": 197, \"codeName\": \"InvalidIndexSpecificationOption\", \"errmsg\": \"Error in specification { \\\"key\\\" : { \\\"key2\\\" : 1 }, \\\"name\\\" : \\\"uq_sparse_pfe\\\", \\\"unique\\\" : true, \\\"sparse\\\" : true, \\\"partialFilterExpression\\\" : { \\\"key2\\\" : { \\\"$gt\\\" : 0 } } }:cannot mix \\\"partialFilterExpression\\\" and \\\"sparse\\\" options\"}",
+          "ms": 0
+        }
+      },
+      "reading": "Rejected: 197 InvalidIndexSpecificationOption 'Error in specification { \"key\" : { \"key2\" : 1 }, \"name\" : \"uq_sparse_pfe\", \"unique\" : true, \"sparse\" : true, \"partialFilterExpression\" : { \"key2\" : { \"$gt\" : 0 } } }:cannot mix \"partialFilterExpression\" and \"sparse\" options'."
+    }
+  ],
+  "conclusions": [
+    {
+      "question": "Are collection validators (validator/validationLevel/validationAction) enabled on documentdb-local 0.117.0, or gated behind 'validator not supported yet'?",
+      "answer": "Enabled on this build: create with a baseline $jsonSchema (bsonType/required/properties) returned ok:1, listCollections shows validator plus validationLevel 'strict' and validationAction 'error' defaults, a violating insert is rejected with code 121 'Document failed validation' (no codeName field, no errInfo), and bypassDocumentValidation:true lets it through. The 'validator not supported yet' CommandNotSupported gate was not hit on this image.",
+      "confidence": "observed"
+    },
+    {
+      "question": "Which $jsonSchema keywords does the engine accept, via create and via collMod?",
+      "answer": "enum and oneOf: accepted by both create and collMod and enforced (violating insert -> 121 'Document failed validation'). additionalProperties, allOf, anyOf, not, patternProperties, dependencies, minProperties, maxProperties: rejected identically by create and collMod with code 9 FailedToParse 'Unknown $jsonSchema keyword: <kw>'. Matches the main-branch bson_json_schema_tree.c dispatch list recorded in DECISIONS.md and contradicts Learn's $jsonSchema page, which lists enum/oneOf as unsupported.",
+      "confidence": "observed"
+    },
+    {
+      "question": "Is a unique index with partialFilterExpression { key: { $exists: true } } accepted and enforced?",
+      "answer": "Accepted (numIndexesAfter 2, ok 1; spec stored verbatim with unique:true and storageEngine.enableOrderedIndex:true). Duplicate {key:1} rejected with 11000 'Duplicate key violation on the requested collection: Index 'uq_key_exists''. Two documents without the key both inserted (missing field is outside the filter). Two documents with {key:null} -> second rejected with 11000, so null is inside the $exists:true filter, as in MongoDB.",
+      "confidence": "observed"
+    },
+    {
+      "question": "Is a unique index with partialFilterExpression { key: { $gt: 0 } } accepted and enforced?",
+      "answer": "Accepted (numIndexesAfter 2, ok 1). Duplicate {key:5} rejected with 11000. Duplicates of {key:0}, {key:-1}, missing key and {key:'s'} all inserted (outside the numeric $gt:0 filter; strings are type-bracketed out). updateOne moving {key:0} to {key:5} rejected with 11000, so uniqueness is enforced when an update brings a document into the filter.",
+      "confidence": "observed"
+    },
+    {
+      "question": "Engine-source claims about partial-filter limits ($exists:false unsupported; sparse cannot mix with partialFilterExpression)",
+      "answer": "Both confirmed: $exists:false -> 67 CannotCreateIndex 'Expression not supported in partial index: key $exists false'; unique+sparse+partialFilterExpression -> 197 InvalidIndexSpecificationOption 'cannot mix \"partialFilterExpression\" and \"sparse\" options'.",
+      "confidence": "observed"
+    },
+    {
+      "question": "Does any of this prove managed Azure DocumentDB behaviour?",
+      "answer": "No. All facts are from documentdb-local image 0.117.0 (revision 28cc012, built 2026-09-25) advertising MongoDB 7.0.0 / wire 21. Whether the managed service runs this engine build with EnableSchemaValidation on, and whether enum/oneOf are live there, remains open (DECISIONS.md topic open item 1). The error shapes (code 121 without codeName, 11000 'Duplicate key violation...' wording, 9 FailedToParse 'Unknown $jsonSchema keyword') are what this gateway emits and are plausible but unverified for Azure.",
+      "confidence": "inferred"
+    }
+  ]
+}

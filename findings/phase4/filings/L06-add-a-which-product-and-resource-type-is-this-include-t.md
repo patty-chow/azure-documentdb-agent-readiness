@@ -8,7 +8,7 @@ priority: P1
 sample_count: 49
 member_drafts:
   - 073-product-and-resource-type-disambiguation-microsoft-documentd.md
-open_questions: 3
+open_questions: 1
 ---
 
 # Add a "Which product and resource type is this?" include to the Azure DocumentDB overview and quickstarts
@@ -53,13 +53,13 @@ Insert it directly under the H1 intro paragraph of every page listed above. Sugg
 > | | Azure DocumentDB (this service) | Azure Cosmos DB for MongoDB (RU) |
 > | --- | --- | --- |
 > | ARM / Bicep resource type | `Microsoft.DocumentDB/mongoClusters` | `Microsoft.DocumentDB/databaseAccounts` with `kind: 'MongoDB'` |
-> | Azure CLI | `az documentdb mongocluster ...` (`documentdb` extension) | `az cosmosdb ...` |
-> | Terraform | `azurerm_mongo_cluster` (azurerm 4.x) or AzAPI `Microsoft.DocumentDB/mongoClusters` | `azurerm_cosmosdb_account` |
-> | Capacity and billing | Compute tier (for example M10, M30, M40; each tier maps to a vCore and memory size) plus storage, scaled independently | Request units per second (RU/s) |
-> | Host and connection | `mongodb+srv://` to `<cluster>.mongocluster.cosmos.azure.com`, no explicit port | `<account>.mongo.cosmos.azure.com:10255` with `replicaSet=globaldb` |
+> | Azure CLI | `az documentdb mongocluster ...` (`documentdb` extension, Azure CLI 2.75.0 or later; the older `az cosmosdb mongocluster` group manages the same resource type but is superseded) | `az cosmosdb ...` |
+> | Terraform | `azurerm_mongo_cluster` (azurerm 4.x and later) or AzAPI `Microsoft.DocumentDB/mongoClusters` | `azurerm_cosmosdb_account` |
+> | Capacity and billing | Compute tier (M10 to M200; M10, M20 and M25 are burstable dev/test tiers) plus storage, applied to every physical shard and scaled independently; storage can be increased but not decreased | Request units per second (RU/s) |
+> | Host and connection | `mongodb+srv://` to `<cluster>.mongocluster.cosmos.azure.com` (the portal's **Self** string) or `<cluster>.global.mongocluster.cosmos.azure.com` (the **Global read-write** string), no explicit port | `<account>.mongo.cosmos.azure.com:10255` with `replicaSet=globaldb` |
 > | Authentication | Native (SCRAM-SHA-256) users or Microsoft Entra ID | Account keys or Entra ID |
 >
-> Copy your connection string from **Connection strings** in the portal, or from `az documentdb mongocluster list-connection-strings`, and pass it to your MongoDB driver unchanged. It uses the `mongodb+srv` scheme and includes `tls=true`, `authMechanism=SCRAM-SHA-256`, `retrywrites=false` and `maxIdleTimeMS=120000`. Don't split out the host and port, and don't add `replicaSet`.
+> Copy your connection string from **Connection strings** in the portal (Cluster > Settings > Connection strings), or from `az documentdb mongocluster list-connection-strings`, and pass it to your MongoDB driver unchanged. It uses the `mongodb+srv` scheme and includes `tls=true`, `authMechanism=SCRAM-SHA-256`, `retrywrites=false` and `maxIdleTimeMS=120000`. Don't split out the host and port, and don't add `replicaSet`. On a single cluster the Self string and the Global read-write string are interchangeable. If the cluster has or may get a cross-region replica, use the Global read-write string for writes so that a promotion needs no code change; the Self string of the old primary becomes read-only after promotion. Replica clusters expose only a Self string. Never construct the host from the cluster name; use the string the portal, CLI or REST API returns.
 >
 > Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys).
 
@@ -82,7 +82,13 @@ Add this mapping after the template:
 | `ipRules` | `Microsoft.DocumentDB/mongoClusters/firewallRules` child resource |
 | `azurerm_cosmosdb_account` | `azurerm_mongo_cluster` |
 
-Then add: "This template uses a low-cost development configuration (`M10`, 32 GiB storage, `shardCount: 1`, high availability disabled). For production, choose a higher tier and enable high availability."
+Then add: "This template uses a low-cost development configuration (`M10`, 32 GiB storage, `shardCount: 1`, high availability disabled). For production, choose `M30` or higher and set `properties.highAvailability.targetMode` to `'ZoneRedundantPreferred'`. M10, M20 and M25 are burstable dev/test tiers: they support one physical shard and no in-region high availability, and a cluster scaled to M30 or higher can't be scaled back down to them. `Disabled` is documented by the resource provider as not recommended for production."
+
+Don't name `SameZone` in the note: it is in the API contract and accepted by the CLI, but the azurerm provider doesn't expose it and whether the control plane accepts an explicit request today is still an open engineering question (DECISIONS.md, topic 11).
+
+### 4. Language quickstarts and `quickstart-portal`: agree on the host form
+
+All six language quickstarts hard-code `<your-cluster-name>.global.mongocluster.cosmos.azure.com` while telling the reader to copy "the value from the Connection string field", and `quickstart-portal` says "the Connection string field" (singular) and shows only the plain host. The portal shows two fields, **Self (always this cluster)** and **Global read-write**, and neither page says so. Both forms are valid; this is an inconsistency of presentation, not of fact. Fix: either switch the quickstart samples to the plain (Self) host, which is what `how-to-connect-mongo-shell`, `how-to-connect-cloud-shell`, the Learn training unit and the REST API default string show, or keep `.global.` and add the one-sentence explanation from the include ("on a single cluster either string works; use the Global read-write string for writes when the cluster has a replica"). Either way, name both portal fields where the reader is told to copy the value, and link the connection-string reference once L07 lands.
 
 ## Related changes in other repositories (not yet filed)
 
@@ -105,12 +111,12 @@ Run folders from the experiment:
 ## Resolved
 
 - retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+- Global read-write host: answered 2026-11-25, see findings/phase4/DECISIONS.md (host forms, SME topic 3; settled from Learn, no SME needed). The portal offers two connection strings, **Self (always this cluster)** on `<cluster>.mongocluster.cosmos.azure.com` and **Global read-write** on `<cluster>.global.mongocluster.cosmos.azure.com`; on a single cluster either works, the global string exists only on the primary and keeps writes working across a replica promotion, replica clusters expose only a Self string, and the host must be taken from the returned connection string rather than built from the cluster name. The table now shows both; the earlier wording "for clusters with replicas" was imprecise because every primary cluster has a Global read-write string. Sources: Learn how-to-connect-role-based-access-control ("Get cluster credentials"), how-to-cluster-replica#use-connection-strings, how-to-private-link, how-to-cross-region-replica-portal, training unit create-configure-azure-documentdb-cluster/3-connect-to-cluster, tutorial-nodejs-mongoose.
+- Production guidance in the Bicep/Terraform note: answered 2026-11-25, see findings/phase4/DECISIONS.md (CLI, IaC and server versions, SME topic 11). Enable HA with `highAvailability.targetMode: 'ZoneRedundantPreferred'`: the resource provider's HighAvailabilityMode contract documents `Disabled` as "not recommended for production" and `ZoneRedundantPreferred` as preferring zone redundancy and falling back to same-zone, and the azurerm provider exposes only those two values. Name M30 or higher as production tiers: M10, M20 and M25 are burstable dev/test tiers with one physical shard and no in-region HA, a cluster scaled to M30 or higher can't go back to them, and the FAQ calls M30 and larger the production tiers. Whether an explicit `SameZone` request is accepted today stays open, so the note doesn't name it. Sources: Azure/azure-rest-api-specs MongoCluster.tsp (HighAvailabilityMode) and stable/2026-09-01 mongoCluster.json; Learn compute-storage, limitations (Tier limits), high-availability, how-to-scale-cluster, faq; Azure DocumentDB pricing page; terraform-provider-azurerm mongo_cluster r_schema.go.
 
 ## Open questions
 
-1. **Global read-write host.** [needs SME confirmation] Clusters with replicas also expose `<cluster>.global.mongocluster.cosmos.azure.com`. Should the table mention it, and is the wording "global read-write host for clusters with replicas" correct?
-2. **Production guidance in the Bicep/Terraform note.** [needs SME confirmation] Is "enable high availability" (for example `targetMode: 'ZoneRedundantPreferred'`) the recommended production default, and which tiers should be named as examples?
-3. **Authentication row.** [needs SME confirmation] Confirm that the RU-column authentication summary (account keys or Entra ID) is accurate enough for a comparison table, or drop the row.
+1. **Authentication row.** [needs SME confirmation] Confirm that the RU-column authentication summary (account keys or Entra ID) is accurate enough for a comparison table, or drop the row. (The Azure DocumentDB column is settled: native SCRAM-SHA-256 users, Microsoft Entra ID, or both; DECISIONS.md topic 5. The RU-based Azure Cosmos DB for MongoDB column is outside DECISIONS.md.)
 
 ## Source drafts
 

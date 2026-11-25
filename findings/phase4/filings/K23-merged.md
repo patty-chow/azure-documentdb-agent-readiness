@@ -3,7 +3,7 @@ id: K23
 title: "local-deployment skill: steer agents away from the Cosmos DB Emulator, add a gateway quick start, offline test tiers, and an idempotent seed and bulk-load rule"
 repo: Azure/documentdb-agent-kit
 type: pr
-status: needs_sme
+status: ready
 priority: P1
 sample_count: 55
 member_drafts:
@@ -18,7 +18,7 @@ merged_from:
   - K09
   - K08
   - K26
-open_questions: 12
+open_questions: 7
 ---
 
 # local-deployment skill: steer agents away from the Cosmos DB Emulator, add a gateway quick start, offline test tiers, and an idempotent seed and bulk-load rule
@@ -40,7 +40,7 @@ This PR makes `skills/local-deployment` the single place an agent goes to run, t
 - `skills/mcp-setup/SKILL.md` Step 1 ("Confirm prerequisites") checks only `node --version` and `git --version`.
 - `skills/mcp-setup/SKILL.md` Step 2 row B gives the 27017 community-MongoDB URI, not the 10260 gateway URI (which needs TLS and SCRAM credentials).
 - `skills/connection/SKILL.md` never mentions a local target.
-- Microsoft Learn has no local/emulator page for Azure DocumentDB (it links the open-source project), so the kit is the right home for this.
+- Microsoft Learn's only local page is the development-loop tutorial (https://learn.microsoft.com/en-us/azure/documentdb/development-loop, updated 2026-11-23): it runs `ghcr.io/documentdb/documentdb/documentdb-local:latest` with no versioned-tag guidance and says nothing about which cluster features the container lacks; the older `oss` page (updated 2026-04-27) still builds from source and connects with psql on 9712. Neither page covers tests or seeding, so the kit is the right home for this (the Learn gaps are tracked in the Learn filings).
 
 **3. No test-tier convention (K09).** The only testing guidance is one bullet in `local-prod-parity.md` ("Integration tests target the local Gateway container, not an in-memory MongoDB") plus a four-line `docker compose up -d documentdb / ./wait-for-port.sh 10260 / npm run test:integration / docker compose down` snippet. No skill or knowledge-base file mentions pytest, jest, mocks or markers. Nothing tells an agent:
 
@@ -48,13 +48,13 @@ This PR makes `skills/local-deployment` the single place an agent goes to run, t
 - how to keep connects out of import time, so `import app` does not need `DOCUMENTDB_URI`;
 - how to gate integration tests on `DOCUMENTDB_URI` so they are skipped, not failed, when it is unset, and how CI runs the two tiers separately;
 - how to isolate test data (a per-run database dropped on teardown);
-- which DocumentDB features (`cosmosSearch` vector search, `createSearchIndexes` / `$search`, DocumentDB index options, TTL expiry, `explain`) cannot be mocked and belong in the container tier.
+- which DocumentDB features (`cosmosSearch` vector search, `createSearchIndexes` / `$search`, DocumentDB index options, TTL expiry, `explain`) cannot be mocked and belong in the integration tier, and which of those the local container cannot run at all (full-text `$search`, DiskANN, product quantization, change streams, Entra ID; see Resolved) and therefore need an Azure cluster.
 
 The kit's own `testing/conftest.py` already uses a skip-when-no-container fixture, but that is the kit's eval harness, not a rule agents load.
 
 **4. No seed or bulk-load pattern, and the one example is not idempotent (K08).**
 
-- `skills/local-deployment/local-sample-data-management.md` says "Idempotent scripts only", but its own *Correct* example is an `insertMany` with fixed `_id: 1` / `_id: 2`. Run a second time against a populated database (a manual `mongosh` run, CI, or the same code reused as an app seed) it fails with E11000. The image runs `INIT_DATA_PATH` scripts only on a fresh volume, so the problem is the pattern the example teaches, not the container.
+- `skills/local-deployment/local-sample-data-management.md` says "Idempotent scripts only", but its own *Correct* example is an `insertMany` with fixed `_id: 1` / `_id: 2`. Run a second time against a populated database (a manual `mongosh` run, CI, or the same code reused as an app seed) it fails with E11000. The image's own sample data is opt-in (`--init-data true` / `INIT_DATA`; `SKIP_INIT_DATA` is a legacy alias for `--init-data false`) and is the StoreData set (stores, ratings), not the `sampledb` (users, products, orders, analytics) that the same rule file claims is seeded by default, so the problem is the pattern the example teaches, not the container.
 - `skills/driver/SKILL.md` has one rule (`driver-singleton-client`), and its description does not mention seeding or bulk loading, so an agent writing `seed.py` has no reason to open it.
 - A grep of `skills/` and `knowledge-base/` for `bulkWrite`, `bulk_write`, `insert_many`, `writeErrors` or `allowDiskUse` returns no hits, and `insertMany` appears only in that one example. Nothing covers chunking, natural-key upserts, partial-failure handling, index ordering, a sample fixture with a licence, or demo dataset size.
 - `scenarios/contoso/contoso-seed.js` already follows the right contract (resumable, seeded PRNG, opt-in drop), but no skill links to it. `scenarios/ecommerce/seed.sh` drops collections every run and uses unseeded `Math.random()`.
@@ -79,7 +79,7 @@ We ran gpt-5-mini on 100 Azure DocumentDB sample-app prompts with this kit insta
   - caught `MongoBulkWriteError` and dropped `writeErrors`;
   - iterated nightly jobs over `find({})` with no batch size or resume marker;
   - seeded destructively with no check on the database name;
-  - set `allowDiskUse=False` on a faceted aggregation.
+  - toggled `allowDiskUse` on a faceted aggregation expecting it to change memory behaviour (the service accepts and ignores the option; see Resolved).
   Every builder invented its own idempotency contract and dataset size (5 stores, 20 ATMs, 500 to 2,000 events). A seed is usually the first thing a developer runs against a new cluster; if it is slow or doubles its data, the service looks broken.
 
 The common consequence: the emulator does not run the PostgreSQL-based open-source DocumentDB engine, so it has no `cosmosSearch` vector indexes (vector-ivf, vector-hnsw, vector-diskann), no DocumentDB text-search indexes and none of the gateway's TLS/SCRAM-SHA-256 behaviour; port 10255 belongs to Cosmos DB for MongoDB (RU). Azure DocumentDB uses 10260 locally and a `mongodb+srv://...mongocluster.cosmos.azure.com/` string with no explicit port in the cloud. An agent that follows its prior either cannot connect, or gets a local environment whose indexes differ from the cluster's, never starts it at all, writes tests that need the cluster, and seeds data that doubles on rerun.
@@ -104,7 +104,9 @@ Each kit file appears once below, with all edits combined.
 Use this when Docker is present and you are writing a sample, running integration tests, or iterating on indexes. It avoids round-trips to the Azure cluster until the code is stable.
 
 ```bash
-# 1. run (loopback only, named so teardown is one command; pin a tag in CI, see local-prod-parity)
+# 1. run (loopback only, named so teardown is one command). :latest is fine for a copy-paste
+#    dev loop; in CI and compose files use a versioned tag (pg15-1.2.0 .. pg18-1.2.0; latest
+#    and 1.2 point to pg17-1.2.0 as of DocumentDB 1.2, 2026-11-12), see local-prod-parity.
 docker run --pull always -dt --name documentdb-local \
   -p 127.0.0.1:10260:10260 \
   -e USERNAME=docdbuser -e PASSWORD="${DOCUMENTDB_PASSWORD:?set DOCUMENTDB_PASSWORD}" \
@@ -121,12 +123,12 @@ export DOCUMENTDB_URI="mongodb://docdbuser:${DOCUMENTDB_PASSWORD}@localhost:1026
 docker rm -f documentdb-local
 ```
 
-(`-e USERNAME/-e PASSWORD` and the `--username/--password` arguments after the image name are equivalent; the CLI arguments override the env vars.)
+(`-e USERNAME/-e PASSWORD` and the `--username/--password` arguments after the image name are equivalent; the CLI arguments override the env vars. `authMechanism=SCRAM-SHA-256` is optional: the gateway advertises only SCRAM-SHA-256, so drivers negotiate it; Learn's development-loop tutorial gives the string without it. The image default is `--tlsMode allowTLS`, which accepts plain and TLS connections; `tls=true` with `tlsAllowInvalidCertificates=true` is still the right local setting because the certificate is self-signed, and `tlsAllowInvalidCertificates` must never reach an Azure URI.)
 
-**Parity caveats vs Azure DocumentDB:** the local gateway speaks the same wire protocol, so the same driver code should work by swapping `DOCUMENTDB_URI` between this and the cluster's `mongodb+srv://...mongocluster.cosmos.azure.com` string. It is a single-container dev engine: one SCRAM admin user, no Microsoft Entra ID auth, no vCore tier sizing, HA/replication, firewall, `az documentdb mongocluster` or portal features. Re-run `cosmosSearch` vector-index and text-index (full-text) tests against the Azure cluster before shipping; treat local results for those as a smoke test. See [local-prod-parity](local-prod-parity.md) and [local-test-tiers](local-test-tiers.md).
+**Parity caveats vs Azure DocumentDB:** the local gateway speaks the same wire protocol, so the same driver code should work by swapping `DOCUMENTDB_URI` between this and the cluster's `mongodb+srv://...mongocluster.cosmos.azure.com` string. It is a single-container dev engine: one SCRAM admin user, no vCore tier sizing, HA/replication, firewall, `az documentdb mongocluster` or portal features. What runs locally: CRUD, aggregation, `explain`, TTL, multi-document transactions with the default read concern, and `cosmosSearch` vector indexes of kind `vector-ivf` and `vector-hnsw` up to 2,000 dimensions (4,000 with `compression: "half"`). What needs an Azure cluster: `vector-diskann` and product quantization (`pq`, 16,000 dimensions); full-text search (`createSearchIndexes` / `$search` with text operators: the local gateway returns code 115 "Command 'createSearchIndexes' not supported."; on Azure it is a preview that must be enabled per cluster); change streams (`$changeStream` returns code 115 locally; open-source issue documentdb/documentdb#50); Microsoft Entra ID (MONGODB-OIDC); and `readConcern: snapshot` (rejected locally, issue documentdb/documentdb#736). Run those against the Azure cluster before shipping. See [local-prod-parity](local-prod-parity.md) and [local-test-tiers](local-test-tiers.md).
 ````
 
-Sources for the quick-start commands (K26): https://documentdb.io/docs/documentdb-local/ (port 10260 default, `PASSWORD` required, `--username/--password` supported, no replication or failover) and the github.com/documentdb/documentdb README; the kit's own `local-prod-parity.md` already says to version-pin the image.
+Sources for the quick-start commands (K26): https://documentdb.io/docs/documentdb-local/ (port 10260 default, `PASSWORD` required, `--username/--password` supported, `--tlsMode allowTLS` default, no replication or failover, versioned tags `pg15-1.2.0` to `pg18-1.2.0` with `latest` and `1.2` pointing to `pg17-1.2.0`, "Use a versioned tag when you need a reproducible setup"), https://documentdb.io/docs/getting-started/release-notes-1.2, https://learn.microsoft.com/en-us/azure/documentdb/development-loop (canonical local string without `authMechanism`) and the github.com/documentdb/documentdb README; the kit's own `local-prod-parity.md` already says to version-pin the image. Sources for the parity list: https://documentdb.io/docs/reference/operators/aggregation/$vectorsearch/ (only `vector-hnsw` and `vector-ivf`; caps 2,000 / 4,000 / 16,000), https://documentdb.io/docs/reference/operators/aggregation/$search/ (`$search` is vector-only in the open-source engine), https://documentdb.io/docs/reference/operators/aggregation/$changestream/, engine source `pg_documentdb/src/vector/vector_index_kind_impl.c`, `pg_documentdb_gw/documentdb_gateway_core/src/postgres/data_client.rs` and `src/auth/manager.rs` (SCRAM-SHA-256 only), issues documentdb/documentdb#50 and #736, and https://learn.microsoft.com/en-us/azure/documentdb/limitations (HNSW and DiskANN need M30 or higher on Azure). See findings/phase4/DECISIONS.md, SME topic 12.
 
 **(c) Under "Image choices", after the two existing bullets (K23).**
 
@@ -171,7 +173,7 @@ Neither exposes `cosmosSearch` vector indexes, DocumentDB text-search indexes, o
 
 ### 3. `skills/local-deployment/local-prod-parity.md` (K09)
 
-Replace the "Test what prod does" bullet with: "Integration tests target the local Gateway container, not an in-memory MongoDB. Unit tests may stub the driver. See `local-test-tiers` for the gating and fixture pattern." Keep the existing version-pin guidance (the quick start's `:latest` comment points here).
+Replace the "Test what prod does" bullet with: "Integration tests target the local Gateway container, not an in-memory MongoDB. Unit tests may stub the driver. See `local-test-tiers` for the gating and fixture pattern." Keep the existing version-pin guidance and make it concrete (the quick start's tag comment points here): name the current versioned tags (`pg15-1.2.0` to `pg18-1.2.0`; `latest` and `1.2` resolve to `pg17-1.2.0`) and say that `latest` has moved from 1.0 to 1.2 since the kit's examples were written. Add a short "Local vs cluster" list with the settled parity facts: available locally are `vector-ivf` and `vector-hnsw` (2,000 dimensions, 4,000 with `compression: "half"`), TTL, `explain` and transactions with the default read concern; cluster-only are DiskANN and `pq` compression (16,000 dimensions), full-text search (`createSearchIndexes` / `$search`, preview on Azure), change streams, Microsoft Entra ID and `readConcern: snapshot`. The kit's `vector-search` skill advertises DiskANN, product quantization and fp16 without this caveat, so this list is also where that skill should link.
 
 ### 4. New `skills/local-deployment/local-test-tiers.md` (K09)
 
@@ -180,7 +182,7 @@ Follows the existing rule template (Why it matters / Incorrect / Correct / Refer
 **Rules**
 - **Two tiers, never mixed in one file or one unmarked folder.**
 - **Tier 1, unit (always runs):** no network, no `DOCUMENTDB_URI`, no AI key. The driver is created lazily behind a small accessor or repository (or business logic takes the collection as a parameter), so tests can swap in a stub. Embedding, chat and web-search calls go through one function that tests replace with a deterministic fake (fixed-dimension vectors, canned completions). `mongomock` is fine for plain CRUD and aggregation *shapes*. It does not implement `cosmosSearch`, `$search` or DocumentDB index options.
-- **Tier 2, integration (gated):** marked `integration` and skipped with a clear message when `DOCUMENTDB_URI` is unset. It runs against the local Gateway container (or an Azure DocumentDB cluster when the URI points there), never an in-memory MongoDB. The documented `.env.example` value points at the local Gateway on `127.0.0.1:10260` (see `local-connection-config` and the SKILL.md quick start). Anything DocumentDB-specific (`cosmosSearch`, `$search`, TTL, `explain`) lives here. Optionally, a `pytest_collection_modifyitems` hook in `conftest.py` adds a skip marker to every `integration` item when `DOCUMENTDB_URI` is unset, so tests that do not use the `test_db` fixture are skipped too.
+- **Tier 2, integration (gated):** marked `integration` and skipped with a clear message when `DOCUMENTDB_URI` is unset. It runs against the local Gateway container (or an Azure DocumentDB cluster when the URI points there), never an in-memory MongoDB. The documented `.env.example` value points at the local Gateway on `127.0.0.1:10260` (see `local-connection-config` and the SKILL.md quick start). Anything DocumentDB-specific (`cosmosSearch`, `$search`, TTL, `explain`, transactions) lives here. The local container runs `cosmosSearch` `vector-ivf` and `vector-hnsw` (up to 2,000 dimensions, 4,000 with `compression: "half"`), TTL, `explain` and transactions with the default read concern. It does not run full-text search (`createSearchIndexes` / `$search` text operators return code 115), `vector-diskann`, `pq` compression, change streams, Microsoft Entra ID or `readConcern: snapshot`; tests for those carry a second marker (for example `azure_only`) and are skipped when the URI host is `localhost` / `127.0.0.1`, and full-text tests additionally expect code 115 ("Search index creation is not supported yet") when the cluster's full-text preview is not enabled. Optionally, a `pytest_collection_modifyitems` hook in `conftest.py` adds a skip marker to every `integration` item when `DOCUMENTDB_URI` is unset, so tests that do not use the `test_db` fixture are skipped too.
 - **Isolation:** each run uses `<sample>_test_<uuid8>` and drops it on teardown. Never test against the seed database.
 - **TLS:** invalid-certificate tolerance is for the self-signed local Gateway only, never for an Azure cluster (see `local-env-driven-config`, `local-connection-config`).
 - **README:** a "Testing without cloud" line, for example: "`pytest` runs offline unit tests; `pytest -m integration` needs `DOCUMENTDB_URI`." A README must not claim tests that the sample does not ship.
@@ -297,12 +299,12 @@ const describeIfLive = process.env.DOCUMENTDB_URI ? describe : describe.skip;
 # docker-compose.test.yml
 services:
   documentdb:
-    image: ghcr.io/documentdb/documentdb/documentdb-local:latest
+    image: ghcr.io/documentdb/documentdb/documentdb-local:pg17-1.2.0   # versioned tag; bump deliberately (OSS docs: use a versioned tag for a reproducible setup)
     ports: ["127.0.0.1:10260:10260"]
     environment:
       - USERNAME=${DOCUMENTDB_USER:?}
       - PASSWORD=${DOCUMENTDB_PASSWORD:?}
-      - SKIP_INIT_DATA=true
+      # the image's StoreData sample set is opt-in (INIT_DATA=true); leave it off, the tests seed their own per-run database
 ```
 ```yaml
 - run: pytest -m "not integration"                       # always
@@ -338,6 +340,8 @@ print('users: ' + users.countDocuments());   // 2 on every run
 
 > **Sizing a demo dataset** (rules of thumb): CRUD, REST and change-stream demos use 20 to 100 documents. Aggregation and dashboard demos use 1,000 to 10,000, generated from a seeded PRNG. Vector demos use 200 to 500 `number[]` vectors. Geospatial demos use 10 to 50 points in one city. Start from `seed/fixture.json`, which holds 12 synthetic products under the repository's licence. Each product has `sku`, `name`, `description`, `category`, `price`, `stock`, `updatedAt` and a GeoJSON `location`. Scale the fixture up with a generator function, not by hand-editing. `updatedAt` is stored as an ISO string in the fixture; convert it to a `Date` before writing if the app queries by date.
 
+**(e)** Correct the rule's description of the image's own sample data (lines 7-14 today): the image seeds nothing unless `--init-data true` (env `INIT_DATA=true`) is passed; the opt-in dataset is StoreData (`stores`, `ratings`), not a `sampledb` with users, products, orders and analytics; `SKIP_INIT_DATA` is a legacy alias for `--init-data false`, not a default-false switch. Source: https://documentdb.io/docs/documentdb-local/ and `documentdb-local/scripts/documentdb_local_settings.sh` (line 37) in github.com/documentdb/documentdb.
+
 ### 6. New `skills/local-deployment/seed/fixture.json` (K08)
 
 12 synthetic product documents, no real people, companies or places, under the repository's licence. `sku` is the natural key the seed upserts on. Shape (one document shown; the other 11 follow the same fields with distinct `sku` values and categories):
@@ -363,10 +367,10 @@ print('users: ' + users.countDocuments());   // 2 on every run
 >
 > **Contract.**
 > 1. Give every document a deterministic natural key (or a stable string `_id`), never `Math.random()` or `uuid4()`.
-> 2. Create a unique index on that key **before** the load. It keeps the upsert filter fast and turns a stray plain insert or a concurrent rerun into E11000 instead of a duplicate row.
-> 3. Write in chunks (about 1,000) with unordered `bulkWrite` upserts.
+> 2. Create a unique index on that key **before** the load. It keeps the upsert filter fast and turns a stray plain insert or a concurrent rerun into E11000 instead of a duplicate row. Learn says a unique index build blocks writes on the collection, so build it while the collection is empty (https://learn.microsoft.com/en-us/azure/documentdb/limitations).
+> 3. Write in chunks with unordered collection-level `bulkWrite` upserts. Start at about 1,000 operations per call (a starting point, not a Learn figure; the 1,000-per-`insertMany` number on Learn belongs to the RU-based Cosmos DB for MongoDB page) and never exceed the documented hard cap of 25,000 writes per request: "Batch operations exceeding 25,000 writes will fail" (https://learn.microsoft.com/en-us/azure/documentdb/limitations, Batch limits). The compatibility page's `bulkWrite: No` row refers to the MongoDB 8.0 database-level `bulkWrite` command; collection-level `db.collection.bulkWrite()` maps to insert/update/delete and works (observed in this experiment: `ok:1, nUpserted:200`).
 > 4. Read `writeErrors`. Treat 11000 as "already present" and retry the other errors with backoff. Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). The keyed upserts in this rule are that idempotent retry: with `retrywrites=false` the driver does not retry writes, so the script retries for itself.
-> 5. Create secondary, text and `cosmosSearch` vector indexes **after** the load [needs SME confirmation for each vector kind, see Open question 8]. Give every index an explicit name; `createIndex` is a no-op when the same definition already exists, so the script stays re-runnable. Store embeddings as `number[]`.
+> 5. Create secondary indexes **after** the load. For vector indexes the order depends on the kind (https://learn.microsoft.com/en-us/azure/documentdb/vector-search): HNSW can be created on an empty collection; IVF's `numLists` is derived from the document count, so create (or re-create) it after loading; a product-quantization (DiskANN) index should be created after the collection has data. A new vector index can return empty results for 2 to 3 minutes while it builds (https://learn.microsoft.com/en-us/azure/documentdb/quickstart-nodejs-select-algorithm, Troubleshooting), so the final count check must not go through the vector index. Full-text search indexes are a separate step (`createSearchIndexes`, preview on Azure, not available on the local gateway) and are not part of a seed. Give every index an explicit name and make the index step tolerant of "already exists": an identical `createIndexes` call is expected to be a no-op, but the error returned for a same-name index with different options is undocumented, so catch `IndexOptionsConflict` / "already exists" rather than relying on a code. Store embeddings as `number[]`: Learn requires an array of numbers, and a document whose vector has another type (for example BSON binary) is not indexed and is silently absent from results.
 > 6. Never drop by default. Use an opt-in `--reset` flag (or `SEED_RESET=true`), and refuse non-`sample_` databases unless `--confirm` is passed.
 > 7. Finish with a count check and exit non-zero on a mismatch.
 > 8. For chunked RAG ingestion, upsert on `chunk_id = sha1(source_id + ":" + chunk_index)`.
@@ -421,7 +425,7 @@ try {
 } finally { await client.close(); }
 ```
 
-The HNSW values above (`m: 16`, `efConstruction: 64`) are placeholders. [needs SME confirmation: supported HNSW and IVF limits, see Open question 9]
+The HNSW values above (`m: 16`, `efConstruction: 64`) are the documented defaults: `m` 2 to 100 (default 16), `efConstruction` 4 to 1000 and at least `2m` (default 64), `efSearch` default 40; IVF uses `numLists` = documentCount/1000 (start at 1 for demos) and `nProbes` at most `numLists`. `dimensions` must be at most 2,000 for an uncompressed index, 4,000 with `compression: "half"` on HNSW or IVF, and 16,000 only with product quantization on DiskANN (the 8,000 figure on the select-algorithm quickstarts is wrong). One vector index per path. HNSW and DiskANN need an M30 or higher cluster. Sources: https://learn.microsoft.com/en-us/azure/documentdb/vector-search, https://learn.microsoft.com/en-us/azure/documentdb/half-precision, https://learn.microsoft.com/en-us/azure/documentdb/product-quantization, https://learn.microsoft.com/en-us/azure/documentdb/limitations.
 
 **Correct: `seed.py`**
 
@@ -444,7 +448,7 @@ def run_bulk(coll, ops, attempt=0):
             return e.details
         if attempt >= 2:
             raise
-        time.sleep(0.5 * 2 ** attempt)        # retryable writes unsupported: retry here
+        time.sleep(0.5 * 2 ** attempt)        # retryable writes unsupported (retrywrites=false): retry here
         return run_bulk(coll, [ops[w["index"]] for w in failed], attempt + 1)
 
 with MongoClient(os.environ["DOCUMENTDB_URI"]) as client:
@@ -462,11 +466,11 @@ with MongoClient(os.environ["DOCUMENTDB_URI"]) as client:
     sys.exit(0 if n == len(docs) else 1)
 ```
 
-> **Batch and nightly jobs.** Iterate with `find(filter).sort("_id", 1).batch_size(500)`. Save the last `_id` so that a restart resumes from `{"_id": {"$gt": marker}}`. Cap concurrency (`asyncio.Semaphore(8)` or `p-limit`). Pass `allowDiskUse=True` to `$group`, `$facet` or `$sort` over unbounded input. Retry on transient network, failover and timeout errors. Do not copy the request-unit throttling logic (16500 / 429) from Cosmos DB RU guidance. [needs SME confirmation: whether vCore can return 16500 or 429, see Open question 7]
+> **Batch and nightly jobs.** Iterate with `find(filter).sort("_id", 1).batch_size(500)`. Save the last `_id` so that a restart resumes from `{"_id": {"$gt": marker}}`. Cap concurrency (`asyncio.Semaphore(8)` or `p-limit`). Do not rely on `allowDiskUse`: the service accepts and ignores it (engine `commands_common.c` lists it among ignored options); query memory is bounded per tier (about 150 MiB on M80) and sorting is done in memory, so bound `$group`, `$facet` and `$sort` input with an indexed `$match` and `$limit` instead. Retry network errors and code 50 `ExceededTimeLimit` (the 120-second default query limit, adjustable per query with `maxTimeMS`) with bounded backoff, and only for idempotent writes. Azure DocumentDB has no request units and never returns 16500 or 429: those are RU-based Cosmos DB for MongoDB codes, absent from the Learn troubleshooting table and from the engine's error mappings, and no run in this experiment saw one. Treat code 261 `TooManyLogicalSessions` ("There are too many open connections.") as "reduce connections", not as a retry signal.
 >
 > **Local and Azure.** The same script runs against the local Gateway container (see `local-deployment` Quick start) and an Azure DocumentDB cluster; only `DOCUMENTDB_URI` changes (see `local-env-driven-config`). The local URI carries the TLS relaxation for the self-signed certificate; the Azure URI uses `tls=true` with SCRAM-SHA-256 or Entra ID.
 >
-> **References.** Node.js `Collection.bulkWrite` / `MongoBulkWriteError`; PyMongo `bulk_write` / `BulkWriteError.details`; `index-single-field`; `vector-search/vector-choose-index-type.md`; `local-deployment/seed/fixture.json`; `scenarios/contoso/contoso-seed.js` for a larger resumable example.
+> **References.** Node.js `Collection.bulkWrite` / `MongoBulkWriteError`; PyMongo `bulk_write` / `BulkWriteError.details`; https://learn.microsoft.com/en-us/azure/documentdb/limitations (25,000 writes per batch, 120-second query limit, unique-index build); https://learn.microsoft.com/en-us/azure/documentdb/vector-search (parameter ranges, build order); https://learn.microsoft.com/en-us/azure/documentdb/how-to-create-indexes; `index-single-field`; `vector-search/vector-choose-index-type.md`; `local-deployment/seed/fixture.json`; `scenarios/contoso/contoso-seed.js` for a larger resumable example.
 
 ### 8. `skills/driver/SKILL.md` (K08; also edited by the K07 PR, coordinate the Rules list)
 
@@ -480,7 +484,7 @@ Append to the front-matter `description`: "…bulk loading, seed scripts, import
 
 ### 9. `skills/connection/SKILL.md` (no edit in this PR)
 
-The `retryWrites=true` example (line 60) and the RU-code `withRetry` helper (lines 224-230) contradict the bulk-load rule's retry guidance and the decided position (retryable writes are not supported by Azure DocumentDB; `retrywrites=false` is required; see Resolved), but they belong to the K07 connection-string PR. This PR only cross-links; land K07 first or in the same release so the retry story is consistent and K07 uses the same rationale sentence as the bulk-load rule. The missing local-target mention noted under "What happens today" is covered by the `mcp-setup` and `AGENTS.md` changes below; K07 may add a one-line link to the local-deployment quick start.
+The `retryWrites=true` example (line 60) and the `withRetry` helper that retries only on `err.code === 16500 || err.code === 429` (lines 224-230) contradict the bulk-load rule's retry guidance and the decided positions (retryable writes are not supported by Azure DocumentDB and `retrywrites=false` is required; the service never returns 16500 or 429, so that helper never retries a real transient error; see Resolved), but they belong to the K07 connection-string PR. This PR only cross-links; land K07 first or in the same release so the retry story is consistent and K07 uses the same rationale sentence as the bulk-load rule. The missing local-target mention noted under "What happens today" is covered by the `mcp-setup` and `AGENTS.md` changes below; K07 may add a one-line link to the local-deployment quick start.
 
 ### 10. `skills/mcp-setup/SKILL.md` (K26 and K23)
 
@@ -522,11 +526,20 @@ Runnable versions of the `local-test-tiers` snippets. The folder is named `local
 - `examples/local-testing/docker-compose.test.yml` — the compose block from section 4
 - `examples/local-testing/.github/workflows/tests.yml` — the CI block from section 4 (an example workflow for samples, not the kit's own CI), with the URI read from a repository secret
 
-### 14. `CHANGELOG.md` (K08, extended to the whole PR)
+### 14. Corrections to existing `skills/local-deployment` rules (from findings/phase4/DECISIONS.md, SME topic 12)
+
+Statements in the skill that the research contradicted; each is a small text edit in the same PR because the quick start and `local-test-tiers` would otherwise disagree with the rules they link.
+
+- `local-connection-config.md` (lines 7, 13, 18-25): says a connection without `--tls` "fails" / the "server rejects" it and lists `--authenticationMechanism SCRAM-SHA-256` as a minimum requirement. The image default is `--tlsMode allowTLS`, which accepts plain and TLS connections (only `requireTLS` rejects plain ones), and the mechanism is negotiated because the gateway advertises only SCRAM-SHA-256. Reword to: TLS is recommended and the certificate is self-signed, so local URIs carry `tls=true&tlsAllowInvalidCertificates=true`; `authMechanism` is optional. Sources: https://documentdb.io/docs/documentdb-local/; engine `documentdb-local/scripts/documentdb_local_settings.sh` (line 44), `pg_documentdb_gw/documentdb_gateway_core/src/processor/ismaster.rs` (saslSupportedMechs).
+- `local-docker-compose-setup.md` (lines 10, 34), `local-ports-and-bindings.md` (lines 28, 42, 50, 60), `local-choose-deployment-method.md` (line 38), `SKILL.md` (line 11): the rule text says to pin the image, but every example uses `:latest` with `pull_policy: always`. Change the compose and `docker run` examples to a versioned tag (`pg17-1.2.0` today, the build `latest` resolves to) with a comment on bumping, and keep `:latest` only in the copy-paste quick start. The kit's own CI (`.github/workflows/diagnostic-regression.yml` line 23, `docs/TESTING-MACOS.md` line 100, `CHANGELOG.md` line 9) pins digest `sha256:4a341d...` described as "the pg17-1.0.0 digest"; that digest still resolves but no named tag points to it any more (`pg17-1.0.0`, `pg17-1.0.1`, `1.0` and `stable` all resolve to the 1.0.1 build) and it is two releases behind 1.2.0 (2026-11-12); re-pin as part of the same change (which tag or digest is Open question 5). Source: https://documentdb.io/docs/documentdb-local/ ("Use a versioned tag when you need a reproducible setup"), https://documentdb.io/docs/getting-started/release-notes-1.2, GHCR tag listing observed 2026-11-25.
+- `local-choose-deployment-method.md` (line 45) and `local-docker-compose-setup.md` (line 73): reference links point at `github.com/microsoft/documentdb`; the image and docs live under the `documentdb` GitHub organization (`ghcr.io/documentdb/documentdb/documentdb-local`, documentdb.io), as the kit's own CHANGELOG entry of 2026-10-19 records.
+- `local-sample-data-management.md` (lines 7-14): sample-data claims, fixed in section 5(e).
+
+### 15. `CHANGELOG.md` (K08, extended to the whole PR)
 
 ```markdown
-- local-deployment: add "Not this" guidance against the Azure Cosmos DB Emulator / port 10255 / stock mongo images; add a gateway Quick start; add `local-test-tiers` rule; fix non-idempotent seed example; add demo fixture (`seed/fixture.json`) and dataset sizing.
-- driver: add `driver-bulk-load-idempotent-seed` rule.
+- local-deployment: add "Not this" guidance against the Azure Cosmos DB Emulator / port 10255 / stock mongo images; add a gateway Quick start with a local-vs-cluster parity list (no DiskANN / pq, full-text search, change streams, Entra ID or snapshot read concern on the local gateway); add `local-test-tiers` rule; fix non-idempotent seed example and the image's sample-data description; add demo fixture (`seed/fixture.json`) and dataset sizing; examples use a versioned image tag; TLS/authMechanism wording in local-connection-config corrected.
+- driver: add `driver-bulk-load-idempotent-seed` rule (25,000 writes per request cap, retrywrites=false rationale, no 16500/429 on Azure DocumentDB, allowDiskUse is ignored).
 - mcp-setup / AGENTS.md / README / install scripts: local example URI now points at the 10260 gateway; plain MongoDB on 27017 is labelled as not DocumentDB.
 ```
 
@@ -555,21 +568,24 @@ Further run folders cited by the members:
 ## Resolved
 
 - retryWrites: answered 2026-11-25, see findings/phase4/DECISIONS.md. Retryable writes are not supported; retrywrites=false is required; the server does not de-duplicate retried writes (documentdb/documentdb#767).
+- Local gateway feature parity (`cosmosSearch`, `createSearchIndexes` / `$search`): the documentdb-local image supports `vector-ivf` and `vector-hnsw` (2,000 dimensions uncompressed, 4,000 with `compression: "half"`) but not `vector-diskann` or `pq` compression, not `createSearchIndexes` / full-text `$search` (code 115 "Command 'createSearchIndexes' not supported."), not change streams (code 115), not Microsoft Entra ID (SCRAM-SHA-256 only), and not `readConcern: snapshot`, while transactions with the default read concern work. Sources (DECISIONS.md, SME topic 12): https://documentdb.io/docs/reference/operators/aggregation/$vectorsearch/, https://documentdb.io/docs/reference/operators/aggregation/$search/, https://documentdb.io/docs/reference/operators/aggregation/$changestream/, engine source `pg_documentdb/src/vector/vector_index_kind_impl.c`, `pg_documentdb_gw/documentdb_gateway_core/src/postgres/data_client.rs`, `src/auth/manager.rs`, `packaging/gateway/docker/Dockerfile_documentdb_local`, issues documentdb/documentdb#50, #736, #803.
+- Full-text search status: preview, not GA; enablement is self-serve (portal Settings > Features > Full-text search, or Azure CLI / Bicep / Terraform PATCH of `properties.previewFeatures` adding `FullTextSearch`), wait 10 minutes before creating a search index, and a cluster without the preview returns code 115 `CommandNotSupported` "Search index creation is not supported yet". Sources (DECISIONS.md, SME topic 7): https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview (updated 2026-11-17), https://devblogs.microsoft.com/documentdb/?p=259, observation in runs/07-voice-of-customer-sentiment-hub/20261124-204049.
+- 16500 / 429 throttling: Azure DocumentDB never returns 16500, 429, TooManyRequests or any throttling code; those are RU-based Cosmos DB for MongoDB errors, absent from the Learn troubleshooting table and from the engine's error mappings, and no run observed one; resource pressure surfaces as timeouts (code 50 `ExceededTimeLimit`, 120-second default) and 261 `TooManyLogicalSessions` is a non-retryable connection-limit error. Sources (DECISIONS.md, SME topic 2): https://learn.microsoft.com/en-us/azure/documentdb/troubleshoot-common-issues, https://learn.microsoft.com/en-us/azure/documentdb/limitations, https://learn.microsoft.com/en-us/azure/cosmos-db/mongodb/error-codes-solutions, github.com/documentdb/documentdb at a5f1636 (error_mappings.csv, documentdb_errors.csv, `query_dispatch.rs`).
+- Vector index build order per kind: HNSW can be created on an empty collection; IVF's `numLists` depends on document count, so create or re-create it after loading; a product-quantization index should be created after the collection has data; a new index can return empty results for 2 to 3 minutes while it builds. Sources (DECISIONS.md, SME topic 6): https://learn.microsoft.com/en-us/azure/documentdb/vector-search, https://learn.microsoft.com/en-us/azure/documentdb/product-quantization, https://learn.microsoft.com/en-us/azure/documentdb/quickstart-nodejs-select-algorithm.
+- HNSW options and binary vectors: `m: 16` and `efConstruction: 64` are the documented defaults (`m` 2 to 100, `efConstruction` 4 to 1000 and at least `2m`); dimension caps are 2,000 uncompressed, 4,000 with half precision, 16,000 with product quantization on DiskANN (the 8,000 figure on the select-algorithm quickstarts is wrong, confirmed by the product owner 2026-11-25); vectors must be arrays of numbers, and a document whose vector is another type (BSON binary) is not indexed and is silently absent from results. Sources (DECISIONS.md, SME topic 6): https://learn.microsoft.com/en-us/azure/documentdb/vector-search, https://learn.microsoft.com/en-us/azure/documentdb/half-precision, https://learn.microsoft.com/en-us/azure/documentdb/limitations, issue documentdb/documentdb#109.
+- Pinning a versioned image tag: yes; the OSS docs say "Use a versioned tag when you need a reproducible setup", versioned tags are `pg15-1.2.0` to `pg18-1.2.0` (`latest` and `1.2` resolve to `pg17-1.2.0`, DocumentDB 1.2, 2026-11-12), and the kit's rule text already says to pin while its examples use `:latest`; which exact tag or digest the kit's CI pins is a maintainer choice (Open question 5). Sources (DECISIONS.md, SME topic 12): https://documentdb.io/docs/documentdb-local/, https://documentdb.io/docs/getting-started/release-notes-1.2, GHCR tag listing observed 2026-11-25.
+- allowDiskUse (affects the batch-job paragraph): the engine accepts and ignores the option; query memory is bounded per tier (about 150 MiB on M80). Sources (DECISIONS.md, SME topic 10): engine `pg_documentdb/src/commands/commands_common.c` (IgnoredCommonSpecFields), https://learn.microsoft.com/en-us/azure/documentdb/limitations.
+- Batch write cap (affects the bulk-load contract): 25,000 writes per batch request; collection-level `bulkWrite()` works, the compatibility page's `bulkWrite: No` row is the MongoDB 8.0 database-level command. Sources (DECISIONS.md, SME topic 9): https://learn.microsoft.com/en-us/azure/documentdb/limitations (Batch limits), https://learn.microsoft.com/en-us/azure/documentdb/compatibility-query-language, observation in runs/02-real-time-event-stream-ingestion/20261124-203233.
 
 ## Open questions
 
 1. Should the install-script and README edits in section 12 stay in this PR or move to a follow-up? They change user-facing default example URIs. (Maintainer preference.)
-2. The same 27017 "local URI" also appears in the microsoft/documentdb-mcp README. That is out of scope here and should be tracked as its own item. Can the maintainers confirm that the two repositories should use the same 10260 gateway example?
+2. The same 27017 "local URI" also appears in the microsoft/documentdb-mcp README (lines 73, 95, 115, 231 and the VS Code install badge) and on the Learn MCP Toolkit page. The facts are settled (a default documentdb-local container listens on 10260, exits without a password and serves a self-signed certificate, so that example cannot connect to it; DECISIONS.md, SME topic 12); whether the MCP repository adopts the same 10260 gateway example is a maintainer decision for that repository and is tracked as its own item, out of scope here.
 3. Maintainers: is `AGENTS.md` routing on "docker is on PATH" the trigger you want, or would you prefer the hint only in `mcp-setup` so agents do not start containers unasked?
 4. Part of the "gateway not running" missed-accelerator signal comes from the experiment harness (local tools such as documentdb-local were reported as missed even where the harness did not let the agent use them). The doc gap stands on the file evidence, but K26's 15-sample figure, and therefore part of the 55, should be treated as indicative until a rerun after the harness fixes.
-5. [needs SME confirmation] Does the local Gateway image support `cosmosSearch` vector indexes (vector-ivf, vector-hnsw, vector-diskann) and `createSearchIndexes` / `$search`, so the integration tier can exercise them? If not, `local-test-tiers` and the quick-start parity caveats should name which features need a real Azure DocumentDB cluster.
-6. [needs SME confirmation] Is full-text search (`$search`) generally available, or still in preview? The rules should not imply that a preview feature is GA.
-7. [needs SME confirmation] Can vCore return 16500 or 429? The bulk-load rule tells readers not to copy RU throttling logic.
-8. [needs SME confirmation] Does creating `cosmosSearch` indexes after the load matter for each kind? In particular, does `vector-ivf` need data before it builds, and can HNSW be built on an empty collection?
-9. [needs SME confirmation] Are the HNSW options in the seed skeleton (`m: 16`, `efConstruction: 64`) within the supported limits? Are binary (non-`number[]`) vectors ignored by `cosmosSearch`?
-10. [needs SME confirmation] Should CI (the `docker-compose.test.yml` and the quick start's CI note) pin a versioned `documentdb-local` tag instead of `:latest`, and which tag?
-11. Should the bulk-load rule live in `driver`, as proposed, or in `local-deployment`? Do the demo-size numbers suit the maintainers?
-12. Sample counting: the 55 is the union of K23's 22 and K26's 15 (from finding-id lists), K09's 16 (finding-id lists of drafts 091 and 052, which share one sample) and K08's 15 (from evidence paths of drafts 103 and 053, which share one sample; their finding-id lists also include findings on unrelated topics such as cold-quiz naming). Members overlap on 13 samples. All counts come from one run and may change after the harness fixes; re-check before quoting them publicly.
+5. Which exact tag or digest should the kit's compose example and CI pin (`pg17-1.2.0`, its digest, or the floating `1.2`)? That versioned tags should replace `:latest` is settled (see Resolved); the choice is a maintainer decision. Suggested default: `pg17-1.2.0` pinned by digest, bumped deliberately on each DocumentDB release, with `:latest` kept only in the copy-paste quick start.
+6. Should the bulk-load rule live in `driver`, as proposed, or in `local-deployment`? Do the demo-size numbers suit the maintainers?
+7. Sample counting: the 55 is the union of K23's 22 and K26's 15 (from finding-id lists), K09's 16 (finding-id lists of drafts 091 and 052, which share one sample) and K08's 15 (from evidence paths of drafts 103 and 053, which share one sample; their finding-id lists also include findings on unrelated topics such as cold-quiz naming). Members overlap on 13 samples. All counts come from one run and may change after the harness fixes; re-check before quoting them publicly.
 
 ## Source drafts
 
