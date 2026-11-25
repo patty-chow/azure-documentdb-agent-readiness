@@ -1,29 +1,23 @@
 import os
 from pymongo import MongoClient
-from threading import Lock
-from dotenv import load_dotenv
+from pymongo.errors import ConfigurationError
 
-load_dotenv()
-
-_DOCUMENTDB_URI = os.getenv("DOCUMENTDB_URI")
-_DB_NAME = os.getenv("DOCUMENTDB_DB", "sample_fintech_08")
-
+# Singleton MongoClient per documentdb-driver guidance
 _client = None
-_lock = Lock()
-
 
 def get_client():
     global _client
     if _client is None:
-        with _lock:
-            if _client is None:
-                if not _DOCUMENTDB_URI:
-                    raise RuntimeError("DOCUMENTDB_URI is not set in environment")
-                # Use TLS by default; let the URI control auth and options
-                _client = MongoClient(_DOCUMENTDB_URI, tls=True)
+        uri = os.environ.get("DOCUMENTDB_URI")
+        if not uri:
+            raise RuntimeError("DOCUMENTDB_URI environment variable is required")
+        # Expect the full connection string (mongodb or mongodb+srv) in DOCUMENTDB_URI
+        _client = MongoClient(uri)
     return _client
 
 
-def get_db():
+def get_db(db_name=None):
+    if db_name is None:
+        db_name = os.environ.get("DB_NAME", "sample_fintech_08")
     client = get_client()
-    return client[_DB_NAME]
+    return client[db_name]

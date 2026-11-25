@@ -1,0 +1,728 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample is a small, working Python demo that seeds two collections (regulatory/internal policies), stores embeddings when an OpenAI key is present, exposes a CLI and FastAPI /analyze endpoint, and includes a LlamaIndex adapter example. Key gallery expectations are implemented (singleton client, .env.example, README, idempotent upserts, projection usage, returned similarity scores, unit test using mongomock). Shortcomings: the runtime uses client-side brute-force similarity instead of server-side cosmosSearch/$search vector queries; the sample does not run LlamaIndex as the runtime (only an adapter example); vector index creation was attempted but the MCP tool was disabled in verification and server-side index listing did not show the vector index; error handling for empty queries/embedding failures is minimal; some dependency pins are loose (openai unpinned). See detailed requirement-by-requirement results, practice checks and decisions below.",
+  "requirement_results": [
+    {
+      "requirement": "Build a Python RAG agent with LlamaIndex in which one agent handles the whole flow for a given policy excerpt: retrieving the relevant regulatory clauses, comparing them against the excerpt and producing the compliance gap report.",
+      "status": "partly_met",
+      "evidence": "app/src/llama_index_adapter.py shows an adapter (build_llama_index_from_docs) that demonstrates how to build a LlamaIndex index, but the runtime analyze flow (app/src/app.py and app/src/analysis.py) uses direct OpenAI embedding and ChatCompletion calls rather than running LlamaIndex end-to-end.",
+      "cause": "builder_error",
+      "smallest_fix": "Wire the LlamaIndex adapter into the runtime analyze flow (replace call_llm/build_prompt with a LlamaIndex query/predictor call) or make the adapter a working runtime dependency and document how to enable it in README."
+    },
+    {
+      "requirement": "Ingest regulatory documents into one Azure DocumentDB collection and internal policy documents into a second, separate collection, storing on each document its text and the embedding array produced by the embedding model configured in LlamaIndex.",
+      "status": "met",
+      "evidence": "app/src/seed.py: upsert_collection sets d['embedding'], d['embedding_model'] and d['embedding_dims'] and upserts into reg_coll/pol_coll via collection.update_one(..., upsert=True) (lines ~70-80, 83-91 in seed.py). app/src/seed_noembed.py also upserts placeholder embeddings (lines 52-61).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field of each collection in code, with dimensions matching the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "A create-index placeholder and helper exist: app/scripts/create_indexes.py documents the desired index shapes; events show an attempted documentdb_create_index call that failed (events.jsonl tool documentdb_create_index: ToolExecutionException complaining 'Management tools are disabled by default.'), and then a pymongo db.command({'createIndexes':...}) run was executed (events.jsonl entries at timestamps ~06:54:03 and ~06:54:18). app/.env.example and scripts mention dimensions=1536.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Add a clear, runnable 'create_indexes_admin.py' that uses pymongo runCommand with example cosmosSearchOptions, and document in README that operators must run it with admin privileges (or set ENABLE_MANAGEMENT_TOOLS=true for the MCP tool) so the index is created and can be verified."
+    },
+    {
+      "requirement": "When given a policy excerpt, embed it and retrieve the most relevant regulatory clauses by running a $search / cosmosSearch vector similarity query (similarity COS, L2 or IP) against the regulatory collection in Azure DocumentDB, returning the top-k clauses (e.g. k = 5).",
+      "status": "not_met",
+      "evidence": "app/src/app.py and app/src/analysis.py compute an embedding and then perform a client-side brute-force similarity over documents fetched from the DB (retrieve_top_regulatory and analysis.analyze_text perform in-Python cosine similarity; app/src/app.py lines ~47-59, analysis.py lines ~43-56). There is no server-side $search/cosmosSearch call in the runtime.",
+      "cause": "builder_error",
+      "smallest_fix": "Replace the client-side scoring with a cosmosSearch vector query against the 'regulatory' collection (use db.command createIndexes + $search aggregation or the documented pymongo runCommand/$search call). Provide an example query snippet in the sample code and README showing how to set search params (k, similarity, efSearch/lSearch)."
+    },
+    {
+      "requirement": "Apply context engineering to build the comparison prompt: assemble a structured prompt that places the policy excerpt and the retrieved regulatory clauses in distinct, labelled sections and instructs the LLM to compare the policy excerpt against those clauses.",
+      "status": "met",
+      "evidence": "app/src/app.py function build_prompt builds a structured prompt with 'Policy excerpt:' and 'Regulatory clauses (top matches):' labeled sections and instructions to output JSON (lines 62-72).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Produce a compliance gap report as the agent's output, generated by the LLM through LlamaIndex from that structured comparison prompt, identifying where the policy excerpt meets and where it falls short of the retrieved regulatory clauses.",
+      "status": "partly_met",
+      "evidence": "app/src/app.py: build_prompt constructs the structured prompt and call_llm uses openai.ChatCompletion.create to obtain an LLM output; the adapter for LlamaIndex exists but is not used (llama_index_adapter.py). The report is produced by the LLM, but not through a LlamaIndex runtime (lines ~75-82 and 86-93 in app.py; adapter at llama_index_adapter.py).",
+      "cause": "builder_error",
+      "smallest_fix": "Either use LlamaIndex to run the prompt/composition (call into the adapter) or change the sample title/README to not claim LlamaIndex is the runtime; the smaller change is to wire the adapter into analyze_excerpt and document how to enable the dependency."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.py reads DOCUMENTDB_URI from environment (lines 11-16). app/src/seed.py, app/src/app.py and analysis.py read OPENAI_API_KEY and EMBEDDING_MODEL from environment (app/src/seed.py line 13; app/src/app.py line 17-19; analysis.py lines 10-11). app/.env.example provides placeholders (app/.env.example lines 2-6).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains placeholders for DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL, OPENAI_EMBEDDING_DIMS, OPENAI_LLM_MODEL and DB_NAME (lines 2-7). README refers to .env.example (app/README.md lines 21-22).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "The sample chooses OpenAI text-embedding-3 (1536 dims) in decisions and .env.example documents EMBEDDING_DIMENSIONS=1536 (app/.env.example line 5). seed.py sets d['embedding_dims'] to len(emb) at upsert time (app/src/seed.py lines 75-78). The server-side index creation was attempted with dimensions=1536 but verification of a server-side vector index was not fully confirmed (events show createIndexes attempts and a later empty index listing).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Document and assert the chosen embedding dims in the seed script; include a small verification step (explain/list_indexes) that confirms index dimensions after index creation in admin setup instructions."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "create_indexes.py and README document example index choices and recommend DiskANN/HNSW and dims=1536; README notes production changes and points to creating native vector indexes (app/scripts/create_indexes.py and app/README.md lines ~36-39). However the sample uses client-side brute-force for the tiny dataset and does not programmatically tune parameters for larger datasets.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an explicit section in README that recommends default index params for different dataset sizes (e.g., HNSW: up to 50k, DiskANN for >100k), with copy-paste createIndexes JSON and notes on tuning maxDegree/lBuild/lSearch."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py implements a module-level singleton _client and get_client/get_db that reuse the MongoClient (lines 5-16).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/src/seed.py and app/src/seed_noembed.py upsert documents using update_one(..., upsert=True) (seed_noembed.py lines 56-61; seed.py lines 70-80); README documents seed usage (app/README.md lines 28-34).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "app/src/app.py exposes POST /analyze and analyze_api calls analyze_excerpt inside a try/except that returns HTTP 500 on any exception (app/src/app.py lines 95-101). There is no explicit empty-query validation or explicit handling that returns a clear, client-facing error when the embedding call fails (embed_text in app.py raises on missing key or propagates exception).",
+      "cause": "builder_error",
+      "smallest_fix": "Add explicit validation in analyze_api to reject empty excerpt with HTTP 400 and wrap embedding calls with a clear 4xx/5xx mapping plus a helpful error message when embeddings cannot be obtained (e.g., 'missing OPENAI_API_KEY' or 'embedding service error')."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "app/src/app.py retrieve_top_regulatory returns entries of form {'score': s, 'doc': doc} (lines 51-59) and the CLI prints scores (lines 109-113). analysis.py returns sim values as well in analyze_text (lines 70-79).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt pins many dependencies (pymongo==4.4.0, python-dotenv==1.0.0, fastapi==0.100.0, uvicorn==0.23.0, pytest==7.4.0, numpy==1.26.4) but openai is specified as openai>=1.0.0 (loose) rather than an exact pinned version (app/requirements.txt).",
+      "cause": "builder_error",
+      "smallest_fix": "Pin openai to a tested exact version (e.g., openai==3.59.0) and consider pinning any transitive packages used in CI; add a constraints.txt if permissive ranges are desired for local development."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "partly_met",
+      "evidence": "There is a unit test that uses mongomock and monkeypatch to run without a live cluster (app/tests/test_analysis_mock.py modified and shown to pass in the build events). However app/tests/test_seed_and_query.py expects a live database and will fail when no cluster is available (test requires list_collection_names).",
+      "cause": "builder_error",
+      "smallest_fix": "Mark tests that require a live cluster as integration tests (skip by default), and add CI-friendly unit tests that use mongomock or explicit test DB names and teardown. Update README to show how to run integration tests against a real cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "The repository does not include Terraform/Bicep/ARM templates for Microsoft.DocumentDB/mongoClusters or other Azure resource definitions; skill_md states a cluster is already provisioned and the builder did not add IaC to the sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small Bicep or Terraform example that deploys Microsoft.DocumentDB/mongoClusters with parameterized tier/storage/region and defaults suitable for demo (note: document that running it will create billable resources)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md contains sections describing what the sample shows, prerequisites, quickstart/setup/run and Notes/limitations (lines 1-40).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md title and text explicitly use 'Azure DocumentDB' (README.md line 1 and lines 3-7) and other files refer to DocumentDB in the same way.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create a single MongoClient per process (module-level singleton) and reuse it rather than creating a client per request.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.py lines 5-16 implement module-level singleton _client and get_client() that reuses MongoClient.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune connection-pool and timeout parameters according to your hosting model.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The code creates MongoClient from DOCUMENTDB_URI without explicit maxPoolSize or timeouts (app/src/db.py lines 11-16). The repository does not document tuned pool settings for serverless vs long-running servers.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add optional env vars (MAX_POOL_SIZE, SERVER_SELECTION_TIMEOUT_MS) and apply them in MongoClient(...) in src/db.py.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always use TLS for client connections and never disable certificate validation in production.",
+      "category": "security / connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/security#transport-security",
+      "status": "violated",
+      "evidence": "app/src/db.py constructs MongoClient from DOCUMENTDB_URI without programmatic verification that tls=true or certificate validation is enabled (app/src/db.py lines 11-16). .env.example suggests a connection string with tls=true (app/.env.example line 2) but the code does not enforce TLS.",
+      "source": "Secure your Azure DocumentDB cluster",
+      "searched": "",
+      "fix": "Validate the parsed connection string or pass tls=True and tlsAllowInvalidCertificates=False explicitly to MongoClient in src/db.py and fail early if TLS is not present.",
+      "sources": [
+        {
+          "title": "Secure your Azure DocumentDB cluster",
+          "url": "https://learn.microsoft.com/azure/documentdb/security#transport-security"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefer Entra ID",
+      "practice": "Prefer Microsoft Entra ID authentication and RBAC or per-application secondary users over embedding admin/root credentials in application code.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample uses connection string in env var DOCUMENTDB_URI and documents this in README/.env.example; the sample does not attempt to demonstrate Entra ID OIDC flows.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "OIDC / managed identity",
+      "practice": "When available, use managed identities / OIDC (MONGODB-OIDC) with a driver callback so the app gets short-lived tokens.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-build-python-console-app#connect-to-the-cluster",
+      "status": "not_applicable",
+      "evidence": "The sample uses DOCUMENTDB_URI SCRAM-style connection in examples and .env.example; it does not implement MONGODB-OIDC flows.",
+      "source": "How to build a Python console app with Azure DocumentDB (OIDC example)",
+      "searched": "",
+      "fix": "Optional: provide an example in README showing how to configure Microsoft Entra ID authentication and how to use DefaultAzureCredential with the driver.",
+      "sources": [
+        {
+          "title": "How to build a Python console app with Azure DocumentDB (OIDC example)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-build-python-console-app#connect-to-the-cluster"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize embeddings",
+      "practice": "Normalize embeddings at ingest when using cosine similarity, and store the embedding model name and the embedding dimension with each document.",
+      "category": "vector search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/seed.py embed_text normalizes the returned vector (lines 63-66) and upsert_collection sets d['embedding_model'] and d['embedding_dims'] (lines 75-78). seed_noembed inserts embedding placeholders and sets embedding_model/embedding_dims fields (seed_noembed.py lines 53-60).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index choice by scale",
+      "practice": "Prefer DiskANN for production-scale vector indexes, use HNSW for moderate-sized collections (~up to 50k vectors) and IVF for very small datasets.",
+      "category": "vector search / indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample documents the recommendation in create_indexes.py and README but for the small synthetic dataset the runtime uses brute-force client-side search.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "If you intend to demonstrate server-side indexes, create a small HNSW index in CI for moderate sized demos and document DiskANN recommendations for large datasets.",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index params",
+      "practice": "When creating DiskANN/HNSW vector indexes, set and tune parameters (dimensions, similarity, maxDegree, lBuild) and ensure the index 'dimensions' and similarity match the embeddings exactly; rebuild the index if the embedding model changes.",
+      "category": "vector search / indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "violated",
+      "evidence": "create_indexes.py and events show an attempted createIndexes with 'dimensions':1536 and other params (events.jsonl) but the final documentdb_list_indexes call returned only the _id index (events.jsonl), so parameters were not demonstrably applied server-side in verification.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "Add an admin-run createIndexes script (pymongo runCommand) with clear success checks and a README step to verify index settings (dimensions/similarity).",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Hybrid search",
+      "practice": "Combine BM25 keyword search and vector retrieval (hybrid search / RRF) when you want lexical signals plus semantic vectors.",
+      "category": "search / retrieval",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/full-text-search/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The sample documents a lexical fallback (text index) and the README mentions hybrid options, but the runtime uses vector brute-force + text fallback heuristics rather than server-side hybrid $search. No server-side RRF implementation is present to inspect.",
+      "source": "documentdb-full-text-search",
+      "searched": "",
+      "fix": "If demonstrating hybrid retrieval, add a server-side example that runs BM25 + vector and fuses using RRF either server-side (aggregation) or client-side with documented parameters.",
+      "sources": [
+        {
+          "title": "documentdb-full-text-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/full-text-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Store embeddings with text and provenance",
+      "practice": "Store source text, embeddings and provenance metadata (source, doc_id/section, embedding_model, embedding_dims) together.",
+      "category": "data modeling / provenance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "seed.py stores embedding, embedding_model, embedding_dims fields (seed.py lines 75-78). Documents include source/section/title fields (seed_noembed.py lines 11-16, seed.py lines 18-23).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent upserts",
+      "practice": "Seed and ingest jobs use idempotent upserts or versioned documents so re-running the seed doesn't create duplicates.",
+      "category": "data modeling / operational",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "seed.py and seed_noembed.py use collection.update_one({'_id': ...}, {'$set': d}, upsert=True) to upsert documents (seed_noembed.py lines 56-61; seed.py lines 70-80).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Local dev gateway",
+      "practice": "For local development, run the DocumentDB Gateway image (Mongo on port 10260) and include a 'no-embed' seed mode so developers can populate collections without requiring external embedding keys.",
+      "category": "local development / dev workflow",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "The repo includes seed_noembed.py (app/src/seed_noembed.py) which populates collections without computing embeddings (lines 1-9, 48-61). README notes local dev patterns and optional no-embedding seed (app/README.md lines 27-34, notes).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use projections",
+      "practice": "Use projections (field selection) in find/aggregate queries to return only the fields you need and reduce payload size.",
+      "category": "queries / cost",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/find",
+      "status": "followed",
+      "evidence": "app/src/app.py retrieve_top_regulatory uses a projection in find(): reg_coll.find({}, {\"_id\": 1, \"title\": 1, \"source\": 1, \"section\": 1, \"content\": 1, \"embedding\": 1}) (app/src/app.py line ~51).",
+      "source": "find (Azure DocumentDB docs)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "find (Azure DocumentDB docs)",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/find"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side indexes for RAG",
+      "practice": "Prefer server-side vector indexes and server-side $search + cosmosSearch queries for scale rather than downloading all documents and doing brute-force similarity on the client.",
+      "category": "vector search / performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search",
+      "status": "violated",
+      "evidence": "The sample uses client-side brute-force similarity computation (app/src/app.py lines 50-59 and analysis.py lines 46-55) for retrieval rather than issuing server-side cosmosSearch queries.",
+      "source": "README (sample guidance) and vector-search guidance",
+      "searched": "",
+      "fix": "Implement and demonstrate an alternative retrieval path that issues a cosmosSearch vector query (db.command/$search) against the regulatory collection and use it in the analyze flow when a server-side index is available.",
+      "sources": [
+        {
+          "title": "README (sample guidance) and vector-search guidance",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Provenance in RAG outputs",
+      "practice": "Include provenance (source id, clause/section id, jurisdiction, effective_date and an explicit retrieval id or link) in the data returned to the prompt so RAG outputs can cite exact clause origins.",
+      "category": "application design / provenance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/query-knowledge-base#llamaindex-azure-documentdb-integration",
+      "status": "followed",
+      "evidence": "Retrieved docs include _id, source and section fields; build_prompt in app.py includes source/section/title/content in the prompt and the returned 'retrieved' objects include doc._id and score (app/src/app.py lines 66-71 and 85-93).",
+      "source": "Use LlamaIndex with Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use LlamaIndex with Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/query-knowledge-base#llamaindex-azure-documentdb-integration"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Test DB patterns",
+      "practice": "Seed and test workflows should use small dedicated test databases/collections with teardown and optionally a no-embedding seed mode to avoid using production data or requiring embedding API keys in CI.",
+      "category": "testing / dev workflow",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "tests/test_analysis_mock.py uses mongomock to run a unit test without a live cluster and seed_noembed.py supports no-embedding seeding (app/tests/test_analysis_mock.py and app/src/seed_noembed.py). However a separate test (app/tests/test_seed_and_query.py) still expects a live DB and will fail without one.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "Mark integration tests explicitly and add teardown in test fixtures or a test DB-name override to avoid touching production sample_fintech_08 in CI.",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain queries",
+      "practice": "Use explain('executionStats') on typical retrieval queries to check index usage (keysExamined/docsExamined) and avoid COLLSCAN before shipping.",
+      "category": "queries / optimization",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P28",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md",
+      "status": "violated",
+      "evidence": "No code calls db.command('explain') or similar to verify index usage; app/scripts/create_indexes.py documents index shapes but no explain-based verification or example is included.",
+      "source": "documentdb-query-optimization",
+      "searched": "",
+      "fix": "Add a small admin/debug script (scripts/explain_queries.py) that runs explain('executionStats') for the sample queries and prints keysExamined/docsExamined, and add a README step to run it before shipping.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimization",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Decision to approve build with readiness 'ready_with_gaps' is recorded and consistent with the operator 'approval' events in events.jsonl."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python 3.13 matches the run environment and is supported by events that show Python 3.13 was available and used."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choice of pymongo (sync) and singleton client is implemented (app/src/db.py) and corresponds to documentdb-driver guidance loaded during the run."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from environment is implemented in src/db.py (lines 11-16) and the .env.example documents it."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Choice of OpenAI text-embedding-3 (1536 dims) is recorded and the code/.env.example reflect EMBEDDING_DIMENSIONS=1536; this was a deliberate builder choice."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choosing OpenAI as the default provider is implemented in code and .env.example (OPENAI_API_KEY), and all embedding/LLM calls use OpenAI client."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "A CLI and FastAPI endpoint were implemented (app/src/app.py and analysis CLI), as recorded in the workspace and events."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision to try using the documentdb_create_index MCP tool is supported by events showing a documentdb_create_index call was attempted (events.jsonl) and failed due to management tools being disabled."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Duplicate readiness approval; consistent with logs."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Repeat of earlier runtime choice; consistent with environment evidence."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Recorded and implemented: singleton MongoClient in src/db.py."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Decision to use OpenAI text-embedding-3 family is consistent with code, .env.example and decisions recorded in events."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Reiterates CLI+FastAPI choice; code exists and was exercised in verification."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Decision to store embeddings and create an index but to use client-side retrieval for the demo is explicit and visible in code (client-side scoring in app/src/app.py and analysis.py). The events show the rationale and the actual implementation."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Decision to use MCP server create_index for verification was attempted (events show the attempt) and the rationale is consistent with the environment; the attempt was later blocked by management-tools policy."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "The documentdb_create_index tool failed (events show ToolExecutionException), and a fallback runCommand via pymongo was executed (events show the run_command that called createIndexes). The decision accurately reflects the trace."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Repeated approval; consistent with logs."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "sound",
+      "comment": "Repeat of Python runtime decision; events show consistent use."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "Choice and implementation of pymongo singleton documented and present in the code and event log."
+    },
+    {
+      "decision_id": "D020",
+      "assessment": "sound",
+      "comment": "Choice of embeddings dims and the explicit number 1536 appears in .env.example and in create-index attempts; consistent with the builder notes."
+    },
+    {
+      "decision_id": "D021",
+      "assessment": "sound",
+      "comment": "Choice of OpenAI gpt-3.5-turbo for ChatCompletion is implemented in app/src/app.py (LLM_MODEL default) and recorded in events/decisions."
+    },
+    {
+      "decision_id": "D022",
+      "assessment": "sound",
+      "comment": "Duplicate of earlier CLI+HTTP decision; code exists to match it."
+    },
+    {
+      "decision_id": "D023",
+      "assessment": "questionable",
+      "comment": "Decision to both create a server-side vector index and also use client-side fallback is defensible. The sample documents server-side index creation but the verification trace shows the server-side create failed/was not visible; the builder consciously left the client-side fallback, which is pragmatic but deviates from the requirement that retrieval use $search server-side."
+    },
+    {
+      "decision_id": "D024",
+      "assessment": "sound",
+      "comment": "Approval repetition logged and consistent."
+    },
+    {
+      "decision_id": "D025",
+      "assessment": "sound",
+      "comment": "Python/virtualenv choice repeated; consistent with the environment and earlier events."
+    },
+    {
+      "decision_id": "D026",
+      "assessment": "sound",
+      "comment": "pymongo singleton choice repeated; code and events confirm implementation."
+    },
+    {
+      "decision_id": "D027",
+      "assessment": "questionable",
+      "comment": "Decision recorded as 'model_default' to do client-side brute-force NN due to environment constraints. It's defensible for a tiny demo dataset, but the product expectation (and the checklist) prefers server-side cosmosSearch. Events confirm the client-side approach was implemented; this ought to be noted as a deviation from the ideal gallery guidance."
+    },
+    {
+      "decision_id": "D028",
+      "assessment": "sound",
+      "comment": "Selecting text-embedding-3-small and OPENAI_API_KEY as env var is implemented in code and .env.example; decision is consistent with the verification notes."
+    },
+    {
+      "decision_id": "D029",
+      "assessment": "sound",
+      "comment": "Decision to use direct OpenAI calls in runtime and provide a LlamaIndex adapter only is implemented and supported by the code and events (llama-index not installed, adapter included)."
+    },
+    {
+      "decision_id": "D030",
+      "assessment": "sound",
+      "comment": "Providing both CLI and FastAPI and running the CLI for verification is consistent with the run logs and code."
+    },
+    {
+      "decision_id": "D031",
+      "assessment": "sound",
+      "comment": "Attempt to pin llama-index to a particular version and subsequent dependency resolution issues are recorded in events; later the decision to remove llama-index from runtime deps is also recorded and implemented."
+    },
+    {
+      "decision_id": "D032",
+      "assessment": "sound",
+      "comment": "Upgrading FastAPI/uvicorn for compatibility with pydantic v2 is documented in the events and requirements modifications; the change is consistent with the dependency resolution trace."
+    },
+    {
+      "decision_id": "D033",
+      "assessment": "sound",
+      "comment": "Upgrading openai dependency to satisfy llama-index transitive requirements is recorded in the events; eventually openai was left as a broad range in requirements to avoid rigid conflicts. The decision is visible in the events' pip resolution attempts."
+    },
+    {
+      "decision_id": "D034",
+      "assessment": "sound",
+      "comment": "Decision to remove llama-index from runtime dependencies but keep the adapter is recorded and matches the final requirements and repository contents (adapter file present, llama-index absent from runtime installation during verification)."
+    },
+    {
+      "decision_id": "D035",
+      "assessment": "sound",
+      "comment": "Setting openai to a broad compatible range (openai>=1.0.0 in final requirements) is reflected in requirements.txt and the events for pip resolution; evidence supports the decision."
+    },
+    {
+      "decision_id": "D036",
+      "assessment": "sound",
+      "comment": "Decision to seed the database without embeddings because OPENAI_API_KEY was not set is supported by run logs: python -m src.seed produced 'No embeddings inserted (OPENAI_API_KEY missing or failed). Documents seeded without embeddings.' (events.jsonl)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Copy-paste vector index creation examples",
+      "what_was_missing": "A single, copy-paste-ready createIndexes/runCommand JSON snippet for each vector index kind (vector-hnsw, vector-ivf, vector-diskann) that includes dims, similarity, and algorithm-specific params.",
+      "where_searched": "DocumentDB vector search skill and Microsoft Learn vector-search pages during discovery; app/scripts/create_indexes.py exists but is a placeholder.",
+      "effect_on_this_build": "The MCP create-index tool was attempted and failed (management tools disabled). The builder fell back to pymongo runCommand; index listing did not show the expected index. Lack of a simple authoritative example increases the chance a builder will call the wrong API shape and fail silently or create the wrong index.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Create a vector index' page containing: (1) three copy-paste JSON examples for createIndexes/runCommand (HNSW, IVF, DiskANN) with dims parameter and recommended default params; (2) a one-liner pymongo runCommand snippet; (3) runbook notes about required privileges and how to verify with documentdb_list_indexes and explain().",
+      "priority": "high"
+    },
+    {
+      "topic": "Server-side hybrid retrieval examples",
+      "what_was_missing": "A small example that demonstrates BM25 + vector hybrid (RRF) implemented server-side via createSearchIndexes + $search and an aggregation pipeline or example client-side fusion with exact parameters.",
+      "where_searched": "documentdb-full-text-search skill and Microsoft Learn hybrid-search docs; repository notes but no working sample.",
+      "effect_on_this_build": "The sample implements a lexical fallback and client-side vector scoring only; authors and readers may not see how to implement server-side hybrid retrieval recommended for production.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a 'hybrid-search.md' quickstart that includes: createSearchIndexes example for BM25, createIndexes example for vector index, a cosmosSearch $search aggregation that runs both and a code snippet showing Reciprocal Rank Fusion server-side or client-side, plus RU-cost considerations.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Local gateway quickstart (image + port)",
+      "what_was_missing": "A prominent, brief note telling developers to use the DocumentDB Gateway Docker image (ghcr.io/documentdb/documentdb/documentdb-local) and the port 10260, and that mongo:latest on 27017 is not a substitute for feature parity.",
+      "where_searched": "documentdb-local-deployment skill and local dev notes; README had only a brief mention of local modes.",
+      "effect_on_this_build": "The sample provides no local gateway automation; without the gateway a dev might run a plain Mongo image and miss DocumentDB-specific features (cosmosSearch) during testing.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Local development' page with the docker run command, env flags like SKIP_INIT_DATA, and examples on connecting via DOCUMENTDB_URI with port 10260, plus how to run seed_noembed for CI.",
+      "priority": "high"
+    },
+    {
+      "topic": "Entra ID OIDC example",
+      "what_was_missing": "A concise example showing how to enable Microsoft Entra ID (OIDC) authentication on a cluster and a minimal Python snippet demonstrating driver callback (DefaultAzureCredential + OIDC) to obtain short-lived tokens.",
+      "where_searched": "documentdb-security skill and Microsoft Learn RBAC docs; sample repo did not include an Entra ID example.",
+      "effect_on_this_build": "The sample uses connection strings; teams wanting to show best-practice authentication (no long-lived credentials) have no quick reference in the repo.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Auth' page: steps to enable Entra ID on a cluster, create least-privilege principals, and a Python code snippet showing how to provide an OIDC token to pymongo when auth mode is configured.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Explain-based index verification",
+      "what_was_missing": "A small admin script and README step showing how to run explain('executionStats') for the sample retrieval queries and interpret keysExamined/docsExamined to detect COLLSCANs.",
+      "where_searched": "documentdb-query-optimization skill; the sample only documents index shapes but not verification steps.",
+      "effect_on_this_build": "Without this, authors may ship code that appears to work on tiny datasets but will do COLLSCANs and be unusably expensive at scale.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add scripts/explain_queries.py that runs explain('executionStats') for the sample queries and prints a short health-check; add a paragraph in README telling authors to run it pre-release.",
+      "priority": "high"
+    },
+    {
+      "topic": "Embedding model & dims clarity in quickstart",
+      "what_was_missing": "The starter prompt did not name an embedding model or the env var names for embeddings/LLM. While the builder chose OpenAI text-embedding-3 (1536) and documented OPENAI_EMBEDDING_MODEL/EMBEDDING_DIMENSIONS in .env.example, this guidance should be explicit in central docs.",
+      "where_searched": "readiness notes and the repo .env.example: the repo documents a choice but the prompt lacked it.",
+      "effect_on_this_build": "If a different embedding model is used and dims are mis-sized, server-side indexes would be misconfigured and retrieval would silently return wrong neighbors.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short 'Embedding model' section stating recommended default (OpenAI text-embedding-3 = 1536), the env vars to set, and how to change EMBEDDING_DIMENSIONS if you choose another model (with example dims for common models).",
+      "priority": "high"
+    },
+    {
+      "topic": "Tests separation (unit vs integration)",
+      "what_was_missing": "Clear guidance and test markers that separate unit tests (mongomock, run in CI) from integration tests that require a live cluster, with examples for skipping integration tests by default.",
+      "where_searched": "repo tests and README; tests include both mongomock-based test and a live-db test (test_seed_and_query.py) with no skip markers.",
+      "effect_on_this_build": "CI could fail or run against real resources unintentionally; the build had to adjust tests during verification.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a test policy to the sample: unit tests use mongomock and live tests are marked with pytest markers (e.g., @pytest.mark.integration) and instructions in README on how to run them against a live cluster.",
+      "priority": "medium"
+    }
+  ]
+}
