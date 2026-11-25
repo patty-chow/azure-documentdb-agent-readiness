@@ -74,6 +74,7 @@ SYSTEM_DATABASES = {"admin", "config", "local"}
 # How far a run went. None means the whole pipeline.
 STAGE_ORDER = {"review": 1, "readiness": 2, "build": 3, None: 4}
 MODEL_FAILURE_EXIT = 7
+AUDIT_FAIL_EXIT = 4               # the pipeline finished; the audit's verdict was "fail"
 MAX_CONSECUTIVE_FAILURES = 3
 MODEL_RETRIES = 2                 # resumes after a model failure (exit 7), on top of the SDK's own retries
 RATE_LIMIT_BACKOFF_SECONDS = 90   # the deployment's limit is per minute, so wait out the window first
@@ -118,14 +119,19 @@ def reached(entry: dict) -> int:
     return STAGE_ORDER.get(entry.get("stop_after"), 4)
 
 
+def finished(entry: dict) -> bool:
+    """The pipeline ran to its stop point. Exit 0 is a pass; AUDIT_FAIL_EXIT is a completed run whose audit failed."""
+    return entry.get("exit_code") in (0, AUDIT_FAIL_EXIT)
+
+
 def complete_for(entry: dict, stop_after: str | None) -> bool:
-    return entry.get("exit_code") == 0 and reached(entry) >= STAGE_ORDER[stop_after]
+    return finished(entry) and reached(entry) >= STAGE_ORDER[stop_after]
 
 
 def resumable(entry: dict) -> bool:
-    """A run folder with saved stages can be continued, whether the run stopped at a gate or failed."""
+    """A run folder with saved stages can be continued: stopped at a gate, failed, or interrupted mid-run."""
     run_dir = entry.get("run_dir")
-    return bool(run_dir) and (PROJECT / run_dir).is_dir() and entry.get("exit_code") is not None
+    return bool(run_dir) and (PROJECT / run_dir).is_dir()
 
 
 # ------------------------------------------------------------ environment --
@@ -158,20 +164,32 @@ def list_databases() -> set[str]:
         return set()
 
 
-def drop_new_databases(before: set[str]) -> list[str]:
-    new = sorted(list_databases() - before - SYSTEM_DATABASES)
-    if not new:
+def sample_database(sample_id: str) -> str:
+    return "sample_" + re.sub(r"[^a-z0-9]+", "_", sample_id.lower()).strip("_")
+
+
+def drop_sample_databases(sample_id: str, before: set[str]) -> list[str]:
+    """Drop what this run created: its own database by name, plus any new database that is not another
+    sample's. With parallel runs a before/after diff alone would drop a concurrent run's database."""
+    own = sample_database(sample_id)
+    current = list_databases()
+    new = current - before - SYSTEM_DATABASES
+    others = {n for n in new if n.startswith("sample_") and n != own}
+    targets = sorted(({own} & current) | (new - others))
+    if others:
+        say(f"[{sample_id}] left {sorted(others)} alone: created by other running samples")
+    if not targets:
         return []
     try:
         from pymongo import MongoClient
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             client = MongoClient(cluster_uri(), serverSelectionTimeoutMS=20000)
-            for name in new:
+            for name in targets:
                 client.drop_database(name)
     except Exception as exc:
-        say(f"      WARNING: could not drop databases {new}: {type(exc).__name__}: {exc}")
-    return new
+        say(f"      WARNING: could not drop databases {targets}: {type(exc).__name__}: {exc}")
+    return targets
 
 
 def make_venv(tag: str) -> Path:
@@ -182,7 +200,7 @@ def make_venv(tag: str) -> Path:
 
 
 def render_env_note(sample: dict, arm: str, tag: str) -> Path:
-    database = "sample_" + re.sub(r"[^a-z0-9]+", "_", sample["id"].lower()).strip("_")
+    database = sample_database(sample["id"])
     mcp_line = ("- The `documentdb` MCP server's connection profile `default` is connected to that same cluster. Use its tools "
                 "to inspect collections, indexes and query plans and to verify what the app created.\n") if arm in ARMS_WITH_DOCUMENTDB_MCP else ""
     text = ENV_NOTE.read_text(encoding="utf-8").replace("{database}", database).replace("{mcp_line}", mcp_line)
@@ -329,7 +347,7 @@ def run_one(sample: dict, args: argparse.Namespace, resume_from: str | None) -> 
         if run_json.is_file():
             entry["verdicts"] = json.loads(run_json.read_text(encoding="utf-8")).get("verdicts", {})
     if args.drop_databases:
-        entry["dropped_databases"] = drop_new_databases(dbs_before)
+        entry["dropped_databases"] = drop_sample_databases(sample["id"], dbs_before)
     if args.allow_azure_writes and args.cleanup:
         entry["cleaned_up"] = cleanup_new_resources(args.resource_group, resources_before)
         if entry["cleaned_up"]:
@@ -431,6 +449,8 @@ def main() -> int:
         print("DOCUMENTDB_URI is not set: nothing to drop, continuing")
         args.drop_databases = False
 
+    if VENVS.is_dir():  # one loop runs at a time; anything left here is from an interrupted run
+        shutil.rmtree(VENVS, ignore_errors=True)
     awake = keep_awake()
     results: list[dict] = []
     consecutive_failures = 0
@@ -442,7 +462,7 @@ def main() -> int:
             try:
                 entry = fut.result()
                 results.append(entry)
-                consecutive_failures = 0 if entry.get("exit_code") == 0 else consecutive_failures + 1
+                consecutive_failures = 0 if finished(entry) else consecutive_failures + 1
             except Exception as exc:  # one broken run must not stop the loop
                 say(f"[{futures[fut]['id']}] loop error: {exc!r}")
                 consecutive_failures += 1
@@ -457,12 +477,13 @@ def main() -> int:
             awake.terminate()
 
     ok = sum(1 for r in results if r.get("exit_code") == 0)
+    audit_failed = sum(1 for r in results if r.get("exit_code") == AUDIT_FAIL_EXIT)
     if stuck:
         print(f"\nSTUCK after {len(results)} run(s), {ok} ok. State: runs/loop-state.json")
         return 2
-    print(f"\nPHASE DONE: {ok}/{len(queue)} runs finished with exit 0 (arm={args.arm}, stop_after={args.stop_after or 'audit'}). "
-          "State: runs/loop-state.json")
-    return 0 if ok == len(queue) else 1
+    print(f"\nPHASE DONE: {ok}/{len(queue)} runs finished with exit 0, {audit_failed} finished with a failed audit "
+          f"(arm={args.arm}, stop_after={args.stop_after or 'audit'}). State: runs/loop-state.json")
+    return 0 if ok + audit_failed == len(queue) else 1
 
 
 if __name__ == "__main__":
