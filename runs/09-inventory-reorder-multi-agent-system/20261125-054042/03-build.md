@@ -1,0 +1,43 @@
+# 3. Build report: 09-inventory-reorder-multi-agent-system
+
+**Status: completed**
+
+Built a small Python LangChain-style multi-agent sample that demonstrates an end-to-end DocumentDB-driven reorder workflow: a ForecastAgent computes reorder quantities from sales_velocity documents, a SupplierAgent picks a supplier from lead_times documents, and an Orchestrator coordinates both and writes purchase_orders to Azure DocumentDB while using a persisted agent_memory collection to prevent duplicate orders. The sample includes an idempotent seed script, a CLI entrypoint to run orchestration, a minimal FastAPI endpoint, unit tests, and a README. I verified dependency installation, seeding, orchestration (PO creation), and unit tests against the live DocumentDB cluster referenced by DOCUMENTDB_URI in the environment. No Azure resources were created or changed beyond data in the sample database (per run policy).
+
+## How to run
+
+1) Create and activate a Python virtualenv. 2) Copy .env.example to .env and set DOCUMENTDB_URI (and optionally OPENAI_API_KEY). 3) pip install -r requirements.txt. 4) python seed.py    # creates indexes and inserts demo data. 5) python run_orchestrator.py --all   # run orchestrator for all SKUs (creates purchase_orders). 6) (Optional) uvicorn sample_retail_09.main:app --reload and POST /reorder to trigger orchestration via HTTP. 7) pytest -q (or python -m pytest -q) to run unit tests.
+
+## Verified by running
+
+- pip install -r requirements.txt: succeeded (dependencies installed).
+- python seed.py: succeeded (created indexes and seeded 30 items; output: 'Indexes ensured' / 'Seeded 30 items').
+- python run_orchestrator.py --all: succeeded (created 30 purchase_orders; printed created POs).
+- documentdb_list_databases (via MCP): showed database 'sample_retail_09' with collections: sales_velocity (count 424), lead_times (30), purchase_orders (30), agent_memory (30).
+- documentdb_find_documents on purchase_orders (via MCP): returned 30 inserted purchase_orders (sampled).
+- python -m pytest -q: 1 passed (unit test ran).
+
+## Not verified
+
+- Vector index creation / vector-search: The sample includes a design decision to use OpenAI text-embedding-3-small (1536 dims) if vector features are added, and the README and code do not create a 'cosmosSearch' vector index in this run. I did not create or test vector indexes or vector queries because the sample's demonstration focuses on forecast/supplier/orchestrator flows and the run did not create vector indexes.
+- OpenAI embedding and chat integration: The sample is structured to allow adding embeddings / LangChain chat agents, but I did not execute any OpenAI embedding or chat calls (no calls to external LLM/embedding APIs were made during verification). These require API keys and are optional for the demo.
+- LangChain multi-agent memory integration: The sample implements shared memory persisted to DocumentDB (agent_memory collection) for deduplication, but it does not integrate LangChain's in-memory or advanced memory modules. Full LangChain orchestration and multi-agent message passing (LLM reasoning) were not exercised with model calls.
+
+## Open issues
+
+- I attempted to log one additional index-design decision via the audit-trail tool but the log_decision call failed twice due to an argument parsing error in the logging tool. Earlier decision logs were recorded; this single log failure is an instrumentation issue, not a sample functional problem.
+- The sample chooses OpenAI text-embedding-3-small (1536 dims) by default. The readiness report noted an information gap about embedding model choice; if you plan to use vector search in the sample, confirm the embedding model and dimensions you want and add code to create the corresponding cosmosSearch vector index (the sample includes no runtime creation of a vector index).
+
+## Files
+
+- `requirements.txt`
+- `.env.example`
+- `README.md`
+- `sample_retail_09/__init__.py`
+- `sample_retail_09/db.py`
+- `sample_retail_09/agents.py`
+- `seed.py`
+- `run_orchestrator.py`
+- `sample_retail_09/main.py`
+- `tests/test_agents.py`
+
