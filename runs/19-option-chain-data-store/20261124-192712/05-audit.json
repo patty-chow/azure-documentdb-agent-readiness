@@ -1,0 +1,732 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core requested functionality: a Python/FastAPI ingestion service that receives option-chain snapshots, performs unordered bulk writes (ordered=False), uses UpdateOne upserts, creates the compound index (underlying, expiry, strike), and exposes an endpoint to return a chain filtered by underlying+expiry and sorted by strike. Important additional gallery expectations are also implemented (env-based connection, .env.example, batched seed script, pinned dependencies, singleton MongoClient, README). Remaining findings: (1) no retry/backoff around bulk writes (reliability gap), (2) a small broken helper script (scripts/ensure_indexes.py imports a missing get_db), (3) unit tests could not be run in this environment due to a FastAPI / Pydantic import issue (environment/tooling), and (4) no IaC to provision a cluster. Several documentation gaps were also found where prior-knowledge recommendations have no public guidance. See Requirement Results, Practice Checks, Decision Reviews and Doc Gaps below.",
+  "requirement_results": [
+    {
+      "requirement": "The ingestion service is written in Python and accepts options chain snapshots (e.g. through an HTTP endpoint that receives a snapshot payload), storing each snapshot's option records as documents in an Azure DocumentDB collection.",
+      "status": "met",
+      "evidence": "app/app/main.py:31-46 (POST /ingest endpoint, IngestSnapshot model definition and loop that constructs documents)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Each received snapshot is persisted with a bulk write through the Python MongoDB driver (e.g. pymongo's `bulk_write` given a list of write operations).",
+      "status": "met",
+      "evidence": "app/app/main.py:34-56 (build ops list of UpdateOne and call coll.bulk_write(batch, ordered=False))",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The bulk write is issued with `ordered=False`.",
+      "status": "met",
+      "evidence": "app/app/main.py:56 (coll.bulk_write(batch, ordered=False))",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The code creates a compound index on the option documents collection with keys in the order underlying, expiry, strike (e.g. `create_index([(\"underlying\", 1), (\"expiry\", 1), (\"strike\", 1)])`).",
+      "status": "met",
+      "evidence": "app/app/db.py:30-32 (coll.create_index([('underlying', 1), ('expiry', 1), ('strike', 1)], name='idx_underlying_expiry_strike'))",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The option documents carry the underlying, expiry and strike fields that the compound index is built on.",
+      "status": "met",
+      "evidence": "app/app/main.py:36-44 (doc contains 'underlying', 'expiry', 'strike')",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The service exposes an endpoint that takes an underlying and an expiry date as inputs (e.g. path or query parameters).",
+      "status": "met",
+      "evidence": "app/app/main.py:60-64 (GET /chains with underlying: str and expiry: date query parameters)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "That endpoint queries Azure DocumentDB with equality filters on underlying and expiry, the leading prefix of the compound index, and returns the full set of matching option documents for that chain.",
+      "status": "met",
+      "evidence": "app/app/main.py:62-66 (cursor = coll.find({'underlying': underlying, 'expiry': expiry_dt}).sort('strike', 1) and returns results)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/app/db.py:9-12 (load_dotenv(); read DOCUMENTDB_URI and DOCUMENTDB_DB from env); app/.env.example:1-5 (placeholder only)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example:1-5 (DOCUMENTDB_URI placeholder and DOCUMENTDB_DB=sample_fintech_19)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not use vectors or create vector indexes; no embedding model exists in repo to compare dimensions.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If the sample will include vector data, add a documented embedding model and include vector dimensionality in .env.example/README so builds can assert index dimensions."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index creation or parameters present in repository.",
+      "cause": "could_not_determine",
+      "smallest_fix": "Not applicable unless vectors are added; otherwise document instructions for adjusting vector-index params in README."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/app/db.py:16-23 (module-level _client and get_client() implements a singleton MongoClient per process)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.py:20-46 (get_collection used; UpdateOne with upsert=True is used for idempotency); app/app/db.py:30-32 (get_collection ensures index creation)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "`/search` returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint exists in app/app/main.py",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search endpoint with input validation that returns 400 for empty query and explicit error handling for embedding failures (example: return JSON {error:'embedding_failed'} with 502) and tests that simulate embedding failure."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search endpoint or similarity-scoring logic in repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If a /search endpoint is added, include similarity scores in response objects (e.g., include 'score' per hit) and test coverage for score presence."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "met",
+      "evidence": "app/requirements.txt:1-8 (fastapi==0.95.2, uvicorn[standard]==0.22.0, pymongo==4.4.0, python-dotenv==1.0.0, pydantic==1.10.12, pytest==7.4.2, pytest-asyncio==0.22.0, httpx==0.28.1)",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "partly_met",
+      "evidence": "app/tests/test_api.py:35-39 (monkeypatch fixture that replaces db.get_collection with an in-memory FakeCollection so tests are designed to run without a live cluster) but builder_report: 'pytest: could not complete (internal import error) -- FastAPI/Pydantic import-time TypeError under Python 3.13' (tests were not executed successfully in this environment).",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Either update pinned dependencies so pytest can import FastAPI/Pydantic in this environment or document and run tests under a supported Python version (3.10/3.11) in CI; the minimal change is to add a note in README and CI config restricting test runs to a supported Python version or to pin compatible package versions."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/Terraform/ARM templates or IaC scripts for Microsoft.DocumentDB/mongoClusters present in repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Provide an IaC example (Bicep or Terraform AzAPI) targeting Microsoft.DocumentDB/mongoClusters and include it under infra/ with sensible defaults and clean-up instructions."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md:1-21 (description, prerequisites and setup), lines 22-31 (run and endpoints), and lines 37-38 (clean-up instructions).",
+      "cause": "none",
+      "smallest_fix": "none"
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md:3 (mentions 'Azure DocumentDB (MongoDB-compatible)'); code and README consistently mention DocumentDB",
+      "cause": "none",
+      "smallest_fix": "none"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Secrets via env",
+      "practice": "Never commit the cluster connection string or credentials to source control; read the connection string at runtime from an environment variable and provide only a placeholder (.env.example) in the repo.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "app/app/db.py:9-12 (load_dotenv(); read DOCUMENTDB_URI from env); app/.env.example:1-4 (placeholder only).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Singleton MongoClient",
+      "practice": "Create a single MongoClient per process (module-level singleton), reuse it across requests, and avoid creating a client per request so the driver's connection pool and monitors are reused.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples",
+      "status": "followed",
+      "evidence": "app/app/db.py:13-23 (module-level _client variable and get_client() that creates MongoClient once)",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS and connection options",
+      "practice": "Always use TLS for connections to Azure DocumentDB (include tls=true / use mongodb+srv where appropriate) and do not disable certificate verification in production.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication",
+      "status": "followed",
+      "evidence": "app/.env.example:3 (example placeholder includes '?tls=true' in commented example). app/app/db.py leaves TLS flags to the connection string read from env.",
+      "source": "Connect to Azure DocumentDB using MongoDB Shell",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using MongoDB Shell",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection string options",
+      "practice": "Use the mongodb+srv scheme and recommended connection-string options (for example tls=true, authMechanism=SCRAM-SHA-256 or MONGODB-OIDC, retryWrites=false, sensible maxIdleTimeMS) provided in Azure DocumentDB connection examples.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials",
+      "status": "followed",
+      "evidence": "app/.env.example:3 shows an example SRV-style URI with tls=true; app/app/db.py uses the environment-provided URI so recommended options can be supplied by the operator.",
+      "source": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID (azure-resource-manager-bicep)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID (azure-resource-manager-bicep)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#get-cluster-credentials"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index ESR",
+      "practice": "Create a compound index using the ESR (Equality → Sort → Range) ordering for queries that filter by multiple fields; for the options chain use (underlying, expiry, strike) to support equality on underlying+expiry and sorting by strike.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field",
+      "status": "followed",
+      "evidence": "app/app/db.py:30-32 (create_index([('underlying',1),('expiry',1),('strike',1)])); app/app/main.py:64 (find with equality on underlying+expiry and .sort('strike', 1)).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Verify index usage",
+      "practice": "Use explain() (and explain('executionStats')) and index statistics to verify that production queries use the intended index and that sorts are covered by the index (no blocking SORT stage).",
+      "category": "query performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation",
+      "status": "not_assessable",
+      "evidence": "No explain() calls or index-statistics collection exist in repository. The seed script and get_collection create the index, but no post-seed explain() was recorded in the build artifacts.",
+      "source": "Indexing Best Practices in Azure DocumentDB / index-compound-esr guidance",
+      "searched": "",
+      "fix": "Add a small verification script or CI step that runs coll.find(...).explain('executionStats') for the sample queries and logs index usage; include sample output in README or the build artifact.",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB / index-compound-esr guidance",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Background index builds",
+      "practice": "Create indexes on empty collections or build them in the background / during low-traffic windows; unique indexes block reads/writes and should be created on empty collections.",
+      "category": "indexing / provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/background-indexing",
+      "status": "not_assessable",
+      "evidence": "The sample creates an index at startup and via seed; it does not detect collection traffic or choose foreground/background mode. There is no environment flag or README note advising background builds for production.",
+      "source": "Background indexing",
+      "searched": "",
+      "fix": "Document in README that in production the index should be created during low-traffic windows or with the non-blocking option supported by the cluster; optionally add a script parameter to create background-safe builds.",
+      "sources": [
+        {
+          "title": "Background indexing",
+          "url": "https://learn.microsoft.com/azure/documentdb/background-indexing"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL for retention",
+      "practice": "Use TTL indexes (createIndex with expireAfterSeconds) on a Date field to implement automatic retention of old snapshots, noting TTL only works on a single date field and deletions occur via a background sweeper (not instant).",
+      "category": "data lifecycle",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation",
+      "status": "not_applicable",
+      "evidence": "The sample does not implement time-based retention or TTL index; expiry/timestamp fields are present but no TTL index is created.",
+      "source": "index-ttl-expiry (Indexing skill resource) / Azure DocumentDB TTL guidance",
+      "searched": "",
+      "fix": "If retention is needed, add a TTL index creation step and document how it works and which timestamp field it applies to.",
+      "sources": [
+        {
+          "title": "index-ttl-expiry (Indexing skill resource) / Azure DocumentDB TTL guidance",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unordered upsert bulk writes",
+      "practice": "Set ordered=false for bulk write operations to improve ingest throughput when per-operation ordering is not required; use UpdateOne(upsert=True) or replaceOne with upsert for snapshot ingestion.",
+      "category": "bulk writes",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes",
+      "status": "followed",
+      "evidence": "app/app/main.py:48-56 (ops.append(UpdateOne(..., upsert=True)); coll.bulk_write(batch, ordered=False)); app/scripts/seed.py:44-51 (same pattern).",
+      "source": "Optimize write performance in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Optimize write performance in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk batch sizing",
+      "practice": "Limit the number of operations per bulk batch (recommendation: limit per-process batches to ~1,000 documents) and be aware of the hard maximum writes-per-batch limit (DocumentDB: 25,000 writes per request); tune batch size for payload and retry granularity.",
+      "category": "bulk writes",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/max-document-size",
+      "status": "followed",
+      "evidence": "app/app/main.py:11 (BATCH_SIZE = 1000) and batching loop app/app/main.py:54-56; app/scripts/seed.py uses BATCH=1000 and batches the ops (scripts/seed.py:49-51).",
+      "source": "Document size and batch write limits in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Document size and batch write limits in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/max-document-size"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent upserts (deterministic key)",
+      "practice": "Make upserts idempotent by using a deterministic unique key (for example a composed _id or a unique compound key built from underlying+expiry+strike+optionType) so retries and duplicate ingestion don't create duplicate documents.",
+      "category": "data modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P12",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/app/main.py:48-50 (creates filter on underlying+expiry+strike+optionType and uses UpdateOne(..., upsert=True)), making the upsert idempotent without composing a synthetic _id.",
+      "source": "",
+      "searched": "searches: 'Azure DocumentDB guidance \"make upserts idempotent deterministic _id\"' (no useful public result found)",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short public recipe showing 'compose deterministic _id or use UpdateOne filter keyed by underlying+expiry+strike+optionType' would let agents cite a canonical method rather than relying on prior knowledge."
+    },
+    {
+      "topic": "Store dates as BSON Date UTC",
+      "practice": "Store date/time fields as true BSON Date types (ISODate/Date) and consistently use UTC for expiry and snapshot timestamps to avoid timezone-related query mismatches and to support TTL indexes.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation",
+      "status": "followed",
+      "evidence": "app/app/main.py:38 and 44 (expiry stored via datetime.combine(snapshot.expiry, datetime.min.time()); timestamp uses datetime.utcnow() when not provided); app/scripts/seed.py stores expiry as datetime.combine(...).",
+      "source": "index-ttl-expiry (Indexing skill resource)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "index-ttl-expiry (Indexing skill resource)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pagination for large results",
+      "practice": "Use pagination or cursor-based iteration (limit+sort, range queries, or server-side cursors) for endpoints that may return large result sets rather than returning arbitrarily large lists in a single HTTP response.",
+      "category": "API design / queries",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P14",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/app/main.py:64-71 (GET /chains returns full cursor materialized into list 'results' without limit/pagination), no paging params present.",
+      "source": "",
+      "searched": "searches: 'Azure DocumentDB pagination best practices API responses large result sets' (no useful public result found)",
+      "fix": "Add limit/offset or cursor-based pagination to GET /chains (e.g., query params 'limit' and 'after_strike' or use a server-side cursor and return a next_token), and update README and tests.",
+      "sources": [],
+      "what_would_help": "A public guidance page stating 'for full-chain endpoints prefer cursor/pagination when chain length could be >N' would let agents implement paging by default."
+    },
+    {
+      "topic": "Retry/backoff for transient errors",
+      "practice": "Implement retry logic with exponential backoff for transient network and server errors and treat rate-limit responses with backoff; for bulk writes inspect BulkWriteError details and handle per-operation failures appropriately.",
+      "category": "retries and error handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "violated",
+      "evidence": "app/app/main.py:52-56 (calls coll.bulk_write(batch, ordered=False) without try/except or retry/backoff logic). No retry wrappers or BulkWriteError handling present in seed or main.",
+      "source": "Reliability in Azure DocumentDB / Resilience to transient faults",
+      "searched": "",
+      "fix": "Wrap bulk_write calls in a retry with exponential backoff and inspect BulkWriteError; implement limited retries and surface per-op failure details in logs/response.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB / Resilience to transient faults",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Write concern and durability",
+      "practice": "Choose and be explicit about write durability/consistency settings appropriate to your workload, but verify how Azure DocumentDB maps or supports MongoDB writeConcern before relying on non-default settings.",
+      "category": "consistency and durability",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P16",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "No explicit writeConcern is set in MongoClient or bulk_write calls in code; default driver settings apply.",
+      "source": "",
+      "searched": "searches: 'Azure DocumentDB guidance \"choose write concern w majority\"' (no useful public result found)",
+      "fix": "Add configuration option (env var) for writeConcern and document the trade-offs in README; provide recommended default after verifying cluster mapping.",
+      "sources": [],
+      "what_would_help": "A documentation page describing how Azure DocumentDB maps standard MongoDB writeConcern options for vCore clusters would let samples set recommended defaults safely."
+    },
+    {
+      "topic": "Schema validation",
+      "practice": "Use JSON Schema validation ($jsonSchema) at the collection level or application-layer validation (pydantic/Mongoose) to ensure ingested documents contain required fields and are well-formed.",
+      "category": "data validation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema",
+      "status": "followed",
+      "evidence": "Application uses Pydantic models for request validation: app/app/main.py:15-28 (OptionItem and IngestSnapshot models). No collection-level $jsonSchema validator present, but app-layer validation exists.",
+      "source": "$jsonSchema (Azure DocumentDB)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "$jsonSchema (Azure DocumentDB)",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring and throttling",
+      "practice": "Monitor cluster metrics (CPU, memory, IOPS, connection saturation), watch for throttling during bulk ingestion, and plan capacity (or autoscale) while implementing retry/backoff for rate-limit responses.",
+      "category": "provisioning and scaling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-monitor-diagnostics-logs",
+      "status": "not_assessable",
+      "evidence": "No monitoring configuration or guidance in README; sample targeted a pre-provisioned cluster and the seed run was small, so monitoring was not part of the sample execution.",
+      "source": "Monitor Azure DocumentDB diagnostics logs with Azure Monitor",
+      "searched": "",
+      "fix": "Add a section in README describing how to enable diagnostic settings and what metrics to watch during bulk ingestion; add caution about capacity planning.",
+      "sources": [
+        {
+          "title": "Monitor Azure DocumentDB diagnostics logs with Azure Monitor",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-monitor-diagnostics-logs"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document-per-strike",
+      "practice": "Avoid embedding unbounded arrays that grow without bound; for option chains store each strike as its own document (one document per strike) rather than a growing array to keep documents small and queries efficient.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-index",
+      "status": "followed",
+      "evidence": "app/app/main.py:35-50 and app/scripts/seed.py:33-46 create one document per option/strike rather than storing an unbounded array.",
+      "source": "Indexing Best Practices in Azure DocumentDB / Scenario based guide to indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB / Scenario based guide to indexing",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection of returned fields",
+      "practice": "Limit returned fields via projection in queries so responses only include fields the client needs and reduce network/data transfer.",
+      "category": "API design / performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/how-to-javascript-manage-documents#update-a-document",
+      "status": "violated",
+      "evidence": "app/app/main.py:64 fetches entire documents (coll.find({...}).sort('strike', 1)) and returns full documents; no projection argument is passed to find().",
+      "source": "Manage a document in Azure Cosmos DB for MongoDB using JavaScript (projection examples)",
+      "searched": "",
+      "fix": "Add a projection to the find call to return only the required fields (e.g., .find(query, projection={'underlying':1,'expiry':1,'strike':1,'bid':1,'ask':1,'optionType':1})) and adjust tests/README accordingly.",
+      "sources": [
+        {
+          "title": "Manage a document in Azure Cosmos DB for MongoDB using JavaScript (projection examples)",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/how-to-javascript-manage-documents#update-a-document"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver pin and compatibility",
+      "practice": "Pin and test your MongoDB driver version against the cluster's supported wire protocol version (verify the driver supports the features you use) and run integration tests after upgrades.",
+      "category": "compatibility and provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-java-spring-data#prerequisites",
+      "status": "followed",
+      "evidence": "app/requirements.txt:3 pins pymongo==4.4.0; builder_report notes the cluster is MongoDB 7.0 wire protocol and calls out driver pin in open_issues for attention.",
+      "source": "Quickstart: Connect Spring Data MongoDB to Azure DocumentDB (tested driver version) / MQL compatibility notes",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Spring Data MongoDB to Azure DocumentDB (tested driver version) / MQL compatibility notes",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-java-spring-data#prerequisites"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain after seeding",
+      "practice": "Use explain() and index statistics after seeding data to confirm compound indexes are used and there are no collection scans for the queries your API executes.",
+      "category": "verification and monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation",
+      "status": "not_assessable",
+      "evidence": "The builder recorded verifying the index exists via the MCP server, but there is no explain() execution recorded in code or in the build log saved in the repo; therefore we cannot confirm the query plan used after seeding in the repository artifacts.",
+      "source": "Indexing Best Practices in Azure DocumentDB / track the status of a createIndex operation",
+      "searched": "",
+      "fix": "Add a small script or CI step that runs .find(...).explain('executionStats') for the core query and stores / prints the explain plan; include example output in the repository.",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB / track the status of a createIndex operation",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Reduce number of indexes",
+      "practice": "Reduce the number of indexes to the minimum needed for queries because each index increases write cost and slows ingestion; prefer a single well-designed compound index over many overlapping single-field indexes.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes",
+      "status": "followed",
+      "evidence": "The sample creates a single compound index (idx_underlying_expiry_strike) and does not add other indexes in the repo.",
+      "source": "Optimize write performance in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Optimize write performance in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator action and is supported by the build log. Reason and evidence are operator-sourced; no contradiction found."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python matches the explicit prompt instruction. Evidence: the repository is a Python project with FastAPI and pymongo (app/app/main.py, app/app/db.py)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "Choosing FastAPI is a reasonable, defensible convention but the reason_source is 'model_default' rather than a documented project requirement. The code uses FastAPI, so the decision produced correct code, but the choice was not grounded in an explicit external requirement."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "wrong",
+      "comment": "Decision D004 records 'pinned pymongo==4.5.0' but the repository pins pymongo==4.4.0 (app/requirements.txt:3). The declared pin does not match the actual requirements file."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from env is implemented (app/app/db.py:9-12) and matches the readiness guidance; evidence supports the decision."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "questionable",
+      "comment": "The decision says an external script scripts/ensure_indexes.py and a startup helper were provided. There is an ensure_indexes.py file, but it imports a missing get_db (scripts/ensure_indexes.py:4 imports get_db which is not defined in app/app/db.py). The startup helper (get_collection creating the index) is present. The script exists but is broken as written; the decision is therefore partially correct."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "questionable",
+      "comment": "D007 states InsertOne in bulk_write with ordered=False. The implemented code uses UpdateOne with upsert=True (app/app/main.py:49-50 and seed script). The general intent (unordered bulk writes, batching) was followed, but the exact API choice in the recorded decision (InsertOne) does not match the final implementation (UpdateOne upsert)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Single collection 'options' with expiry stored as a BSON Date is implemented (main.py:36-44 and seed.py:34-42 use datetime objects)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "wrong",
+      "comment": "D009 claims tests were replaced to avoid importing FastAPI, but repository tests (app/tests/test_api.py) still import FastAPI/TestClient and app.main (tests/test_api.py:2-4). The decision does not match the repo contents."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "wrong",
+      "comment": "D010 says python-dateutil was added, but app/requirements.txt does not contain python-dateutil. The seed uses datetime.fromisoformat and does not require dateutil; the decision is not reflected in the requirements file."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "wrong",
+      "comment": "D011 picks python-dateutil==2.9.0 because 2.9.2 wasn't available. As above, no python-dateutil pin is present in requirements.txt, so this decision was not applied in repository files."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Duplicate approval entry similar to D001; evidence same as D001."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "D013 restates the choice of Python + FastAPI with reason_source 'prompt' and is consistent with the code in repository; acceptable and supported by evidence."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "D014 states pymongo pinned to 4.4.0, which matches app/requirements.txt:3; decision is consistent with repo."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Decision to use DOCUMENTDB_URI environment variable is implemented (app/app/db.py)."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Programmatic index creation on startup is present via get_collection() (app/app/db.py:30-32), and seed script calls get_collection(), so the decision is implemented."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Using UpdateOne with upsert=True is implemented (main.py:49-50 and scripts/seed.py:44-45)."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "sound",
+      "comment": "Batch size 1000 is implemented (main.py:11 BATCH_SIZE=1000 and batching loop at main.py:54-56; seed script uses BATCH = 1000)."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "httpx==0.28.1 appears in requirements.txt (app/requirements.txt:8). The decision matches the repository."
+    },
+    {
+      "decision_id": "D020",
+      "assessment": "wrong",
+      "comment": "D020 records upgrading FastAPI to 0.100.0 to be compatible with pydantic v2, but requirements.txt pins fastapi==0.95.2 and pydantic==1.10.12. The repository retained FastAPI 0.95.2 and pydantic v1, so D020's stated change was not applied."
+    },
+    {
+      "decision_id": "D021",
+      "assessment": "sound",
+      "comment": "D021 states use of pydantic v1 (1.10.12) with FastAPI 0.95.2 to avoid Rust builds; this matches app/requirements.txt and explains the environment choice. Evidence: requirements and the builder report noting the Python 3.13 / pydantic import issue."
+    },
+    {
+      "decision_id": "D022",
+      "assessment": "sound",
+      "comment": "D022 modified scripts/seed.py to insert project root into sys.path. The file app/scripts/seed.py:8-12 shows that change and allows running the seed script as a top-level script."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Idempotent upsert guidance",
+      "what_was_missing": "No clear public Microsoft doc explicitly describing composing a deterministic _id or an explicit recipe for making UpdateOne upserts idempotent (compose key from underlying+expiry+strike+optionType).",
+      "where_searched": "learn.microsoft.com (DocumentDB pages), searches: 'Azure DocumentDB guidance \"make upserts idempotent deterministic _id\"'",
+      "effect_on_this_build": "Discovery agent labeled this as prior_knowledge_only (P12). The builder implemented idempotency via UpdateOne with a composed filter, but agents had no canonical public guidance to cite when deciding whether to use a deterministic _id vs UpdateOne upserts.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Idempotent ingestion' page under the DocumentDB developer guide that: (1) explains strategies to make ingestion idempotent (compose _id, use UpdateOne upsert with deterministic filter, unique compound indexes); (2) gives code snippets for pymongo showing both approaches; (3) notes tradeoffs (indexing, uniqueness constraints).",
+      "priority": "medium"
+    },
+    {
+      "topic": "Pagination guidance for full-chain endpoints",
+      "what_was_missing": "No public guidance specific to DocumentDB addressing when API endpoints should implement pagination for large logical 'chain' result sets and recommended patterns (limit/offset, keyset pagination using strike, or server-side cursors).",
+      "where_searched": "learn.microsoft.com (DocumentDB pages), general searches: 'Azure DocumentDB pagination best practices API responses large result sets'",
+      "effect_on_this_build": "Discovery agent recorded this as prior_knowledge_only (P14). The sample returns full chain without pagination; a public note would have led the builder to implement paging by default.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short guidance page 'API pagination patterns for DocumentDB-backed endpoints' describing: when to use limit+offset vs keyset pagination, examples using 'strike' as a range key for keyset pagination, an example FastAPI snippet returning next_token, and sample .explain() checks for cursor performance.",
+      "priority": "high"
+    },
+    {
+      "topic": "Write concern mapping docs",
+      "what_was_missing": "No clear public mapping guidance for MongoDB writeConcern semantics to DocumentDB vCore clusters (which durability/consistency options map to what behavior in this product).",
+      "where_searched": "learn.microsoft.com DocumentDB pages, searches: 'Azure DocumentDB guidance \"choose write concern w majority\"'",
+      "effect_on_this_build": "Discovery agent marked write-concern guidance as prior_knowledge_only (P16). The sample leaves writeConcern at driver defaults; a public page would help sample authors choose explicit durable/writeConcern settings safely.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A compatibility/operations page that lists which writeConcern values are supported, how they map to the cluster's durability semantics, examples configuring MongoClient writeConcern in Python, and warnings about throughput/cost tradeoffs.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Agent kit rule: prefer explicit API choice",
+      "what_was_missing": "Some build decisions (e.g., using FastAPI) were taken from model defaults rather than explicit guidance; agents lack a small agent-kit rule recommending a preferred minimal web framework for Python samples or requiring the builder to justify an alternative.",
+      "where_searched": "agent kit skill docs and the sample repo; decisions.jsonl shows model_default choices",
+      "effect_on_this_build": "Decision D003 used 'model_default' as reason_source; this is acceptable but generates inspectability gaps. If an agent picks a different framework by default it will produce slightly different sample shape.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "An agent-kit rule: 'Python sample web framework: prefer FastAPI for new samples unless the prompt explicitly requests another framework; document the choice in decisions.jsonl with reason_source enabling discoverability.'",
+      "priority": "low"
+    },
+    {
+      "topic": "Tests run guidance and environment constraints",
+      "what_was_missing": "A concise note on the preferred Python versions and compatibility matrix for FastAPI/pydantic/pydantic-core and guidance on when tests should be run under a specific runtime (CI matrix).",
+      "where_searched": "project requirements, PyPI, and builder logs; the run failed pytest due to Pydantic/FastAPI import error on Python 3.13",
+      "effect_on_this_build": "The builder's tests could not be executed in this runner environment (builder_report 'pytest: could not complete... Python 3.13 pydantic forward-ref error'). Without a clear note/CI matrix, agents may attempt to run tests in incompatible environments.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Test environment' section to the docs and agent-kit: supported Python versions (3.10/3.11 recommended), minimal pinned package combos that work out-of-the-box, and CI job examples that run tests under supported versions.",
+      "priority": "high"
+    }
+  ]
+}

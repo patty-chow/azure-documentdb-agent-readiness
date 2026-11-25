@@ -8,12 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the ingestion service in Python that accepts options chain snapshots and, for each snapshot, translates the snapshot into the set of option documents and issues a single unordered bulk write to Azure DocumentDB using the pymongo driver (use bulk_write with ordered=False).
-- Use pymongo bulk operations (e.g., InsertOne/ReplaceOne/UpdateOne as appropriate) in the bulk_write call so the snapshot's option documents are written in one bulk operation with ordered=False.
-- When a snapshot contains more option documents than a single bulk operation should hold, split the snapshot into multiple bulk_write batches and submit each batch with ordered=False (batching size may be an implementation constant).
-- In application startup/code create a compound index on (underlying, expiry, strike) in Azure DocumentDB using pymongo’s create_index so the index exists before queries run.
-- Expose an HTTP endpoint (accepting parameters for underlying and expiry, e.g., query or path parameters) that queries Azure DocumentDB via pymongo for documents matching the given underlying and expiry and returns the full set of matching option documents.
-- The endpoint’s query must use both underlying and expiry as equality filters (and return all matching documents); the returned chain should be produced in strike order (e.g., sorted by strike ascending) so callers receive a full, ordered chain.
+- The ingestion service is written in Python and accepts options chain snapshots (e.g. through an HTTP endpoint that receives a snapshot payload), storing each snapshot's option records as documents in an Azure DocumentDB collection.
+- Each received snapshot is persisted with a bulk write through the Python MongoDB driver (e.g. pymongo's `bulk_write` given a list of write operations).
+- The bulk write is issued with `ordered=False`.
+- The code creates a compound index on the option documents collection with keys in the order underlying, expiry, strike (e.g. `create_index([("underlying", 1), ("expiry", 1), ("strike", 1)])`).
+- The option documents carry the underlying, expiry and strike fields that the compound index is built on.
+- The service exposes an endpoint that takes an underlying and an expiry date as inputs (e.g. path or query parameters).
+- That endpoint queries Azure DocumentDB with equality filters on underlying and expiry, the leading prefix of the compound index, and returns the full set of matching option documents for that chain.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
