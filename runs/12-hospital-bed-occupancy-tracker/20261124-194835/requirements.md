@@ -11,11 +11,10 @@
 - A Node.js service uses Mongoose to store bed status documents in Azure DocumentDB; each bed document belongs to a ward and carries a status that is one of occupied, available or cleaning.
 - The service opens a change stream on the bed status collection and keeps consuming its events while running, so that bed status changes are picked up as they are written.
 - From the change stream events the service detects status transitions between occupied, available and cleaning (e.g. by comparing the bed's previous status with the new one) and acts only on events where the status changed.
-- A live occupancy summary document is maintained per ward, holding the current count of beds in each status for that ward, and it is updated from the change stream handler on every detected transition.
-- Each summary update is a single atomic update operation (e.g. one updateOne with $inc adjusting the affected status counts).
+- A live occupancy summary document is maintained per ward (e.g. holding counts of beds per status), and it is updated from the change stream handler on every detected transition.
+- Each summary update is a single atomic update operation (e.g. one updateOne with $inc adjusting the affected counts).
 - A TTL index is created in code on a Date field of the bed status documents, with its expireAfterSeconds (or the Date value it expires on) derived from a configurable cleaning timeout.
-- Only beds in the cleaning state carry the Date value the TTL index expires on: it is set when a bed enters cleaning and removed when the bed leaves cleaning, so Azure DocumentDB deletes cleaning-state documents automatically after the timeout.
-- The service surfaces a capacity alert for a ward when that ward's occupancy summary reaches a capacity condition (e.g. occupied beds at or above the ward's capacity), in a form bed managers can see (e.g. an alert document or an emitted notification).
+- Cleaning-state documents, and only those, are expired by the TTL index once the timeout has passed (e.g. the indexed Date field is set when a bed enters cleaning and unset when it leaves, or the index carries a partial filter on the cleaning status).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

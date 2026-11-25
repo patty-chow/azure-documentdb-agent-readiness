@@ -1,0 +1,46 @@
+# 3. Build report: 12-hospital-bed-occupancy-tracker
+
+**Status: completed**
+
+I built a small Node.js (Mongoose) sample app that demonstrates Azure DocumentDB change streams, atomic per-ward summary updates, and TTL expiry for cleaning-state documents. The sample includes an idempotent seed script, a one-shot demo that starts a short-lived change-stream watcher and performs status updates, a small Express API to inspect ward summaries / update bed status, and a README with run instructions. I created indexes (including a TTL index) and verified the app against the live DocumentDB cluster reachable via DOCUMENTDB_URI in the environment. Change-stream processing updated ward summaries as expected. I attempted a quick TTL deletion test (5s expiry) and observed that deletion did not occur within 30s — TTL deletions are driven by a background thread and can be delayed; this is noted in not_verified.
+
+## How to run
+
+1) Copy .env.example to .env and set DOCUMENTDB_URI (do NOT commit real secrets). Optionally set CLEANING_TTL_SECONDS and DB_NAME. 2) Install deps: npm install 3) Seed sample data / create indexes: npm run seed 4) Run the demo (starts a short-lived change-stream watcher, performs sample updates, then exits): npm run demo 5) Optional: run the HTTP server to inspect summaries: npm start then GET /wards/ward-A/summary 6) To test TTL behavior manually, adjust CLEANING_TTL_SECONDS in .env and use src/ttl_check.js (npm run demo sets cleaning timestamps; ttl_check tries a short 5s expiry and polls — TTL deletions are subject to background sweep timing).
+
+## Verified by running
+
+- npm install: completed (dependencies installed without vulnerabilities)
+- npm run check-env: detected DOCUMENTDB_URI in environment (DOCUMENTDB_URI set: true)
+- npm run seed: ran src/seed.js successfully (output: 'Seeding complete'); seed created collections and indexes and populated sample wards and beds
+- documentdb_list_databases (via MCP server) for sample_healthcare_12: returned collections 'beds' (count 19) and 'wardsummaries' (count 3)
+- documentdb_list_indexes (via MCP server) on beds collection: showed indexes including cleaningExpiresAt_1 with expireAfterSeconds: 0 (TTL index present), bedId_1, wardId_1, wardId_1_status_1, status_1
+- npm run demo: started change-stream watcher, updated several beds and logged updates; change-stream handler recomputed and updated WardSummary documents. Demo output included lines like 'Updated ward summary for ward-A: { occupied: 2, available: 2, cleaning: 2 }'
+- documentdb_find_documents on wardsummaries: confirmed WardSummary documents with counts updated after demo (returned 3 summary docs with counts reflecting recent updates)
+- node src/ttl_check.js: set a bed's cleaningExpiresAt to now+5s and polled for 30s; TTL deletion was not observed within 30s (script logged repeated 'Still present'). This verifies TTL index exists but shows deletions may be delayed by server background sweep timing
+
+## Not verified
+
+- Precise TTL deletion timing: I attempted a short (5s) TTL expiry test and did not observe the document removed within 30s. TTL deletions are performed by a background sweeper and may run at intervals (commonly ~60s or more); I could not reliably observe the actual deletion timing within the short automated test. Recommendation: if your production logic depends on immediate deletion, rely on application-level checks or scheduled jobs; otherwise verify in your target environment how frequently the TTL background thread runs.
+- Any provisioning or resource creation of Azure DocumentDB clusters was intentionally not performed (run policy forbids Azure resource changes). The sample uses an existing cluster via DOCUMENTDB_URI (as provided in the run environment).
+
+## Open issues
+
+None.
+
+## Files
+
+- `package.json`
+- `.env.example`
+- `README.md`
+- `.gitignore`
+- `src/db.js`
+- `src/models/bed.js`
+- `src/models/wardSummary.js`
+- `src/seed.js`
+- `src/changeWatcher.js`
+- `src/demo.js`
+- `src/server.js`
+- `src/check_env.js`
+- `src/ttl_check.js`
+
