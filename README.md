@@ -5,8 +5,7 @@ This branch (`samples-loop`) is a fork of
 a five-stage pipeline that measures how ready an AI coding agent is to build an application on
 Azure DocumentDB. The fork adds a loop that ran the pipeline over 100 starter prompts, the complete
 results, and a triage of what the runs found into filing-ready issues and pull requests for the
-Agent Kit, the DocumentDB MCP server and Microsoft Learn. Everything was run on 2026-11-24 and
-2026-11-25.
+Agent Kit, the DocumentDB MCP server and Microsoft Learn.
 
 ## The pipeline (unchanged from upstream, one deviation)
 
