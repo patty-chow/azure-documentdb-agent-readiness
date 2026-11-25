@@ -1,0 +1,64 @@
+# 5a. Best practices: prior knowledge against the public record: 02-clinical-trial-matching-orchestration
+
+A model first listed the best practices it knew from training, with no tools. An agent then searched public sources without the team's checklist, the way an agent building this app would, and checked each prior belief against what it found.
+
+**23 practices, 21 with a public address.**
+
+| Outcome | Count | What it means |
+|---|---|---|
+| The model believed otherwise; public sources contradict it | 0 | An agent working from memory builds the wrong thing here. |
+| The model knows it; no public source for this service says either way | 2 | Agents will act on it. Nothing public says whether they should. |
+| The model knew it, and public sources agree | 16 | Memory and documentation line up. |
+| Found in public sources only | 5 | Documented; the model did not list it beforehand. |
+
+## Sources that were reachable in this run
+
+| Source | Reachable | Detail |
+|---|---|---|
+| `learn` (documentation search) | yes | 3 tools |
+| Installed agent skills | 17 | 17 have a public address |
+
+## Known to the model, with no public source for this service
+
+| Id | Practice | Knowledge of | Searches tried |
+|---|---|---|---|
+| P09 | The Azure DocumentDB public docs do not prescribe a specific client-side ANN library (FAISS/hnswlib) as the official fallback; the service docs focus on server-side vector indexes instead. | general | search: Azure DocumentDB FAISS 'client-side' fallback 'nearest neighbor' 'FAISS' |
+| P11 | Model eligibility criteria in a structured, queryable form (normalized fields and arrays) instead of opaque free text so deterministic rule engines can apply inclusion/exclusion logic. | general | search: Azure DocumentDB model eligibility criteria structured 'eligibility' 'criteria' (no useful service guidance found) |
+
+## All practices
+
+| Id | Practice | Category | Basis | Source | Public address | How it was found | Applies to this app |
+|---|---|---|---|---|---|---|---|
+| P01 | Read the DocumentDB/MongoDB connection URI from an environment variable and do not commit connection strings or credentials to source control; provide a .env.example or ignored .env for local development instead. | authentication_and_secrets | prior_knowledge_confirmed | Quickstart: Connect Mongoose to Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#prerequisites | Azure DocumentDB connection environment variable .env example | yes |
+| P02 | Reuse a single long-lived MongoClient (connection pool) per process rather than creating a new client per request. | connection_handling | prior_knowledge_confirmed | Quickstart: Use Azure DocumentDB with MongoDB driver for Python (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-python#code-examples | MongoClient reuse Azure DocumentDB best practice | yes |
+| P03 | Enforce TLS for all connections and prefer Private Link / private endpoints or IP firewall rules instead of exposing the database publicly for production. | network_and_security | prior_knowledge_confirmed | Secure your Azure DocumentDB cluster (public_doc) | https://learn.microsoft.com/azure/documentdb/security#transport-security | Azure DocumentDB TLS private endpoint firewall guidance | yes |
+| P04 | Store production secrets (connection credentials, keys) in a secrets store such as Azure Key Vault and use environment variables for local development fallbacks. | authentication_and_secrets | prior_knowledge_confirmed | Migrate from Amazon DocumentDB to Azure DocumentDB (with MongoDB compatibility) (public_doc) | https://learn.microsoft.com/azure/documentdb/migrate-amazon-documentdb#update-your-application | store connection string in Key Vault DOCUMENTDB_URI guidance | yes |
+| P05 | Create indexes on scalar fields used in query filters and create compound indexes for the most common filter+sort query shapes. | indexing | prior_knowledge_confirmed | Architecture best practices for Azure Cosmos DB for NoSQL (public_doc) | https://learn.microsoft.com/azure/well-architected/service-guides/cosmos-db#cost-optimization | Azure DocumentDB indexing policy create indexes for queryable fields | yes |
+| P06 | For paging through large result sets, prefer range- or cursor-based (seek) pagination rather than skip/offset-heavy pagination to keep queries efficient. | queries | prior_knowledge_confirmed | Use Beanie with Azure DocumentDB: Build a Python inventory API (public_doc) | https://learn.microsoft.com/azure/documentdb/tutorial-python-beanie#create-the-project | pagination cursor vs skip guidance Azure DocumentDB examples | yes |
+| P07 | Store dense numeric embeddings as a numeric array field (number[]) on documents so they can be indexed or used for client-side ranking when needed. | vector_search | prior_knowledge_confirmed | Integrated vector store in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search#how-does-a-vector-store-work | Azure DocumentDB store embeddings number[] | yes |
+| P08 | Prefer using server-side vector indexes (DiskANN/HNSW/IVF) for production and create a scalar index on filter fields alongside the vector index to support hybrid (filter + vector) queries. | vector_search | prior_knowledge_confirmed | Integrated vector store in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search | Azure DocumentDB DiskANN HNSW IVF guidance hybrid filtering | yes |
+| P09 | The Azure DocumentDB public docs do not prescribe a specific client-side ANN library (FAISS/hnswlib) as the official fallback; the service docs focus on server-side vector indexes instead. | vector_search | prior_knowledge_only | - (prior_knowledge) | **none** | search: Azure DocumentDB FAISS 'client-side' fallback 'nearest neighbor' 'FAISS' | yes |
+| P10 | Keep documents under the service's per-document size limit (16 MB) and store large binary payloads (files) in Azure Blob Storage with a reference in the document. | data_modeling | prior_knowledge_confirmed | Document size and batch write limits in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/max-document-size | Azure DocumentDB maximum document size 16 MB | yes |
+| P11 | Model eligibility criteria in a structured, queryable form (normalized fields and arrays) instead of opaque free text so deterministic rule engines can apply inclusion/exclusion logic. | data_modeling | prior_knowledge_only | - (prior_knowledge) | **none** | search: Azure DocumentDB model eligibility criteria structured 'eligibility' 'criteria' (no useful service guidance found) | yes |
+| P12 | Use projection to return only the fields required by the application to reduce network payloads and throughput/cost (return stored source or selected fields only). | queries | prior_knowledge_confirmed | find (public_doc) | https://learn.microsoft.com/documentdb/query/commands/query-and-write/find#projections | Azure DocumentDB projection reduce RU costs | yes |
+| P13 | Design write operations to be idempotent (use upserts with a stable key where appropriate) and implement retries for transient failures with exponential backoff and jitter; ensure retries are safe for non-idempotent operations. | retries_and_error_handling | prior_knowledge_confirmed | Reliability in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults | Azure DocumentDB idempotent writes retry guidance retryWrites=false note | yes |
+| P14 | Avoid long-running or frequent multi-document transactions when possible; keep transactions short, scope them narrowly, and build retry logic for transaction conflicts. | data_modeling | prior_knowledge_confirmed | Group multiple operations in transactions in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/how-to-transactions#create-a-transaction | Azure DocumentDB transactions best practices keep transactions short avoid conflicts | yes |
+| P15 | Use JSON Schema validation ($jsonSchema) where supported to enforce collection-level schema constraints and catch malformed updates early. | data_modeling | prior_knowledge_confirmed | $jsonSchema (public_doc) | https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema | Azure DocumentDB $jsonSchema schema validation support | yes |
+| P16 | Provision cluster tier and storage according to workload (vector indexes need more memory/compute); prefer M30+ for DiskANN/HNSW and monitor utilization to scale tiers appropriately. | provisioning_and_capacity | prior_knowledge_confirmed | Quickstart: Vector index with TypeScript in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-select-algorithm#run-the-code | DiskANN HNSW cluster tier M30 guidance | yes |
+| P17 | Enable diagnostic settings, slow-query logs and capture explain() plans to monitor query performance, find missing indexes and expensive scans. | observability | prior_knowledge_confirmed | Secure your Azure DocumentDB cluster (public_doc) | https://learn.microsoft.com/azure/documentdb/security | Azure DocumentDB monitor diagnostics slow query explain plans | yes |
+| P18 | Use least-privilege database accounts for application access and prefer Microsoft Entra ID / RBAC over wide admin keys for everyday operations. | authentication_and_secrets | prior_knowledge_confirmed | Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID (azure-cli) (public_doc) | https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#manage-azure-role-based-access-control | Azure DocumentDB RBAC Microsoft Entra ID guidance | yes |
+| P19 | Samples often set retryWrites=false in connection strings and note that driver-managed retryable writes differ from application-level retries; verify retry semantics for your deployment and ensure any application retries are safe and idempotent. | connection_handling | found_in_public_source | Why keep retryWrites=false (tutorial commentary) (public_doc) | https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#why-keep-retrywritesfalse | retryWrites=false guidance Azure DocumentDB samples | yes |
+| P20 | Vector fields to be indexed must be numeric arrays (number[]); documents with non-numeric vector types will not be indexed for vector search. | vector_search | found_in_public_source | Integrated vector store in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search#how-does-a-vector-store-work | Azure DocumentDB vector field must be number[] | yes |
+| P21 | You can create only one vector index per vector path on a collection; plan index lifecycle accordingly. | vector_search | found_in_public_source | Integrated vector store in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search#how-does-a-vector-store-work | Azure DocumentDB single vector index per path guidance | yes |
+| P22 | Tune vector-index parameters for accuracy/latency tradeoffs (DiskANN: maxDegree, lBuild, lSearch; HNSW: m, efConstruction, efSearch; IVF: numLists/nProbes) and use DiskANN for production M30+ clusters. | vector_search | found_in_public_source | Quickstart: Vector index with Go in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-go-select-algorithm#run-the-code | DiskANN HNSW IVF tuning parameters Azure DocumentDB | yes |
+| P23 | Normalize embeddings and choose an appropriate similarity metric (COS for normalized text embeddings; IP equivalent to COS for unit-length vectors) when using vector search. | vector_search | found_in_public_source | Quickstart: Vector index with Go in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/quickstart-go-select-algorithm#run-the-code | embedding normalization cosine inner product guidance | yes |
+
+## Searches that returned nothing useful
+
+- Azure DocumentDB FAISS 'client-side' fallback 'nearest neighbor' 'FAISS'
+- Azure DocumentDB guidance 'eligibility criteria' structured model 'clinical trial' 'criteria' (no service-level guidance found)
+
+## Notes
+
+I searched Microsoft Learn / Azure DocumentDB docs for connection, auth, indexing, vector search, sizing, transactions, retries and observability guidance and recorded individual, checkable practices. Where a prior belief matched a DocumentDB page I reused that discovered entry and marked it prior_knowledge_confirmed (K01..K08, K10..K18, etc.). Two prior beliefs (K09, K11) had no authoritative Azure DocumentDB doc confirming them and are therefore marked prior_knowledge_only (P09 and P11). No prior belief was contradicted by Azure DocumentDB public docs.
+

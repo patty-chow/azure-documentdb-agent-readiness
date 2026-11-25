@@ -8,14 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement a Python LangChain orchestration pipeline that accepts a patient profile input and coordinates two agent components: an eligibility agent and a consent agent.
-- Using the PyMongo driver, run a vector search against Azure DocumentDB by issuing a $search / cosmosSearch query on the trials collection to retrieve candidate trials ranked by similarity; the query must reference the embedding field stored on trial documents (e.g., an "embedding" field) and return the top candidates (e.g., top-N).
-- In code, create a cosmosSearch vector index (kind vector-ivf, vector-hnsw, or vector-diskann) on the trial documents' embedding field via Azure DocumentDB’s search-index creation API; that index must specify the embedding dimensionality to match the embedding model used by the application.
-- Ensure trial documents store embedding vectors on a document field (the seeding/upsert code writes embeddings into each trial document) so the vector index and $search operate over those stored embeddings.
-- The orchestration passes retrieved candidate trials to an eligibility agent implemented with LangChain Python; that agent programmatically evaluates inclusion and exclusion criteria by inspecting trial criteria fields (e.g., age ranges, conditions, lab thresholds) against the patient profile and returns a structured eligibility decision (pass/fail) and rationale for each trial.
-- After eligibility evaluation, the orchestrator hands eligible trials to a consent agent implemented with LangChain Python; the consent agent produces a plain-language, patient-facing trial summary for each trial that explains purpose, key procedures, and consent-relevant points tailored to the patient profile.
-- Persist match results back into Azure DocumentDB using PyMongo so that each stored match record contains at least the trial identifier, the eligibility decision and rationale, and the consent-agent plain-language summary.
-- Implement the pipeline sequencing so outputs flow through: vector search → eligibility agent → consent agent, with the orchestrator wiring each step’s outputs to the next within the LangChain Python orchestration.
+- A Python pipeline built with LangChain acts as the orchestrator: it accepts a patient profile as input and runs the steps in order, vector search, then the eligibility agent, then the consent agent, passing each step's output to the next.
+- In code, through a MongoDB driver (e.g. PyMongo), create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field of the trial-criteria documents in Azure DocumentDB, with dimensions matching the embedding model the pipeline uses.
+- Embed the patient profile with an embedding model and find candidate trials by running a $search / cosmosSearch aggregation against the trial-criteria collection in Azure DocumentDB, so the database returns the trials whose stored criteria embeddings are most similar to the profile.
+- An eligibility agent, built with LangChain, receives the candidate trials and applies each trial's inclusion and exclusion rules to the patient profile to decide which candidates the patient is eligible for.
+- A consent agent, built with LangChain, receives the trials the eligibility agent accepted and generates a plain-language summary of each trial for the patient.
+- Store the match results in Azure DocumentDB (e.g. the matched trial, the eligibility outcome and the plain-language summary for the patient).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
