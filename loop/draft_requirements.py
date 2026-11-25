@@ -30,13 +30,44 @@ resource type Microsoft.DocumentDB/mongoClusters). It is not Amazon DocumentDB a
 
 Given a sample's title, description, concepts and starter prompt, list what a publishable version must do
 to satisfy the starter prompt. Rules:
-- One requirement per bullet, each something a reviewer can check in the code. 6 to 12 bullets.
+- One requirement per bullet, each a distinct behaviour a reviewer can check in the code. 5 to 10 bullets.
 - Only requirements the starter prompt asks for or clearly implies. Do not add generic hygiene items;
-  those are covered by a shared section appended later.
+  a shared section appended later already requires environment-variable configuration, a reused client,
+  a seed script, unit tests, pinned dependencies, infrastructure as code and a README.
 - Name the language, framework, driver or ODM, agent framework, and DocumentDB feature the prompt names,
   exactly as it names them. Name the embedding model only if the prompt does.
 - "Using the DocumentDB skill" at the start of a prompt refers to guidance installed in the coding agent,
   not to a component of the app. Never turn it into a requirement.
+- State requirements at the level of detail the prompt uses. Never invent field names, collection names,
+  route paths, status codes, function or tool names, index keys or output-field lists the prompt does not
+  give; where a detail is needed to make a bullet checkable, write it as an example in parentheses
+  ("e.g. ..."), not as the requirement.
+- The agent type, the concept list and the prompt's descriptive phrases ("policy agent", "aggregation
+  tool", "agent memory", "Single-agent", "Orchestration") describe roles and architecture, not
+  identifiers. Require the role or component to exist and behave as described, never that code, names or
+  strings match that wording exactly.
+- Do not add error handling, retries, idempotency, concurrency protection, input validation, empty-result
+  handling, logging or compliance safeguards unless the prompt asks for them. A requirement describes what
+  the prompt asks the app to do, not how a production system would harden it.
+- Do not require a value to be configurable, parameterised or exposed as a setting unless the prompt says
+  so; a constant in code satisfies a prompt that gives no parameter.
+- Do not require tests, demo or end-to-end scripts, example invocations, seed or sample data, citations,
+  provenance metadata, document ids in outputs, structured logging of intermediate results or exposed
+  internals "so a reviewer can verify". The auditor reads the code; a behaviour the code performs is
+  already checkable.
+- Do not write a separate bullet about connecting to Azure DocumentDB, where the connection string comes
+  from, or that operations "really" target Azure DocumentDB. Name the driver or ODM inside the bullet
+  that first uses it.
+- Never add a bullet that restates an earlier one as a prohibition ("not client-side", "not simulated",
+  "rather than ..."), as an assurance ("ensure that ...") or as a consequence of it.
+- Service facts. Vector search in Azure DocumentDB means a cosmosSearch index of kind vector-ivf,
+  vector-hnsw or vector-diskann on the embedding field, created in code and queried with $search /
+  cosmosSearch (similarity COS, L2 or IP); embeddings are stored on documents, there are no index files.
+  Full-text search uses a search index created with createSearchIndexes and queried with $search, never
+  $text. There is no Atlas API, no "binary embedding" option and no "MongoDB API" account; the service is
+  a cluster. When the prompt names vector search, the similarity runs in the database, not in app code,
+  and one bullet requires the vector index to be created with dimensions matching the embedding model.
+  Multi-document transactions use a session (withTransaction, or start/commit/abort).
 - Use the name "Azure DocumentDB" for the service.
 - Output only the bullets, each starting with "- ". No heading, no preamble."""
 

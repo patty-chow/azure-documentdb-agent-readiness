@@ -280,8 +280,10 @@ def run_one(sample: dict, args: argparse.Namespace, resume_from: str | None) -> 
         cmd += ["--stop-after", args.stop_after]
     if args.allow_azure_writes:
         cmd.append("--allow-azure-writes")
+    # Passed on resume as well: the pipeline refreshes the run folder's copy, so a corrected
+    # requirements file reaches the audit even when review and readiness already ran.
     requirements = PROJECT / "requirements" / f"{Path(sample['prompt']).stem}.md"
-    if requirements.is_file() and not resume_from:
+    if requirements.is_file():
         cmd += ["--requirements", str(requirements)]
     if args.env_note:
         cmd += ["--skill", str(render_env_note(sample, args.arm, tag))]
