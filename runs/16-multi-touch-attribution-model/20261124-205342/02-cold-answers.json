@@ -1,0 +1,124 @@
+{
+  "answers": [
+    {
+      "question_id": "Q01",
+      "question": "What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster?",
+      "answer": "Resource provider namespace: Microsoft.DocumentDB. Resource type: Microsoft.DocumentDB/databaseAccounts (the Cosmos DB account resource is used for MongoDB-compatible clusters).",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q02",
+      "question": "Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension?",
+      "answer": "Use the core CLI group az cosmosdb. Example create command: az cosmosdb create --name my-docdb-account --resource-group my-rg --kind MongoDB --locations regionName=eastus --default-consistency-level Session. (az cosmosdb is part of the core Azure CLI, not an extension.)",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q03",
+      "question": "Which Bicep and Terraform resource types deploy a cluster?",
+      "answer": "Bicep: resource of type 'Microsoft.DocumentDB/databaseAccounts' (set kind: 'MongoDB' and required properties/locations). Example Bicep snippet: resource docdb 'Microsoft.DocumentDB/databaseAccounts@2021-04-15' = { name: 'myDocDb' kind: 'MongoDB' properties: { databaseAccountOfferType: 'Standard' locations: [ { locationName: 'eastus' } ] } }\nTerraform (AzureRM): resource 'azurerm_cosmosdb_account' (set kind/capabilities for MongoDB). Example: resource \"azurerm_cosmosdb_account\" \"docdb\" { name = \"myDocDb\" location = azurerm_resource_group.rg.location resource_group_name = azurerm_resource_group.rg.name offer_type = \"Standard\" capabilities = [ { name = \"EnableMongo\" } ] }",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q04",
+      "question": "What does a connection string look like: scheme, host suffix, port, and the options it must carry?",
+      "answer": "Typical MongoDB-compatible connection string for Azure DocumentDB/Cosmos Mongo API:\nmongodb://<username>:<password>@<account>.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&retryWrites=false\n- Scheme: mongodb:// (or mongodb+srv:// if SRV record available)\n- Host suffix: <account>.mongo.cosmos.azure.com\n- Port: 10255 (TLS/SSL port)\n- Recommended options: ssl=true (or tls=true), replicaSet=globaldb, retryWrites=false, tlsAllowInvalidCertificates=false (do not disable in prod).",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q05",
+      "question": "How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else?",
+      "answer": "Azure DocumentDB (Cosmos DB) style deployments are usually provisioned and billed as throughput (Request Units per second, RU/s) with options for autoscale and serverless for supported APIs. However some MongoDB-compatible managed SKUs expose instance-style compute tiers (M-family like M30) billed by vCores. For a managed MongoDB-compatible cluster that exposes M30 etc. you should treat capacity as a compute tier (M30) billed by vCore/instance type for that cluster; if you instead deploy a Cosmos DB account for Mongo API you will see RU/s billing. (Pick the cluster SKU shown in the portal to know which applies.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q06",
+      "question": "Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID?",
+      "answer": "Primary supported DB authentication for Mongo clients is username/password (SCRAM-SHA-256 / SCRAM-SHA-1) using the database user created on the cluster. Many managed MongoDB-compatible offerings also support X.509 client cert authentication. Microsoft Entra (Azure AD) based authentication for MongoDB drivers is not generally supported as an alternative to SCRAM for the MongoDB wire protocol on Cosmos/Mongo API; Azure AD is used for control-plane (management) operations, not for Mongo DB data-plane auth. Therefore a driver should authenticate with a SCRAM username/password (embedded in the mongodb URI) or with a client certificate if the service supports X.509.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q07",
+      "question": "Which client library should an application use? Is there a service-specific SDK?",
+      "answer": "Use the standard MongoDB drivers for data-plane operations (e.g. pymongo for Python). There is no separate data-plane, Mongo-API-specific Azure SDK; the Azure SDKs (azure-cosmos) target the core Cosmos SQL API. For management tasks use the Azure CLI/SDK (az cosmosdb or azure-mgmt-cosmosdb) but for application code use the platform's MongoDB driver.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q08",
+      "question": "Which vector index types are supported, and what does the command that creates one look like?",
+      "answer": "On a vector-capable DocumentDB cluster the service exposes vector index algorithms such as HNSW, IVF and DiskANN. The index is created with the MongoDB createIndex API on the vector field using an index spec with a 'vector'/algorithm subdocument. Example (syntax used by such managed MongoDB services):\ndb.events.createIndex({ embedding: 'vector' }, { name: 'embedding_vec_idx', vector: { algorithm: 'hnsw', metric: 'cosine', dimensions: 768, efConstruction: 200, M: 16 } })\n(Use the cluster's documentation or describeIndexes tool to confirm the exact option names; the above is the concrete command form I would run against the cluster.).",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q09",
+      "question": "How are full-text search and hybrid search done?",
+      "answer": "Full-text/hybrid search is accomplished by integrating with a search engine: for Azure you typically use Azure Cognitive Search and push or index your DocumentDB documents into an Azure Cognitive Search index (indexer or data export). Some managed MongoDB-compatible clusters expose a built-in search index (Atlas Search style) reachable via a search aggregation stage; if that is present you use that search stage. For hybrid relevance+vector retrieval you build a pipeline that combines a vector nearest-neighbor search (via the vector index) with a text search filter from Azure Cognitive Search or the cluster's native search stage and then re-rank.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q10",
+      "question": "Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not?",
+      "answer": "Supported server/wire versions vary by cluster SKU. Recent managed MongoDB-compatible clusters advertise support for MongoDB 4.0, 5.0, 6.0 and newer (some clusters now support MongoDB 7.0 wire protocol). Commonly restricted or incompatible features vs upstream MongoDB include: certain server-side JavaScript eval operations, some aggregation stages or operators that touch internals, cross-database joins, and in older Mongo-API offerings limited multi-document transactions or different transaction semantics. Expect subtle query planner and index semantics differences; always test critical pipelines against the target cluster version.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q11",
+      "question": "How do you run the database locally for development and tests: which image or emulator, and which port?",
+      "answer": "If you are targeting Cosmos DB's Mongo API you can use the Azure Cosmos DB Emulator for local development (official image) for the SQL API; emulator support for Mongo API is limited or absent. For full MongoDB feature parity use the official MongoDB Docker image, e.g. docker run -p 27017:27017 --name mongo-dev -d mongo:7.0 and connect to mongodb://localhost:27017 for local dev. If the managed cluster requires specialized vector index features, those will not be available locally unless the vendor supplies a matching local image; otherwise test vector features against the real cluster.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q12",
+      "question": "Are change streams supported, and does anything have to be enabled first?",
+      "answer": "Change streams depend on the managed cluster providing a replica-set/oplog interface. Some managed MongoDB-compatible services expose change streams for supported wire versions (MongoDB 3.6+); others do not. If the service supports change streams you may need to enable an oplog or ensure the account is created with a replica-set/cluster SKU that provides an oplog. In short: change streams are possible on compatible SKUs but are not universally available — verify the cluster's feature matrix and enable the oplog/replica capabilities if required.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q13",
+      "question": "Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it?",
+      "answer": "The sample environment references a dedicated 'documentdb' MCP server — use that for data-plane inspection and index/query plan tools. The general Azure MCP server does not necessarily include the Mongo/DocumentDB-specific tools; use the 'documentdb' MCP server instance for DocumentDB cluster introspection.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q14",
+      "question": "What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project?",
+      "answer": "Historically Microsoft offered a service called DocumentDB which was the precursor to Azure Cosmos DB; 'DocumentDB' became the SQL/Core API of Cosmos DB. The managed MongoDB-compatible offering is surfaced through Cosmos DB (Mongo API) or as a separate managed MongoDB offering depending on SKU. The open-source 'DocumentDB' project is unrelated — Microsoft’s DocumentDB was a proprietary hosted database product that later evolved into Azure Cosmos DB. In short: DocumentDB (Microsoft) -> rebranded/merged into Cosmos DB; Cosmos's Mongo API provides MongoDB wire-protocol compatibility.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q15",
+      "question": "What engine is underneath, and does that change anything in application code?",
+      "answer": "The engine is the managed service's proprietary backend (Azure Cosmos DB engine or the managed MongoDB service engine) exposing the MongoDB wire protocol via a compatibility layer. That means application code using standard MongoDB drivers generally works, but semantics differ in edge cases (indexing behavior, transaction semantics, aggregation operator support, performance characteristics). Test and adjust queries/indices for the managed backend; expect to use standard MongoDB drivers but verify feature parity for advanced features.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S01",
+      "question": "What index definition does this sample need for vector search?",
+      "answer": "Question: What index definition does this sample need for vector search?\nAnswer: Create a vector index on the event embedding field named 'embedding' with algorithm HNSW, cosine distance and the correct dimensionality. Example I would run:\ndb.journey_events.createIndex({ embedding: 'vector' }, { name: 'embedding_hnsw', vector: { algorithm: 'hnsw', metric: 'cosine', dimensions: 768, efConstruction: 200, M: 16 } })\nThis index will be used by aggregation stages performing k-NN searches for attribution pipelines.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "S02",
+      "question": "What aggregation stage sequence will implement first-touch, last-touch and linear attribution?",
+      "answer": "Question: What aggregation stage sequence will implement first-touch, last-touch and linear attribution?\nAnswer: I will use MongoDB aggregation grouped by customerId: 1) $match on date/window, 2) $sort by timestamp ascending, 3) $group by customerId to collect events array (push event objects), then compute attribution: - first-touch: take first event.source and assign full credit; - last-touch: take last event.source and assign full credit; - linear: $unwind events then $group by customerId and source computing sum(1/numEvents) per source. Concretely I will run a pipeline that $group: { _id: '$customerId', events: { $push: { ts: '$ts', channel: '$channel', revenue: '$revenue' } }, count: { $sum: 1 } } then post-process to compute models per group and write a versioned document.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S03",
+      "question": "How will the app authenticate to the cluster at runtime in this sample?",
+      "answer": "Question: How will the app authenticate to the cluster at runtime in this sample?\nAnswer: The sample will read a full Mongo-compatible connection URI from the environment variable DOCUMENTDB_URI and pass it to pymongo.MongoClient(documentdb_uri). The URI contains the user/password and TLS options (e.g. ssl=true&replicaSet=globaldb). We will not embed secrets in code; the README/.env.example will show DOCUMENTDB_URI='mongodb://<username>:<password>@<account>.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb'.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S04",
+      "question": "Which Python client and exact connection call will the sample use?",
+      "answer": "Question: Which Python client and exact connection call will the sample use?\nAnswer: Use pymongo (the official MongoDB Python driver). Connection code:\nfrom pymongo import MongoClient\nimport os\nuri = os.environ['DOCUMENTDB_URI']\nclient = MongoClient(uri, tls=True, tlsAllowInvalidCertificates=False)\ndb = client['sample_customer_360_16']\n(collections will be db.get_collection('journey_events')).",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S05",
+      "question": "What collection and document layout will the sample create for customer journey events and attribution outputs?",
+      "answer": "Question: What collection and document layout will the sample create for customer journey events and attribution outputs?\nAnswer: Collections:\n- journey_events: documents like { _id: ObjectId(...), customerId: 'cust-123', timestamp: ISODate(...), channel: 'email'|'paid'|'organic', eventType: 'click'|'view'|'purchase', value: 12.34, embedding: [float,...] }\n- attribution_results: versioned per customer: { _id: ObjectId(...), customerId: 'cust-123', version: 1, generatedAt: ISODate(...), windowStart: ISODate(...), windowEnd: ISODate(...), models: { first_touch: { 'email':1.0 }, last_touch: {...}, linear: { 'email':0.4, 'paid':0.6 } } }\nUse these shapes so pipelines can group by customerId and write a single versioned document per customer.",
+      "confidence": "high"
+    }
+  ]
+}
