@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build an async Python pipeline using Beanie ODM that reads raw product reviews, calls OpenAI to classify sentiment and extract key themes, enriches each document with a sentiment score and tags field, and upserts the result back into DocumentDB. Include a summary aggregation query grouped by product and sentiment.
