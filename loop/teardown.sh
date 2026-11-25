@@ -16,7 +16,8 @@ if [[ "${1:-}" != "--yes" ]]; then
   [[ "$confirm" == "$RG" ]] || { echo "aborted"; exit 1; }
 fi
 
-az documentdb mongocluster delete -g "$RG" -n "$CLUSTER" --yes --no-wait -o none 2>/dev/null && echo "cluster delete requested" || echo "cluster not found"
+# Synchronous: the cluster takes several minutes to go away and a --no-wait request can be dropped silently.
+az documentdb mongocluster delete -g "$RG" -n "$CLUSTER" --yes -o none 2>/dev/null && echo "cluster deleted" || echo "cluster not found"
 # Every Azure OpenAI account in the group (there is one per region used for model quota), purged so the names can be reused.
 az cognitiveservices account list -g "$RG" --query "[?kind=='OpenAI'].[name,location]" -o tsv | while read -r name loc; do
   az cognitiveservices account delete -g "$RG" -n "$name" -o none 2>/dev/null && echo "openai account $name deleted"
@@ -24,7 +25,8 @@ az cognitiveservices account list -g "$RG" --query "[?kind=='OpenAI'].[name,loca
 done
 
 # Anything the builder provisioned during write-enabled runs.
-ids=$(az resource list -g "$RG" --tag purpose=samples-factory --query "[].id" -o tsv)
+# az resource list refuses --tag together with -g, so filter the tag query by resource group instead.
+ids=$(az resource list --tag purpose=samples-factory --query "[?resourceGroup=='$RG'].id" -o tsv)
 if [[ -n "$ids" ]]; then
   echo "$ids" | xargs -n1 az resource delete --ids -o none && echo "tagged builder resources deleted"
 fi
