@@ -1,0 +1,67 @@
+# 3. Build report: 14-customer-complaint-classifier
+
+**Status: partial**
+
+Built a Python FastAPI + Beanie sample app that demonstrates a complaint-classification pipeline (LLM classification + embeddings) and includes a seed script and an index-creation helper. Local unit tests run and pass. Dependency install succeeded. I attempted to verify creation of collection/indexes and seeding via the documentdb MCP server, but MCP write operations failed (documentdb_insert_documents and documentdb_create_index returned errors), so I could not perform the live-cluster write verification for sample_banking_14. I did verify the MCP server can list databases (it returned sample_banking_13 and sample_banking_15), which shows the MCP connection works for read operations in this environment.
+
+## How to run
+
+1) Create a Python virtualenv, activate it, and install dependencies:
+   pip install -r requirements.txt
+
+2) Create .env from .env.example and fill in DOCUMENTDB_URI and OPENAI_API_KEY (do not commit secrets).
+
+3) (Optional) Seed data locally (if you have DOCUMENTDB_URI write permissions to the target cluster):
+   python -m src.seed.seed --uri "$DOCUMENTDB_URI" --db sample_banking_14 --count 50
+
+4) (Optional) Create indexes (if you have permission). The repo includes scripts/create_indexes.py which will attempt to create a product_category index and a sample cosmosSearch vector-index command. The cosmosSearch call may need adjustment per your cluster's exact createSearchIndexes API shape:
+   python scripts/create_indexes.py
+
+5) Start the API (after filling .env):
+   uvicorn src.app.main:app --reload
+
+6) Endpoints:
+   POST /classify-run?limit=50  - run classification pipeline on unclassified docs (requires DB writes and OpenAI key)
+   POST /search?q=...&k=5       - run a similarity search (requires embeddings and cosmosSearch index)
+   GET /hotspots                - returns aggregation counts by product_category
+
+7) Tests (mocked, run locally without a live cluster or real OpenAI key):
+   pytest
+
+Notes:
+- The app reads DOCUMENTDB_URI and OPENAI_API_KEY from environment at runtime. No secrets are written to the repository.
+- If you cannot run the seed/index scripts on the live cluster (permission/organization rules), run them against a local DocumentDB gateway (see documentdb-local-deployment skill) or adjust as required by your infra team.
+
+## Verified by running
+
+- pip install -r requirements.txt: exit code 0 (dependencies installed, some dependency warnings reported)
+- pytest: 2 passed
+- documentdb_list_databases (connection_profile='default'): returned ['sample_banking_13', 'sample_banking_15']
+
+## Not verified
+
+- Seeding data into database 'sample_banking_14' via documentdb_insert_documents (MCP) — attempted but the MCP write tool failed with 'Error: Function failed.', so the seed was NOT inserted via MCP. Reason: MCP write tool failure/tool denied.
+- Creating indexes on the live cluster via documentdb_create_index (MCP) — attempted but the MCP write tool failed with 'Error: Function failed.'; the product_category index and cosmosSearch vector index were NOT created via MCP in this run.
+- Running the classification pipeline end-to-end against the live cluster (requires writes and a valid OPENAI_API_KEY) — not performed because MCP write operations were unavailable in this run and OpenAI calls were not executed against the live cluster (tests mock LLM).
+
+## Open issues
+
+- documentdb_insert_documents and documentdb_create_index MCP tool calls failed with generic 'Error: Function failed.' I attempted writes once and then stopped per the run instructions. Because of this, I could not create the sample_banking_14 database/collection on the live cluster or create the vector index for embeddings. The repository includes scripts (src/seed/seed.py and scripts/create_indexes.py) so a developer with write permission can run them locally.
+- The MCP server returned a list of databases but sample_banking_14 was not present in that list. The sample app and scripts assume the database name 'sample_banking_14' per the prompt; if you want live verification, either run the seed/index scripts with a user that has write permissions or create the DB via your infra team.
+- OpenAI/LLM calls are only exercised via unit tests with mocks. To run the pipeline end-to-end you must provide a valid OPENAI_API_KEY in environment; be aware this will use external API and incur cost.
+
+## Files
+
+- `requirements.txt`
+- `.env.example`
+- `README.md`
+- `LICENSE`
+- `src/app/models.py`
+- `src/app/db.py`
+- `src/app/pipeline.py`
+- `src/app/main.py`
+- `src/seed/seed.py`
+- `scripts/create_indexes.py`
+- `tests/test_pipeline.py`
+- `.gitignore`
+
