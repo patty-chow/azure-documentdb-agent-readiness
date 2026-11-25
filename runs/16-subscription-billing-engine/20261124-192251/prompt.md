@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Node.js Mongoose billing engine that stores subscription plans, customers, and charge events in DocumentDB. Use multi-document transactions to atomically record a charge and update the subscription status. Add idempotency key checks to prevent double-billing, and use TTL indexes to auto-expire trial entitlement documents.
