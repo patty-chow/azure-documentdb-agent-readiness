@@ -8,14 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and Mongoose to connect to Azure DocumentDB via a MongoDB-compatible connection string supplied by an environment variable (connection established with Mongoose.connect).
-- Provide Mongoose models for the positions collection and the alert rules collection (models named e.g., Position and AlertRule) with fields sufficient to evaluate alerts (positions: userId, symbol, shares, avgCost, currentPrice, sector, updatedAt; alert rules: userId, scope (symbol or global), metric (e.g., "price" or "pnl"), comparison (">","<"), threshold, webhookUrl, active).
-- Open a change stream on the positions collection using the Azure DocumentDB change streams feature (use positions.watch(...) via Mongoose/driver) and configure the stream to retrieve the latest document (fullDocument: "updateLookup").
-- Detect relevant price updates by inspecting change stream events and only trigger evaluation when the event shows a price change (e.g., operationType "update" with updateDescription.updatedFields.currentPrice present, or an "insert" with a currentPrice).
-- For each position change that passes the price-change detection, query the alert rules collection for active rules applicable to that position (match by userId and symbol or by global scope) and evaluate each rule's condition against the updated position document (support at least metric types "price" and "pnl" where pnl = (currentPrice - avgCost) * shares).
-- When a rule is breached, send an HTTP POST webhook to the alert rule's webhookUrl with a JSON payload that includes the position document, the alert rule document, the breached metric name and value, and a UTC timestamp; implement the POST using a Node.js HTTP client (e.g., fetch or axios) and record the webhook HTTP status in logs or collection.
-- Implement an aggregation pipeline (using Mongoose aggregate) that computes for a given user: total portfolio P&L as sum((currentPrice - avgCost) * shares) and sector allocation as per-sector total market value (marketValue = currentPrice * shares) with each sector's percentage of the portfolio total.
-- Expose the aggregation via an HTTP endpoint (e.g., GET /portfolio/:userId/summary) that returns a JSON object containing total P&L and an array of sectors with their marketValue and percentage allocation computed by the aggregation.
+- A Node.js portfolio service built with Mongoose that defines models for positions and for alert rules and persists documents of both kinds in Azure DocumentDB.
+- A change stream opened through Mongoose on the positions collection (e.g. `Model.watch()`) that stays open while the service runs and receives the collection's change events.
+- Incoming change events are inspected to detect price updates on positions, and each detected price update triggers alert evaluation for the affected position.
+- On a detected price update, each alert rule document is evaluated against the position's new price to decide whether the rule's threshold is breached.
+- When an alert rule's threshold is breached, the service fires a webhook (an HTTP request to a webhook endpoint) carrying the alert.
+- An aggregation pipeline run through Mongoose on the positions data that computes portfolio P&L (profit and loss) and sector allocation.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

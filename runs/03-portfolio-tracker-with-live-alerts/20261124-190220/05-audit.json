@@ -1,0 +1,799 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested Node.js + Mongoose portfolio service, change-stream watcher, webhook firing and aggregation endpoint and was exercised against the live cluster in this run. Core functional requirements are met and unit tests passed. Findings focus on operational hardening and a few checklist / best-practice gaps an author or the product team should address before publishing: resume-token durability, change-stream handler offload, aggregation allowDiskUse, more explicit retry/backoff and webhook idempotency guidance, and a small README improvement. Several practices the product team expects are discoverable (public docs or packaged skills) and were followed; a handful are only prior-knowledge beliefs or not implemented and should be documented or added to the agent kit so future agents and builders reliably do the right thing.",
+  "requirement_results": [
+    {
+      "requirement": "A Node.js portfolio service built with Mongoose that defines models for positions and for alert rules and persists documents of both kinds in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/index.js lines 11-12 (mongoose.model registrations); app/src/models/position.js and app/src/models/alertrule.js define schemas and indexes.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A change stream opened through Mongoose on the positions collection (e.g. Model.watch()) that stays open while the service runs and receives the collection's change events.",
+      "status": "met",
+      "evidence": "app/src/worker/watch.js line 38 (Position.watch(..., { fullDocument: 'updateLookup' })); app/src/index.js lines 57-59 starts the worker.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Incoming change events are inspected to detect price updates on positions, and each detected price update triggers alert evaluation for the affected position.",
+      "status": "met",
+      "evidence": "app/src/worker/watch.js lines 39-46 and app/src/alert_watcher.js lines 10-16 inspect change.fullDocument, compute pnl and trigger evaluation.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "On a detected price update, each alert rule document is evaluated against the position's new price to decide whether the rule's threshold is breached.",
+      "status": "met",
+      "evidence": "app/src/alert_watcher.js lines 22-28 (metric selection) and lines 4-7 (evalComparison).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "When an alert rule's threshold is breached, the service fires a webhook (an HTTP request to a webhook endpoint) carrying the alert.",
+      "status": "met",
+      "evidence": "app/src/alert_watcher.js lines 31-36 (axios.post) and app/src/worker/watch.js lines 50-53 (sendWebhook result logged).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "An aggregation pipeline run through Mongoose on the positions data that computes portfolio P&L and sector allocation.",
+      "status": "met",
+      "evidence": "app/src/app.js lines 16-27 and app/src/index.js lines 18-36 show the aggregation pipeline; scripts/aggregate_test.js exercised the pipeline (events show it returned summary JSON).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 8-9 read process.env.DOCUMENTDB_URI; app/.env.example contains only a placeholder for DOCUMENTDB_URI.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI placeholder; README documents usage (copy .env.example to .env).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use vector embeddings or vector indexes.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index is created in this sample.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js implements a singleton pattern (isConnected) and reuses mongoose across the process.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.js uses updateOne(..., { upsert: true }) for positions and alert rules; app/scripts/create_indexes.js calls createIndexes(); events show seed and index creation ran successfully.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "This sample does not implement a /search endpoint.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search functionality in this sample.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "This is a Node.js sample: package-lock.json is present (ensures reproducible installs). package.json contains caret (^) ranges rather than exact pinned versions.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Commit package-lock.json (already present) and/or replace ranges with exact versions in package.json (or add a note in README to use npm ci to ensure lockfile reproducibility)."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "tests/aggregation.test.js exercises a pure function and npm test passed (events: 'PASS tests/aggregation.test.js').",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/Terraform) files present in repo. The builder deliberately did not provision resources (decision D009) because run policy forbids creating Azure resources.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Add minimal IaC artifacts (Bicep or Terraform templates targeting Microsoft.DocumentDB/mongoClusters) to the repo so the sample includes optional provisioning; the build pipeline can skip applying them in restricted runs."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run and clean-up.",
+      "status": "partly_met",
+      "evidence": "README.md documents what the sample shows, prerequisites, setup and run steps, but does not include explicit clean-up / teardown instructions for the sample database or indexes.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a 'Clean up' section to README with commands to drop the sample collections or database (or instructions to run a provided cleanup script)."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and docs use the name 'Azure DocumentDB' consistently (README lines 1, 3 and other references).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection string env var",
+      "practice": "Load the cluster connection string from an environment variable (do not hard-code or commit it), avoid printing the full URI to logs, and use an example file (.env.example) or a secret store for developer onboarding.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 8-9 (const uri = process.env.DOCUMENTDB_URI), app/.env.example present.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune MongoDB driver connection options to your deployment: set sensible maxPoolSize/minPoolSize, serverSelectionTimeoutMS and socketTimeoutMS according to serverless vs long-running server patterns.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines ~12-18 sets maxPoolSize:50, minPoolSize:10, serverSelectionTimeoutMS:5000, socketTimeoutMS:30000.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client reuse",
+      "practice": "Use a single MongoClient / Mongoose connection (singleton) for the process and reuse it across requests.",
+      "category": "driver",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js implements isConnected guard and returns the shared mongoose connection.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always require TLS when connecting to Azure DocumentDB; do not disable certificate verification in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js sets tls: true in mongoose options and README warns 'TLS is required'.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change stream fullDocument",
+      "practice": "When using change streams and you need the post-update document, open the stream with fullDocument: 'updateLookup' so handlers receive the current document on update events.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams",
+      "status": "followed",
+      "evidence": "app/src/worker/watch.js line 38 and app/src/alert_watcher.js line 54 pass { fullDocument: 'updateLookup' } to Model.watch().",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Resume tokens",
+      "practice": "Persist change-stream resume tokens durably and resume the stream with resumeAfter/startAtOperationTime to continue from the last processed event.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream",
+      "status": "violated",
+      "evidence": "No code persists resume tokens. change stream is opened without resumeAfter/startAtOperationTime (app/src/worker/watch.js and app/src/alert_watcher.js show watch() calls but no token persistence).",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Persist the last processed change._id (resume token) to a durable collection on every processed event and call Model.watch(..., { resumeAfter: token }) on restart; implement exponential backoff and safe resume failure handling.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Short handlers",
+      "practice": "Keep change-stream handlers short and offload webhook delivery or expensive evaluation to background workers/queues.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams",
+      "status": "violated",
+      "evidence": "app/src/worker/watch.js and app/src/alert_watcher.js perform synchronous HTTP requests (await axios.post or await sendWebhook) inside the change stream handler rather than enqueuing work.",
+      "source": "Change streams in Azure DocumentDB; Best practices",
+      "searched": "",
+      "fix": "Offload webhook delivery to a background worker or message queue; in the short term, perform non-blocking enqueue (e.g., write delivery requests to a 'deliveries' collection and process them with a separate worker) so the watch loop returns quickly.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB; Best practices for background jobs",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Alert-rule indexing",
+      "practice": "Design alert-rule queries so they can be satisfied by indexes (e.g., lookup by userId + active + symbol); create appropriate compound indexes rather than scanning all rules.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/models/alertrule.js includes indexes on userId and compound userId+active (AlertRuleSchema.index({ userId: 1, active: 1 })).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index ESR",
+      "practice": "Follow the ESR rule (Equality → Sort → Range) when creating compound indexes for queries and aggregation match stages.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "Alert-rule queries use userId + active + symbol semantics; existing indexes include userId and userId+active but not a full { userId:1, active:1, symbol:1 } compound index to cover the common predicate, so some queries may still require extra work. (app/src/models/alertrule.js shows defined indexes.)",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Add a compound index on { userId: 1, active: 1, symbol: 1 } to avoid scans when matching rules by userId, active and symbol.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Aggregation indexes",
+      "practice": "Create indexes to support aggregation match and group stages used by portfolio P&L and sector allocation (e.g., indexes on accountId, symbol, sector or a compound {accountId:1, symbol:1}).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/models/position.js defines indexes: userId, symbol, sector and compound userId+symbol; documentdb_list_indexes shows these indexes were created (events entries).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "allowDiskUse",
+      "practice": "When running potentially large aggregations, enable allowDiskUse: true and minimize projection/result shape to reduce data transferred over the wire.",
+      "category": "aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/aggregate",
+      "status": "violated",
+      "evidence": "Aggregations in app/src/app.js and scripts/aggregate_test.js call Position.aggregate(...) but do not pass the option { allowDiskUse: true } for large workloads.",
+      "source": "aggregate",
+      "searched": "",
+      "fix": "Pass { allowDiskUse: true } to aggregate when running larger datasets or document this option in README and conditionally enable it when result size may exceed memory.",
+      "sources": [
+        {
+          "title": "aggregate",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/aggregation/aggregate"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries and backoff",
+      "practice": "Implement retries with exponential backoff for transient connection/server-selection errors and rate-limited responses and cap retries with a dead-lettering approach for permanent failures.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "The sample implements a single short retry for webhook delivery (app/src/worker/watch.js sendWebhook has one retry) but lacks a general exponential-backoff retry strategy for driver transient errors or 429 handling and does not record failed deliveries to a dead-letter store.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add exponential-backoff retry helper for transient DB and webhook errors and persist failed webhooks to a 'dead-letter' collection after retry exhaustion.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent seeds",
+      "practice": "Make seed scripts idempotent by using upserts keyed on stable natural keys so seeds can be rerun safely.",
+      "category": "seeding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.js uses Position.updateOne(..., { upsert: true }) and AlertRule.updateOne(..., { upsert: true }).",
+      "source": "scripts/seed.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.js",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embedding vector model",
+      "practice": "Model and store embeddings as a fixed-length numeric array and record the embedding dimensionality and model metadata.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample does not use embeddings or vector indexes.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index creation",
+      "practice": "Create a dedicated vector index (cosmosSearch) with explicit options that match your embedding model and scale.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "No vector indexes created in the sample.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring & slow queries",
+      "practice": "Enable diagnostic settings and capture slow-query logs to Log Analytics and alert on CPU/memory/connection saturation.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Cluster-level monitoring is outside this sample's code; no cluster settings modified by the sample.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Capacity sizing",
+      "practice": "Pick cluster throughput to cover peak workloads from change-stream consumers and heavy aggregations.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Cluster provisioning is outside sample code and was not modified in this run.",
+      "source": "documentdb-high-availability",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-high-availability",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Backups",
+      "practice": "Rely on the platform's automatic backups and retention policy as part of DR planning.",
+      "category": "backups",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Backups are a cluster-level setting; sample does not alter backup policy.",
+      "source": "documentdb-high-availability",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-high-availability",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Network isolation & Entra ID",
+      "practice": "Prefer Private Endpoint / firewall rules and Microsoft Entra ID + RBAC for auth and use CMK for encryption-at-rest when required.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Configuration of network isolation or Entra-auth is a cluster/admin concern outside the sample code.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Webhook idempotency",
+      "practice": "Make webhook delivery idempotent (include an event id or deduplication key and have the receiver deduplicate), or persist short-lived delivery records so retries don't cause duplicate effects.",
+      "category": "webhooks",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P20",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample sends a payload with ruleId/userId/symbol/currentPrice but does not include a durable deduplication id or persist delivery records (app/src/worker/watch.js payload line 50). This practice was not found in public Azure DocumentDB docs (prior_knowledge_only).",
+      "source": "prior_knowledge",
+      "searched": "Azure DocumentDB webhook idempotent delivery (search returned no explicit guidance)",
+      "fix": "A short documentation page describing recommended webhook payload fields (eventId, resumeToken/changeId) and a sample delivery-record collection would help.",
+      "sources": [],
+      "what_would_help": "A public guidance page stating: 'Include change _id and ruleId in webhook payload and persist delivery attempts to a webhook_deliveries collection for deduplication and observability.'"
+    },
+    {
+      "topic": "Mongoose .lean()",
+      "practice": "When using Mongoose in read-heavy code paths, prefer projection + .lean() to avoid constructing Mongoose documents when you only need plain objects for evaluation/aggregation.",
+      "category": "mongoose",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P21",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "Alert evaluation uses AlertRule.find(...) which returns Mongoose documents rather than .lean() plain objects (app/src/alert_watcher.js line 20). No public Azure DocumentDB doc was found for this exact Mongoose guidance (prior_knowledge_only).",
+      "source": "prior_knowledge",
+      "searched": "Mongoose .lean Azure DocumentDB guidance (search returned no direct doc)",
+      "fix": "A short agent-kit rule or documentation sentence on recommended use of .lean() for evaluation hot-paths would let agents prefer it.",
+      "sources": [],
+      "what_would_help": "A sentence in the Mongoose/Driver skill: 'For read-heavy evaluation paths (alerts) use .find(...).lean() to avoid Mongoose document construction overhead.'"
+    },
+    {
+      "topic": "Testing aggregation",
+      "practice": "Write unit tests for aggregation logic with realistic sample documents and include short integration tests that run aggregations against the live sample_fintech_03 database to validate correctness and index usage.",
+      "category": "testing",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P22",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "tests/aggregation.test.js unit test exists and passed (npm test); scripts/aggregate_test.js runs aggregation against the live DB (events show the aggregation output).",
+      "source": "prior_knowledge",
+      "searched": "testing aggregations with Azure DocumentDB (search returned general guidance but no Azure-specific test template)",
+      "fix": "",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Precompute thresholds / cache lookups",
+      "practice": "Keep alert evaluation fast by precomputing thresholds and caching static lookups (instrument metadata like sector) with an in-memory TTL cache.",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P23",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The sample looks up AlertRule documents on each change and does not implement a cache for static metadata (app/src/worker/watch.js lines 45-46). This practice is a prior-knowledge belief; no public doc was found.",
+      "source": "prior_knowledge",
+      "searched": "alert evaluation performance best practices (general search returned no Azure DocumentDB specific guidance)",
+      "fix": "Add guidance or an agent-kit rule recommending caching of static metadata and precomputing thresholds for hot-path evaluation.",
+      "sources": [],
+      "what_would_help": "A short page in agent-kit: 'For alert watchers, cache alert rules/metadata in memory and refresh on change to keep evaluation O(1) per rule.'"
+    },
+    {
+      "topic": "Parallelizing change streams",
+      "practice": "When using change streams at scale, use the GetChangeStreamTokens command to obtain per-physical-shard resume tokens and run a watcher per token to parallelize load.",
+      "category": "change_streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/custom-commands#parallelizing-change-streams",
+      "status": "not_applicable",
+      "evidence": "The sample runs a single watcher and the environment/seed is single-shard; multishard token parallelization is not implemented.",
+      "source": "Use MongoDB extension commands to manage data stored in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use MongoDB extension commands to manage data stored in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/custom-commands#parallelizing-change-streams"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: HTTP library choices",
+      "practice": "Audit: the code uses both axios and node-fetch for HTTP; the choice was not logged as a design decision.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/worker/watch.js imports node-fetch; app/src/alert_watcher.js imports axios. No explicit decision logged choosing libraries.",
+      "source": "code files",
+      "searched": "",
+      "fix": "Record an explicit decision in decisions.jsonl or README about HTTP client choice (prefer single library) or unify to one HTTP client.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: changeStream config",
+      "practice": "Audit: change stream uses fullDocument:updateLookup but the decision to use this option was not logged.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/worker/watch.js line 38 and app/src/alert_watcher.js line 54 use fullDocument:'updateLookup' but no decision entry mentions this specific option.",
+      "source": "code files",
+      "searched": "",
+      "fix": "Add a short decision note (decisions.jsonl) documenting why fullDocument:updateLookup was chosen and any resume-token tradeoffs.",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator-approved 'ready_with_gaps' is consistent with the build logs; approval is an operator action and evidence exists in the run."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Node.js + Mongoose follows the prompt; events show the decision and the code implements that stack."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "unverifiable",
+      "comment": "Mongoose 7.x was chosen with reason_source 'model_default'. The run loaded driver skills but no explicit documentation source proving a specific 7.x minor is required for the cluster—this is a model-default choice and should be documented (driver compatibility guidance)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from the environment was implemented (app/src/db.js); the decision matches the run environment guidance."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Index selection was recorded and implemented; create_indexes.js produced the intended indexes (events show indexes created)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Duplicate approval entry; same rationale as D001."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Duplicate/confirming decision to use Node.js v24 and Mongoose 7.x; matched by the runtime and package.json."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Duplicate of the environment-reading decision; code reads DOCUMENTDB_URI at runtime."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Decision not to provision Azure resources is consistent with run policy. events.jsonl shows the run policy constraint and the decision to not create resources."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Decision not to shard for the sample is reasonable (small dataset, teaching sample). The code implements single-shard assumptions."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "questionable",
+      "comment": "Choosing a single POST (simple retry) is defensible for a sample, but the product's best practice (durable delivery/queue) differs; decision logged as 'model_default'—documenting the chosen minimal policy in README (which was done) is appropriate."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Indexes defined in Mongoose schemas were created and verified; the decision matches the code and index verification steps in events."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Forcing dbName to 'sample_fintech_03' was implemented in src/db.js; events show connect() used dbName and seed/index scripts operated on that database."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Adding scripts/create_indexes.js and running it was recorded and verified; events show indexes created."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Driver version compatibility",
+      "what_was_missing": "Concrete guidance mapping Azure DocumentDB supported MongoDB wire protocol/server version to exact driver (mongodb) and Mongoose versions to pin for samples (e.g., tested Mongoose/mongodb pairs for MongoDB 7.x clusters).",
+      "where_searched": "documentdb-driver, documentdb-connection skills and Microsoft Learn compatibility pages were checked; no single explicit pinned-version recommendation for samples was found.",
+      "effect_on_this_build": "Builder used model-default Mongoose 7.x and caret ranges in package.json. This leaves ambiguity for future builds about exact minor/patch versions to pin for reproducible samples.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Driver compatibility' page in the agent-kit or product docs that lists the tested driver versions and the recommended pinned package.json snippet for Node (e.g., \"mongoose\": \"7.6.0\", \"mongodb\": \"5.6.0\"), plus the command 'npm ci' to guarantee lockfile installs.",
+      "priority": "high"
+    },
+    {
+      "topic": "Resume-token persistence for change streams",
+      "what_was_missing": "A short example and guidance (with sample code) showing durable persistence of the last processed change stream resume token and how to resume using resumeAfter/startAtOperationTime safely (including backoff when resume fails).",
+      "where_searched": "Change stream docs (Microsoft Learn) and documentdb-driver/connection skills—docs mention resume tokens but no small, copy-paste sample for a Node/Mongoose watcher that persists tokens to a collection.",
+      "effect_on_this_build": "The sample opens change streams with fullDocument: 'updateLookup' but does not persist resume tokens, leaving the watcher unable to resume exactly where it left off after a restart and increasing risk of missed or duplicated processing.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A 1-page quickstart 'Change-stream resilience' showing: code to write change._id to a durable 'stream_tokens' collection after processing; startup code that reads the last token and calls Model.watch(..., { resumeAfter: token }); guidance on how to handle resume failures and token expiry.",
+      "priority": "high"
+    },
+    {
+      "topic": "Change-stream handler best-practice: offload webhook delivery",
+      "what_was_missing": "A sample pattern and short justification showing non-blocking change-stream handlers (enqueue work to a deliveries collection or to a queue) and a separate worker that performs HTTP deliveries, with sample code for node/express/mongoose.",
+      "where_searched": "Change streams docs and documentdb-connection/driver skills; general guidance exists but no tiny example packaged for use in agent-authored samples.",
+      "effect_on_this_build": "Builder kept webhook deliveries in the handler for simplicity; this is acceptable for a toy sample but could mislead builders into synchronous handlers in production.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A short sample showing 'watch -> write delivery request to deliveries collection -> worker polls deliveries collection and sends webhooks with retries & dead-lettering'.",
+      "priority": "high"
+    },
+    {
+      "topic": "Webhook payload & idempotency guidance",
+      "what_was_missing": "A recommended webhook payload schema (fields to include: eventId/resumeToken/changeId, ruleId, userId, symbol, metric, value, threshold, timestamp) and a small recommended delivery-record schema (webhook_deliveries) for deduplication and observability.",
+      "where_searched": "Searches for 'Azure DocumentDB webhook idempotent delivery' produced no authoritative guidance; general webhook best-practices exist but not for DocumentDB change-stream based events.",
+      "effect_on_this_build": "The sample sends a reasonable payload but does not include a durable deduplication key or delivery-record persistence; this makes idempotency and delivery observability unclear for integrators.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Webhooks from change streams' note in the sample README or product docs with example payload and schema for webhook_deliveries collection and sample code to include change._id as eventId.",
+      "priority": "high"
+    },
+    {
+      "topic": "allowDiskUse for large aggregations",
+      "what_was_missing": "A short note: when to pass allowDiskUse:true for aggregation pipelines and example of how to do that from Mongoose/Node.",
+      "where_searched": "Aggregate docs on Microsoft Learn and query-optimizer skill; guidance exists but a one-liner example in the sample README would be helpful.",
+      "effect_on_this_build": "Sample aggregation omits allowDiskUse and could be surprising when users run larger datasets. It's a small change in code but worth documenting.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a subsection in README 'Large aggregations' showing how to call Position.aggregate(pipeline, { allowDiskUse: true }).",
+      "priority": "medium"
+    },
+    {
+      "topic": "Dependencies pinning example for Node samples",
+      "what_was_missing": "An explicit guidance in the agent-kit on how to present pinned dependencies for Node samples (recommend commit of package-lock.json, use npm ci, optionally pin exact versions in package.json).",
+      "where_searched": "No single how-to found in the agent-kit; package-lock.json is present but package.json uses ^ ranges which can confuse reproducibility expectations.",
+      "effect_on_this_build": "Builder committed package-lock.json (good) but package.json still uses ranges; future rebuilds may produce different transient installs if lockfile is not used.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: 'For Node samples, commit package-lock.json, call npm ci in Quickstart, and either pin versions in package.json or document that users should run npm ci for reproducible installs.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "IaC quickstart for Microsoft.DocumentDB/mongoClusters",
+      "what_was_missing": "A minimal Bicep / Terraform example that creates a Microsoft.DocumentDB/mongoClusters resource with low-cost defaults suitable for sample runs and an example az documentdb mongocluster command, plus a note that the sample can skip provisioning when a cluster is provided.",
+      "where_searched": "documentdb-azure-deployment skill and Learn pages (some examples exist) but there was no single small sample-ized IaC template included in the agent kit for sample apps.",
+      "effect_on_this_build": "No IaC included in repo (by design for this run). Adding a small, optional IaC file would let users provision a throwaway cluster in environments that allow it.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A minimal Bicep file and an example az documentdb mongocluster create command with low-cost defaults and a 'do not run in restricted CI' note.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Agent confusion & naming guidance",
+      "what_was_missing": "Clear, prominent wording to disambiguate 'Azure DocumentDB' (this product), older 'Cosmos DB for MongoDB' variants, and neighbours such as 'Amazon DocumentDB'.",
+      "where_searched": "Readiness findings and multiple skills: the product naming is a common confusion source; documentation exists but is scattered.",
+      "effect_on_this_build": "The builder used 'Azure DocumentDB' correctly, but future agents may pick the wrong resource type or CLI group (az cosmosdb vs az documentdb).",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "One-paragraph 'Naming and compatibility' in README that states: 'This sample targets Microsoft.DocumentDB/mongoClusters (az documentdb mongocluster) — not az cosmosdb or Cosmos DB databaseAccounts; use the cluster connection strings view to copy the SRV URI.'",
+      "priority": "high"
+    },
+    {
+      "topic": "Prior-knowledge-only practices (Mongoose .lean, caching alert metadata)",
+      "what_was_missing": "Public, sample-specific documentation affirming whether prior-knowledge rules (use .lean() in hot paths; cache static metadata for alert evaluation) apply to Azure DocumentDB or are general Mongoose guidance.",
+      "where_searched": "Searches returned prior knowledge but no product-specific guidance.",
+      "effect_on_this_build": "Agents (and builders) may act on general Mongoose memory/performance heuristics without an Azure-specific confirmation.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Agent-kit rule page: 'Performance tips for Mongoose on DocumentDB' listing .lean() and caching examples and when to use them for alert-evaluation workloads.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Decision logging: changeStream options and HTTP client choices",
+      "what_was_missing": "Small auditing guidance telling builders to record non-obvious design choices (e.g., fullDocument:updateLookup, HTTP client selection) in decisions.jsonl so audits can explain why a sample used a particular pattern.",
+      "where_searched": "No such audit template existed in the agent-kit for sample builds.",
+      "effect_on_this_build": "Several code choices were made but not logged (fullDocument option, mixing axios and node-fetch). This complicates later audits.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a two-line decision template to the agent-kit that builders must fill out for choices affecting behavior/ops (driver versions, change-stream options, retry/backoff policy, HTTP client).",
+      "priority": "low"
+    }
+  ]
+}
