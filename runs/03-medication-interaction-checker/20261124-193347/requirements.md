@@ -8,13 +8,14 @@
 
 ## What the starter prompt asks for
 
-- Implement a Single-agent LangChain implementation in Node.js that orchestrates retrieving interaction documents from Azure DocumentDB and calling an LLM to reason about them.
-- Use Mongoose as the ODM to query the DocumentDB collection of drug interactions for every unique pair of medications supplied (enumerate all unique pairs and query Mongoose for documents matching the pair in either order — e.g. fields like drugA/drugB or a normalized pair field).
-- Provide Mongoose-based functions to add and update interaction documents in the DocumentDB knowledge base so the app can maintain the interaction KB (create/update operations implemented via Mongoose).
-- For each pairwise interaction found, pass the interaction document details into a prompt template (prompt engineering) via LangChain that explicitly instructs the LLM to assess clinical severity and to produce a concise clinical recommendation for management.
-- In the prompt/template, require the LLM to return a sortable severity assessment (for example a numeric score or an ordered label such as high/medium/low) and use that value in the application to rank interactions.
-- Deduplicate results so that each medication pair appears only once in the final output even if multiple matching documents were returned by the database.
-- Return a ranked list (most severe first) of interactions as structured output (e.g., a JSON array) where each item includes the medication pair, the LLM-assessed severity, and the LLM-provided clinical recommendation.
+- Implement the checker as a Node.js agent built with LangChain, where one agent carries out the whole check: retrieving interaction documents from Azure DocumentDB and reasoning over them with an LLM.
+- Use Mongoose as the ODM: define a Mongoose model for drug interaction documents and use it for the reads and writes against the knowledge base in Azure DocumentDB.
+- Let the app maintain the knowledge base by adding and updating interaction documents through Mongoose (e.g. upsert operations on the interaction model).
+- Accept a list of medications as input and enumerate every unique pair among them.
+- For every pair, query Azure DocumentDB through Mongoose for the interaction documents covering that pair (e.g. matching the two drug names in either order).
+- Build the LLM prompt with prompt engineering: pass the retrieved interaction document content to the LLM through LangChain with explicit instructions to assess the severity of each interaction.
+- Rank the interactions by the LLM-assessed severity (e.g. most severe first).
+- Return the ranked list of interactions, each with a clinical recommendation (e.g. alongside its medication pair and assessed severity).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
