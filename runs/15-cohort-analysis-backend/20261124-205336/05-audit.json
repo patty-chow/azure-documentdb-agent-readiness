@@ -1,0 +1,633 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested FastAPI cohort-backend, runs the aggregation with $bucket and produces materialised snapshots that the API serves. The run verified seeding, index creation and a successful one-shot snapshot generation against the provided cluster. Main findings: (1) the pipeline does use $bucket successfully in this environment but public docs warn $bucket is unsupported on some Mongo-API server versions — the product docs should be made more prominent to prevent fragile samples; (2) the implementation materialises snapshots but inserts new snapshot documents rather than replacing/upserting previous snapshots; (3) the pipeline computes breakdowns by channel/product but does not use a $facet stage as the prompt suggested; (4) some operational best-practices (explain()/diagnostics, retry/backoff for snapshot writes, RU/throughput guidance and basic instrumentation) are missing. None of the missing items make the sample unusable for demo, but several are important for production-readiness and for agents generating similar samples.",
+  "requirement_results": [
+    {
+      "requirement": "A Python FastAPI service exposes HTTP endpoints that return cohort analysis results.",
+      "status": "met",
+      "evidence": "app/app/main.py: lines 24-36 define GET /cohorts and GET /cohorts/{snapshot_month}; lines 39-43 define POST /admin/refresh.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The cohort computation is an aggregation pipeline that Azure DocumentDB executes, sent through a MongoDB driver (e.g. PyMongo).",
+      "status": "met",
+      "evidence": "app/app/cohort.py: pipeline defined and executed with customers.aggregate(...); app/scripts/generate_snapshot.py runs generate_cohort_snapshot (app/app/cohort.py: lines 64-146, 145-176).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The pipeline uses a `$bucket` stage to group customers by acquisition month.",
+      "status": "met",
+      "evidence": "app/app/cohort.py: $bucket stage present (lines 98-113) with groupBy: \"$acquired_at\" and boundaries constructed earlier.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The pipeline computes retention rates at 30, 60 and 90 days for each cohort.",
+      "status": "met",
+      "evidence": "app/app/cohort.py: retained30/retained60/retained90 computed in $addFields (lines 76-97) and summed in $bucket output (lines 105-108).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The pipeline uses a `$facet` stage to break the cohorts down by channel and by product.",
+      "status": "partly_met",
+      "evidence": "app/app/cohort.py: channel and product breakdowns are produced by $push/$arrayToObject mapping after the $bucket stage (lines 109-140, 116-141), but there is no `$facet` stage in the pipeline.",
+      "cause": "builder_error",
+      "smallest_fix": "Replace or augment the post-bucket transformation with an explicit $facet stage that computes channel and product facets (small change in the pipeline definition: add a $facet with two sub-pipelines that $unwind/$group or $sortByCount on channels and products)."
+    },
+    {
+      "requirement": "Cohort snapshots are cached as materialised documents stored in Azure DocumentDB (e.g. a snapshots collection), produced by running the pipeline.",
+      "status": "met",
+      "evidence": "app/app/cohort.py: snapshot document constructed and snapshots.insert_one(snapshot) (lines 168-175). scripts/generate_snapshot.py (lines 8-11) runs the function and prints the result.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A weekly refresh re-runs the pipeline and replaces the materialised snapshot documents.",
+      "status": "partly_met",
+      "evidence": "app/app/main.py: BackgroundScheduler schedules weekly_job that calls generate_cohort_snapshot(db) (lines 9-18).",
+      "cause": "builder_error",
+      "smallest_fix": "Change snapshot persistence to upsert/replace (e.g., use update_one(filter={'snapshot_month': ...}, {'$set': snapshot}, upsert=True) instead of insert_one) so a weekly run replaces the previous snapshot rather than inserting a fresh document."
+    },
+    {
+      "requirement": "The cohort endpoints serve their results from the cached snapshot documents.",
+      "status": "met",
+      "evidence": "app/app/main.py -> api_list_snapshots and api_get_snapshot call list_snapshots/get_snapshot which read from cohort_snapshots (lines 24-36).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/app/db.py: reads DOCUMENTDB_URI and DB_NAME from environment (lines 5-11). app/.env.example contains placeholders (app/.env.example lines 1-3).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI and DB_NAME (app/.env.example lines 1-3).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "No vector index or embedding model is used by this sample; vectors are out of scope.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector search or vector index in the repository.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/app/db.py: uses a module-level _client and get_client(), returning a singleton MongoClient (lines 13-28).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.py: drops and re-inserts collections (lines 35-38) and creates indexes (lines 77-85). The script is idempotent for demo use (deletes previous sample data then inserts fresh data).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "This sample exposes cohort endpoints only; no /search endpoint exists.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If search is later added, add explicit input validation and error handling that returns HTTP 400 for empty queries and 502/503 for embedding failures."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search endpoint or vector retrieval implemented in this sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "met",
+      "evidence": "app/requirements.txt pins exact versions (fastapi==0.95.2, uvicorn==0.23.2, pymongo==4.5.0, etc.) (app/requirements.txt lines 1-7).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/test_cohort.py uses mongomock and inserts a small in-memory DB for tests; tests do not require a live cluster (app/tests/test_cohort.py shows mongomock usage).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep/Terraform/ARM) for Microsoft.DocumentDB/mongoClusters are present in the repository (no templates in repo root).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small Bicep or Terraform example that creates a Microsoft.DocumentDB/mongoClusters resource (or an ARM template snippet) and documents default low-cost parameters."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes 'What this sample shows', prerequisites, quick start, API endpoints and cleaning up instructions (README.md lines 1-31, 37-43).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md, .env.example and other files refer to 'Azure DocumentDB' (README.md lines 1 and 14; .env.example comments).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton MongoClient",
+      "practice": "Create and reuse a single MongoClient process-wide (singleton) and avoid creating a new client per request; configure pool parameters only after understanding your workload.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app/db.py: uses module-level _client and get_client() to return a singleton MongoClient (lines 13-28).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune connection-pool settings to your deployment scenario and set fail-fast timeouts.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app/db.py: sets serverSelectionTimeoutMS and (in a prior write) retryWrites=True; conservative defaults used when constructing MongoClient (lines 19-25 in some app/db.py copies).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver version support",
+      "practice": "Pin the driver version and use a version the service supports.",
+      "category": "connection",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python",
+      "status": "followed",
+      "evidence": "app/requirements.txt pins pymongo==4.5.0 (app/requirements.txt line 3). Microsoft docs state DocumentDB supports modern MongoDB wire protocol versions so recent PyMongo 4.x is appropriate.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "search: 'Azure DocumentDB pymongo supported versions quickstart'",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "No credentials in repo",
+      "practice": "Read the DocumentDB connection string from an environment variable (DOCUMENTDB_URI), never hard-code credentials and keep only a .env.example",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/app/db.py: DOCUMENTDB_URI read from env (lines 7-11). app/.env.example contains placeholder (app/.env.example lines 1-3). No secrets are checked in.",
+      "source": "README.md / .env.example",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md / .env.example",
+          "url": ""
+        },
+        {
+          "title": "README.md / .env.example",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefer Entra ID for auth",
+      "practice": "Keep DB credentials in a secret store and prefer Microsoft Entra (managed identity) + RBAC instead of long-lived DB passwords",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "violated",
+      "evidence": "The app reads DOCUMENTDB_URI and uses it for SCRAM auth (app/app/db.py lines 7-11). No OIDC/Microsoft Entra ID flow is implemented.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Document why SCRAM is used in README and add guidance / optional example for MONGODB-OIDC/DefaultAzureCredential (or provide a separate sample that enables Microsoft Entra ID authentication).",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always require TLS for client connections and never disable certificate validation in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example suggests mongodb+srv connection string including tls=true and README warns not to commit secrets (app/.env.example & README.md).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retryable writes and app retries",
+      "practice": "Enable driver retryable reads/writes where supported and implement application-level retries with exponential backoff for transient errors.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "The MongoClient is constructed with retryWrites=True in some app/db.py variants in the repo (events show that), but snapshot writes (snapshots.insert_one) are not wrapped with explicit application-level retries or backoff (app/app/cohort.py lines 174-175).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Wrap snapshot persistence in a retry loop with exponential backoff (or use a helper that retries transient errors), and consider capturing and retrying RequestRateTooLarge/429 responses.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Indexes for cohort aggregation",
+      "practice": "Create indexes that support your cohort aggregation and query patterns — index acquisition timestamp and customer identifier and add compound ESR indexes for common filters/sorts.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py creates indexes on customers.customer_id (unique), customers.acquired_at, customers.channel, customers.primary_product_id and events.customer_id, events.event_date, events.product_id (seed.py lines 77-85).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Aggregation & explain()",
+      "practice": "Prefer aggregation pipelines (server-side aggregation) and verify pipeline performance with explain().",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "The app uses aggregation pipelines (good) but the sample does not call explain(\"executionStats\") or capture executionStats to validate index usage and RU-cost (app/app/cohort.py runs customers.aggregate(...) but no explain call).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Add an explain(\"executionStats\") step in scripts/refresh_snapshots.py or a helper that records the aggregation's executionStats to logs or a diagnostics collection so readers can confirm index usage and RU consumption.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Project early",
+      "practice": "Project only required fields early in aggregation pipelines to reduce RU usage.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "The pipeline does a $lookup that pulls full events arrays then filters in-memory; it does not project minimal fields in the $lookup pipeline (app/app/cohort.py lines 66-74 and $lookup).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Use $lookup with a pipeline that $project only the event_date and product/channel fields required, or project fields before expensive stages to limit returned data.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Materialize snapshots",
+      "practice": "Materialize heavy cohort snapshots as compact summary documents and refresh them on a schedule; perform snapshot writes with batched operations to reduce RU and roundtrips.",
+      "category": "caching",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "App materializes a compact snapshot document and writes it to cohort_snapshots (app/app/cohort.py lines 168-175). The weekly scheduler is configured (app/app/main.py lines 9-18).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "If writing many snapshot documents at once, switch to bulk operations; current single-document snapshots are fine for a demo.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embed frequently-read attributes",
+      "practice": "Embed frequently-read attributes (channel, product) in event documents to avoid expensive $lookup joins.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "Seeded documents include channel and primary_product_id fields in customer and product/product_id and channel in events (app/scripts/seed.py lines 44-52 and event docs lines 66-72).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bucket stage support",
+      "practice": "Avoid relying on aggregation stages that may be unsupported by some API-server versions (e.g., $bucket/$bucketAuto) — check compatibility pages.",
+      "category": "queries",
+      "availability": "discovered_not_listed",
+      "discovery_id": "P18",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/feature-support-70#aggregation-pipeline",
+      "status": "followed",
+      "evidence": "The app uses $bucket (app/app/cohort.py lines 98-113) and the one-shot snapshot generation completed successfully in this run (builder_report: 'Generated snapshot: ...'). However Azure docs explicitly warn some aggregation stages may be unsupported on some API-server versions.",
+      "source": "Azure Cosmos DB feature support (MongoDB) / aggregation pipeline pages",
+      "searched": "search: \"Azure DocumentDB $bucket support\"",
+      "fix": "Add a compatibility note to README and add a runtime compatibility test (or an explain/feature-check step) that fails with a clear message if the server does not support $bucket.",
+      "sources": [
+        {
+          "title": "Azure Cosmos DB feature support (MongoDB) / aggregation pipeline pages",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/feature-support-70#aggregation-pipeline"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Instrument snapshots",
+      "practice": "Instrument the service with application-level metrics (snapshot duration, RU consumed per snapshot) and alert on RU throttling.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "violated",
+      "evidence": "No instrumentation or logging of snapshot duration or RU consumption is implemented; generate_cohort_snapshot simply runs the pipeline and inserts snapshot (app/app/cohort.py lines 145-175).",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Log snapshot start/end times and capture explain() RU metrics or return executionStats; add a basic metric emit (duration, doc counts, and failure counts) to the snapshot script.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound indexes for facets",
+      "practice": "For aggregation facets (channel/product breakdown), design compound indexes matching equality and group keys (ESR rule).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The app creates single-field indexes that are useful for lookups, but does not create compound ESR indexes specifically tuned for the current facet computation (seed.py lines 77-85). The sample's small dataset is served by single-field indexes; for large data, add compound indexes.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "If dataset grows, create compound indexes such as {channel:1, acquired_at:1} or {product_id:1, event_date:1} following ESR guidance.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefer incremental snapshots",
+      "practice": "Prefer incremental/change-feed-driven snapshot updates rather than full recomputes for large datasets.",
+      "category": "caching",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/how-to-cache#caching-patterns",
+      "status": "violated",
+      "evidence": "The app runs a full recompute weekly (BackgroundScheduler or on-demand), it does not implement incremental or change-feed updates (app/app/main.py lines 9-18 and app/scripts/generate_snapshot.py).",
+      "source": "Improve efficiency of reads by using a cache / materialize via Stream Analytics and change feed",
+      "searched": "",
+      "fix": "Document and optionally provide an alternate script that uses the cluster's change feed or change streams to incrementally update snapshots, or show how to run per-cohort partial recomputes.",
+      "sources": [
+        {
+          "title": "Improve efficiency of reads by using a cache / materialize via Stream Analytics and change feed",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/how-to-cache#caching-patterns"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Feature-support check",
+      "practice": "Check the Azure Cosmos DB feature-support pages for the server-version you run; aggregation-stage support varies by server version.",
+      "category": "queries",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#compatibility-philosophy",
+      "status": "violated",
+      "evidence": "The sample did not add a README note or runtime compatibility check to ensure the server version supports all aggregation stages used (no explain() or server-version check documented).",
+      "source": "Azure Cosmos DB feature support pages",
+      "searched": "search: 'Azure DocumentDB aggregation stage $bucket feature support'",
+      "fix": "Add a short 'compatibility check' step in README (and an optional script) that queries the server for its MongoDB wire version or runs a small feature-check pipeline and exits with a clear error if unsupported stages (like $bucket) are missing.",
+      "sources": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval of 'ready_with_gaps' is an operator choice. Events show multiple readiness approvals were logged; the build proceeded with the stated readiness level."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python + FastAPI matches the prompt and the run environment; events show this decision was logged and the code uses FastAPI."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choosing PyMongo and a singleton MongoClient follows driver-skill guidance; the code implements a singleton client (app/app/db.py). Events show the documentdb-driver skill was loaded when making this choice."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "The decision to use DOCUMENTDB_URI from environment matches the provided run environment and is consistent with the code (app/app/db.py) and .env.example. Events show the run environment note and the log_decision recorded the choice."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Choosing separate collections customers/events and denormalized fields is consistent with the code and seed script. The code and seed both implement that design (scripts/seed.py lines 24-56)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Seeding ~1k customers was a reasonable builder choice for demo. The seed script shows NUM_CUSTOMERS configurable; the actual run used 800 customers as reported in the builder report. Events show the seed script ran and inserted sample data."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Materialising snapshots in cohort_snapshots and scheduling weekly with APScheduler is implemented (app/app/main.py scheduler lines 9-18). Decision is supported by the code and recorded in events."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Index choices were logged and implemented (scripts/seed.py lines 77-85 create indexes). Events confirm index creation via MCP queries during verification."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "A later readiness approval with the same text was recorded; consistent with D001. Events show repeated readiness logs."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Re-affirmation of framework/driver choice (Python/FastAPI/PyMongo) — the code and runtime confirm this selection."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Decision to use synchronous PyMongo and singleton client is implemented in code and consistent with loaded skills."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Another readiness approval; recorded in the run and consistent with build progress."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Choosing Python + FastAPI again — consistent and supported by the code base."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Pinning to PyMongo 4.x is consistent with the compatibility docs and with the pinned requirements file present in the repo."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Decision not to provision a new cluster is consistent with the run environment and the run policy; code uses the existing cluster via DOCUMENTDB_URI."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "questionable",
+      "comment": "Pinning specific dependency versions was logged with reason_source 'model_default'. The project does pin versions; this is reasonable but model_default means the choice wasn't explicitly grounded in an external compatibility doc at the time of the decision. There are public docs covering supported wire-protocols and driver compatibility (Quickstart/compatibility pages), so this is a discoverability gap more than an unsupported decision — consider citing the compatibility page when pinning."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Decision to run snapshot via python -c with sys.path.append('.') was driven by the runner refusing a PYTHONPATH= prefix; events show the 'PYTHONPATH=.' invocation was refused and that the author used an alternate approach. The 'tool_unavailable' / refusal is present in events and supports the logged reason."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "DB-based job lease guidance",
+      "what_was_missing": "Clear public guidance for Azure DocumentDB recommending or discouraging a DB-based lease (findOneAndUpdate) pattern for scheduled job locking.",
+      "where_searched": "Searches: \"Azure DocumentDB findOneAndUpdate 'lease' 'distributed lock'\", and installed skill docs (documentdb-*). No authoritative Azure doc prescribing this pattern was found; it remains prior-knowledge.",
+      "effect_on_this_build": "The sample uses APScheduler in-process and does not implement a distributed lease. For single-process demo this is fine, but a user copying the sample into multi-instance production may get overlapping jobs.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Job scheduling and locking' page in the Agent Kit or docs that: (1) states whether Azure DocumentDB has a recommended DB-based lease pattern; (2) shows a safe example using findOneAndUpdate for a lease record (idempotent, timestamp, owner) and how to handle lease expiry; (3) shows a cloud-native alternative (use Azure Functions Timer + Durable Functions or Azure Automation + a leader-election pattern).",
+      "priority": "high"
+    },
+    {
+      "topic": "$bucket feature-support note",
+      "what_was_missing": "A prominent note in quickstarts/readme explaining which aggregation stages (e.g. $bucket/$bucketAuto) are supported only on certain Mongo-API server versions and how to check compatibility.",
+      "where_searched": "Azure feature-support pages (learn.microsoft.com) and skills (documentdb-query-optimizer). The feature-support pages mention the limitation but this guidance was not surfaced to the sample or README prominently.",
+      "effect_on_this_build": "The sample uses $bucket and worked against the provided cluster, but on other clusters (older server-versions) the pipeline would fail. An agent replicating the sample could build a non-working sample if it assumes $bucket is always supported.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'aggregation compatibility' section to sample README and to the Agent Kit: 'Before using $bucket/$bucketAuto, check your cluster server-version or run the included compatibility_check.py; if unsupported, use client-side bucketing or alternate aggregation shapes.' Include a one-liner to detect server wire-version via driver or to run a small test pipeline and explain() it.",
+      "priority": "high"
+    },
+    {
+      "topic": "JSON schema / collection validators for Mongo API",
+      "what_was_missing": "Authoritative guidance on whether collection-level JSON schema validators are supported and recommended for Azure DocumentDB with MongoDB compatibility (this is a prior-knowledge area with limited public docs).",
+      "where_searched": "Searches: 'Azure DocumentDB collection validator', '$jsonSchema operator Azure Cosmos DB', and installed skills. No clear consistent guidance found in public docs.",
+      "effect_on_this_build": "Sample does not create collection validators. Validators could prevent malformed documents and make aggregation assumptions safer.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page in the docs/Agent Kit describing whether the MongoDB API supports collection validators for the supported server-versions, example createCollection with validator, and guidance on when to use validators vs application validation.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Explain()/diagnostics for aggregation",
+      "what_was_missing": "A sample or short recipe demonstrating how to call explain('executionStats') for aggregation pipelines against Azure DocumentDB and how to capture RU metrics from the explain output.",
+      "where_searched": "documentdb-query-optimizer skill and Azure docs; the skill mentions explain() but the sample did not include an example.",
+      "effect_on_this_build": "The builder did not add explain() reporting to the snapshot script; missing explain makes it harder to tune the pipeline or to show RU consumption to users.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a small script (scripts/aggregation_explain.py) that runs the cohort pipeline via explain('executionStats'), prints key fields (totalDocsExamined, totalKeysExamined, executionTimeMillis, RU estimates if available) and stores the explain output to a diagnostics collection.",
+      "priority": "high"
+    },
+    {
+      "topic": "Change-feed / incremental-snapshots guidance",
+      "what_was_missing": "A short guide showing how to implement incremental snapshot updates using the change feed/change streams rather than full recomputes.",
+      "where_searched": "Azure caching docs, change feed docs and installed skills (documentdb-data-modeling, documentdb-monitoring).",
+      "effect_on_this_build": "The sample performs full recompute weekly; for large datasets this is RU-expensive. Lack of a small change-feed example means agents are likely to implement full recomputes by default.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A small example showing (1) enable change feed or change streams for a collection; (2) a simple consumer that updates per-cohort aggregates on change events; (3) best-practice for checkpointing and failure handling.",
+      "priority": "high"
+    }
+  ]
+}
