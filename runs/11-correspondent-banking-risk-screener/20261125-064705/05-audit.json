@@ -1,0 +1,1005 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested Python LangChain-style agent, seeds example correspondent/sanctions/adverse-media documents with embeddings, runs client-side similarity search, computes a risk score and returns matches plus a plain-language narrative. It is runnable locally (seed, tests, example run succeeded with deterministic embeddings when OPENAI_API_KEY was absent). Key gaps: the sample intentionally avoids creating a server-side vector index and therefore does not exercise $search / cosmosSearch vector queries or publish IaC for the managed DocumentDB cluster. Several documentation items (index creation syntax & parameters, recommended createIndex example, and index tuning guidance) are missing or left to the user; these are documented below as recommended fixes.",
+  "requirement_results": [
+    {
+      "requirement": "Provide a Python LangChain agent that carries out the correspondent review: embedding profiles, searching the watchlist data and producing the per-correspondent result.",
+      "status": "met",
+      "evidence": "app/src/agent.py:93-135 (review_correspondent returns risk_score, matches, risk_narrative).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Embed correspondent bank entity profiles with a LangChain embeddings integration and store each profile's vector on its document in Azure DocumentDB using a MongoDB-compatible Python driver (e.g. pymongo).",
+      "status": "partly_met",
+      "evidence": "app/scripts/seed.py:49-54 (embeddings added to correspondent docs and upserted into DocumentDB); app/src/embeddings.py:6,16-24 uses OpenAI via openai. The code uses pymongo (app/src/db.py:11) as the MongoDB driver.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Add langchain-community (or adjust requirements) and/or change src/embeddings.py to prefer LangChain's OpenAIEmbeddings when available. Alternatively, document that the sample intentionally uses the openai client as a supported fallback; to strictly meet the checklist, add langchain-community to requirements.txt and update embed module to call LangChain first."
+    },
+    {
+      "requirement": "Store sanctions list entries and adverse media entries as documents in Azure DocumentDB, each with its embedding on the document.",
+      "status": "met",
+      "evidence": "app/scripts/seed.py:56-64 and 66-74 (embeddings computed and coll.replace_one with upsert=True for sanctions and adverse_media).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field in code, with dimensions matching the embedding model used.",
+      "status": "not_met",
+      "evidence": "app/src/db.py:19-22 (docstring: sample is conservative and computes similarity client-side); safe_create_indexes only creates simple PK indexes (app/src/db.py:24-27). No server-side vector index createIndex is present.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Provide an agent-kit-verified createIndex snippet (or add a controlled, opt-in create_vector_index function) that uses a dimension constant derived from the embedding module. Prefer adding the verified createIndex example to the DocumentDB agent kit and an opt-in code path (e.g. ENABLE_VECTOR_INDEX env var) so builders don't attempt unverified parameters by default."
+    },
+    {
+      "requirement": "On each review cycle, run vector similarity search inside Azure DocumentDB with $search / cosmosSearch, using each correspondent's embedding as the query vector against the embedded sanctions list and adverse media entries.",
+      "status": "not_met",
+      "evidence": "app/src/agent.py:109-116 (search is implemented client-side with _search_collection_by_embedding reading stored 'embedding' fields and computing cosine similarity in Python). No $search / cosmosSearch calls or server-side vector query operators are used.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Add an opt-in server-side path that runs $search/cosmosSearch when a verified index exists (controlled by env var or config). Ship a tested agent-kit snippet demonstrating the exact createIndex & $search invocation for the managed DocumentDB so samples can enable it safely."
+    },
+    {
+      "requirement": "Derive a risk score for each correspondent from the similarity search results returned by Azure DocumentDB.",
+      "status": "partly_met",
+      "evidence": "app/src/agent.py:43-50 (compute_risk_score implements a simple heuristic mapping similarity to 0-100). The score is derived from similarity results, but those similarities are computed client-side rather than returned by Azure DocumentDB.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "When adding server-side search, adapt compute_risk_score to accept server-supplied scores and document the mapping; for now, document that compute_risk_score consumes similarity scores from whichever path (server or client) is configured."
+    },
+    {
+      "requirement": "Return, for each correspondent reviewed, the risk score, the matched sanctions list and adverse media entries, and a plain-language risk narrative written by the agent.",
+      "status": "met",
+      "evidence": "app/src/agent.py:131-135 (return includes 'risk_score', 'matches', and 'risk_narrative'). Narrative generation present at app/src/agent.py:53-65 (LLM path) and 66-81 (deterministic fallback).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.py:5 (DOCUMENT_DB = os.environ.get('DOCUMENTDB_URI')); app/src/embeddings.py:9-13 (OPENAI_API_KEY required). No secrets in repo; app/.env.example lists placeholders.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example:2-5 includes DOCUMENTDB_URI, OPENAI_API_KEY and OPENAI_API_BASE. However agent.py supports an LLM_MODEL env var (app/src/agent.py:17) and the README mentions seeds/flags that are not enumerated in .env.example.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add LLM_MODEL and any opt-in flags (e.g. ENABLE_VECTOR_INDEX or ENABLE_SERVER_SEARCH) to .env.example with placeholders and comments."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_met",
+      "evidence": "app/src/embeddings.py:6 documents MODEL_NAME = 'text-embedding-3-small' and comments '1536 dims' and the synthetic embedding uses dim=1536 (app/src/agent.py:84-90). No server-side vector index is created, so no index dimensions exist on the server to check.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Add an explicit EMBEDDING_DIM constant in src/embeddings.py and use it when creating any server-side index (or in index-creation snippet shipped via agent kit). Provide a tested createIndex example that sets 'dimensions' to that constant."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "app/README.md:35-36 recommends creating a proper vector index for production but contains no concrete parameter recommendations, and the code purposely avoids creating cluster-specific vector indexes (app/src/db.py:20-22).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a README section giving example index parameters for small/medium/large datasets and show how to tune 'm', 'efConstruction' (HNSW) or IVF parameters; include a note about costs and tests."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py:11-12 client = MongoClient(DOCUMENT_DB); db = client[DB_NAME]. get_collection returns db[name] for reuse.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.py:43-54,61-64,71-73 uses coll.replace_one(..., upsert=True) for idempotent seeding; safe_create_indexes() is called at start (app/scripts/seed.py:44).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "partly_met",
+      "evidence": "app/src/main.py:19-25 maps ValueError from review_correspondent to HTTP 400; review_correspondent raises ValueError if both correspondent_id and profile_text are missing (app/src/agent.py:93-101). However embedding failures are caught and the code falls back to deterministic synthetic_embedding (app/src/agent.py:103-108) rather than returning an error.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Decide desired behavior and document it: either return a 500 with a clear error on embedding failure, or keep the deterministic fallback but document it in the README and the API spec. For strict compliance, change review_correspondent to raise a 502/500 on embedding exceptions instead of automatically falling back."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "app/src/agent.py:120-129 (formatted output entries include 'score': float(m['score'])). Example output printed by scripts/run_example.py in events.jsonl shows scores (events.jsonl:41).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt pins fastapi==0.95.2 and uvicorn==0.22.0; pymongo uses a constrained range pymongo>=4.3,<5.0; other packages use >= ranges rather than exact pins (langchain>=0.0.300, openai>=0.27.6).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Pin the set of dependencies to specific versions (e.g. use == for each) in requirements.txt for reproducible installs."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/test_agent.py uses unittest.mock to patch get_collection and embed_text (app/tests/test_agent.py:23-56); pytest run in events.jsonl succeeded (events.jsonl:29).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep / Terraform / ARM) present in repository; file listing contains no 'arm', 'bicep' or 'main.tf' entries (events.jsonl list_files).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal Bicep or Terraform template demonstrating how to declare the Azure DocumentDB resource (or point to a canonical agent-kit template)."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md:5-33 documents overview, prerequisites and quickstart steps (install, env, seed, run). Cleanup steps are not present.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a 'cleanup' section with recommended steps to remove sample data or tear down any resources the reader may have created (or disclaim that live cluster is shared and provide safe cleanup commands)."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md:1 describes 'DocumentDB'; code and README refer to 'Azure DocumentDB (MongoDB-compatible)'. No other product names are used in README; a runtime warning from pymongo mentions CosmosDB (a driver runtime warning) but repository text uses Azure DocumentDB as requested.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env var secrets",
+      "practice": "Require the DocumentDB connection string to be supplied from the DOCUMENTDB_URI environment variable at runtime and provide a .env.example placeholder instead of committing secrets.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.py:5 (reads DOCUMENTDB_URI); app/.env.example:2 (placeholder shown).",
+      "source": ".env.example / src/db.py / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example / src/db.py / README.md",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Single client reuse",
+      "practice": "Create and reuse a single MongoClient instance for the process (module-level client) and use it for all collection access.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.py:11-12 (client = MongoClient(...); db = client[DB_NAME]); get_collection returns db[name].",
+      "source": "src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Primary-key indexes",
+      "practice": "Create simple primary-key/identity indexes for collections (correspondents, sanctions, adverse_media) on startup to support lookups.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.py:24-27 creates pk_correspondents, pk_sanctions, pk_adverse_media within safe_create_indexes().",
+      "source": "src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefer server-side vector index",
+      "practice": "For production, create a proper server-side vector index (e.g., HNSW/IVF/DiskANN) on the embedding field rather than relying on client-side similarity.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/src/db.py:20-22 and README.md:35-36 intentionally avoid creating server-side vector indexes; agent implements client-side similarity (app/src/agent.py:28-40).",
+      "source": "README.md / src/db.py",
+      "searched": "",
+      "fix": "Add an opt-in create_vector_index function (with verified parameters) and document how to enable it. Ship a tested agent-kit snippet for creating a vector index.",
+      "sources": [
+        {
+          "title": "README.md / src/db.py",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent seed",
+      "practice": "Make the seed operation idempotent by using upserts (replace_one / upsert=True) so repeated runs do not create duplicates.",
+      "category": "provisioning_and_seeding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py:51-54,61-64,71-73 (coll.replace_one(..., upsert=True)).",
+      "source": "scripts/seed.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.py",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Deterministic embedding fallback",
+      "practice": "Provide a deterministic synthetic-embedding fallback (used for seeding and runtime when OPENAI_API_KEY is not present) so the sample can run without external keys and produce reproducible vectors.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py:24-31 defines synthetic_embedding; app/src/agent.py:84-90 defines synthetic_embedding used at runtime; TRY_USE_API logic in scripts/seed.py handles fallback.",
+      "source": "scripts/seed.py / src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.py / src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Do not return embeddings",
+      "practice": "Exclude or do not return full embeddings in API responses; compute similarity server- or client-side but omit embedding bytes from the public result payload.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py:120-129 formats matches and does NOT include the raw 'embedding' field in returned objects; stored documents retain embeddings but responses omit them.",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Database scope",
+      "practice": "Limit the sample to a dedicated database name (sample_banking_11) and avoid touching other databases in the cluster.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.py:6 DB_NAME = 'sample_banking_11' and code uses db = client[DB_NAME]. README reiterates constraint (app/README.md:11-14).",
+      "source": "src/db.py / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py / README.md",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS in connection example",
+      "practice": "Include TLS in the example connection string (ssl=true) to suggest encrypted connections in the sample configuration.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/.env.example:2 includes '?ssl=true' in the placeholder connection string.",
+      "source": ".env.example",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client-side fallback",
+      "practice": "When a server-side vector index cannot be created automatically, compute vector similarity client-side (numpy) as a fallback so the sample remains portable across clusters.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/README.md:35-36 documents the client-side fallback; app/src/agent.py:28-40 and _search_collection_by_embedding perform numpy-based similarity.",
+      "source": "README.md / src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md / src/db.py",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation error handling",
+      "practice": "Handle failures to create indexes gracefully (catch PyMongoError and warn) instead of crashing the application during startup.",
+      "category": "provisioning_and_maintenance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/db.py:23-29 safe_create_indexes wraps create_index calls in try/except PyMongoError and prints a warning on failure.",
+      "source": "src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Cluster reachability check",
+      "practice": "Ensure the data-plane account used for seeding and runtime allows writes and the cluster is reachable before attempting seeding or queries.",
+      "category": "provisioning_and_monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "README.md:23 notes the cluster must be reachable and allow data-plane writes; scripts/seed.py and scripts/run_seed.py are used to exercise the connection (events show seed run and pymongo warnings).",
+      "source": "README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embedding field storage",
+      "practice": "Store embeddings as lists of floats in a dedicated 'embedding' field on documents (the sample stores 1536-dim embeddings in an 'embedding' field).",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py:51-54,61-63,71-73 assigns doc['embedding'] = emb before upsert; app/src/embeddings.py and synthetic_embedding use 1536 dims.",
+      "source": "scripts/seed.py / src/embeddings.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.py / src/embeddings.py / src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.py",
+          "url": ""
+        },
+        {
+          "title": "src/embeddings.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Centralize embeddings",
+      "practice": "Separate responsibilities: compute embeddings in a dedicated module (src/embeddings.py) and call them from the seeding and runtime code so embedding logic is centralized.",
+      "category": "code_structure",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/embeddings.py provides embed_text and embed_texts; scripts/seed.py imports embed_texts (or uses local fallback) and src/agent.py imports embed_text/embed_texts.",
+      "source": "src/embeddings.py / scripts/seed.py / src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/embeddings.py / scripts/seed.py / src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/embeddings.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Deterministic fallbacks for seed & runtime",
+      "practice": "Provide both seeding and runtime paths that fall back to deterministic embeddings so CI/DEV environments can run without external API keys.",
+      "category": "testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py:34-41 TRY_USE_API logic; app/src/agent.py:103-108 catches embedding exceptions and uses synthetic_embedding.",
+      "source": "scripts/seed.py / src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.py / src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client-side projection",
+      "practice": "When computing runtime similarity in the client, fetch only documents that have an 'embedding' field and project the minimal fields required for scoring.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py:30-31 uses coll.find({'embedding': {'$exists': True}}, { 'embedding': 1, '_id': 1, 'title': 1, 'entry_text': 1, 'snippet': 1, 'source': 1, 'date': 1 }).",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Cap returned matches",
+      "practice": "Format and cap returned matches (e.g., top 10) and present only selected metadata (id, title, score, source, date) rather than raw documents.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py:121-129 formats matches and returns top 10 (all_matches[:10]).",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Deterministic narrative fallback",
+      "practice": "Use a deterministic, testable narrative fallback when an LLM is not available (produce a deterministic plain-language summary based on scores and matches).",
+      "category": "testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py:65-81 provides deterministic narrative fallback when LLM is not available.",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Quickstart docs",
+      "practice": "Document the quickstart steps: install, set environment variables (using .env.example), run seed script, and run the API using uvicorn.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/README.md:18-32 contains quickstart steps including install, env vars, seed, run API and example request.",
+      "source": "README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Separate seed & runtime",
+      "practice": "Separate seeding and runtime concerns (seed script computes and stores embeddings; runtime recomputes query embedding and searches against stored vectors).",
+      "category": "provisioning_and_seeding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py computes and stores embeddings (lines 49-74); app/src/agent.py computes query embedding at runtime (app/src/agent.py:103-108).",
+      "source": "scripts/seed.py / src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.py / src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client-side re-ranking",
+      "practice": "If server-side vector search is not used, perform straightforward client-side re-ranking using cosine similarity over stored embeddings as a simple and portable approach.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py:_search_collection_by_embedding and cosine_similarity functions (app/src/agent.py:20-40) perform client-side cosine re-ranking.",
+      "source": "README.md / src/agent.py / src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md / src/agent.py / src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed logging",
+      "practice": "Log warnings and progress during seeding (the seed script prints seeded counts and warns on index creation failures) to help troubleshoot provisioning.",
+      "category": "provisioning_and_monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "scripts/seed.py prints 'Seeded X ...' (app/scripts/seed.py:54,64,74) and src/db.py prints a warning on index failure (app/src/db.py:28-29).",
+      "source": "scripts/seed.py / src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "scripts/seed.py / src/db.py",
+          "url": ""
+        },
+        {
+          "title": "scripts/seed.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "API examples",
+      "practice": "Provide example usage for the API endpoint (/review) and examples for calling it with either a correspondent_id or inline profile_text.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/README.md:31-32 and app/src/main.py defines POST /review and README shows example payloads.",
+      "source": "README.md / src/main.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md / src/main.py",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        },
+        {
+          "title": "src/main.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unit test fixtures",
+      "practice": "Use a small deterministic test fixture in unit tests (tests/test_agent.py uses small mocked embeddings and documents) to avoid network dependency in CI.",
+      "category": "testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P28",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/tests/test_agent.py:23-56 patches embed_text and get_collection to provide synthetic docs/embeddings.",
+      "source": "tests/test_agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "tests/test_agent.py",
+          "url": ""
+        },
+        {
+          "title": "tests/test_agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "LLM optional",
+      "practice": "Centralize the LLM usage behind an optional dependency: use LangChain if available and fall back to deterministic text generation if not.",
+      "category": "dependencies",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py:9-16 attempts to import langchain ChatOpenAI; sets LLM_AVAILABLE flag and falls back to deterministic narrative when not available.",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Optional LLM control",
+      "practice": "If an LLM is used, make it optional and controlled by the presence of the OPENAI_API_KEY so the system can run without LLM access in test/dev environments.",
+      "category": "dependencies",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P36",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py:53-55 uses OPENAI_API_KEY presence and LLM_AVAILABLE to decide whether to call ChatOpenAI; fallback path used when key is absent.",
+      "source": "src/agent.py / src/embeddings.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py / src/embeddings.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/embeddings.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Consistent dimensionality",
+      "practice": "Keep vector dimensionality consistent across seeding and runtime (the sample uses a 1536-dim embedding model and the synthetic generator uses 1536 dims).",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P40",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/embeddings.py:6 comment '1536 dims'; app/scripts/seed.py:24-31 synthetic_embedding uses dim=1536; app/src/agent.py synthetic_embedding default dim=1536.",
+      "source": "src/embeddings.py / scripts/seed.py / src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/embeddings.py / scripts/seed.py / src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/embeddings.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Guard against zero-length vectors",
+      "practice": "When computing cosine similarity, guard against zero-length vectors and return a safe default score (the sample returns 0 when a vector norm is zero).",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P41",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py:20-25 (cosine_similarity returns 0.0 when either vector norm is zero).",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Cap top matches",
+      "practice": "Present a capped number of top matches (e.g., top_k per collection and then global top-N) to limit response size and computation.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P42",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py:_search_collection_by_embedding uses top_k param with default 5 and review_correspondent returns top 10 global results (app/src/agent.py:28-40 and 121-129).",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator decision; events show the run proceeded with acknowledged gaps. Evidence: decisions.jsonl (D001)."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Python with FastAPI aligns with the prompt and the implementation (app/src/main.py uses FastAPI). Evidence: decisions.jsonl D002 and events showing src/main.py created (events.jsonl:19)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choosing pymongo>=4.3,<5.0 is consistent with code and requirements.txt (app/requirements.txt:3). The chosen pinned range is reasonable for MongoDB 7.x compatibility."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Decision to compute similarity client-side is implemented and documented (app/src/agent.py client-side cosine similarity; README notes the deliberate choice). The readiness report and missing agent-kit justify the choice."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Choosing text-embedding-3-small is implemented (app/src/embeddings.py:6). Decision originated from model_default, but the repository reflects that choice."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "LLM default gpt-4o-mini is present in app/src/agent.py:17 and used when LangChain/OPENAI_API_KEY are available."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Secrets read from env vars DOCUMENTDB_URI and OPENAI_API_KEY is implemented (app/src/db.py and app/src/embeddings.py) and .env.example documents placeholders. Note: an earlier log attempt used 'skill.md' as reason_source and produced a validation exception in events.jsonl:6; the recorded D007 later used readiness_report as the reason_source (events.jsonl:8)."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Builder switched from LangChain embeddings to using the openai client due to a missing langchain_community module during test runs; events show pytest import error and a subsequent rewrite of src/embeddings.py to use openai (events.jsonl:26,27). The change is reflected in the repository."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The decision to run the seed script against the live cluster was executed and recorded; events show scripts/run_seed.py ran and seeded documents (events.jsonl:36)."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Deterministic synthetic embeddings for seeding when OPENAI_API_KEY is absent were implemented and used by the seed run (app/scripts/seed.py and events.jsonl:36)."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Fallback to deterministic synthetic embeddings for runtime queries when OPENAI_API_KEY is missing is implemented (app/src/agent.py:103-108) and exercised during example run (events.jsonl:41)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Server-side vector index creation",
+      "what_was_missing": "A verified, copy-paste createIndex example for the managed Azure DocumentDB cluster (exact createIndex parameters, option names and an example for HNSW/IVF/DiskANN).",
+      "where_searched": "Repository files and run environment; no external documentation server was reachable in this run (documentation_search_available: false).",
+      "effect_on_this_build": "The builder avoided creating server-side vector indexes and implemented client-side similarity as a fallback. This prevents the sample from demonstrating server-side $search/cosmosSearch vector queries and leaves index tuning to users.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Agent kit / documentation page titled 'Create a vector index on Azure DocumentDB (MongoDB 7 style)'. Outline: short intro, exact createIndex code snippets for HNSW, IVF and DiskANN with parameters (dimensions variable), example Python pymongo call to create index, verification commands to list indexes, and a tested script that can be run against the managed cluster. Provide an opt-in env var example (ENABLE_VECTOR_INDEX=true) and a note about costs and recommended parameters for small/medium/large datasets.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index parameter guidance in README",
+      "what_was_missing": "Concrete guidance in the README on which vector index parameters to choose for different dataset sizes and how to adapt parameters.",
+      "where_searched": "README.md and other repository files. No external docs accessible in this run.",
+      "effect_on_this_build": "Left users without guidance on how to tune index parameters for production workloads; the sample deliberately avoids creating such indexes without guidance.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a 'Vector index tuning' subsection to the README explaining typical parameter defaults for small (<=10k), medium (10k-1M) and large (>1M) datasets, with example HNSW/IVF parameter sets and tradeoffs (latency vs memory vs recall).",
+      "priority": "medium"
+    },
+    {
+      "topic": "Embedding model & dimensions authoritative statement",
+      "what_was_missing": "A single canonical place documenting the chosen embedding model and its vector dimension (so index dimension and synthetic fallbacks must match it).",
+      "where_searched": "app/src/embeddings.py and other repository files; no external docs reachable.",
+      "effect_on_this_build": "Builder selected text-embedding-3-small and used 1536 dims, but without an authoritative doc consumers might alter embedding model without updating index code.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "README 'Configuration' section itemizing MODEL_NAME and EMBEDDING_DIM (e.g., MODEL_NAME=text-embedding-3-small, EMBEDDING_DIM=1536) and advising where to change these constants for other models. Recommend making EMBEDDING_DIM available as a single source of truth in code.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness",
+      "what_was_missing": "Optional environment variables used by the code (LLM_MODEL, ENABLE_VECTOR_INDEX/ENABLE_SERVER_SEARCH) were not listed in .env.example.",
+      "where_searched": ".env.example and src/*.py in repository.",
+      "effect_on_this_build": "Users may not realize optional flags exist to enable server-side index creation or change the LLM model name.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Update .env.example to list LLM_MODEL, OPENAI_API_BASE (already present), and optional toggles like ENABLE_VECTOR_INDEX and ENABLE_SERVER_SEARCH with placeholders and comments explaining their use.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Infrastructure as code example for cluster",
+      "what_was_missing": "No IaC (Bicep/Terraform) example for creating an Azure DocumentDB cluster or minimal sample to show resource type and required params.",
+      "where_searched": "Repository root and docs; no external docs reachable.",
+      "effect_on_this_build": "Operators who want to reproduce the cluster with correct resource type and settings have no packaged example; the run policy supplied a live cluster so the sample avoided provisioning, but the gallery expects an IaC example.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Provide a minimal Terraform and Bicep example that declares the DocumentDB resource the product supports (example resource provider and names), with defaults that keep cost low and optional parameters for tier and region. Add a short paragraph in README pointing to the IaC file.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Exact client & createIndex code snippet",
+      "what_was_missing": "A minimal copy-paste snippet showing how to connect with pymongo and create the recommended vector index (exact call using the managed service's accepted options).",
+      "where_searched": "Repository and local run outputs; no external docs reachable.",
+      "effect_on_this_build": "Without the snippet the builder avoided creating indexes and used client-side similarity, reducing production realism of the sample.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "A short code sample file 'examples/create_vector_index.py' that sets EMBEDDING_DIM from src/embeddings.py and issues the create_index call with tested options for the product's vector index API, plus verification steps to confirm index creation.",
+      "priority": "high"
+    }
+  ]
+}
