@@ -8,7 +8,7 @@
 
 ## What the starter prompt asks for
 
-- Implement the chatbot in Python with LangChain as a single RAG chain/agent that accepts a free-text symptom description and returns triage advice.
+- Implement the chatbot in Python with LangChain as a RAG pipeline that accepts a free-text symptom description and returns triage advice.
 - Store the clinical triage guideline sections as documents in Azure DocumentDB with an embedding on each document (written with a Python MongoDB driver, e.g. PyMongo), and create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field whose dimensions match the embedding model's output.
 - For each symptom description, embed the description with the same embedding model and retrieve the most relevant guideline sections with a $search / cosmosSearch query (similarity COS, L2 or IP) so the similarity runs in Azure DocumentDB.
 - Pass the retrieved guideline sections into the LangChain prompt as the context the generated answer is grounded in.
