@@ -8,15 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Implement the service using Python and FastAPI (FastAPI app, route definitions and ASGI entrypoint must be present).
-- Use Beanie ODM to model and persist documents and initialize Beanie against an Azure DocumentDB MongoDB endpoint (code must call Beanie initialization with a motor client pointed at Azure DocumentDB).
-- Define a Supplier Document class using Beanie (Pydantic-based schema) that declares required fields at the Pydantic schema level (e.g., a required name and contact field) so creation fails validation if missing.
-- Define a PurchaseOrder Document class using Beanie (Pydantic-based schema) that declares required fields including a supplier reference (supplier_id), a numeric value field (e.g., total_value) and a status field; these fields must be required by schema validation.
-- Implement full CRUD endpoints for Supplier: create (POST), read single (GET /suppliers/{id}), list (GET /suppliers), update (PUT or PATCH), and delete (DELETE), returning appropriate HTTP status codes and the document JSON.
-- Implement full CRUD endpoints for PurchaseOrder: create (POST), read single (GET /purchase-orders/{id}), list (GET /purchase-orders), update (PUT or PATCH), and delete (DELETE), returning appropriate HTTP status codes and the document JSON.
-- Enforce required-field validation at the application layer: incoming request bodies are validated by Pydantic/Beanie schemas and missing or invalid required fields cause 4xx responses and no write to Azure DocumentDB; creating a PurchaseOrder must verify the referenced Supplier exists and return a 4xx error if not.
-- Add an aggregation endpoint that summarizes open PO value by supplier (e.g., GET /aggregations/open-po-value-by-supplier) which executes a Mongo aggregation pipeline against Azure DocumentDB (via Beanie or motor) to filter POs with status == "open" and return per-supplier sums of the numeric value field, including supplier id (and optionally supplier name).
-- Ensure API responses serialize Document IDs and Pydantic types to JSON (ObjectId/UUID converted to strings) so returned JSON is directly consumable by clients.
+- Implement the service in Python with FastAPI, using Beanie ODM as the data layer over Azure DocumentDB.
+- Model suppliers as a Beanie Document class whose Pydantic schema declares the supplier's fields and marks the required ones.
+- Model purchase orders as a Beanie Document class whose Pydantic schema declares the PO's fields, including those the aggregation needs (e.g. a reference to the supplier, a status and a monetary value), and marks the required ones.
+- Expose FastAPI endpoints that create, read (e.g. get one and list), update and delete supplier documents through the Beanie model.
+- Expose FastAPI endpoints that create, read (e.g. get one and list), update and delete purchase-order documents through the Beanie model.
+- Create and update requests are validated against the Pydantic schemas in the application layer, and a request that omits a required field is rejected by the service.
+- Expose an aggregation endpoint that runs an aggregation pipeline in Azure DocumentDB through Beanie (e.g. match open purchase orders, then group by supplier summing their value) and returns the total open PO value per supplier.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

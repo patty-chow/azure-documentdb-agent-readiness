@@ -1,0 +1,555 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements a FastAPI + Beanie service with Supplier and PurchaseOrder models, CRUD endpoints (create/read/delete) and an aggregation endpoint. The repository includes a seed script, README and .env.example. Key shortcomings: update endpoints are missing for both resources; the aggregation runs directly against the Motor collection rather than via Beanie as requested; connection-timeout/retry options are not set; dependencies are not pinned and caused a Beanie init runtime error during verification; list endpoints are unbounded (no pagination); the seed script and index provisioning were not successfully verified because Beanie initialization failed at run time. None of the problems observed are obviously a security failure, but several reduce robustness and prevent verification against the live cluster. See requirement-by-requirement results, practice checks, decision reviews and documentation gaps below.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the service in Python with FastAPI, using Beanie ODM as the data layer over Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/app/main.py: lines 1-5, 10; imports FastAPI and beanie.init_beanie (lines 1-4, 10, 21).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Model suppliers as a Beanie Document class whose Pydantic schema declares the supplier's fields and marks the required ones.",
+      "status": "met",
+      "evidence": "app/app/models.py: Supplier class declares name: Field(...) required (lines 13-16) and contact optional (lines 15).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Model purchase orders as a Beanie Document class whose Pydantic schema declares the PO's fields, including those the aggregation needs (e.g. a reference to the supplier, a status and a monetary value), and marks the required ones.",
+      "status": "met",
+      "evidence": "app/app/models.py: PurchaseOrder defines supplier_id: PydanticObjectId Field(...), total_value: float Field(..., gt=0), status: str Field(...) (lines 25-29).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Expose FastAPI endpoints that create, read (e.g. get one and list), update and delete supplier documents through the Beanie model.",
+      "status": "partly_met",
+      "evidence": "app/app/main.py: create (POST /suppliers) at lines 31-35; list (GET /suppliers) at lines 38-41; get (GET /suppliers/{supplier_id}) lines 44-49; delete (DELETE /suppliers/{supplier_id}) lines 52-58. No update endpoint (PUT/PATCH) is present.",
+      "cause": "builder_error",
+      "smallest_fix": "Add an update endpoint (e.g. PUT /suppliers/{id} or PATCH) that accepts a validated Pydantic model or partial update model and applies updates via Beanie (e.g. await Supplier.get(id); await doc.set({..}) or use .update)."
+    },
+    {
+      "requirement": "Expose FastAPI endpoints that create, read (e.g. get one and list), update and delete purchase-order documents through the Beanie model.",
+      "status": "partly_met",
+      "evidence": "app/app/main.py: create (POST /purchaseorders) lines 61-69; list (GET /purchaseorders) lines 72-75; get (GET /purchaseorders/{po_id}) lines 78-83; delete (DELETE /purchaseorders/{po_id}) lines 86-92. No update endpoint exists.",
+      "cause": "builder_error",
+      "smallest_fix": "Add an update endpoint (PUT/PATCH) that validates updates against the Pydantic schema and applies them via Beanie's update APIs."
+    },
+    {
+      "requirement": "Create and update requests are validated against the Pydantic schemas in the application layer, and a request that omits a required field is rejected by the service.",
+      "status": "partly_met",
+      "evidence": "Create endpoints accept Beanie Document classes as request models (create_supplier(supplier: Supplier) at lines 32-35 and create_purchase_order(po: PurchaseOrder) at lines 62-69) so create requests are validated. Update endpoints are not present so update validation cannot be exercised.",
+      "cause": "builder_error",
+      "smallest_fix": "Add update endpoints that accept appropriate Pydantic models (or use explicit validators) so update requests are validated like creates."
+    },
+    {
+      "requirement": "Expose an aggregation endpoint that runs an aggregation pipeline in Azure DocumentDB through Beanie (e.g. match open purchase orders, then group by supplier summing their value) and returns the total open PO value per supplier.",
+      "status": "partly_met",
+      "evidence": "app/app/main.py: Aggregation endpoint GET /aggregations/open_po_value_by_supplier (lines 95-119) defines a pipeline (lines 101-111) that matches status:'open' and groups by supplier_id and returns open_value. The implementation calls the Motor collection aggregate via db[PurchaseOrder.get_motor_collection().name].aggregate(...) (line 113) rather than invoking Beanie's aggregation helpers.",
+      "cause": "builder_error",
+      "smallest_fix": "Either use Beanie's aggregation wrappers (e.g. PurchaseOrder.aggregate(...)) or document why the Motor aggregate was used; ensure the code runs under the pinned driver/Beanie versions."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/app/config.py reads DOCUMENTDB_URI from environment using pydantic-settings BaseSettings (lines 4-9); .env.example contains a placeholder (app/.env.example). No secrets are checked in.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI only (lines 1-3). app/app/config.py exposes DATABASE_NAME (default 'sample_retail_15') but DATABASE_NAME is not present in .env.example (app/app/config.py lines 4-9).",
+      "cause": "builder_error",
+      "smallest_fix": "Add DATABASE_NAME and any other runtime settings to .env.example with placeholders (e.g., DATABASE_NAME=\"sample_retail_15\")."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not implement vector search or create vector indexes; not applicable for this app.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexes are created or described in the repo.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/app/main.py declares a global client and creates it on startup: client declared at line 12, created in startup() using AsyncIOMotorClient(settings.DOCUMENTDB_URI) (lines 15-19) and closed on shutdown (lines 24-28).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/app/seed.py provides an idempotent seed (checks existing Supplier and PurchaseOrder documents and skips inserts if present) (lines 14-23, 26-39). Index creation is defined via model Settings.indexes (app/app/models.py lines 18-22 and 31-35) and init_beanie(database=...) is called (seed.py line 12) but index creation was not explicitly invoked in code; the builder could not verify seed.py against the live cluster due to a Beanie/Motor compatibility error during init_beanie (builder_report open_issues).",
+      "cause": "builder_error",
+      "smallest_fix": "Make seed explicitly create or validate indexes during the seed step (use create_index or beanie's ensure indexes API) and pin dependency versions so init_beanie runs successfully in verification."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample does not implement a /search endpoint.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search endpoint or vector search is implemented.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "not_met",
+      "evidence": "app/requirements.txt lists packages without fixed versions (lines 1-7). The builder's run report documents a Beanie/Motor/PyMongo compatibility TypeError when running the seed (builder_report open_issues).",
+      "cause": "builder_error",
+      "smallest_fix": "Pin explicit compatible versions (e.g. beanie==<x>, motor==<y>, pymongo==<z>, pydantic-settings==<v>) in requirements.txt; re-run pip install and confirm init_beanie succeeds."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No tests are present in the repository.",
+      "cause": "builder_error",
+      "smallest_fix": "Add unit tests that mock the database (use mongomock or patch Motor/Beanie components) and run under pytest; document test commands in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep, Terraform, ARM templates, or az CLI IaC files are present in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small Bicep or Terraform example that creates Microsoft.DocumentDB/mongoClusters with default (low-cost) parameters and a note that the sample doesn't create cloud resources in CI by default."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md includes purpose, prerequisites and setup/run instructions (lines 1-24) but does not include explicit cleanup steps for the sample database or how to remove seeded data.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a 'Clean-up' section instructing how to delete the sample database (e.g., drop database sample_retail_15) or how to remove inserted documents, and mention any permission requirements."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md line 4 uses 'Azure DocumentDB (MongoDB-compatible)'; code comments and README consistently name Azure DocumentDB.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Client reuse",
+      "practice": "Reuse a single long-lived AsyncIOMotorClient / MongoClient instance for the process (create once at startup, close at shutdown).",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project",
+      "status": "followed",
+      "evidence": "app/app/main.py lines 12, 15-21, 24-28 (global client declared, created at startup with AsyncIOMotorClient and closed at shutdown).",
+      "source": "Quickstart: Connect Beanie to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Beanie to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Read connection from env",
+      "practice": "Read the cluster connection string from an environment variable at runtime and provide a .env.example placeholder instead of checked-in credentials.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/app/config.py lines 4-9 (Settings reads DOCUMENTDB_URI from env via pydantic-settings); app/.env.example contains a placeholder (app/.env.example lines 1-3).",
+      "source": ".env.example",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS and verification",
+      "practice": "Require TLS/SSL and validate server certificates for production connections; do not disable certificate validation except for short-lived local evaluation with self-signed certs.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-cloud-shell#configure-mongodb-shell-in-azure-cloud-shell-manually",
+      "status": "violated",
+      "evidence": "app/app/main.py constructs AsyncIOMotorClient(settings.DOCUMENTDB_URI) with no explicit tls/ssl or certificate-validation options (line 18). .env.example contains only a placeholder connection string (app/.env.example).",
+      "source": "Quickstart: Connect to Azure DocumentDB using Azure portal",
+      "searched": "",
+      "fix": "Pass or document required TLS options (either in the connection string or as Motor client kwargs), and validate certificates in production. E.g., AsyncIOMotorClient(settings.DOCUMENTDB_URI, tls=True, tlsAllowInvalidCertificates=False) or instruct users to include tls=true in the uri.",
+      "sources": [
+        {
+          "title": "Quickstart: Connect to Azure DocumentDB using Azure portal",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-cloud-shell#configure-mongodb-shell-in-azure-cloud-shell-manually"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client timeouts",
+      "practice": "Set sensible client timeouts (serverSelectionTimeoutMS, socketTimeoutMS) so the app fails fast on unreachable clusters.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project",
+      "status": "violated",
+      "evidence": "AsyncIOMotorClient called without timeout options (app/app/main.py line 18); no defaults are set in code or .env.example.",
+      "source": "Quickstart: Connect Beanie to Azure DocumentDB",
+      "searched": "",
+      "fix": "Set serverSelectionTimeoutMS and other timeouts via the connection string or client kwargs (e.g., AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)).",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Beanie to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries and transient faults",
+      "practice": "Handle transient faults with retries and exponential backoff for idempotent operations.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "violated",
+      "evidence": "No driver-level retry settings or application-level retry wrappers are present in the code. Create and delete calls are direct (e.g., await supplier.insert() lines 34 and 69).",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add a small retry wrapper for idempotent operations or enable driver retry options where appropriate, bounded attempts and jitter for application-level retries.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pin dependencies",
+      "practice": "Pin Motor, PyMongo and Beanie to specific compatible versions in requirements for reproducible installs.",
+      "category": "libraries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project",
+      "status": "violated",
+      "evidence": "app/requirements.txt lists packages without version pins (app/requirements.txt lines 1-7). The builder observed a runtime TypeError on init_beanie related to Motor/PyMongo/Beanie compatibility (builder_report open_issues).",
+      "source": "Quickstart: Connect Beanie to Azure DocumentDB",
+      "searched": "",
+      "fix": "Pin explicit compatible versions in requirements.txt (tie beanie, motor, pymongo, pydantic-settings to known-compatible releases); verify init_beanie runs in CI.",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Beanie to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Beanie init once",
+      "practice": "Initialize Beanie once at application startup with the selected models and the database object (await init_beanie(...)).",
+      "category": "libraries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project",
+      "status": "followed",
+      "evidence": "app/app/main.py calls await init_beanie(database=db, document_models=[Supplier, PurchaseOrder]) at startup (line 21). seed.py also calls init_beanie(database=db, document_models=[...]) (seed.py line 12) to prepare the seed stage.",
+      "source": "Quickstart: Connect Beanie to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Beanie to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Indexes for aggregation",
+      "practice": "Create indexes on fields used by filters and aggregation group keys (e.g., compound index on (supplier_id, status)).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#queryable-fields-should-always-have-indexes-created",
+      "status": "followed",
+      "evidence": "app/app/models.py defines indexes: Supplier Settings.indexes contains 'name' (lines 18-22) and PurchaseOrder Settings.indexes contains a compound index on (supplier_id, status) (lines 31-35). The aggregation pipeline matches on status and groups by supplier_id (main.py lines 101-103).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#queryable-fields-should-always-have-indexes-created"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Match early in aggregation",
+      "practice": "Place $match as early as possible in aggregation pipelines so the engine can use indexes.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation#single-collection-pipeline-examples",
+      "status": "followed",
+      "evidence": "The sample's pipeline begins with {$match: {status: 'open'}} (app/app/main.py lines 101-103 and seed.py lines 42-44).",
+      "source": "Aggregation pipeline examples and limitations",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Aggregation pipeline examples and limitations",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-aggregation#single-collection-pipeline-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Application-layer required fields",
+      "practice": "Enforce required fields at the application layer (Pydantic/Beanie validators) and consider server-side JSON Schema validation.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compare-mongodb-atlas#compatibility-and-licensing",
+      "status": "followed",
+      "evidence": "Model fields are declared with required Pydantic Field(...): Supplier.name (models.py line 14) and PurchaseOrder fields (models.py lines 26-28). Creates use these models as request bodies (main.py lines 32 and 63) so application-layer validation is present.",
+      "source": "Compare Azure DocumentDB to MongoDB Atlas",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Compare Azure DocumentDB to MongoDB Atlas",
+          "url": "https://learn.microsoft.com/azure/documentdb/compare-mongodb-atlas#compatibility-and-licensing"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Provision indexes in seed step",
+      "practice": "Provision indexes and required collections as part of a deploy/seed step and validate them with admin tools.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#queryable-fields-should-always-have-indexes-created",
+      "status": "not_assessable",
+      "evidence": "The models declare indexes (models.py lines 18-22 and 31-35) and init_beanie is called in seed.py (line 12). However the seed step could not be executed against the live cluster because init_beanie failed at runtime due to a dependency incompatibility (builder_report open_issues). It is not possible to confirm index creation in this run.",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "Make seed explicitly ensure indexes (call an index creation API or beanie.ensure_indexes) and pin dependencies so init_beanie runs in CI/verification.",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#queryable-fields-should-always-have-indexes-created"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pagination on list endpoints",
+      "practice": "Protect list endpoints with pagination limits; prefer cursor-based or range-based pagination.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-python-beanie#create-the-project",
+      "status": "violated",
+      "evidence": "list_suppliers and list_purchase_orders return the full result of find_all().to_list() with no limit or pagination (app/app/main.py lines 38-41 and 72-75).",
+      "source": "Use Beanie with Azure DocumentDB: Build a Python inventory API",
+      "searched": "",
+      "fix": "Add query params for page/limit or implement range- or cursor-based pagination using an index (e.g., limit and last_id-based paging) to avoid unbounded scans.",
+      "sources": [
+        {
+          "title": "Use Beanie with Azure DocumentDB: Build a Python inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-python-beanie#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain heavy aggregations",
+      "practice": "Instrument and log query performance and analyze explain() output for heavy aggregations to confirm index usage.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output#detect-performance-problems",
+      "status": "violated",
+      "evidence": "No explain() calls, no logging or instrumentation around the aggregation endpoint (app/app/main.py aggregation function lines 95-119).",
+      "source": "Read query explain output in Azure DocumentDB",
+      "searched": "",
+      "fix": "Use db.collection.aggregate(...).explain('executionStats') during seed or in a diagnostic endpoint and log the plan; add a test that ensures group stage uses an index (no COLLSCAN).",
+      "sources": [
+        {
+          "title": "Read query explain output in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output#detect-performance-problems"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "No secrets in repo",
+      "practice": "No password, key or full connection string appears in source, config, tests or README.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": ".env.example uses a placeholder (app/.env.example lines 1-3); config reads from env (app/app/config.py lines 4-9); no credentials are checked into the repo.",
+      "source": ".env.example",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Name the service correctly",
+      "practice": "The sample uses the name 'Azure DocumentDB' throughout and does not use a former or neighbouring product name.",
+      "category": "sample_hygiene",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/overview#lower-cost-than-mongodb-atlas",
+      "status": "followed",
+      "evidence": "app/README.md line 4 references 'Azure DocumentDB (MongoDB-compatible)'.",
+      "source": "What is Azure DocumentDB (with MongoDB compatibility)?",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "What is Azure DocumentDB (with MongoDB compatibility)?",
+          "url": "https://learn.microsoft.com/azure/documentdb/overview#lower-cost-than-mongodb-atlas"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Administrative approval 'ready_with_gaps' is consistent with the builder_report which documents gaps; no trace-level mismatch found."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Builder chose Python + FastAPI + Beanie as the prompt requested. The prompt explicitly required these (prompt evidence) and the code implements them (main.py imports and uses FastAPI and Beanie)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "The decision to use Motor is correct for Beanie. events.jsonl shows the documentdb-driver skill was loaded (events.jsonl entries) and the code imports AsyncIOMotorClient (app/main.py line 4). Although the decision reason is marked 'model_default', a loaded skill and the code confirm Motor was the correct choice."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "The decision to omit strict pins (use latest) is recorded as 'model_default'. This appears to have contributed to the runtime incompatibility observed (builder_report: TypeError in init_beanie). The discovered practice P07 and Quickstart guidance recommend pinning compatible versions; events show pip install succeeded but init_beanie failed. Consider this decision questionable; better to pin versions in a sample."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from the environment matches the run environment guidance (app/config.py) and the prompt's instruction. events.jsonl shows the config file was written and used."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Not provisioning new Azure resources is consistent with the run policy noted in the readiness report; events show no resource provisioning actions."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Choosing float for total_value is a defensible sample simplification; the README warns to use Decimal in production (app/README.md line 29). The decision reason was 'model_default' but it is documented as a trade-off in README."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Creating indexes for supplier.name and compound (supplier_id, status) follows the indexing guidance. The models declare these indexes (app/models.py) and the documentdb-indexing skill was loaded per events.jsonl."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Updating config to import BaseSettings from pydantic_settings to match pydantic v2 is supported by the runtime errors observed and is reflected in the repo (app/config.py). events.jsonl shows the edit actions and the install of pydantic-settings."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Adding pydantic-settings to requirements to satisfy Pydantic v2 is consistent with the failure trace and the installed requirements file; events.jsonl shows the change and subsequent pip install."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Beanie update validation behaviour",
+      "what_was_missing": "Clear, public documentation that states whether Beanie's update operations run Pydantic validators and, if not, the recommended application-layer pattern to validate updates.",
+      "where_searched": "Searched repo files and Microsoft docs (quickstart) and noted 'searches_with_no_useful_result' in practice discovery: 'Azure DocumentDB beanie \"validate Pydantic on update\"' — no single authoritative page was found that explains best-practice for update validation with Beanie.",
+      "effect_on_this_build": "The sample implements create endpoints that use Pydantic models, but update endpoints were omitted. Uncertainty about whether updates would be validated by Beanie may have discouraged or mis-specified update endpoint design.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page in the Beanie quickstart or DocumentDB Python guidance titled 'Validating updates with Beanie' that explains: (1) whether beanie.update(...) and Document.set(...) run Pydantic validators; (2) recommended patterns for enforcing validation on updates (e.g. accept a Pydantic model DTO for updates, call model.parse_obj/update_local and then apply via replace/atomic update, or run manual validators); (3) example code for PATCH vs PUT with Beanie.",
+      "priority": "high"
+    },
+    {
+      "topic": "Dependency-version pins in quickstart",
+      "what_was_missing": "A prominent example in the Beanie quickstart (and in sample README) showing an explicit, tested set of pinned package versions for beanie/motor/pymongo/pydantic that are known to work together with the sample.",
+      "where_searched": "Quickstart and indexing docs; discovered practice P07 recommends pinning, but the sample builder chose not to pin and experienced a runtime init_beanie TypeError.",
+      "effect_on_this_build": "Lack of pinned versions caused the seed/verification step to fail (Beanie init path error), preventing verification of index creation and aggregation results against the live cluster.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a section 'Pinned package versions' to the Python Beanie quickstart and the sample README with a minimal reproducible requirements.txt block (example: beanie==X.Y.Z, motor==A.B.C, pymongo==M.N.O, pydantic-settings==P.Q) plus a short note explaining why pinning is important for verifying samples.",
+      "priority": "high"
+    },
+    {
+      "topic": "Guidance on multi-document transactions",
+      "what_was_missing": "Clear guidance for sample authors on whether to avoid multi-document transactions or rely on them for correctness in Azure DocumentDB; practice P13 (prior_knowledge_only) indicates agent memory but no authoritative page was found explaining trade-offs for this service.",
+      "where_searched": "Documentation and discovered practices; practice P13 is flagged prior_knowledge_only with no explicit Azure DocumentDB doc found in the discovery step.",
+      "effect_on_this_build": "The sample does not use transactions; lacking explicit service guidance may lead other builders to change modeling or add transactions without understanding service implications.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short note on the main Azure DocumentDB docs: 'Transactions and modeling guidance' that states that Azure DocumentDB supports multi-document ACID transactions, when to avoid them for performance and modeling alternatives, and a code example showing a minimal transaction usage pattern for Motor/Beanie if needed.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Seed script index creation / idempotent deploy step example",
+      "what_was_missing": "A canonical seed/deploy example that both creates seed data idempotently and explicitly provisions indexes (or shows beanie.ensure_indexes usage) with guidance on tolerating index build semantics in production.",
+      "where_searched": "Quickstart and indexing docs; while models declare indexes, the sample relied on init_beanie and this wasn't verified due to the runtime error.",
+      "effect_on_this_build": "Without a clear pattern and an explicit index-create example, the sample left ambiguity about when and how indexes will be created and how that interacts with seed scripts, contributing to fragile verification.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a 'seed-and-index' script template: (1) call init_beanie, (2) call beanie's ensure_indexes or create_index API explicitly, (3) insert sample data only when absent, (4) show how to run the script twice safely. Provide a short note about unique-index building being foreground and recommended deploy-time behavior.",
+      "priority": "high"
+    },
+    {
+      "topic": "Decision to avoid pinning (model_default decisions)",
+      "what_was_missing": "A discoverable note in the sample quickstart that highlights the importance of pinning specific dependency versions for reproducible verification of samples.",
+      "where_searched": "Quickstart docs; discovered practice P07 exists but the guidance is not always prominent to builders who pick 'latest'.",
+      "effect_on_this_build": "The builder chose unpinned dependencies and observed a runtime error; a prominent example would have prevented the issue.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add an explicit 'Reproducible installs' block to the Beanie quickstart and the DocumentDB Python sample guidance with a tested requirements.txt snippet and CI instructions to run pip install --use-feature=2020-resolver or similar reproducibility notes.",
+      "priority": "high"
+    }
+  ]
+}
