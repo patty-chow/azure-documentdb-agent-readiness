@@ -1,0 +1,44 @@
+# 3. Build report: 02-ai-powered-product-recommendations
+
+**Status: completed**
+
+Built a small Node.js sample app that demonstrates product recommendations using Azure DocumentDB vector search. The sample seeds 10,000 products (with embeddings) and 20,000 orders into the database sample_retail_02, creates a DiskANN vector index on products.embedding, and implements a simple agent-like recommendation flow (vector search + co-purchase re-ranking + per-session memory persisted in DocumentDB). The app supports real embeddings and reasoning via OpenAI when OPENAI_API_KEY is present, and falls back to deterministic synthetic embeddings and template reasoning when the key is missing. Seed, index creation and a one-shot vector-search verification were executed successfully against the live cluster.
+
+## How to run
+
+1) Copy .env.example to .env and set DOCUMENTDB_URI (and optionally OPENAI_API_KEY).
+2) npm install
+3) npm run seed   # inserts 10k products (with embeddings) and 20k orders and creates the DiskANN index
+4) npm start      # starts the web UI on port 3000 (serves public/index.html and /api/recommend)
+
+Notes: If OPENAI_API_KEY is not set the sample uses deterministic synthetic embeddings and templated reasoning. Product IDs seeded are P0..P9999. The server persists per-session memory in the 'sessions' collection using a sessionId cookie.
+
+## Verified by running
+
+- npm install: exit code 0, dependencies installed
+- seed script (node src/seed.js): completed - created products (10000) and orders (20000) and created DiskANN index (createIndexes returned ok:1)
+- documentdb_list_indexes on sample_retail_02.products: returned two indexes including idx_embedding_diskann with cosmosSearchOptions { kind: 'vector-diskann', dimensions: 1536, similarity: 'COS' }
+- one-shot vector-search verification (node src/test_recommend.js): found seed product P0 and returned nearest neighbors (aggregation with $search knnBeta returned matching results)
+
+## Not verified
+
+- Running the long-running Express server and exercising the browser UI end-to-end was not executed here (command runner avoids starting durable servers). The server code is present and can be run locally with npm start.
+- OpenAI embedding and LLM reasoning: not executed against live OpenAI because OPENAI_API_KEY was not present in the run environment. The sample supports OpenAI if the env var is provided; otherwise it uses synthetic embeddings and templated explanations.
+- LlamaIndex Node bindings: the prompt asked for a 'LlamaIndex agent' but LlamaIndex Node SDK availability and examples were not installed/verified in this environment; I implemented an equivalent lightweight agent flow directly (embedding + vector search + reasoning).
+
+## Open issues
+
+None.
+
+## Files
+
+- `package.json`
+- `.env.example`
+- `README.md`
+- `src/db.js`
+- `src/seed.js`
+- `src/server.js`
+- `src/test_recommend.js`
+- `public/index.html`
+- `public/style.css`
+

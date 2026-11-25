@@ -1,0 +1,508 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample is a runnable Node.js app that meets the starter-prompt functionality: it seeds products (10k) and orders (20k), creates a DiskANN vector index (dimensions 1536), stores embeddings, exposes an Express UI, implements per-session memory persisted in a 'sessions' collection, and returns the top-5 recommendations with textual reasoning (OpenAI when available, deterministic synthetic fallback otherwise). Key runtime checks (seed, index creation, a one-shot vector search) were executed against the live cluster. Findings: the builder intentionally did not use LlamaIndex (no adapter/skill/SDK used), embeddings are generated from product text (not directly from co-purchase aggregates), some production-grade practices (retries honoring Retry-After, idempotent seed/upserts and unique indexes, infrastructure-as-code, documented clean-up steps, and explicit index/query tuning guidance) are missing or only partly implemented. Many best-practices are implemented and traceable to installed skills (singleton client, env-driven config, DiskANN index, normalized embeddings, $search/cosmosSearch usage).",
+  "requirement_results": [
+    {
+      "requirement": "Implement the app in Node.js and integrate LlamaIndex for vector search operations (code imports/uses Node.js and LlamaIndex).",
+      "status": "not_met",
+      "evidence": "app/package.json (dependencies) and src/* show Node.js usage; no LlamaIndex imports or usage found in src/*. Decision D004 (decisions.jsonl) records the explicit choice to implement an equivalent flow instead of LlamaIndex.",
+      "cause": "skill_silent",
+      "smallest_fix": "Provide a skill or packaged example for LlamaIndex Node bindings (e.g., add a 'llamaindex-node' skill and examples) or change the starter prompt to allow an equivalent agent implementation when LlamaIndex bindings are unavailable."
+    },
+    {
+      "requirement": "Use the Azure DocumentDB skill to read co-purchase order history from Azure DocumentDB (code shows an explicit call or adapter labeled \"Azure DocumentDB skill\" that queries the database).",
+      "status": "partly_met",
+      "evidence": "The app queries the orders collection and computes co-purchase aggregates (app/src/server.js lines 149-158 and seed: orders inserted lines 152-165). However there is no adapter module explicitly named or labelled 'Azure DocumentDB skill'—the implementation uses the MongoDB driver directly. (events.jsonl shows documentdb-driver and other skills were loaded during the build, but the code does not present an adapter wrapper.)",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Add a thin adapter module (e.g., src/skill_adapters/documentdb.js) that wraps the DocumentDB skill guidance (or MCP calls) and update README to mention it; or update the skill to provide an explicit adapter template the builder can `require()`."
+    },
+    {
+      "requirement": "Parse order documents from Azure DocumentDB to extract co-purchase relationships (orders containing multiple product IDs) and use that history as the source data for generating product representations.",
+      "status": "met",
+      "evidence": "app/src/server.js: aggregation over orders to compute co-purchase counts (lines 153-158). Seed creates orders with product arrays (app/src/seed.js lines 147-163).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Generate vector embeddings for products from the co-purchase data (code contains a clearly defined step that creates embeddings per product from the mined co-purchase information).",
+      "status": "partly_met",
+      "evidence": "app/src/seed.js generates embeddings for each product (lines 136-142) using a textual prompt `${title} - a sample item in category C${j % 20}` and getEmbeddingForText (lines 139-141). The code does not generate embeddings from aggregated co-purchase signals.",
+      "cause": "builder_error",
+      "smallest_fix": "In src/seed.js, compute a co-purchase summary or neighborhood for each product (e.g., top co-purchased product IDs or co-purchase counts) and pass that aggregated textual/numeric representation into getEmbeddingForText so embeddings reflect co-purchase relationships rather than only product title."
+    },
+    {
+      "requirement": "Persist those embeddings into a DiskANN index stored on disk (code builds and saves a DiskANN index file and uses it for subsequent lookups).",
+      "status": "met",
+      "evidence": "createVectorIndexIfNotExists in app/src/seed.js builds a cosmosSearch vector-diskann index (lines 79-116). events.jsonl shows createIndexes returned ok:1 and documentdb_list_indexes returned idx_embedding_diskann with cosmosSearchOptions { kind: 'vector-diskann', dimensions: 1536, similarity: 'COS' } (events.jsonl entries at timestamps around 02:25:21 and 02:26:20).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Build the agent using LlamaIndex so that vector search against the DiskANN index is performed via LlamaIndex APIs (code shows LlamaIndex creating/using the DiskANN-backed index for nearest-neighbor queries).",
+      "status": "not_met",
+      "evidence": "No LlamaIndex imports or use. The app uses direct MongoDB $search (cosmosSearch) aggregation pipelines (app/src/server.js lines 130-144) and a lightweight 'agent-like' flow; decision D004 records the deliberate choice to not use LlamaIndex.",
+      "cause": "skill_silent",
+      "smallest_fix": "Either (a) include the LlamaIndex Node package and an example adapter that runs the LlamaIndex pipeline against the DiskANN-backed collection, or (b) add an explicit skill that documents how to wire LlamaIndex to Azure DocumentDB and provide a small adapter template in the agent kit."
+    },
+    {
+      "requirement": "Implement agent memory (explicitly named \"agent memory\") with per-session storage so recommendations are personalized across a user session and the memory influences returned recommendations (code demonstrates reading/writing session memory and using it when scoring or ranking items).",
+      "status": "met",
+      "evidence": "app/src/server.js: session creation (createSession lines 37-42), recordViewedProduct (lines 47-50), getSessionMemory (lines 55-59), and session-based boost in scoring lines 162-169; the session is persisted in the 'sessions' collection and used in ranking.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Provide an interactive API or UI entry point that accepts a product ID and returns the top 5 recommended items plus a human-readable reasoning/explanation for each recommendation (response includes five product IDs/items and textual reasoning).",
+      "status": "met",
+      "evidence": "app/src/server.js defines POST /api/recommend and returns top-5 recommendations plus explanation (lines 106-179). public/index.html posts productId to /api/recommend (lines 25-39).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Include a script in the repository that ingests exactly 20,000 product purchase transactions into Azure DocumentDB (the script inserts 20,000 order documents when run and the repository documents how to execute it).",
+      "status": "met",
+      "evidence": "app/src/seed.js sets NUM_ORDERS = 20000 and inserts orders in batched insertMany (lines 148-166). README documents npm run seed (app/README.md lines 21-24). events.jsonl shows seed completed and inserted the batches.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Use a configuration file for the Azure DocumentDB connection string and, when the connection string is missing or invalid, surface a clear, user-facing error message explaining the problem (code reads the connection string from a config file and explicitly validates it, failing with a clear error if absent or invalid).",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI (lines 1-2). app/src/db.js checks process.env.DOCUMENTDB_URI and exits with a clear error if missing (lines 16-21). README documents copying .env.example (app/README.md lines 21-24).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Provide an artistic, retailer-style UI for interacting with the agent (project contains frontend assets styled to look like an online retailer product page or catalog where users can submit a product ID and view recommendations).",
+      "status": "met",
+      "evidence": "public/index.html (Shoply branding, tag line) and public/style.css (styled hero and product area) create an artistic retailer-style UI (files app/public/index.html and app/public/style.css).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Add detailed comments before each method/function in the codebase (every function/method file contains a descriptive comment header explaining purpose, inputs, outputs, and high-level behavior to improve readability).",
+      "status": "met",
+      "evidence": "Files include descriptive headers and inline comments: app/src/db.js (file header and function comments lines 1-11 and 29-58), app/src/seed.js (lines 1-11 and function headers lines 23-56, 49-72, 75-116), app/src/server.js (file header and function headers lines 1-15, 34-42, 44-50, 52-59, 61-99).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton client reuse",
+      "practice": "Create and reuse a single MongoClient instance (process-wide singleton) and tune connection-pool parameters for your deployment scenario rather than creating a new client per request.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 26-41: getClient() implements a singleton client and reuses it.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune connection-pool parameters according to hosting: small maxPoolSize and short maxIdleTimeMS for serverless, larger pools (50+) and longer idle times for OLTP servers; set timeouts appropriate to expected latencies.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.js line 35 sets maxPoolSize: 10 but no other tuning (connectTimeoutMS/socketTimeoutMS/maxIdleTimeMS) and no config-driven tuning for hosting was implemented.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Expose and document pool/timeouts in config (e.g., read MAX_POOL_SIZE, CONNECT_TIMEOUT_MS, SOCKET_TIMEOUT_MS from env) and set defaults per hosting guidance (serverless vs OLTP).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver pinning",
+      "practice": "The driver version is pinned and is one the service supports.",
+      "category": "connection",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/package.json lists \"mongodb\": \"^5.9.0\" (app/package.json lines 14-20) and a package-lock.json is present. The project uses a caret range rather than an exact locked version in package.json, but package-lock.json provides a lockfile.",
+      "source": "checklist only",
+      "searched": "Searched agent kit and Node best-practice pages for a documented rule to require exact pinning in package.json",
+      "fix": "To be strict: pin exact driver version in package.json or include an explicit note in README that package-lock.json must be committed and used.",
+      "sources": [],
+      "what_would_help": "A sentence in the driver or sample-kit README stating which driver minor/patch is tested and that package-lock.json must be committed."
+    },
+    {
+      "topic": "Env-backed config",
+      "practice": "Read the Azure DocumentDB connection string from an environment-backed config (.env or similar) at startup and fail fast with a clear error if it's missing.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/.env.example (line 2) and app/src/db.js lines 16-21 validate DOCUMENTDB_URI and exit with an explicit error message.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always require TLS on connections to Azure DocumentDB and do not disable certificate validation in production.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "No code disables TLS; README and .env.example show TLS-aware example connection string. app/src/db.js uses the DOCUMENTDB_URI sourced from env, expecting the caller to provide TLS options in the URI (app/.env.example line 1 describes an example with ssl=true).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index creation",
+      "practice": "Create a vector index on your embedding field using the cosmosSearch operator, specifying the index kind (vector-diskann/vector-hnsw/vector-ivf), the embedding dimensions, and the similarity metric; the index's dimensions and similarity must match the embeddings you insert.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "app/src/seed.js builds createIndexes with cosmosSearchOptions.kind='vector-diskann', dimensions set to EMBEDDING_DIMS (lines 82-92, 99-111). events.jsonl shows createIndexes ok and documentdb_list_indexes returned idx_embedding_diskann with dimensions:1536.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "DiskANN tuning",
+      "practice": "Prefer DiskANN for production-scale vector workloads on M30+ clusters and tune DiskANN build/query parameters (maxDegree, lBuild at index-build time; lSearch at query time) to trade recall vs latency.",
+      "category": "vector search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "violated",
+      "evidence": "app/src/seed.js creates a DiskANN index but does not set or expose build-time parameters like lBuild or maxDegree, nor does the server exposure allow tuning query-time lSearch. (Index created with default DiskANN params, seed.js lines 86-92.)",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "Expose DiskANN build parameters in seed config (ENV vars) and expose lSearch in query code so users can tune recall/latency; document expected defaults for the sample size and how to change them.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        },
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Project searchScore",
+      "practice": "Use the MCP or driver explain tools to verify vector-search plans and to project the searchScore (meta: 'searchScore') when you intend to re-rank results based on ANN scores.",
+      "category": "vector search / query planning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P30",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "server.js projection includes score: { $meta: 'searchScore' } (app/src/server.js line 141) and later code uses r.score for scoring & re-ranking (lines 163-169). test_recommend.js also projects searchScore (app/src/test_recommend.js lines 25-26).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregation",
+      "practice": "Use server-side aggregation pipelines ($match, $unwind, $group, $sort, $limit) to compute co-purchase counts and other aggregations rather than pulling large datasets to the client.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "server.js uses aggregation on orders to compute co-purchase counts (app/src/server.js lines 153-158). seed and queries are batched (seed.js uses insertMany lines 133-145 and 150-167).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL sessions",
+      "practice": "Persist per-session memory in a dedicated sessions collection with a TTL index for ephemeral memory.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "The app persists sessions in the 'sessions' collection (app/src/server.js lines 37-41) and uses bounded viewed arrays via $push $slice (lines 47-50). However the seed/server does not create the TTL index automatically—no createIndex({createdAt:1},{expireAfterSeconds: ...}) step is present.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Create a TTL index in seed.js or document a manual step to create it (e.g., db.sessions.createIndex({createdAt:1},{expireAfterSeconds:3600})).",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unique indexes / idempotent seed",
+      "practice": "Use unique indexes to enforce uniqueness for primary keys used by the app (e.g., productId, sessionId) and use upserts carefully for idempotent seeding.",
+      "category": "data integrity",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "seed.js inserts products and orders with insertMany (app/src/seed.js lines 133-145, 150-166) but seed does not create unique index on productId or upsert logic; a repeated run may create duplicates if insertMany doesn't rely on _id uniqueness or if the collection's unique index isn't set.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Create a unique index on {productId:1} (and sessionId if used) and either use upsert or check-existence logic in the seed so the script is idempotent (e.g., bulkWrite with upsert:true).",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk ingestion",
+      "practice": "For large-scale ingestion prefer bulk-executor/SDK bulk APIs or distributed import tools and implement throughput-control, micro-batching, concurrency limits and retries to avoid sustained 429 throttling.",
+      "category": "provisioning and ingestion",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/bulk-executor-java#bulk-execution-in-azure-cosmos-db",
+      "status": "followed",
+      "evidence": "seed.js batches inserts with batchSize = 500 and uses insertMany with ordered:false (app/src/seed.js lines 132-145, 150-166).",
+      "source": "Perform bulk operations on Azure Cosmos DB data",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Perform bulk operations on Azure Cosmos DB data",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/bulk-executor-java#bulk-execution-in-azure-cosmos-db"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embed metadata",
+      "practice": "Store embedding metadata (model name, dims, embeddingVersion) with documents to detect mismatches and trigger re-embedding or index rebuilds when models change.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "violated",
+      "evidence": "Seed stores embedding arrays on products (app/src/seed.js line 141) but does not persist embedding model metadata (EMBEDDING_MODEL/EMBEDDING_DIMS) alongside each document.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "Persist metadata fields such as embeddingModel and embeddingDims on each product document at ingest time (e.g., { productId, title, embedding, embeddingModel: EMBEDDING_MODEL, embeddingDims: EMBEDDING_DIMS }).",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Validate vector dims",
+      "practice": "When ingesting embeddings at scale, validate vector dimensions match the index and reject or normalize inconsistent vectors before inserting to avoid silent search corruption.",
+      "category": "data validation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "violated",
+      "evidence": "seed.js uses EMBEDDING_DIMS to shape synthetic embeddings (app/src/seed.js lines 20-21 and syntheticEmbedding lines 27-46), but does not validate that each produced embedding length matches EMBEDDING_DIMS before insert. There's no explicit per-document dims check.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add a pre-insert check in seed.js that validates embedding.length === EMBEDDING_DIMS and rejects or pads/truncates inconsistent vectors with an explicit log/error.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry semantics",
+      "practice": "Enable SDK retry semantics and implement application-level retries with exponential backoff and jitter for transient errors and 429 responses, honoring Retry-After when present.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/azure-app-configuration/rest-api-throttling",
+      "status": "violated",
+      "evidence": "No retry wrapper for DocumentDB operations, nor a wrapper for OpenAI calls; seed.js uses insertMany and logs warnings on batch failures but does not inspect 429/Retry-After or implement exponential backoff and retry.",
+      "source": "Throttling",
+      "searched": "",
+      "fix": "Wrap network/DB calls in a retry helper that honors Retry-After and uses exponential backoff with jitter; for bulk ingest, throttle concurrency and implement retries for 429 responses.",
+      "sources": [
+        {
+          "title": "Throttling",
+          "url": "https://learn.microsoft.com/azure/azure-app-configuration/rest-api-throttling"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: seed counts",
+      "practice": "Seed sizes and other hard choices should be recorded as a decision in decisions.jsonl for traceability (e.g., 10k products / 20k orders).",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/src/seed.js uses NUM_PRODUCTS=10000 and NUM_ORDERS=20000 but there is no corresponding decision recorded in decisions.jsonl for those numeric choices.",
+      "source": "check",
+      "searched": "",
+      "fix": "Add a decision entry for seeding sizes (e.g., 'I chose 10k products and 20k orders for the sample to balance realism and run time').",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "D001 (approve build ready_with_gaps) is an operator-level action; events.jsonl records the readiness searches and build activity. The decision is consistent with the run and the subsequent build steps."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "D002 chose the official mongodb npm driver and a singleton client. Code (app/src/db.js) implements a singleton and package.json depends on mongodb ^5.9.0. events.jsonl shows the documentdb-driver skill was loaded."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "D003 (OpenAI with deterministic fallback) is reflected in code: seed.js getEmbeddingForText returns syntheticEmbedding when OPENAI_API_KEY is missing (app/src/seed.js lines 53-56). The build log and README also describe the fallback."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "D004 (implementing a lightweight agent flow instead of LlamaIndex) is supported by the event trace: no LlamaIndex skill or package was loaded, and the code implements an equivalent pipeline. The reason (uncertain LlamaIndex Node availability) is documented in readiness findings."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "questionable",
+      "comment": "D005 (persist session memory in DocumentDB sessions collection) was implemented (app/src/server.js). The decision's reason_source is 'model_default' (decisions.jsonl) rather than anchored in a skill or operator instruction. It's a reasonable choice but originated from model default behavior; the run trace does not show a skill prescribing sessions. Consider documenting why DocumentDB (sessions collection) was chosen vs Redis/in-memory in README."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "D006 chose DiskANN and dimensions 1536. The index was created and verified (events.jsonl includes createIndexes ok and documentdb_list_indexes shows idx_embedding_diskann with dimensions 1536). The DocumentDB vector-search skills were loaded."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "D007 removed node-fetch after npm install failed; events.jsonl shows npm install error for node-fetch then an updated package.json and a successful npm install. The decision is traceable in the events log."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "LlamaIndex Node integration guidance",
+      "what_was_missing": "No public, discoverable guidance or agent-kit skill shows how to integrate LlamaIndex Node bindings with Azure DocumentDB's vector store (DiskANN) or provides a copy-paste adapter template.",
+      "where_searched": "Agent kit skills, Microsoft Learn vector-search docs, and run-time readiness notes (events.jsonl searches for LlamaIndex/Node bindings).",
+      "effect_on_this_build": "The builder chose not to use LlamaIndex and implemented an equivalent lightweight agent pipeline. This means the published sample does not demonstrate LlamaIndex usage the starter prompt requested.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a skill 'llamaindex-node' to the agent kit with: (1) a minimal example that constructs a LlamaIndex index over DocumentDB's DiskANN-backed collection; (2) an adapter module that shows how to translate LlamaIndex semantics into cosmosSearch queries (createIndexes + $search) and how to persist metadata; (3) a note on required npm package names/versions and an example package.json.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index tuning defaults & copy-paste createIndexes",
+      "what_was_missing": "A small copy-paste 'createIndexes' runCommand example with recommended DiskANN parameters for a sample-size catalog (10k) and a short explanation of recommended lBuild/lSearch values and their effect.",
+      "where_searched": "documentdb-vector-search skill and Microsoft Learn vector-search docs; the guidance exists but a ready-to-copy snippet for sample authors was not included in the local sample kit docs.",
+      "effect_on_this_build": "The sample created a DiskANN index with defaults; runtime behaved, but authors and readers may not know which params to change for larger datasets.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page named 'Sample: create DiskANN index for product catalog' containing the createIndexes runCommand JSON for DiskANN and suggested defaults for NUM_PRODUCTS=10k (e.g., lBuild=40, maxDegree=64) and recommended query-time lSearch values for k=10. Include a note on expected build time and memory.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Embedding-model → index-dimension guidance",
+      "what_was_missing": "Explicit examples mapping popular embedding models to index 'dimensions' and a recommended env var name convention for embedding model/dim pairs.",
+      "where_searched": "documentdb-vector-search skill, Microsoft Learn vector docs, readiness notes.",
+      "effect_on_this_build": "Builder assumed text-embedding-3-small → 1536 dims; the run succeeded. Without explicit guidance, other authors may pick mismatched dims and silently corrupt nearest-neighbour behavior.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A brief table in the vector-search quickstart: 'Model name → default dims' (e.g., OpenAI text-embedding-3-small:1536, text-embedding-3-large:3072, etc.), and a note: 'Store embeddingModel and embeddingDims with each document; validate dims on ingest.'",
+      "priority": "high"
+    },
+    {
+      "topic": "Session TTL index example",
+      "what_was_missing": "A concrete example (code snippet) that creates a TTL index on the sessions collection (e.g., db.sessions.createIndex({ createdAt:1 }, { expireAfterSeconds: 3600 })).",
+      "where_searched": "documentdb-indexing skill and sample repo; skill documents TTL semantics but sample lacked the createIndex snippet.",
+      "effect_on_this_build": "Sessions are persisted but there is no automatic expiry defined; long-term run could accumulate session documents.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a short 'create session TTL index' snippet in seed.js (or README) that shows createIndex with expireAfterSeconds and explains the Date field requirement.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Retry-and-throttle helpers",
+      "what_was_missing": "A ready-to-use retry helper that honours Retry-After and applies exponential backoff/jitter for DocumentDB SDK calls and external embedding/LLM calls.",
+      "where_searched": "Throttling docs and documentdb-query-optimizer and connection skills; no packaged helper shipped in the agent kit for Node.js sample authors.",
+      "effect_on_this_build": "Seed script uses batched insertMany but does not implement retries for 429s, increasing the risk of failed or partial ingestion under throttling.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Ship a small Node.js helper (retryWithBackoff) as part of the agent-kit or sample template showing how to inspect HTTP 429/Retry-After and how to backoff and retry DB and HTTP calls.",
+      "priority": "high"
+    },
+    {
+      "topic": "Idempotent seeding and unique-index guidance",
+      "what_was_missing": "A recommended pattern and a code snippet that: create unique indexes on productId, use bulkWrite upserts for idempotent seeds, and document how to re-run the seed safely.",
+      "where_searched": "documentdb-indexing skill and agent-kit samples; guidance present in pieces but not a one-shot snippet in the kit.",
+      "effect_on_this_build": "The seed works but is not idempotent; repeated runs may create duplicates if unique indexes are not present or upsert not used.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add an 'idempotent seed' section to the seed example showing createIndex({productId:1},{unique:true}) and using bulkWrite with upsert:true to avoid duplicates.",
+      "priority": "high"
+    },
+    {
+      "topic": "Guidance for using deterministic synthetic embeddings in tests",
+      "what_was_missing": "Public guidance that explicitly recommends deterministic synthetic embeddings for CI and local dev when external embedding APIs are unavailable.",
+      "where_searched": "Searches for 'deterministic synthetic embeddings' returned no authoritative guidance (discovered_practices shows this as prior_knowledge_only).",
+      "effect_on_this_build": "The builder implemented deterministic synthetic embeddings (good), but this is a prior-knowledge pattern that is not documented for Azure DocumentDB authors; agents may not automatically adopt the pattern.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short dev/testing guidance page: 'Testing vector apps without external APIs' that covers deterministic embeddings, seeding, and env flags to avoid external calls.",
+      "priority": "medium"
+    }
+  ]
+}
