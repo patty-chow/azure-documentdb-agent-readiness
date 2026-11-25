@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent using Beanie ODM that reads submitted expense reports from DocumentDB, uses prompt engineering to categorise each line item against company policy, flags policy violations, and writes the enriched report back. Use agent memory to apply consistent categorisation decisions across multiple reports in a session.
