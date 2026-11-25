@@ -4,6 +4,7 @@ title: "Harness: Python 3.13 venv breaks LangChain/LlamaIndex installs and the a
 repo: abinav2307/azure-documentdb-agent-readiness
 type: issue
 status: ready
+hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P2
 sample_count: 8
 member_drafts:

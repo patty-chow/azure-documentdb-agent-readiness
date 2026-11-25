@@ -4,6 +4,7 @@ title: "Starter prompts: add shared schema/seed, deliverable-shape and gallery-c
 repo: abinav2307/azure-documentdb-agent-readiness
 type: issue
 status: ready
+hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P1
 sample_count: 81
 member_drafts:

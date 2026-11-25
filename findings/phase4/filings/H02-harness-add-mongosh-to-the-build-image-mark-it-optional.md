@@ -4,6 +4,7 @@ title: "Harness: add mongosh to the build image, mark it optional in the readine
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
 status: ready
+hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P1
 sample_count: 98
 member_drafts:

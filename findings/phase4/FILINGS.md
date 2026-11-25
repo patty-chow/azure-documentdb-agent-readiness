@@ -2,7 +2,7 @@
 
 43 filings in `findings/phase4/filings/`, each merging the overlapping drafts the reviewer identified (see REVIEW.md); first-pass filings that were merged again are archived in `filings/merged/`. 32 carry status `needs_sme`: a claim in them needs an engineering or docs owner's answer before it goes public; the open questions are listed inside each file. Nothing has been filed. Sample counts come from one experiment run of 100 prompts and are stated as such in every filing.
 
-## The readiness pipeline (abinav2307/azure-documentdb-agent-readiness), file first: these re-baseline the experiment
+## The readiness pipeline (abinav2307/azure-documentdb-agent-readiness): ON HOLD, nothing is filed against the harness for now (owner decision 2026-11-25); share with its owner informally
 
 | Id | Pri | Status | Type | Samples | Drafts merged | Open q. | Title |
 |---|---|---|---|---|---|---|---|

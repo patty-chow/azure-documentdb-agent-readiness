@@ -15,7 +15,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 FILINGS = PROJECT / "findings" / "phase4" / "filings"
 OUT = PROJECT / "findings" / "phase4" / "FILINGS.md"
 REPO_TITLES = [
-    ("abinav2307/azure-documentdb-agent-readiness", "The readiness pipeline (abinav2307/azure-documentdb-agent-readiness), file first: these re-baseline the experiment"),
+    ("abinav2307/azure-documentdb-agent-readiness", "The readiness pipeline (abinav2307/azure-documentdb-agent-readiness): ON HOLD, nothing is filed against the harness for now (owner decision 2026-11-25); share with its owner informally"),
     ("Azure/documentdb-agent-kit", "Azure/documentdb-agent-kit"),
     ("learn-docs", "Microsoft Learn: Azure DocumentDB pages (doc feedback)"),
     ("microsoft/documentdb-mcp", "microsoft/documentdb-mcp"),

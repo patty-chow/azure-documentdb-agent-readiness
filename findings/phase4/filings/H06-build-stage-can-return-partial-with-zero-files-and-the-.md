@@ -4,6 +4,7 @@ title: "Build stage can return partial with zero files and the audit still grade
 repo: abinav2307/azure-documentdb-agent-readiness
 type: issue
 status: ready
+hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P0
 sample_count: 5
 member_drafts:

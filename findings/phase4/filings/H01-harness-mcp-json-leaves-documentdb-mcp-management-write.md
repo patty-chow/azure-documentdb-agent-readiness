@@ -4,6 +4,7 @@ title: "Harness mcp.json leaves documentdb-mcp management/write tools off, so ve
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
 status: ready
+hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P0
 sample_count: 36
 member_drafts:

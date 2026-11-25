@@ -4,6 +4,7 @@ title: "Build prompt and audit: require pinned dependencies with a lockfile, a v
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
 status: needs_sme
+hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P1
 sample_count: 18
 member_drafts:

@@ -4,6 +4,7 @@ title: "Audit stage grades vCore samples against Cosmos DB RU-API practices and 
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
 status: needs_sme
+hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P1
 sample_count: 57
 member_drafts:

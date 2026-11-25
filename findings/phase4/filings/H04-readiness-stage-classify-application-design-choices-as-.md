@@ -4,6 +4,7 @@ title: "Readiness stage: classify application design choices as builder decision
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
 status: ready
+hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P1
 sample_count: 35
 member_drafts:

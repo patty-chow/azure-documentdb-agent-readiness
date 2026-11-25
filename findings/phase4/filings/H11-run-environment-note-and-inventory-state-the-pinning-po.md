@@ -4,6 +4,7 @@ title: "Run-environment note and inventory: state the pinning policy, env-var pr
 repo: abinav2307/azure-documentdb-agent-readiness
 type: pr
 status: needs_sme
+hold: owner decision 2026-11-25, no PRs or issues against the harness for now; share with its owner informally instead
 priority: P2
 sample_count: 8
 member_drafts:
