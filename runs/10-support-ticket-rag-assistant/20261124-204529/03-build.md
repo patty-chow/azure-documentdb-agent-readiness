@@ -1,0 +1,47 @@
+# 3. Build report: 10-support-ticket-rag-assistant
+
+**Status: completed**
+
+I built a compact Python RAG sample that seeds an Azure DocumentDB database with synthetic KB articles and resolved tickets, populates deterministic embeddings, creates a DocumentDB vector index (HNSW), and exposes retrieval + generation logic (Flask POST /suggest). I verified installing dependencies, seeding documents, populating embeddings, creating the vector index (via pymongo), running a retrieval verification, and running the test suite (2 passed). The sample reads connection and OpenAI credentials from environment variables and falls back to deterministic pseudo-embeddings and a template LLM response when OPENAI_API_KEY is not present.
+
+## How to run
+
+1) Copy .env.example to .env and set DOCUMENTDB_URI (and optionally OPENAI_API_KEY / OPENAI_API_BASE). 2) Create and activate a virtualenv: python -m venv .venv && source .venv/bin/activate 3) Install deps: pip install -r requirements.txt 4) Seed documents: python seed.py 5) (If you want real embeddings) ensure OPENAI_API_KEY is set. The sample will use pseudo-embeddings when OPENAI_API_KEY is not set. 6) Populate embedding arrays (deterministic pseudo-embeddings provided): python update_embeddings.py 7) Create the vector index (the sample includes create_vector_index.py which runs a createIndexes command compatible with DocumentDB): python create_vector_index.py 8) Quick retrieval verification (non-server): python -m src.verify_retrieval 9) Run tests: pytest -q 10) Run the Flask app locally: python app.py 11) Example request: curl -X POST http://127.0.0.1:5000/suggest -H 'Content-Type: application/json' -d '{"ticket_text": "Users cannot login with SSO after password rotation"}'
+
+## Verified by running
+
+- pip install -r requirements.txt: succeeded (dependencies installed)
+- python seed.py: succeeded (Seeded 60 documents into sample_customer_360_10.kb_documents)
+- python update_embeddings.py: succeeded (Updated 60 documents with pseudo-embeddings)
+- python create_vector_index.py (pymongo createIndexes): succeeded (index created, returned ok:1)
+- documentdb_list_indexes (MCP): returned list, includes the new cosmosSearch vector index
+- python -m src.verify_retrieval: succeeded (returned top-5 similar documents from vector index)
+- pytest -q: 2 passed
+
+## Not verified
+
+- Creation of the vector index via the documentdb MCP server API (documentdb_create_index) — the tool call failed; I created the index via pymongo instead. Evidence: documentdb_create_index tool returned an error when attempted.
+- Live Flask server run (python app.py) in this environment was not executed because the command runner does not leave long-running servers running; you can run it locally with the instructions in README.
+- OpenAI-based embeddings and LLM calls with a real OPENAI_API_KEY were not exercised in this run (the sample falls back to deterministic pseudo-embeddings and a template generator when OPENAI_API_KEY is not set). If you set OPENAI_API_KEY and OPENAI_API_BASE, the generator will call the OpenAI ChatCompletion API path in src/generator.py.
+- Any control-plane provisioning (creating a new DocumentDB cluster) was intentionally not attempted per run policy — the sample uses the existing cluster reachable via DOCUMENTDB_URI.
+
+## Open issues
+
+- documentdb_create_index (MCP) failed: I attempted to create the vector index via the documentdb MCP server function but it returned an error (function failure). I then used pymongo's db.command({'createIndexes': ...}) which succeeded and created the cosmosSearch vector index. If you prefer an MCP-based index creation, investigate the MCP server permissions or parameters for documentdb_create_index in this environment.
+- The sample does not include a full LlamaIndex adapter to DocumentDB. Instead, the sample shows a minimal RAG flow (embedding stored in DocumentDB and retrieval via $search/cosmosSearch). If maintainers want an explicit LlamaIndex adapter, that could be added later.
+- For production usage: replace pseudo-embeddings with real embeddings (OpenAI or another provider), ensure embedding dimension matches the index, enable secure secret management, and harden the Flask app with auth/rate-limiting.
+
+## Files
+
+- `requirements.txt`
+- `seed.py`
+- `src/db.py`
+- `src/generator.py`
+- `app.py`
+- `src/verify_retrieval.py`
+- `tools/submit_ticket.py`
+- `tests/test_seed_and_search.py`
+- `update_embeddings.py`
+- `create_vector_index.py`
+- `inspect_docs.py`
+
