@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex service that stores provider profiles (specialty, languages, accepted insurance, bio) as DocumentDB documents with embedded vectors. Expose a /find-provider endpoint that accepts a plain-language patient request like 'Spanish-speaking cardiologist accepting Medicare' and returns ranked provider matches using vector search.
