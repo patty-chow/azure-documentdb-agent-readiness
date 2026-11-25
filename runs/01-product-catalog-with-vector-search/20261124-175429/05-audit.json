@@ -1,0 +1,638 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample is a runnable Python/Flask demo that implements embedding, storage, an index-creation payload, and a /search endpoint with an in-app fallback. Major strengths: singleton MongoClient, embedding normalization, embedding metadata, use of $search/cosmosSearch in the aggregation pipeline, not returning raw embeddings in responses, and clear local-gateway quickstart. Key findings that the owner should fix before publishing: (1) the sample stores embeddings as BSON Binary bytes (packed float32) even though Azure DocumentDB's public guidance requires number[] vectors to be indexed — this prevents the server-side vector index from working as the README intends; (2) the vector-ivf hyperparameter (nlist=100) is not tuned for tiny demo datasets; (3) the code does not verify index creation/availability before serving search traffic; (4) no retries/exponential backoff are implemented for DB or embedding API calls; (5) dependencies are not pinned to exact versions; (6) the sample does not document or demonstrate Microsoft Entra ID authentication (it uses connection-string auth by default) though the service supports Entra ID. I inspected the repository files, the builder's decisions and the event trace (skills loaded and pip-install failure). The environment prevented running dependencies or verifying end-to-end against a live cluster; where verification required a running DocumentDB gateway or pip installs I mark the checks accordingly and give minimal fixes the owner can apply.",
+  "requirement_results": [],
+  "checks": [
+    {
+      "topic": "Server-side index creation",
+      "practice": "Create vector indexes server-side using the createIndexes/createSearchIndexes administrative command (key: path -> \"cosmosSearch\") and include cosmosSearchOptions with kind, dimensions, similarity, and algorithm-specific parameters.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index",
+      "status": "followed",
+      "evidence": "app/scripts/create_vector_index.py:21-35 (constructs createSearchIndexes payload and calls db.command)",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "IVF numLists sizing",
+      "practice": "When using IVF, choose numLists relative to dataset size (use documentCount/1000 for up to ~1M documents, and consider other index types like DiskANN beyond that); tune nProbes to trade recall for latency.",
+      "category": "vector_index_tuning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index",
+      "status": "violated",
+      "evidence": "app/scripts/create_vector_index.py:27-31 (cosmosSearchOptions.options: {'nlist': 100}) — nlist=100 is not tuned relative to dataset size (demo has 5 documents).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Set a conservative demo default (e.g., nlist = min(32, max(1, document_count//1000))) or compute nlist from collection count; document the heuristic in the index script.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector k-NN with $search",
+      "practice": "Perform vector k-NN using the $search aggregation stage with the cosmosSearch operator (provide vector, path, k) and project the similarity score via {$meta: 'searchScore'}.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index",
+      "status": "followed",
+      "evidence": "app/app.py:104-116 (builds pipeline with $search.knn and projects {'score': {'$meta': 'searchScore'}}).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embedding storage type",
+      "practice": "Store vectors as numeric arrays (number[]) so they can be indexed; embedding values stored as other types (for example raw BSON Binary) are not accepted by the vector index and will not be indexed.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index",
+      "status": "violated",
+      "evidence": "app/scripts/load_data.py:79-83 (packs normalized float32 into Binary and sets doc['embedding'] = Binary(packed)); app/app.py uses Binary in searches (pack_embedding/unpack functions).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Store embeddings as a numeric array: doc['embedding'] = vec.tolist() (float32), and update create_vector_index/aggregation usage accordingly. Update README to warn builders that Binary-packed embeddings will not be indexed by cosmosSearch.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index"
+        }
+      ],
+      "what_would_help": "A short example snippet in the vector-search skill showing 'doc[\"embedding\"] = normalized_vec.tolist()' and a one-line warning 'Do not store embeddings as BSON Binary if you intend to create a server-side vector index.'"
+    },
+    {
+      "topic": "Single index per path",
+      "practice": "You can create only one vector index per vector path and each indexed vector path accepts a single vector value per document.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#use-large-language-model-llm-orchestration-tools",
+      "status": "followed",
+      "evidence": "app/scripts/create_vector_index.py:21-33 (creates a single index 'embedding_vector_ivf' for path 'embedding').",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#use-large-language-model-llm-orchestration-tools"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index algorithm selection",
+      "practice": "Choose index subtype by scale: prefer vector-diskann for large production corpora, vector-hnsw for mid-size workloads, and vector-ivf for small experiments or demos.",
+      "category": "vector_index_tuning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#use-large-language-model-llm-orchestration-tools",
+      "status": "followed",
+      "evidence": "Decision D007 and app/scripts/create_vector_index.py specify kind 'vector-ivf' for a small demo; this matches the documented recommendation for small experiments.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#use-large-language-model-llm-orchestration-tools"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize & record metadata",
+      "practice": "When using cosine similarity, L2-normalize embeddings at ingestion and store embedding metadata (model name and dimensions) alongside each vector so you can detect mixed models or dimension drift.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app.py:31-36 (normalize), app/scripts/load_data.py:78-83 (normalize, pack and add 'embeddingModel' and 'embeddingDims').",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Consistent dtype & dims",
+      "practice": "Normalize embedding numeric type and shape consistently (typically float32) and verify dimensions at insert time to avoid silent indexing/lookup errors.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/load_data.py:51-60 returns float32; app/.env.example and code set EMBEDDING_DIMS=1536.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "Partly met: the code uses float32 and a dims constant but does not explicitly assert len(vec) == EMBEDDING_DIMS before inserting. Add a dimension-check and a clear error message in load_data.py.",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pre-filter with indexes",
+      "practice": "When you need to pre-filter vector results, create standard (non-vector) indexes on the filter fields and pass a pre-filter clause into the cosmosSearch query so filtering happens before or during candidate selection.",
+      "category": "queries_and_result_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#filtered-vector-search",
+      "status": "not_applicable",
+      "evidence": "The sample has no pre-filtering query patterns (only vector search over embedding + projection of fields).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#filtered-vector-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Singleton MongoClient",
+      "practice": "Create one long-lived MongoClient (singleton) per process and reuse it across requests (do not create a new client per HTTP request); in serverless platforms initialize the client outside the handler so warm invocations reuse the pool.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/app.py:20-28 defines a module-level _client and get_client() that creates MongoClient once and reuses it.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always enable TLS in the connection string (tls=true / mongodb+srv with tls) and validate server certificates; do not disable certificate verification in production and prefer private endpoints / firewall to restrict network access.",
+      "category": "connection_and_security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": ".env.example: MONGO_URI=mongodb://localhost:10260/?tls=true and README.md lines recommending the gateway and TLS; app uses MONGO_URI default with tls=true (app/app.py:13).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefer Entra ID for auth",
+      "practice": "Prefer Microsoft Entra ID (OIDC) + role-based access control for cluster authentication and management rather than embedding long-lived cluster passwords in code; Entra ID can be enabled as an auth mode on the cluster and you can register service principals or managed identities.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#enable-microsoft-entra-id-authentication",
+      "status": "violated",
+      "evidence": "The sample uses MONGO_URI connection strings and .env.example; README does not document Entra ID usage or why it is not used in the demo.",
+      "source": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID",
+      "searched": "",
+      "fix": "Add a README section showing how to use Microsoft Entra ID (example with azure-identity and PyMongo MONGODB-OIDC) or state clearly why the sample uses connection-string auth for the quickstart.",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#enable-microsoft-entra-id-authentication"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets in secret store",
+      "practice": "Store secrets such as the connection string and external embedding API keys in a secret store (Azure Key Vault) rather than hard-coding them in source or repository; drive secrets from environment and managed identity in production.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/key-vault/general/overview#why-use-azure-key-vault",
+      "status": "followed",
+      "evidence": ".env.example and README instruct user to provide MONGO_URI and OPENAI_API_KEY via environment variables and do not commit keys. (README.md:47; app/.env.example).",
+      "source": "About Azure Key Vault",
+      "searched": "",
+      "fix": "Partly met for a demo: consider adding a short example showing how to read MONGO_URI/OPENAI_API_KEY from Key Vault in production.",
+      "sources": [
+        {
+          "title": "About Azure Key Vault",
+          "url": "https://learn.microsoft.com/azure/key-vault/general/overview#why-use-azure-key-vault"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Local gateway usage",
+      "practice": "For local development use the DocumentDB gateway Docker image (Mongo wire protocol on port 10260), keep TLS in your local config but drive any TLS relaxation from environment variables only, and avoid committing tlsAllowInvalidCertificates=true in code.",
+      "category": "local_development",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "README.md:24-27 recommends the DocumentDB local gateway Docker image and exposes port 10260; .env.example uses mongodb://localhost:10260/?tls=true.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size limit",
+      "practice": "DocumentDB supports a 16 MB maximum BSON document size — keep individual documents well under that and split large payloads into external storage like Blob Storage when needed.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/max-document-size",
+      "status": "followed",
+      "evidence": "app/data/sample_products.json: documents are tiny (no large blobs), README mentions small dataset; no large-field usage found.",
+      "source": "Document size and batch write limits in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Document size and batch write limits in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/max-document-size"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Version vectors & backfill",
+      "practice": "When you change embedding model or normalization strategy, version your vectors (embeddingVersion / embeddingModel / embeddingDims) and backfill/index asynchronously; treat index creation and large bulk ingest as maintenance operations and instrument them with logging and health checks.",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/load_data.py:81-83 records 'embeddingModel' and 'embeddingDims' alongside the vector. No backfill/index orchestration script included.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "Consider adding an example backfill script or instructions to the repo for re-embedding and index rebuild, and mark index-build as a maintenance operation.",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Shard key guidance",
+      "practice": "Pick a shard/partition key consistent with your query and write patterns: for read-heavy workloads choose a key that localizes frequent filters; for write-heavy choose a high-cardinality, evenly distributed field; avoid monotonic or skewed keys to prevent hot partitions.",
+      "category": "provisioning_and_partitioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "This sample is single-collection and not sharded; no shard-key selection was made or required.",
+      "source": "documentdb-sharding",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-sharding",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries & 429 handling",
+      "practice": "Handle transient errors and rate limits with retries and exponential backoff, and treat HTTP 429 / rate-limiting specially (respect any Retry-After header and instrument throttling metrics).",
+      "category": "retries_and_rate_limiting",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/app.py and scripts/load_data.py do not implement retries or exponential backoff around MongoClient operations or embedding API calls; the code catches exceptions but does not retry.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Add retry wrappers with exponential backoff (respect Retry-After for 429s) around db.command, coll.aggregate and OpenAI calls; consider using tenacity or similar retry libs.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Do not include embeddings in responses",
+      "practice": "Don't return raw embedding vectors in API responses; project only the fields required by the client (title, description, id, score) to avoid leaking model vectors and reduce response size.",
+      "category": "security_and_privacy",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index",
+      "status": "followed",
+      "evidence": "app/app.py:118-121 and 141-144 remove 'embedding' from docs before returning results.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Protect embedding API keys",
+      "practice": "Protect external embedding API keys (OpenAI/Azure OpenAI) by storing them in Key Vault or environment and avoid logging keys or full request payloads in production logs.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://learn.microsoft.com/azure/ai-foundry/openai/how-to/embeddings",
+      "status": "followed",
+      "evidence": ".env.example lists OPENAI_API_KEY blank; README warns not to commit real keys and the code reads OPENAI_API_KEY from env and only uses it when set (app/app.py:18,50-56).",
+      "source": "Learn how to generate embeddings with Azure OpenAI",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Learn how to generate embeddings with Azure OpenAI",
+          "url": "https://learn.microsoft.com/azure/ai-foundry/openai/how-to/embeddings"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Two-stage retrieval",
+      "practice": "Use two-stage retrieval where appropriate: retrieve a candidate set via vector (or hybrid) search and then rerank the top candidates (for example 20–100) with a higher-precision reranker.",
+      "category": "queries_and_result_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/horizondb/ai/semantic-rank-function#basic-reranking-example",
+      "status": "not_applicable",
+      "evidence": "The sample returns top-k results from vector search and does not implement a separate reranker; for a simple demo this is acceptable, but the practice is recommended for production.",
+      "source": "Semantic reranking with the rank() function in Azure HorizonDB",
+      "searched": "",
+      "fix": "Optional: add a comment or example showing how to rerank top-N candidates with a more expensive model if the sample is expanded.",
+      "sources": [
+        {
+          "title": "Semantic reranking with the rank() function in Azure HorizonDB",
+          "url": "https://learn.microsoft.com/azure/horizondb/ai/semantic-rank-function#basic-reranking-example"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Verify index availability",
+      "practice": "Verify index creation and availability before sending search traffic (make index creation idempotent and check listIndexes/getIndexes or createIndexes response).",
+      "category": "operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index",
+      "status": "violated",
+      "evidence": "app/scripts/create_vector_index.py prints the payload and attempts db.command but there is no code that verifies the index exists before the Flask app starts or prevents searches while index build/incompatibility exists. app/app.py relies on catching exceptions at query time and falling back to in-memory ranking (app/app.py:101-121, 122-146).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Modify create_vector_index.py to check getIndexes/listIndexes and block/return error until index is 'ready', or add an app startup check that refuses $search until index is present. Persist the admin payload if the gateway rejects the command.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Cluster/index build sizing",
+      "practice": "Tune cluster tier, storage type and index build parameters (memory/efBuild/lBuild) for vector indexes; very large HNSW builds can exhaust memory on lower tiers so scale your cluster or switch to DiskANN when needed.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-a-diskann-index-with-filtering",
+      "status": "not_applicable",
+      "evidence": "This sample does not provision a cluster and the repository contains no IaC; tuning cluster tier is out of scope for the local demo.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "If adding IaC, include recommended default tiers for demo vs production and a note about HNSW memory demands.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-a-diskann-index-with-filtering"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index budget & lifecycle",
+      "practice": "Keep a modest number of indexes per collection and routinely review index usage (index budget); use hideIndex before dropIndex to retire indexes safely.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "Sample creates a single vector index and no other indexes; script demonstrates single index creation.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "RU vs cluster tiers",
+      "practice": "If you rely on Cosmos DB RU-based guidance in memory, note that Azure DocumentDB uses cluster tiers and compute/storage sizing rather than the Cosmos RU billing model.",
+      "category": "provisioning",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P26",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "This is a documentation/terminology issue (prior knowledge only): the repo contains no provisioning IaC and the sample does not assume RUs. The environment's public docs showed cluster tiers are the model, but no single page in the discovery crawl was authoritative for RU→tier mapping.",
+      "source": "prior_knowledge",
+      "searched": "Searched for 'Azure DocumentDB Request Units' and found Cosmos DB RU docs but not a direct DocumentDB RU mapping page.",
+      "fix": "Public guidance that maps Cosmos RU guidance to DocumentDB cluster tier equivalents (quick table) would help authors.",
+      "sources": [],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Binary artifacts & indexing",
+      "practice": "If you choose to store embedding-related binary artifacts for non-index use (for example compact on-disk storage), document the serialization format and be aware that the DocumentDB vector index requires number[] for indexing so binary blobs won't be queryable by cosmosSearch.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index",
+      "status": "violated",
+      "evidence": "app/scripts/load_data.py writes Binary(packed float32) (line 81). README.md:46 documents packing as 'BSON Binary (packed float32 little-endian)' but does not clearly say this will not be indexed by cosmosSearch.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Either store as number[] so server-side indexing works, or (if Binary is required) explicitly document the choice and note that such Binary embeddings will not be indexed by cosmosSearch (and give the alternative indexing approach).",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator-approved readiness 'ready_with_gaps'. This is an administrative decision; the events log contains no contradictory evidence."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python + Flask matches the prompt and is reflected in the repository (app.py). events.jsonl shows the decision was logged and the code implemented it."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choice of PyMongo as the driver aligns with documentdb-driver guidance. The repo's requirements.txt references pymongo>=4.4 and the code uses pymongo.MongoClient. events.jsonl shows the decision was recorded."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Targeting the local DocumentDB gateway by default is consistent with the documentdb-local-deployment skill and the README's quickstart (docker image on port 10260). events.jsonl shows the skill was loaded and the README references the gateway."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Using OpenAI when OPENAI_API_KEY is present and a deterministic mock otherwise is implemented in app.py and scripts/load_data.py (openai import guarded by OPENAI_API_KEY; fallback deterministic hash-seeded RNG)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "wrong",
+      "comment": "The builder followed the prompt and stored embeddings as BSON Binary (packed float32). However public DocumentDB guidance requires vectors to be number[] to be indexable by the cosmosSearch vector index. events.jsonl shows the vector-search skill was loaded (the guidance exists) and discovered practices (P04/P27) indicate Binary will not be indexed. Because this choice prevents the server-side vector index from working as intended, the decision is incorrect relative to the documented service behavior."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Choosing vector-ivf for a small demo is supported by the vector-search guidance. The create_vector_index.py payload sets kind='vector-ivf' and the decision was logged; this matches the skill recommendation."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Skipping pip installs in the runner because the environment refused system pip installs is supported by the event trace (run_command produced 'externally-managed-environment' error). The decision to run static syntax checks instead is reasonable and recorded in events.jsonl."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Embedding storage type and indexing",
+      "what_was_missing": "A short, prominent statement in the vector-search docs and sample quickstarts that explicitly says: 'Vectors must be stored as number[] (an array of numbers) to be indexed by cosmosSearch; packing embeddings into BSON Binary will not be indexed.' The repository README mentions packed-Binary but does not make this caution prominent.",
+      "where_searched": "documentdb-vector-search skill, 'Integrated vector store' Microsoft docs, sample README and code; discover step found the number[] requirement but the sample still stored Binary.",
+      "effect_on_this_build": "The builder followed the prompt and stored binary-packed embeddings; as a result server-side vector indexing will likely not work and the sample falls back to in-memory ranking. This reduces the sample's value as a demonstration of server-side vector-ivf search.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Indexable vector storage' note to the top of the 'Vector search' documentation and to the sample README. Example text: 'Important: To be indexed by DocumentDB's cosmosSearch vector indexes, store vectors as an array of numbers (e.g., embedding: [0.123, ...]). Storing embeddings as BSON Binary (packed float32) is compact but will not be indexed. If you must store Binary for offline use, also persist a number[] copy or use a separate index pipeline.'",
+      "priority": "high"
+    },
+    {
+      "topic": "Conservative IVF defaults for demos",
+      "what_was_missing": "The vector-search skill provides algorithm guidance (IVF/HNSW/DiskANN) but does not supply a conservative default for IVF parameters for small demo datasets (e.g., for N < 10k).",
+      "where_searched": "documentdb-vector-search skill and the integrated vector store docs; readiness notes flagged the absence.",
+      "effect_on_this_build": "The builder chose nlist=100 arbitrarily; that value is not tuned to the tiny demo dataset and may be suboptimal or confusing to readers.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a short rule in documentdb-vector-search: 'Demo defaults: when N < 10k, use vector-ivf with nlist=8..32 (choose 8 for N<100, 32 for N~10k). For production datasets compute nlist ~ max(1, N/1000) and document the heuristic.' Include a small code snippet showing how to compute nlist from collection.count_documents({}).",
+      "priority": "medium"
+    },
+    {
+      "topic": "Index creation verification example",
+      "what_was_missing": "A companion example that shows how to create a vector index idempotently and then verify the index is present/usable (listIndexes/getIndexes) before accepting search traffic.",
+      "where_searched": "documentdb-vector-search examples and scripts; the create_vector_index.py script attempts db.command but does not verify readiness.",
+      "effect_on_this_build": "The sample will attempt searches that may fail or return nothing until the index is built; there's no startup/check logic to prevent responses that mislead users.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Provide a small index-creation helper that: (1) issues createSearchIndexes, (2) polls db.getCollectionInfos()/listIndexes or a documented admin status endpoint until index is reported as 'ready', and (3) logs the admin payload and response for manual troubleshooting. Include example output and failure handling.",
+      "priority": "high"
+    },
+    {
+      "topic": "Pinned Python driver versions",
+      "what_was_missing": "An explicit recommended and tested PyMongo version for samples in the driver guidance and/or in sample templates. The quickstarts include tested versions in some pages, but the documentdb-driver skill doesn't prescribe a single pinned version in code templates.",
+      "where_searched": "documentdb-driver skill, quickstarts discovered via docs search; quickstart pages show tested driver versions but the agent kit guidance lacks a canonical pin.",
+      "effect_on_this_build": "The sample's requirements.txt uses ranges (pymongo>=4.4). Consumers and CI users benefit from pinned versions for reproducible installs; the builder had to pick a version without a single authoritative recommendation.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a brief 'Tested driver versions' section to the documentdb-driver skill and the quickstart templates showing exact pip pins for a stable reference (e.g., 'This sample was tested with PyMongo==4.19.0; pin that in requirements.txt or supply a constraints file for reproducible installs').",
+      "priority": "medium"
+    },
+    {
+      "topic": "Microsoft Entra ID examples for data-plane auth",
+      "what_was_missing": "A short, copy-paste example showing how to configure Microsoft Entra ID / MONGODB-OIDC authentication in PyMongo (or how to use azure-identity for managed identities) targeted at sample authors.",
+      "where_searched": "documentdb-security and connection skills; docs mention Entra ID support but example code snippets for the driver were limited or scattered.",
+      "effect_on_this_build": "The author defaulted to connection-string auth and did not document Entra ID usage. Authors and sample readers may assume Entra ID is unavailable or may not know how to wire it into the driver.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Using Microsoft Entra ID for data-plane' subsection in the documentdb-connection skill with a PyMongo example, environment variables needed, and when the sample should use Entra vs connection-string (and include a link to the portal setting to enable Entra ID on the cluster).",
+      "priority": "high"
+    },
+    {
+      "topic": "Guidance for retry/backoff for demo code",
+      "what_was_missing": "A tiny helper or code snippet to add retries with exponential backoff and 429 handling around DocumentDB driver calls and embedding API calls.",
+      "where_searched": "documentdb-connection skill contains retry guidance but the sample author did not include a code snippet or helper in the repo.",
+      "effect_on_this_build": "No retries are implemented; transient errors will cause exceptions or full fallback to in-memory ranking, reducing robustness of the demo when tested against a live cluster or rate-limited embedding provider.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a small retry helper (e.g., using tenacity) to the agent kit and a one-line example in the sample: 'with retry_on_transient_errors(max_attempts=5): coll.aggregate(pipeline)'. Include special-case handling for 429 and respect Retry-After header.",
+      "priority": "high"
+    },
+    {
+      "topic": "RU/provisioning mapping for authors",
+      "what_was_missing": "A short page that explicitly states 'DocumentDB uses compute tiers and storage sizing for clusters (M10..M200). Do not use Cosmos DB RU assumptions.' and maps common Cosmos RU advice to the equivalent DocumentDB guidance.",
+      "where_searched": "readiness findings and quickstarts; searches returned Cosmos RU docs but no authoritative DocumentDB RU mapping.",
+      "effect_on_this_build": "Risk of confusion when sample authors or agents try to apply Cosmos RU guidance and pick the wrong provisioning model.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A one-page 'Provisioning model for DocumentDB' that contrasts Cosmos RU vs DocumentDB tiers, gives recommended dev defaults (M10), and shows a Bicep example with tier and storage parameters.",
+      "priority": "high"
+    },
+    {
+      "topic": "Agent discoverability for 'do not return embeddings' guidance",
+      "what_was_missing": "Although a vector-search example uses projection to omit embeddings (P20), a short explicit sentence in the public docs and agent-kit quickstarts encouraging authors not to return embeddings would reduce ambiguity for agents and builders.",
+      "where_searched": "learn.microsoft.com vector-search docs, sample READMEs; search results returned examples but not a short explicit rule targeted at sample authors.",
+      "effect_on_this_build": "The sample does omit embeddings already, but explicit guidance would prevent accidental leakage in other samples.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a one-line rule in the vector-search quickstart: 'Never return raw vector values in API responses; project out embedding fields.'",
+      "priority": "low"
+    }
+  ]
+}

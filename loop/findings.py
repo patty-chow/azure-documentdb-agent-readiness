@@ -122,6 +122,22 @@ def extract(run_dir: Path) -> list[Finding]:
                     evidence=f"{rel}/02-readiness.json inventory_recommendations",
                 ))
 
+    # A build that never called the DocumentDB MCP server although the inventory had it available.
+    if (run_dir / "03-build.json").is_file() and _documentdb_mcp_available(run_dir):
+        usage = mcp_usage(run_dir)
+        build_calls = usage.get("documentdb", {}).get("by_stage", {}).get("build", 0)
+        if build_calls == 0:
+            out.append(Finding(
+                sample, rel, "build", "mcp_unused", "agent-kit", "high",
+                topic="Builder did not use the DocumentDB MCP server",
+                detail="The server was available with its tools, yet the build stage made no call to it. "
+                       f"Calls per server in this run: {{k: v['total'] for k, v in usage.items()}}.",
+                proposed_change="Kit rule: when a DocumentDB MCP connection is available, verify collections, indexes and "
+                                "queries against it instead of (or before) a local container; MCP description should say "
+                                "it is the data-plane for the connected cluster.",
+                evidence=f"{rel}/events.jsonl",
+            ))
+
     audit = _load(run_dir, "05-audit")
     if audit:
         for g in audit.get("doc_gaps", []):
@@ -158,6 +174,22 @@ def extract(run_dir: Path) -> list[Finding]:
                     proposed_change=r.get("smallest_fix", ""), evidence=f"{rel}/05-audit.json requirement_results",
                 ))
     return out
+
+
+def _documentdb_mcp_available(run_dir: Path) -> bool:
+    """True when the run's inventory recorded the documentdb MCP server as available."""
+    inventory = _load(run_dir, "02-inventory")
+
+    def walk(node) -> bool:
+        if isinstance(node, dict):
+            if node.get("name") == "documentdb" and node.get("available") is True:
+                return True
+            return any(walk(v) for v in node.values())
+        if isinstance(node, list):
+            return any(walk(v) for v in node)
+        return False
+
+    return bool(inventory) and walk(inventory)
 
 
 def mcp_usage(run_dir: Path) -> dict:

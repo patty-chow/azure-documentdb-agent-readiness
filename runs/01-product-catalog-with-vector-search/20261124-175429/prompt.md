@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python Flask app with a product catalog stored in DocumentDB. Embed product titles and descriptions using text-embedding-ada-002, store them as BSON binary vectors, create a vector-ivf index, and expose a /search endpoint that takes a natural language query, embeds it, and returns the top 10 semantically similar products.
