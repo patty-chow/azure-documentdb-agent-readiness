@@ -1,0 +1,748 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements a runnable Python orchestration that extracts from multiple collections, validates, formats a filing, and records workflow-run documents in Azure DocumentDB. Unit tests run with mongomock and an end-to-end run against the live cluster was exercised by the builder. Findings: (1) LangChain itself was not wired into the orchestrator (the sample uses simple Python agent classes and an optional agents.py that references LangChain), (2) .env.example and the code disagree on a model environment variable name (MODEL_NAME vs CHAT_MODEL), (3) vector / search features and vector-index creation were explicitly omitted, and (4) the seed script is idempotent for data but does not create the indexes (index creation lives in the orchestrator). These are correctable; none of the omissions made the sample fail to run for the scenario demonstrated, but they leave gaps the gallery should close for uniform developer experience and discoverability.",
+  "requirement_results": [
+    {
+      "requirement": "The pipeline is written in Python and built with LangChain, with an orchestrator and three distinct agent roles: data extraction, validation and filing.",
+      "status": "partly_met",
+      "evidence": "app/src/orchestrator.py: lines 9-72 define DataExtractionAgent, ValidationAgent, FilingAgent and Orchestrator classes; app/src/agents.py imports LangChain but orchestrator does not instantiate LangChain Agent objects.",
+      "cause": "builder_error",
+      "smallest_fix": "Either wire LangChain Agent/Chain objects into the orchestrator (add langchain to requirements and replace or wrap the simple agent classes with LangChain constructs) or update the README and prompt to say the sample demonstrates a LangChain-style orchestration using plain Python wrappers."
+    },
+    {
+      "requirement": "The data-extraction agent queries more than one Azure DocumentDB collection through a MongoDB-compatible Python driver (e.g. PyMongo), filtering each query to the reporting period, and returns the extracted data to the orchestrator.",
+      "status": "met",
+      "evidence": "app/src/orchestrator.py: lines 14-25 (tx_coll.find({'reporting_period': reporting_period}) and acc_coll.find({'_id': {'$in': account_ids}})).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The validation agent takes the extracted data, checks it for completeness and applies business rules, and returns the outcome of those checks.",
+      "status": "met",
+      "evidence": "app/src/orchestrator.py: lines 31-44 (ValidationAgent.validate checks missing accounts and empty transaction set and returns status/issues).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The filing agent formats the validated data into the required regulatory schema and returns the formatted output.",
+      "status": "met",
+      "evidence": "app/src/orchestrator.py: lines 50-65 (FilingAgent.format_and_save builds a filing JSON, writes examples/filing_<run_id>.json and returns the path).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The orchestrator runs the data-extraction, validation and filing agents in sequence, passing each agent's output to the next agent as its input.",
+      "status": "met",
+      "evidence": "app/src/orchestrator.py: lines 98-116 (call sequence: extract -> validate -> format_and_save and passing extracted/validation results).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The orchestrator records each step's status as a workflow document in an Azure DocumentDB collection (e.g. one document per run that is updated with the step name and its status as each step completes).",
+      "status": "met",
+      "evidence": "app/src/orchestrator.py: lines 86-96 (insert workflow_runs document) and lines 81-84 and 116-121 (_log_step pushes steps and final update sets end_ts).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.py: lines 14-16 read DOCUMENTDB_URI; app/src/agents.py: lines 10-11 read MODEL_NAME and OPENAI_API_KEY; no secrets are committed in the repo; app/.env.example provides placeholders.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example: lines 4-12 provide DOCUMENTDB_URI, OPENAI_API_KEY, EMBEDDING_MODEL, EMBEDDING_DIMS, CHAT_MODEL; app/src/agents.py expects MODEL_NAME (line 10) while .env.example uses CHAT_MODEL — variable name mismatch.",
+      "cause": "builder_error",
+      "smallest_fix": "Align variable names: add MODEL_NAME to .env.example (or change agents.py to read CHAT_MODEL)."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_met",
+      "evidence": "Builder report and app 'not_verified' section: vector index creation was not implemented or verified (no createIndexes with cosmosSearchOptions in the repo).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you want vector search, add explicit embedding model choice in .env.example (EMBEDDING_MODEL and EMBEDDING_DIMS) and create the vector index with those dimensions in the seed or index-creation script using the documented createIndexes/cosmosSearchOptions command."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "README and seed script do not include vector-index creation or sizing guidance; builder_report: 'Vector index creation not created or verified.'",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add index-creation code and README guidance describing the chosen algorithm (HNSW/IVF/DiskANN), tuned parameters and how to scale them for larger datasets."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py: lines 9-24 implement a module-level _client and get_client() singleton pattern (MongoClient created once and reused).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/scripts/seed.py: lines 29,47,53 use update_one(..., upsert=True) for accounts, transactions and positions (idempotent upserts). However the seed script does not create collection indexes (index creation is implemented in orchestrator._ensure_indexes).",
+      "cause": "builder_error",
+      "smallest_fix": "Add idempotent index creation to scripts/seed.py (create_index/createIndexes) so the seed script fully prepares the DB and can be run standalone."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "This sample is a CLI orchestrator; no /search HTTP endpoint is implemented in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you want an HTTP search API, add a FastAPI endpoint /search that validates input, returns a clear 400 for empty queries, and catches embedding errors with a 502/500 and a helpful message."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search or vector-search code exercised in this sample; no similarity scores are produced.",
+      "cause": "prompt_silent",
+      "smallest_fix": "When adding vector/search features, include similarity/distance in the returned result objects and document the score semantics in the README."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "app/requirements.txt contains pinned versions (e.g. pymongo==4.6.1, python-dotenv==1.0.0, openai==0.27.8, pytest==7.4.0, faker==18.3.1, mongomock==4.3.0).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/test_orchestrator.py uses mongomock fixture (lines 11-16) and pytest passed in the build trace (events.jsonl run_command 'pytest -q' exit code 0).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository contains no Bicep/ARM/Terraform code for Microsoft.DocumentDB/mongoClusters or similar; builder intentionally did not provision infra per run policy.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep or Terraform example module that targets Microsoft.DocumentDB/mongoClusters (or provide an AzAPI wrapper) with parameters for tier, storage and region and defaults that keep cost low."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md documents what the sample shows, prerequisites, setup and run steps (lines 14-24, 26-36) but does not include explicit clean-up or teardown instructions to delete seeded data.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a 'clean-up' section to README describing how to remove seeded documents/collections or a script (e.g. scripts/teardown.py) to drop the sample collections."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and other files reference 'Azure DocumentDB' (README.md line 1 and content).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Singleton MongoClient",
+      "practice": "Create one MongoClient per process (singleton) and reuse it across the application rather than creating a new client per request.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.py: lines 9-24 implement module-level _client and get_client() that returns a reused MongoClient.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Read URI from env",
+      "practice": "Read the cluster connection string from the environment at runtime (e.g., DOCUMENTDB_URI) and avoid committing connection secrets to source control; drive local config via a .env file or secret store instead.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.py: lines 14-16 read DOCUMENTDB_URI; app/.env.example contains placeholder DOCUMENTDB_URI and README warns not to commit secrets.",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS and timeouts",
+      "practice": "Always connect with TLS enabled and do not disable certificate validation in production (ensure tls=true in connection string and validate certs).",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "The code relies on the provided connection string for TLS (app/src/db.py: line 18 constructs MongoClient using the URI read from the environment; README and .env.example comment show TLS=true in example connection string).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection timeouts",
+      "practice": "Set reasonable connection timeouts (serverSelectionTimeoutMS, connectTimeoutMS, socketTimeoutMS) to fail fast and avoid hung requests, tuned to the application's latency expectations.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.py: MongoClient is created with retryWrites=True but no explicit serverSelectionTimeoutMS/connectTimeoutMS/socketTimeoutMS (line 18).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Set serverSelectionTimeoutMS and sensible connect/socket timeouts when constructing MongoClient (e.g., MongoClient(uri, serverSelectionTimeoutMS=5000, connectTimeoutMS=10000)).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection pool tuning",
+      "practice": "Configure the MongoClient connection pool (maxPoolSize, minPoolSize, maxIdleTimeMS) according to the deployment model rather than relying on defaults.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.py: MongoClient created with default pool settings (line 18) and no explicit pool tuning parameters.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Pass tuned pool options for the expected runtime (e.g., maxPoolSize) or read them from env for samples that demonstrate different deployment shapes.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retryable reads/writes",
+      "practice": "Enable driver retryable reads/writes and implement application-level retries with exponential backoff for transient errors, ensuring retries are safe or guarded by idempotency/dedup keys.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.py: MongoClient is created with retryWrites=True (line 18) but the orchestrator and seed do not implement explicit application-level retry/backoff on transient errors.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Wrap critical DB operations (seed, insert_one/update_one) with a small retry helper (exponential backoff) and record idempotency/dedup keys in workflow_runs.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Least-privilege credentials",
+      "practice": "Use least-privilege credentials: prefer Microsoft Entra ID (managed identity) + RBAC for apps, or create dedicated DB users with only required roles and rotate secrets via Key Vault.",
+      "category": "authentication and secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "app only reads DOCUMENTDB_URI from env (app/src/db.py: lines 14-16); the repository does not document which credential type is supplied in DOCUMENTDB_URI and the build ran against an existing cluster.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Document the recommended credential type in README and prefer Entra ID patterns (or show how to create a dedicated user) depending on the target audience.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent seed",
+      "practice": "Make seed scripts idempotent (use upsert or check for existing documents/indexes) so repeated runs do not duplicate data or fail unexpectedly.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/seed.py uses update_one(..., upsert=True) for accounts, transactions and positions (lines 29, 47, 53) and print confirms 'Seeded ...' (line 55).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Query-index matching",
+      "practice": "Create indexes that match query filters and sort order (test with explain('executionStats') to confirm the winning plan uses IXSCAN and avoids COLLSCAN) and use projections to return only needed fields.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "Orchestrator._ensure_indexes (app/src/orchestrator.py: lines 74-79) creates compound index on ('reporting_period','date') and account_id index and workflow_runs indexes to support the queries used by the orchestrator.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index ESR",
+      "practice": "Design compound indexes following the ESR rule (Equality → Sort → Range) and order equality fields by selectivity.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "Transactions compound index created as (reporting_period ASC, date ASC) in app/src/orchestrator.py: line 76 which follows equality (reporting_period) then sort (date) pattern.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TTL for workflow logs",
+      "practice": "Use TTL indexes (expireAfterSeconds on a date field) for ephemeral workflow/log documents so old workflow runs are automatically purged.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "violated",
+      "evidence": "Orchestrator._ensure_indexes creates workflow_runs indexes (lines 78-79) but no TTL index is created to expire workflow documents.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Add a TTL index on a suitable date field (e.g., create an index on {'start_ts':1} with expireAfterSeconds set via create_index or via the DB command) and document retention policy in the README.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Orchestration logging",
+      "practice": "Log orchestration/workflow-run state (start/end timestamps, per-step status, messages) as documents so long-running multi-step processes can be tracked and resumed safely.",
+      "category": "orchestration and logging",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/orchestrator.py: lines 86-96 create the workflow_runs document; _log_step (lines 81-84) appends step records and the run is updated with end_ts (line 116).",
+      "source": "src/orchestrator.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/orchestrator.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring and explain()",
+      "practice": "Enable diagnostic settings and slow-query logging (route to Log Analytics) and use explain()/operation logs to identify slow queries and drive index changes and alerts on saturation metrics.",
+      "category": "queries & monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The sample does not configure diagnostic settings or run explain() in code; read-only environment and run policy prevented provisioning or platform-level monitoring changes.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a short 'monitoring' section to README showing how to enable diagnostic settings and an example explain() call for a sample query.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "High availability",
+      "practice": "Enable in-region high availability (HA) on production clusters to obtain the 99.99% SLA and automatic zone-level failover; add cross-region replicas for DR and higher SLAs when needed.",
+      "category": "high availability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "Cluster topology is external to the sample; the repository does not manage cluster HA settings.",
+      "source": "documentdb-high-availability",
+      "searched": "",
+      "fix": "Document recommended HA settings in README and in any accompanying infra-as-code module.",
+      "sources": [
+        {
+          "title": "documentdb-high-availability",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Shard only when necessary",
+      "practice": "Only shard a collection once it exceeds a single physical shard's capacity, and pick the shard key by workload.",
+      "category": "sharding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "The sample works on a small dataset and does not create sharded collections; sharding decisions are out-of-scope for this sample.",
+      "source": "documentdb-sharding",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-sharding",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/sharding/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document sizes",
+      "practice": "Keep documents well under the 16 MB BSON limit and split very large fields or arrays into side collections or bucketed documents.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "Sample documents created by seed.py are small (accounts, transactions, positions) and the filing aggregates are small by design (app/src/orchestrator.py: lines 52-58).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Schema versioning",
+      "practice": "Include a schemaVersion or document_version field on documents and plan migration scripts or lazy-migration paths.",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "violated",
+      "evidence": "Seeded documents and workflow_runs do not include a schemaVersion/document_version field.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "Add a schema_version field to seeded documents (accounts/transactions/positions/workflow_runs) and include a note about migration in the README.",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "CMK for regulated workloads",
+      "practice": "For regulated workloads, enable customer-managed keys (CMK) at cluster creation to control encryption-at-rest keys and plan key rotation and recovery runbooks.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "This is a cluster-level configuration; the sample uses an existing cluster and does not provision or document CMK usage.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Add a short section to the README describing CMK recommendations and links to the cluster provisioning quickstart showing how to enable CMK.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Workflow-run resumability",
+      "practice": "Record each orchestration step's status and timestamps in a workflow-run document to support resumability and idempotent retries.",
+      "category": "orchestration and logging",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P21",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/orchestrator.py: workflow_runs documents contain start_ts, steps (with timestamp and status) and end_ts (lines 86-96, 81-84, 116).",
+      "source": "prior_knowledge",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short public page demonstrating a minimal workflow-run document schema and examples of resuming a run would help agents follow this reliably."
+    },
+    {
+      "topic": "Transactions usage",
+      "practice": "Use multi-document transactions only when required for atomicity across documents/collections, keep transactions small and short-lived, and validate transaction behavior against the live cluster.",
+      "category": "transactions",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P22",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "Sample does not use multi-document transactions; decision to avoid is consistent but transaction semantics cannot be validated without a live cluster-level test for features mongomock doesn't emulate.",
+      "source": "prior_knowledge",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A documented page stating when DocumentDB supports transactions, plus an integration test recipe that runs against the local DocumentDB gateway or live cluster to validate behavior."
+    },
+    {
+      "topic": "PII redaction in logs",
+      "practice": "Do not write secrets or raw PII into workflow logs or plain documents; redact or encrypt sensitive fields and restrict access via RBAC and network controls.",
+      "category": "security",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P23",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "Filing JSON (app/src/orchestrator.py lines 52-58) includes account names and transaction details written to examples/filing_<run_id>.json and to workflow_runs steps; no redaction or explicit PII handling is implemented.",
+      "source": "prior_knowledge",
+      "searched": "",
+      "fix": "Do not write raw PII to workflow logs by default; add redaction rules and a README note explaining when and how to redact/encrypt sensitive fields, or store only references in workflow_runs.",
+      "sources": [],
+      "what_would_help": "A public guidance page that maps sample logging fields to recommended redaction/encryption behaviour."
+    },
+    {
+      "topic": "Integration testing",
+      "practice": "Run integration tests against a real DocumentDB instance (or the documented local Gateway) for behaviors mongomock cannot emulate (indexing, explain plans, vector indexes, transactions).",
+      "category": "testing",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P24",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "Unit tests are run with mongomock (app/tests/test_orchestrator.py). The builder also ran scripts/seed.py and scripts/run_report.py against the live cluster (builder_report verification_done), satisfying the intent of running integration checks against a real instance.",
+      "source": "prior_knowledge",
+      "searched": "",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short integration-test recipe in the README showing how to run the seed + orchestrator against the local gateway or live cluster, and marking such tests as 'integration' in CI."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Operator approval recorded; no contradiction found in events.jsonl."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Python 3.13 is supported by the readiness report and environment inventory; events show the decision was logged."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choice of PyMongo and LangChain as the intended stacks is consistent with the prompt and the documentdb-driver guidance; events show the skill was loaded and decision logged."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from env is what the code does (app/src/db.py lines 14-16) and the decision is supported by readiness instructions."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Builder used the provided cluster and did not provision new Azure resources; events and build report confirm this."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choice of collections (accounts, transactions, positions, workflow_runs) matches the code (seed.py and orchestrator.py) and is recorded in events."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "questionable",
+      "comment": "Indexes chosen (compound on reporting_period/date, account_id, workflow run indexes) are reasonable and implemented in orchestrator._ensure_indexes. The decision lists reason_source 'model_default' rather than a specific skill; nevertheless the chosen shapes match the app's query patterns. Marked 'questionable' only because it was a model-default choice rather than explicitly referenced to an indexing skill in the decision log."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Choice of default models (OpenAI text-embedding-3-small and gpt-4o-mini) was logged and implemented as defaults in .env.example and agents.py. Events record the decision. Note: a variable-name mismatch later reduces discoverability (see doc gap)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Implementing simple function-wrapped agents instead of heavy LangChain Agents is a defensible engineering trade and is reflected in the code (orchestrator.py) and README."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Decision not to implement vector search is logged (D010) and matches the code and builder_report where vector features were intentionally omitted to keep the sample minimal."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Decision to use MCP tools for verification is recorded; the events show documentdb skills were loaded earlier. The build also performed DB checks against the live cluster."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Duplicate readiness approval entry; recorded as operator action and found in events."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Duplicate/logging of environment Python choice; consistent with earlier D002 and environment inventory."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "sound",
+      "comment": "Choice of pymongo (synchronous) is consistent with code and the documentdb-driver skill; events show it was logged."
+    },
+    {
+      "decision_id": "D015",
+      "assessment": "sound",
+      "comment": "Decision to use DOCUMENTDB_URI and connection-string auth is consistent with environment and code (app/src/db.py)."
+    },
+    {
+      "decision_id": "D016",
+      "assessment": "sound",
+      "comment": "Reiterates D005; recorded and consistent with build traces."
+    },
+    {
+      "decision_id": "D017",
+      "assessment": "sound",
+      "comment": "Choice of a synthetic data model is reflected in seed.py and orchestrator.py; it was a conscious design choice logged in the trace."
+    },
+    {
+      "decision_id": "D018",
+      "assessment": "questionable",
+      "comment": "Similar to D007: index choices are reasonable and implemented, but the reason_source 'prompt'/'model_default' is not tied to a particular indexing skill in the log. The implementation itself matches the decision."
+    },
+    {
+      "decision_id": "D019",
+      "assessment": "sound",
+      "comment": "Default model choice logged and implemented as defaults in .env.example and agents.py (though variable-name mismatch exists)."
+    },
+    {
+      "decision_id": "D020",
+      "assessment": "sound",
+      "comment": "Choice of a CLI entrypoint is consistent with scripts/run_report.py and recorded in the decisions trace."
+    },
+    {
+      "decision_id": "D021",
+      "assessment": "sound",
+      "comment": "Decision to omit langchain from requirements was logged with a tool_result reason (pip failures). Events show pip install initially failed for langchain and the repository later removed it from requirements; the decision matches the recorded tooling outcome."
+    },
+    {
+      "decision_id": "D022",
+      "assessment": "sound",
+      "comment": "Decision to pin mongomock to an available version (4.3.0) is supported by pip failure evidence and events show the requirements.txt was updated accordingly."
+    },
+    {
+      "decision_id": "D023",
+      "assessment": "sound",
+      "comment": "Decision to run the seed script against the live cluster is recorded and the builder report confirms the seed was executed successfully against the live cluster."
+    },
+    {
+      "decision_id": "D024",
+      "assessment": "sound",
+      "comment": "Decision to run the orchestrator end-to-end against the live cluster is recorded and the builder report and events show an end-to-end run produced a workflow_runs document and an examples/filing_<run_id>.json file."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Regulatory filing schema",
+      "what_was_missing": "No authoritative regulatory filing schema (XBRL or jurisdictional JSON schema) was available in the prompt, skills, or repo. The builder used a synthetic JSON shape.",
+      "where_searched": "Installed skills, README and search for 'regulatory schema' in project files and skills; readiness findings note the missing schema.",
+      "effect_on_this_build": "The filing format is synthetic; validators and filing agent produce a demo JSON rather than a schema-validated filing. This limits the sample's usefulness for users who expect a real regulator-compliant output.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Regulatory filing' page describing example schemas to target, one or two minimal JSON/XBRL fragments the sample can use, and a 'How to swap in a real schema' guide (validation rules, strict schema validation steps, sample XSD/JSONSchema files).",
+      "priority": "high"
+    },
+    {
+      "topic": "Embedding model and index dimension pairing",
+      "what_was_missing": "No explicit public guidance (in skills/docs) or sample convention that ties an embedding model choice to the vector-index dimension used when creating indexes.",
+      "where_searched": "Installed vector-search skill, readiness searches, and repo files.",
+      "effect_on_this_build": "Builder omitted vector-index creation to avoid dimension/model coupling and left EMBEDDING_MODEL/DIMS as optional in .env.example; sample therefore does not demonstrate vector search.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Embedding → Index dimension' doc that lists common embedding models (provider + model name) and their output dimensions and an example createIndexes payload that uses EMBEDDING_DIMS from config. Include copy-paste code to create an HNSW/IVF index with the correct 'dimensions' value.",
+      "priority": "high"
+    },
+    {
+      "topic": "Local dev & integration test guidance for DocumentDB",
+      "what_was_missing": "A concise recipe showing the DocumentDB local gateway image, the port (10260), and how to run integration tests that exercise explain(), indexes and vector features (mongomock misses these).",
+      "where_searched": "documentdb-local-deployment skill and readiness searches.",
+      "effect_on_this_build": "Builders might use mongomock for everything and miss important service-level behaviors; the sample mixes mongomock unit tests and live-cluster integration runs but lacks a clear 'local dev' guide.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A 'Local development and integration tests' page including Docker commands for the DocumentDB local gateway, connection-string examples (port 10260), and an integration-test scaffold that runs only when a live/local gateway is reachable.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Workflow-run resumability examples",
+      "what_was_missing": "Public examples that show a minimal workflow-run document schema and an authoritative example of how to resume a run after a failure (state transitions, idempotency keys).",
+      "where_searched": "Installed skills and public docs; searches returned no specific DocumentDB-hosted examples.",
+      "effect_on_this_build": "The sample logs steps and timestamps (good) but there is no guide demonstrating resume/retry logic or dedup keys; an agent might not implement safe retries without a concrete pattern.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "A short rule and example document (fields: run_id, start_ts, steps[], step.status, last_checkpoint, dedup_key) and a code snippet showing how an orchestrator resumes from the last successful step by reading workflow_runs and conditionally skipping already-completed operations.",
+      "priority": "high"
+    },
+    {
+      "topic": "Entra ID authentication patterns for application code",
+      "what_was_missing": "Clear code examples demonstrating how to use Microsoft Entra ID (managed identity) for data-plane authentication with DocumentDB (if enabled) and how to wire Azure.Identity into PyMongo or a wrapper.",
+      "where_searched": "documentdb-security skill and Microsoft docs; some enabling docs exist but code patterns are sparse.",
+      "effect_on_this_build": "The sample defaults to a connection string in DOCUMENTDB_URI. If teams want an RBAC/managed-identity example, there is no copy-paste snippet.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A short how-to page showing how to enable Microsoft Entra ID on a cluster, how to obtain a token in Python (Azure.Identity) and inject it into the driver or a proxy, and an example Bicep snippet that enables auth-allowed-modes.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Public guidance for P21/P22/P23/P24 (prior_knowledge_only items)",
+      "what_was_missing": "Several practices (workflow-run resumability, transaction cautions, PII redaction guidance, and the limits of mongomock for vector/index/transaction testing) were present as reasonable prior knowledge but not documented specifically for Azure DocumentDB in the installed skills.",
+      "where_searched": "Installed skills and public searches listed in discovered_practices 'searches_with_no_useful_result'.",
+      "effect_on_this_build": "Agents and builders may assume MongoDB-like behavior; lacking explicit DocumentDB docs for these items risks subtle mistakes (PII logged, incorrect assumptions about transactions, or tests that miss service-level behaviors).",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Short pages or callouts in the indexing/monitoring/security/ testing docs that (a) define a recommended workflow-run document pattern and resume logic, (b) warn about mongomock limitations and show integration-test recipes, (c) specify PII-handling recommendations for workflow logs, and (d) state the transactional semantics caveat and when to test on live clusters.",
+      "priority": "high"
+    },
+    {
+      "topic": "Discoverability: default model env var naming",
+      "what_was_missing": "The repository contains inconsistent environment variable names for the chat/model variable (agents.py reads MODEL_NAME while .env.example lists CHAT_MODEL), reducing discoverability and causing potential runtime confusion.",
+      "where_searched": "Repository files (.env.example, app/src/agents.py) and events trace showing .env.example was written with CHAT_MODEL.",
+      "effect_on_this_build": "Risk of user-facing misconfiguration: filling CHAT_MODEL as in .env.example will not affect agents.py which reads MODEL_NAME, making LLM features silent/confusing.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Fix .env.example to include MODEL_NAME or change agents.py to read CHAT_MODEL. Add a one-line check in startup that prints configured/expected env names (without secrets) so misconfigurations are obvious.",
+      "priority": "high"
+    }
+  ]
+}
