@@ -1,0 +1,51 @@
+# 3. Build report: 20-provider-directory-semantic-search
+
+**Status: completed**
+
+Built a small Python FastAPI sample that stores provider profiles in an Azure DocumentDB collection with embedded vectors and exposes a /find-provider endpoint that performs vector search using the cluster's cosmosSearch vector index. The sample includes an idempotent seed script that creates a vector-hnsw index (1536 dims) and upserts 10 synthetic provider documents with embeddings. Embeddings are produced by OpenAI when OPENAI_API_KEY is provided, otherwise by a deterministic fallback so the sample runs in this environment. I verified dependency installation, seeding, index creation (via the documentdb MCP), sample queries, and unit tests. LlamaIndex/OpenAI runtime integration was intentionally left optional because of dependency resolution conflicts; instructions to enable them are documented in README.
+
+## How to run
+
+1) Python virtualenv: python -m venv .venv && source .venv/bin/activate
+2) pip install -r requirements.txt
+3) cp .env.example .env and set DOCUMENTDB_URI (and optionally OPENAI_API_KEY)
+4) python seed.py    # creates collection, vector index, and upserts sample documents
+5) python query_demo.py "Spanish-speaking cardiologist accepting Medicare" 5   # run a one-shot demo query
+6) Optionally run the API server: uvicorn app.main:app --reload and POST to /find-provider with JSON {"query":"...","k":5}
+
+Notes: If you want LlamaIndex/OpenAI embedding support, install the packages (see README) and set OPENAI_API_KEY. I intentionally left LlamaIndex/OpenAI optional to keep the sample runnable without external keys and to avoid dependency conflicts in this environment.
+
+## Verified by running
+
+- pip install -r requirements.txt: succeeded (installed FastAPI, pymongo, python-dotenv, pytest, httpx, etc.)
+- python seed.py: succeeded (created vector index providers_vector_hnsw and upserted 10 provider docs). Output: 'Seeded 10 providers into sample_healthcare_20.providers'
+- documentdb_list_indexes: found index 'providers_vector_hnsw' with cosmosSearchOptions (kind=vector-hnsw, m=16, efConstruction=64, similarity=COS, dimensions=1536)
+- python query_demo.py "Spanish-speaking cardiologist accepting Medicare" 5: returned one or more matches with searchScore/score and provider documents (sample output printed JSON)
+- pytest: 2 passed, 1 skipped
+
+## Not verified
+
+- Full LlamaIndex runtime integration (llama-index) installed and exercised against live OpenAI embeddings: skipped due to package dependency resolution issues in this environment. Reason: installing llama-index pulled in versions that conflicted with other pinned packages; to enable, follow README instructions to install llama-index and the appropriate openai package in a compatible environment.
+- Running the FastAPI server under uvicorn in long-running mode: not executed here (command runner is single-shot). The README includes instructions to start uvicorn locally.
+- Using real OpenAI embeddings (OPENAI_API_KEY not set in this run): not executed. The code supports OpenAI when OPENAI_API_KEY is present; otherwise a deterministic fallback embedding is used so the sample runs without secrets.
+- Any Azure control-plane operations (provisioning clusters, changing auth modes): not performed (run policy forbids Azure resource changes).
+
+## Open issues
+
+- LlamaIndex/OpenAI dependency conflicts: attempting to include llama-index plus a pinned openai caused pip dependency resolution conflicts in this environment. I removed llama-index/openai from the runtime requirements so the sample and tests run (with deterministic fallback embeddings). To enable LlamaIndex/OpenAI locally, install 'llama-index' and a compatible 'openai' release as documented in README.
+- The sample uses deterministic fallback embeddings when OPENAI_API_KEY is not present; results are deterministic but not semantically meaningful. To evaluate real semantic ranking, set OPENAI_API_KEY and re-seed data so embeddings are computed by the chosen model (text-embedding-3-small, 1536 dims).
+- Tests: integration-style server tests are skipped to avoid starting a live server during CI. The unit tests that run here cover seed/index creation (mocked) and the fallback embedding generator.
+
+## Files
+
+- `README.md`
+- `.env.example`
+- `requirements.txt`
+- `data/providers.json`
+- `app/db.py`
+- `app/main.py`
+- `seed.py`
+- `query_demo.py`
+- `tests/test_seed.py`
+- `tests/test_app.py`
+

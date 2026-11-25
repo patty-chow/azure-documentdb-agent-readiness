@@ -1,0 +1,65 @@
+# 5a. Best practices: prior knowledge against the public record: 20-provider-directory-semantic-search
+
+A model first listed the best practices it knew from training, with no tools. An agent then searched public sources without the team's checklist, the way an agent building this app would, and checked each prior belief against what it found.
+
+**24 practices, 23 with a public address.**
+
+| Outcome | Count | What it means |
+|---|---|---|
+| The model believed otherwise; public sources contradict it | 0 | An agent working from memory builds the wrong thing here. |
+| The model knows it; no public source for this service says either way | 1 | Agents will act on it. Nothing public says whether they should. |
+| The model knew it, and public sources agree | 23 | Memory and documentation line up. |
+| Found in public sources only | 0 | Documented; the model did not list it beforehand. |
+
+## Sources that were reachable in this run
+
+| Source | Reachable | Detail |
+|---|---|---|
+| `learn` (documentation search) | yes | 3 tools |
+| Installed agent skills | 17 | 17 have a public address |
+
+## Known to the model, with no public source for this service
+
+| Id | Practice | Knowledge of | Searches tried |
+|---|---|---|---|
+| P21 | Avoid multi-document transactions for common read-heavy vector-search paths; prefer single-document atomic operations and optimistic concurrency where possible. | mongodb | searches tried: "Azure DocumentDB multi-document transactions guidance", "Azure DocumentDB when to avoid transactions" |
+
+## All practices
+
+| Id | Practice | Category | Basis | Source | Public address | How it was found | Applies to this app |
+|---|---|---|---|---|---|---|---|
+| P01 | Read the cluster connection string from an environment variable (DOCUMENTDB_URI) at runtime and never commit the URI or primary key to source control or logs. | authentication_and_secrets | prior_knowledge_confirmed | Use LangChain on Azure with Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/build-rag-applications#langchain-azure-documentdb-integration | Use LangChain on Azure with Azure DocumentDB | yes |
+| P02 | Keep a single long-lived MongoClient (process-wide singleton) and reuse it across requests rather than creating a new client per request. | connection_handling | prior_knowledge_confirmed | documentdb-driver (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md | documentdb-driver | yes |
+| P03 | Always require TLS on MongoDB connections to Azure DocumentDB (tls=true / ssl=true) and validate server certificates; never disable certificate verification in production. | connection_handling | prior_knowledge_confirmed | Connect to Azure DocumentDB using MongoDB Shell (public_doc) | https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication | Connect to Azure DocumentDB using MongoDB Shell | yes |
+| P04 | Store DocumentDB connection strings and other API keys in environment variables or in Azure Key Vault; avoid printing them and rotate keys regularly. | authentication_and_secrets | prior_knowledge_confirmed | Tutorial: Store and use Azure Cosmos DB credentials with Azure Key Vault (public_doc) | https://learn.microsoft.com/azure/cosmos-db/store-credentials-key-vault#add-azure-cosmos-db-access-keys-to-the-key-vault | Tutorial: Store and use Azure Cosmos DB credentials with Azure Key Vault | yes |
+| P05 | Implement retry logic with exponential backoff for transient errors and explicitly honor throttling responses (HTTP 429) by reading the service-provided retry header (e.g., x-ms-retry-after-ms / Retry-After) before retrying. | retries_and_error_handling | prior_knowledge_confirmed | Optimize provisioned throughput cost in Azure Cosmos DB (public_doc) | https://learn.microsoft.com/azure/cosmos-db/optimize-cost-throughput#optimize-with-rate-limiting-your-requests | Optimize provisioned throughput cost in Azure Cosmos DB | yes |
+| P06 | Use structured filters inside the cosmosSearch operator (the 'filter' field) to narrow candidates (e.g., specialty, language, insurance) before vector similarity search rather than post-filtering after kNN. | queries_and_search_patterns | prior_knowledge_confirmed | documentdb-vector-search (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md | documentdb-vector-search | yes |
+| P07 | Create Mongo-style single-field or compound indexes on fields used in equality or range filters (e.g., specialty, languages, acceptedInsurance) and prefer compound indexes (ESR: Equality→Sort→Range) when queries combine fields. | indexing | prior_knowledge_confirmed | documentdb-indexing (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md | documentdb-indexing | yes |
+| P08 | Create a cosmosSearch vector index with dimensions set to the embedding model's output size and choose the similarity metric (COS/IP/L2) to match how you compare embeddings. | vector_search_and_indexing | prior_knowledge_confirmed | Integrated vector store in Azure DocumentDB (vector-search examples) (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index | Azure DocumentDB vector search examples | yes |
+| P09 | Tune ANN index parameters (HNSW: m, efConstruction; IVF: numLists; DiskANN: lBuild/maxDegree) and set query-time parameters (efSearch / lSearch / lSearch >= k) after measuring recall vs latency. | vector_search_and_indexing | prior_knowledge_confirmed | documentdb-vector-search (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md | documentdb-vector-search | yes |
+| P10 | Store embeddings as a fixed-length number[] (array of floats) in a dedicated field (e.g., embedding) and avoid duplicating full embeddings in multiple fields. | data_modeling | prior_knowledge_confirmed | Integrated vector store in Azure DocumentDB (vector-search) (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-ivf-index | Azure DocumentDB vector search examples | yes |
+| P11 | When returning API responses, project out (exclude) the embedding vector and return only the metadata fields and the similarity score to reduce network and client processing costs. | queries_and_performance | prior_knowledge_confirmed | documentdb-vector-search (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md | documentdb-vector-search (vector-knn-query.md) | yes |
+| P12 | Keep embedding dimensions and embedding model consistent across all documents and store metadata fields (embeddingModel, embeddingDims, embeddingVersion) so you can detect drift and re-index when the model changes. | data_modeling | prior_knowledge_confirmed | documentdb-vector-search (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md | documentdb-vector-search (vector-normalize-embeddings.md) | yes |
+| P13 | Make index and collection creation idempotent: check for existing collections/indexes or use create-if-not-exists patterns so seeding scripts can be re-run safely. | provisioning_and_deployment | prior_knowledge_confirmed | Azure Cosmos DB SDK examples (createIfNotExists) (public_doc) | https://learn.microsoft.com/javascript/api/overview/azure/cosmos-readme?view=azure-node-latest#examples | Azure Cosmos DB SDK examples (createIfNotExists) | yes |
+| P14 | Limit vector query results with a topK (k) and use pagination; choose sensible defaults (e.g., k=10) and allow callers to request fewer or more within safe bounds. | queries_and_performance | prior_knowledge_confirmed | Integrated vector store in Azure DocumentDB (vector-search) (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search | Azure DocumentDB vector search docs | yes |
+| P15 | Monitor RU/s (throughput), per-query request charge, index/storage usage, and alert on leading indicators (CPU, memory, IOPS, storage, connection saturation) so you can tune autoscale or RU allocation before incidents. | monitoring_and_cost | prior_knowledge_confirmed | documentdb-monitoring (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md | documentdb-monitoring | yes |
+| P16 | Prefer autoscale (or appropriately-provisioned throughput) for workloads with expensive vector searches or traffic spikes and validate QPS vs RU consumption in staging. | provisioning_and_deployment | prior_knowledge_confirmed | Optimize provisioned throughput cost in Azure Cosmos DB (public_doc) | https://learn.microsoft.com/azure/cosmos-db/optimize-cost-throughput | Optimize provisioned throughput cost in Azure Cosmos DB | yes |
+| P17 | Respect platform rate-limiting: back off on 429s, avoid tight retry loops, add jitter to retry delays, and limit retry attempts to prevent thundering-herd effects. | retries_and_error_handling | prior_knowledge_confirmed | The Retry-After header: how long to wait before you retry (public_doc) | https://learn.microsoft.com/microsoft-cloud/dev/dev-proxy/concepts/retry-after-header#how-to-handle-retry-after | learn.microsoft.com search for Retry-After guidance | yes |
+| P18 | Rate-limit and cache embedding requests to external providers (e.g., Azure OpenAI), batch where possible, and provide deterministic or local fallbacks for offline tests. | authentication_and_secrets | prior_knowledge_confirmed | Generate embeddings with Azure OpenAI / API Management caching guidance (public_doc) | https://learn.microsoft.com/azure/ai-foundry/openai/how-to/embeddings#best-practices | Generate embeddings with Azure OpenAI | yes |
+| P19 | Avoid storing unnecessary PII in provider documents; use PII detection, dynamic data masking, or redact fields not required for search to reduce privacy and compliance risk. | data_modeling_and_privacy | prior_knowledge_confirmed | Dynamic Data Masking in Azure Cosmos DB / PII detection docs (public_doc) | https://learn.microsoft.com/azure/cosmos-db/dynamic-data-masking | search for PII/dynamic masking guidance on learn.microsoft.com | yes |
+| P20 | Write idempotent unit and integration tests: seed known documents, use dedicated test collections or the local emulator, and avoid interacting with production data in tests. | testing_and_ci | prior_knowledge_confirmed | Optimize development and testing cost in Azure Cosmos DB (emulator / createIfNotExists) (public_doc) | https://learn.microsoft.com/azure/cosmos-db/optimize-dev-test | Optimize development and testing cost in Azure Cosmos DB | yes |
+| P21 | Avoid multi-document transactions for common read-heavy vector-search paths; prefer single-document atomic operations and optimistic concurrency where possible. | data_consistency_and_transactions | prior_knowledge_only | - (prior_knowledge) | **none** | searches tried: "Azure DocumentDB multi-document transactions guidance", "Azure DocumentDB when to avoid transactions" | yes |
+| P22 | Normalize searchable text fields (lowercase, canonicalized language tags) at ingest so equality/index lookups and language matching are reliable. | data_modeling | prior_knowledge_confirmed | documentdb-data-modeling (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md | documentdb-data-modeling | yes |
+| P23 | Keep documents reasonably small (well under the 16 MB BSON limit); if embeddings or large text increase document size significantly, store large fields externally and reference them to reduce RU and latency costs. | performance_and_cost | prior_knowledge_confirmed | documentdb-data-modeling (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md | documentdb-data-modeling (model-16mb-limit.md) | yes |
+| P24 | Prefer Microsoft Entra ID / Managed Identity for access to Azure resources over static keys; when the MongoDB wire protocol requires static keys, store them in Key Vault and rotate regularly. | authentication_and_secrets | prior_knowledge_confirmed | documentdb-security (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md | documentdb-security and Azure Key Vault tutorial | yes |
+
+## Searches that returned nothing useful
+
+None.
+
+## Notes
+
+Open discovery used installed skills (documentdb-*) and Microsoft Learn docs (vector search, retry handling, Key Vault, testing/emulator). Prior belief K22 (avoid multi-document transactions for read-heavy vector search) had documentation showing transactions are supported and listing limits, but no Azure DocumentDB page explicitly advising to avoid multi-document transactions for read-heavy vector search; K22 is therefore marked prior_knowledge_only. All other prior beliefs were found in Azure DocumentDB / Azure guidance and are marked confirmed.
+
+Prior beliefs the discovery step did not classify: K21. See 05a-prior-beliefs.json.
+
