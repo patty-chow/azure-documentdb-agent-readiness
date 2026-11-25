@@ -1,0 +1,482 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested FastAPI + Beanie app, an ingestion script, vector-storage fields, and a simple retailer-style UI. It reads DOCUMENTDB_URI from a config and fails fast on missing/invalid connection strings. The ingestion script batches inserts and creates a vector-index command (best-effort). Major issues: the server-side aggregation uses a non-DocumentDB knn operator (knnBeta) rather than the DocumentDB 'cosmosSearch' payload (so server-side vector search is likely to fail on DocumentDB), the ingestion script is not idempotent, the index-creation and MCP-based verification could not run in this environment because management/write tools were disabled, and dependency installation failed on this runtime (pydantic-core build). The build decisions are generally supported by the trace; skills for DocumentDB were loaded, but the vector-search skill guidance (use cosmosSearch) was not followed when implementing the server-side pipeline. See Requirement Results, Practices checks and Doc gaps for details and fixes.",
+  "requirement_results": [
+    {
+      "requirement": "A Python FastAPI app uses the Beanie ODM to define a product document model and store product JSON documents in Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/app/models.py (lines 10-18 define Product Document); app/app/main.py (lines 53-55 initializes Beanie with Product and database).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "An embedding is generated from each product's attributes and stored as a vector field on that product's document in Azure DocumentDB (e.g. an `embedding` array of floats).",
+      "status": "met",
+      "evidence": "scripts/ingest.py (lines 105-116 uses OpenAI or deterministic_vector and line 125 stores 'embedding' in the document); app/app/models.py (embedding: List[float] field).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) is created in code on the embedding field, with similarity COS and dimensions matching the embedding model's output size.",
+      "status": "partly_met",
+      "evidence": "scripts/ingest.py defines a createIndexes runCommand payload with cosmosSearchOptions kind 'vector-hnsw' and dimensions 1536 (lines 53-64).",
+      "cause": "could_not_determine",
+      "smallest_fix": "Include 'similarity': 'COS' in the cosmosSearchOptions and (a) document/README that dimensions must match model; (b) verify index creation at startup or make the helper idempotently create/confirm the exact index, failing early if mismatched."
+    },
+    {
+      "requirement": "A `/substitute` endpoint accepts a product ID, looks up that product's stored embedding and runs an Azure DocumentDB `$search` / cosmosSearch query with similarity COS that returns the 5 closest alternative products (the requested product itself excluded).",
+      "status": "partly_met",
+      "evidence": "app/app/routes.py implements find_substitutes(product_id, k=5) (lines 44-55), looks up the product (line 57) and attempts a server-side aggregation using a $search stage (pipeline lines 72-84).",
+      "cause": "skill_guidance_not_followed",
+      "smallest_fix": "Replace the knnBeta-style $search payload with the DocumentDB `$search` / 'cosmosSearch' payload and specify similarity: 'COS' per the vector-search docs; project $meta 'searchScore' and limit downstream results. (Example: build a cosmosSearch object matching createIndexes 'name' and path 'embedding'.)"
+    },
+    {
+      "requirement": "A script ingests 10,000 product transactions into Azure DocumentDB through the Beanie model.",
+      "status": "partly_met",
+      "evidence": "scripts/ingest.py default count is 10000 and generates/inserts documents in batches (lines 82-89, 97-136). However the script uses insert_many via motor on the collection rather than creating/saving Beanie Document instances.",
+      "cause": "builder_error",
+      "smallest_fix": "Either (a) insert via Product(**doc).insert() in batches using Beanie helpers, or (b) document that the insert_many path is intentional. If Beanie usage is required by policy, change insertion to use Beanie bulk helpers or upsert semantics."
+    },
+    {
+      "requirement": "The app serves an artistic UI styled like an online retailer's website that shows the substitutes returned by the `/substitute` endpoint.",
+      "status": "met",
+      "evidence": "templates/index.html (retailer-style HTML + sample SKUs, JavaScript fetches /substitute), static/style.css provides styling.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The Azure DocumentDB connection string is read from a config file, and the app displays a clear error when that connection string is missing or invalid.",
+      "status": "met",
+      "evidence": "app/app/config.py loads Settings from .env using pydantic BaseSettings (lines 4-13) and raises a RuntimeError on ValidationError (lines ~28-33). app/app/main.py performs a ping and raises a clear RuntimeError with guidance if ping fails (lines 42-51).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The code is kept simple and readable, with a detailed comment placed before each method or function describing what it does.",
+      "status": "met",
+      "evidence": "Files contain docstrings and per-function comments: app/app/routes.py has docstrings before functions (e.g., find_substitutes docstring lines 46-55); scripts/ingest.py and app/app/main.py contain descriptive docstrings and inline comments.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": ".env.example contains placeholders (file root app/.env.example) and app/app/config.py reads DOCUMENTDB_URI from environment; no secrets are committed.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": ".env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI, OPENAI_API_KEY, INGEST_COUNT (file content created in events). DB_NAME is not listed though config supports DB_NAME (app/app/config.py line showing DB_NAME default).",
+      "cause": "builder_error",
+      "smallest_fix": "Add DB_NAME and any other optional settings to .env.example with placeholders and short comments (e.g., DB_NAME=sample_retail_03)."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "met",
+      "evidence": "scripts/ingest.py sets EMBEDDING_DIMS = 1536 (line 38) and the index creation payload uses dimensions 1536 (line 61). Decision D003 selected text-embedding-3-small (1536 dims).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "scripts/ingest.py chooses HNSW m=16, efConstruction=200 (lines 60-64). README mentions vector index creation but does not include guidance for tuning parameters for larger datasets (app/README.md lines 16-18 mention index creation but not tuning).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a short README section recommending parameter adjustments for larger datasets (e.g., increase m and efConstruction or switch to DiskANN for very large collections) and point to the DocumentDB vector-search docs."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/app/main.py creates AsyncIOMotorClient(mongo_uri) and initializes Beanie at startup (lines 38-55); startup_event awaits that connection (lines 57-64).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "not_met",
+      "evidence": "scripts/ingest.py attempts index creation and batches inserts (lines 42-70, 97-136) but the script documentation and code note that re-running the script will create duplicates unless the collection is cleared (comment lines 13-14 and behavior—product_id uses deterministic per-run seed but there is no upsert/non-duplication enforcement).",
+      "cause": "builder_error",
+      "smallest_fix": "Make inserts idempotent by using upsert semantics keyed on product_id (e.g., replace_one({'product_id': pid}, doc, upsert=True) in batches) or have the script check for and skip existing product_ids."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "The sample implements /substitute by product ID; there is no /search endpoint. The /substitute handler raises 404 for missing product (line 58-59) and 400 for product with no embedding (lines 61-63) but does not handle a text-search embedding-call failure code path (find_substitutes attempts server-side aggregation and falls back silently on exception lines 67-99).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add a text /search endpoint, validate empty queries and return 400; when using external embedding APIs, detect and return a clear 502/503 with a helpful message if embedding generation fails."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "app/app/routes.py projects 'score' from $meta searchScore in the server-side pipeline (line 83) and returns computed cosine scores in the client-side fallback (lines 110-114). SubstituteResult includes score field (lines 23-28).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "met",
+      "evidence": "app/requirements.txt contains pinned versions (events show the file written with exact versions).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files found in repository; no CI/test harness present.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add small unit tests that mock the database (e.g., use mongomock or dependency-injected stub clients) and include a test runner script in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep/ARM/Terraform) are present in the repository; only application code and README exist.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Provide a Bicep or Terraform example (using Microsoft.DocumentDB/mongoClusters) as a small 'infra' folder with defaults that target a low-cost dev tier and document cost warnings."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes 'What this sample shows', 'Prerequisites', Quickstart steps, and 'Cleaning up' (lines shown in the README).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and code and comments refer to 'Azure DocumentDB' and 'DocumentDB' consistently (README lines 4-6).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create a single, process-lifetime MongoDB/Cosmos client instance and reuse it for the application's lifetime rather than constructing a new client per request.",
+      "category": "connection-handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/troubleshoot-request-rate-too-large#rate-limiting-on-metadata-requests",
+      "status": "followed",
+      "evidence": "app/app/main.py lines 38-55 (create AsyncIOMotorClient and init_beanie at startup).",
+      "source": "Diagnose and troubleshoot \"Request rate too large\" (429) exceptions",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Diagnose and troubleshoot \"Request rate too large\" (429) exceptions",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/troubleshoot-request-rate-too-large#rate-limiting-on-metadata-requests"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver connection options",
+      "practice": "Configure driver timeouts/retries/TLS per DocumentDB guidance (serverSelectionTimeoutMS, maxPoolSize, tls=true).",
+      "category": "connection-handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#create-an-azure-documentdb-cluster",
+      "status": "violated",
+      "evidence": "app/app/main.py creates AsyncIOMotorClient(mongo_uri) without explicit tuned options (line 40).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "Pass recommended options or document the recommendations; e.g., AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=5000, maxPoolSize=50) or ensure portal-provided tls parameters are present in URI.",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#create-an-azure-documentdb-cluster"
+        },
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation helper",
+      "practice": "Create and verify database, collections and required indexes at provisioning or bootstrap time.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#create-an-azure-documentdb-cluster",
+      "status": "followed",
+      "evidence": "scripts/ingest.py includes ensure_index(...) that builds a createIndexes runCommand with cosmosSearchOptions (lines 42-69).",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python#create-an-azure-documentdb-cluster"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index selection",
+      "practice": "Pick the vector index algorithm appropriate to dataset scale and SLA; HNSW is suitable for mid-size (10k) demos.",
+      "category": "indexing / vector-search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "scripts/ingest.py chooses kind 'vector-hnsw' with m=16, efConstruction=200 (lines 59-64).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index params tuning",
+      "practice": "Set and tune algorithm-specific vector-index parameters (dimensions, m/efConstruction, lBuild/lSearch, numLists for IVF).",
+      "category": "indexing / vector-search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "scripts/ingest.py sets m and efConstruction (lines 60-64) and README documents index creation step (app/README.md line 16).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add explicit README tuning guidance for larger datasets (see Requirement Results).",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vectors as numeric arrays",
+      "practice": "Store vectors as numeric arrays (number[]) and index them only via the platform's vector-index mechanisms.",
+      "category": "data-modeling / indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "app/app/models.py defines embedding: List[float] and ingest stores numeric arrays (scripts/ingest.py lines 118-126).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side vector search operator",
+      "practice": "Use the $search aggregation stage with the cosmosSearch operator as the first stage for vector queries and project searchScore.",
+      "category": "queries / vector-search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/full-text-search-overview#how-azure-documentdb-full-text-search-works",
+      "status": "violated",
+      "evidence": "app/app/routes.py attempts a $search stage with 'knnBeta' (pipeline lines 72-84) rather than the DocumentDB 'cosmosSearch' operator and does not explicitly request similarity 'COS'.",
+      "source": "Full-text search in Azure DocumentDB",
+      "searched": "",
+      "fix": "Change pipeline to use $search:{ 'cosmosSearch': { 'vector':..., 'path':'embedding', 'k':..., 'similarity':'COS' } } and $project searchScore via $meta. Ensure $search is the first aggregation stage.",
+      "sources": [
+        {
+          "title": "Full-text search in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/full-text-search-overview#how-azure-documentdb-full-text-search-works"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection of fields",
+      "practice": "Project only the fields the UI needs and avoid returning the full embedding vector in API responses.",
+      "category": "queries / performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index",
+      "status": "followed",
+      "evidence": "Server-side pipeline projects only product_id, name, and score (app/app/routes.py line 83). The client-side fallback returns Product documents but the UI fetch code only displays name/id/score.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk ingestion batching",
+      "practice": "For large-scale ingestion use SDK bulk execution or batched inserts instead of one-document-at-a-time inserts.",
+      "category": "ingestion / provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/vector-search-performance-tips#tips-for-optimizing-insert-throughput",
+      "status": "followed",
+      "evidence": "scripts/ingest.py batches inserts with DEFAULT_BATCH = 200 and uses insert_many (lines 38, 129-136).",
+      "source": "Tips for optimizing vector indexing & search performance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Tips for optimizing vector indexing & search performance",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/gen-ai/vector-search-performance-tips#tips-for-optimizing-insert-throughput"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry handling",
+      "practice": "Implement retry handling for throttling and transient errors and honor service-provided retry headers.",
+      "category": "retries / robustness",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/troubleshoot-request-rate-too-large#rate-limiting-on-metadata-requests",
+      "status": "violated",
+      "evidence": "No retry/exponential-backoff handling seen for insert_many or index commands in scripts/ingest.py or for server-side queries in app/app/routes.py.",
+      "source": "Diagnose and troubleshoot \"Request rate too large\" (429) exceptions",
+      "searched": "",
+      "fix": "Wrap writes and expensive queries with retry logic honoring x-ms-retry-after-ms/Retry-After and exponential backoff; add a small retry helper used by ingest and query code.",
+      "sources": [
+        {
+          "title": "Diagnose and troubleshoot \"Request rate too large\" (429) exceptions",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/troubleshoot-request-rate-too-large#rate-limiting-on-metadata-requests"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Conventional indexes",
+      "practice": "Create single-field and compound indexes for common lookups (product_id).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/indexing",
+      "status": "followed",
+      "evidence": "app/app/models.py declares product_id Field with index=True (models.py lines including field definition) to support lookups; the code uses find_one(Product.product_id == product_id) (app/app/routes.py line 57).",
+      "source": "Manage indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/indexing"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator decision; events show readiness checks and identified gaps. No contradiction found in trace."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python FastAPI with Beanie matches the starter prompt; events show the runtime and the decision was recorded (pip availability and code written)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choosing text-embedding-3-small (1536 dims) is implemented: scripts/ingest.py uses model 'text-embedding-3-small' and EMBEDDING_DIMS=1536. Decision is reflected in code."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Choosing HNSW and the specified params is implemented in the index-creation payload in scripts/ingest.py. Events show attempts to create the index with those params."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI via pydantic BaseSettings is implemented (app/app/config.py) and a clear error path is provided. Events show .env.example created and config loaded."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Denormalized Product document implemented in app/app/models.py and used by the app. The decision is consistent with the code."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Singleton AsyncIOMotorClient and Beanie initialization at startup implemented in app/app/main.py; events show the documentdb-driver skill was loaded to guide this choice."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Providing both the MCP-based index creation approach and a Python helper is implemented: scripts/ingest.py has ensure_index, and events show documentdb_create_index attempts. The MCP attempts failed because management tools were disabled in this environment (events show ToolExecutionException)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The decision to use MCP tools for verification because pip install failed is supported by the trace: pip install run_command failed (pydantic-core build errors) and subsequent MCP tool calls failed because management/write tools are disabled. The decision is reasonable given the constraints, though verification was not completed."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Explicit DocumentDB cosmosSearch examples for Python FastAPI samples",
+      "what_was_missing": "A concise, copy-paste-ready example that shows the exact $search aggregation pipeline using the 'cosmosSearch' operator for vector search (including similarity:'COS', path, k and how to project $meta 'searchScore').",
+      "where_searched": "Microsoft Learn vector-search docs and quickstarts were examined (events show vector-search skill and learn_microsoft_docs_search results), but the builder implemented a knnBeta-style payload from prior knowledge rather than the DocumentDB cosmosSearch JSON.",
+      "effect_on_this_build": "Builder implemented a $search pipeline using 'knnBeta' which is not the DocumentDB 'cosmosSearch' shape; this likely prevents server-side vector search on DocumentDB and forced reliance on inefficient client-side fallback.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Vector search example for Python' snippet to the docs/quickstart that includes a working $search{'cosmosSearch': {...}} aggregation example, showing similarity:'COS', vector path, k and $project of $meta: 'searchScore'. Include a small Python helper function that returns the pipeline object.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index creation helper that is safe and idempotent",
+      "what_was_missing": "A small helper script / library snippet that safely creates or verifies a DocumentDB vector index and returns a friendly error if management tools are required or disabled. The builder's ensure_index is best-effort but the environment-specific MCP flags blocked verification.",
+      "where_searched": "Search of DocumentDB vector-search quickstarts and MCP skill resources.",
+      "effect_on_this_build": "Index creation attempts could not be verified in this run (management tools disabled); users may run the sample and find the index missing or misconfigured.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Provide a helper script 'create_vector_index.py' that (1) reads EMBEDDING_DIMS from config, (2) checks existing indexes and whether a vector index with matching dimensions exists, (3) creates the index via createIndexes if allowed, and (4) prints a clear instruction for how to create it via the portal or MCP if management tools are disabled.",
+      "priority": "high"
+    },
+    {
+      "topic": "Embedding model & dimension guidance for samples",
+      "what_was_missing": "A short authoritative sentence in the sample docs saying which embedding model the sample was built for (e.g., 'text-embedding-3-small, 1536 dims') and why, with instructions how to change embedding dims consistently (model config, index creation constant).",
+      "where_searched": "No single doc in the sample pointed to a canonical embedding model choice; the builder made an implementation choice. Public docs mention index dimensions but not a default embedding model for samples.",
+      "effect_on_this_build": "The builder selected 1536 dims and used it everywhere; without explicit doc a different builder might pick different dims and create a mismatched index.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a README subsection 'Embedding model and index dimensions' that states the chosen default model, its dimensionality, where to change EMBEDDING_DIMS in code, and how to recreate the index when switching models.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Idempotent ingestion guidance for samples",
+      "what_was_missing": "Example code or guidance showing an idempotent ingestion pattern (upsert by product_id or dedupe by deterministic id), and a worked example batch size for 10k inserts that is safe for typical dev tiers.",
+      "where_searched": "DocumentDB ingestion and vector performance docs mention bulk but do not include a simple idempotent sample for product catalogs in gallery samples.",
+      "effect_on_this_build": "The ingest script is not idempotent and the README/warnings note this; users re-running ingest may get duplicates unexpectedly.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add an 'idempotent ingestion' recipe that uses bulk upserts (replaceOne with upsert:true) in batches and documents trade-offs and a --force flag to clear and re-seed if desired.",
+      "priority": "high"
+    },
+    {
+      "topic": "Clear guidance about management/write MCP tool opt-ins",
+      "what_was_missing": "An explicit note in sample README that MCP management/write tools may be disabled by default in some agent environments and must be enabled via environment variables (ENABLE_MANAGEMENT_TOOLS / ENABLE_WRITE_TOOLS) before the repository's verification scripts can run.",
+      "where_searched": "Events show documentdb_create_index and documentdb_insert_documents failed with explicit errors about opt-in flags.",
+      "effect_on_this_build": "Automated verification attempts failed in this environment; maintainers may be confused why MCP calls error with 'Management tools are disabled by default.'",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short paragraph to README explaining MCP tool opt-in flags and how to run verification locally, including example commands to enable the tools and warnings about running write operations.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Public clarification on vector numeric formats",
+      "what_was_missing": "Because prior beliefs sometimes assume float32-only embeddings, highlight in public docs that DocumentDB supports half-precision / product quantization and when to prefer reduced precision.",
+      "where_searched": "The vector-search docs already state DiskANN/PQ and reduced-precision support, but this is a gap for agents trained on float32-only priors.",
+      "effect_on_this_build": "No direct build impact, but agents may pick float32 unnecessarily; explicit note would prevent incorrect assumptions.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a small note near the vector-search quickstart: 'DocumentDB supports half-precision and product quantization — for very large indexes prefer PQ/fp16; see DiskANN options.'",
+      "priority": "low"
+    }
+  ]
+}
