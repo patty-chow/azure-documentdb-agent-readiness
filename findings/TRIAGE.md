@@ -1458,9 +1458,9 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 02-ai-powered-product-recommendations | `runs/02-ai-powered-product-recommendations/20261124-181835` | 1 | 0 | 11 | 61 | 2 |
 | 02-clinical-trial-matching-orchestration | `runs/02-clinical-trial-matching-orchestration/20261124-193208` | 3 | 0 | 20 | 51 | 2 |
 | 02-real-time-event-stream-ingestion | `runs/02-real-time-event-stream-ingestion/20261124-203233` | 0 | 0 | 12 | 7 | 0 |
-| 02-swift-message-parser-store | `runs/02-swift-message-parser-store/20261124-200226` | 0 | 0 | 12 | 62 | 2 |
+| 02-swift-message-parser-store | `runs/02-swift-message-parser-store/20261124-200226` | 2 | 0 | 12 | 78 | 3 |
 | 02-transaction-categorization-agent | `runs/02-transaction-categorization-agent/20261124-190028` | 0 | 0 | 18 | 96 | 5 |
-| 03-core-banking-transaction-ledger | `runs/03-core-banking-transaction-ledger/20261124-200452` | 4 | 0 | 14 | 78 | 2 |
+| 03-core-banking-transaction-ledger | `runs/03-core-banking-transaction-ledger/20261124-200452` | 4 | 0 | 16 | 93 | 2 |
 | 03-medication-interaction-checker | `runs/03-medication-interaction-checker/20261124-193347` | 7 | 0 | 38 | 70 | 0 |
 | 03-next-best-action-multi-agent | `runs/03-next-best-action-multi-agent/20261124-203319` | 0 | 0 | 1 | 10 | 0 |
 | 03-portfolio-tracker-with-live-alerts | `runs/03-portfolio-tracker-with-live-alerts/20261124-190220` | 6 | 0 | 22 | 104 | 1 |
@@ -1469,7 +1469,7 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 04-earnings-call-rag-assistant | `runs/04-earnings-call-rag-assistant/20261124-190247` | 3 | 0 | 26 | 53 | 4 |
 | 04-medical-imaging-metadata-store | `runs/04-medical-imaging-metadata-store/20261124-193446` | 4 | 0 | 21 | 63 | 5 |
 | 04-natural-language-product-search | `runs/04-natural-language-product-search/20261124-183232` | 2 | 0 | 33 | 80 | 3 |
-| 04-regulatory-reporting-orchestration | `runs/04-regulatory-reporting-orchestration/20261124-200545` | 0 | 0 | 13 | 4 | 0 |
+| 04-regulatory-reporting-orchestration | `runs/04-regulatory-reporting-orchestration/20261124-200545` | 0 | 0 | 13 | 21 | 0 |
 | 05-appointment-scheduling-assistant | `runs/05-appointment-scheduling-assistant/20261124-193733` | 3 | 0 | 8 | 36 | 4 |
 | 05-branch-performance-analytics | `runs/05-branch-performance-analytics/20261124-200647` | 0 | 0 | 10 | 2 | 0 |
 | 05-churn-prediction-pipeline | `runs/05-churn-prediction-pipeline/20261124-203754` | 0 | 0 | 11 | 4 | 0 |
