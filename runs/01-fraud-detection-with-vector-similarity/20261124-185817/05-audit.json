@@ -1,0 +1,585 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The repository is a compact, mostly-complete Python sample that demonstrates encoding transaction text to embeddings, storing them as documents, and running a $search/cosmosSearch vector query to compute a numeric fraud score plus a human-readable explanation. The builder implemented a singleton MongoClient, local sentence-transformers embeddings, an idempotent seed script (upserts), and a demo CLI script that computes risk and prints an explanation. Shortcomings: the prompt asked for a \"Python LangChain agent\" and a LangChain tool wrapper for vector search but the sample implements a standalone script (run_agent.py) and does not expose or register a LangChain Tool/Agent; index creation is not present in the code (the builder attempted MCP-managed index creation but the MCP write/management tools were disabled in this run); error handling around embedding failures is minimal; dependencies are not strictly pinned; no offline unit tests or IaC were included. Many of the expected DocumentDB best practices are present (env-driven connection string, client singleton, normalized vectors, embedding metadata saved with documents, $meta: 'searchScore' projection). The MCP verification attempts failed due to management/write tools being disabled in this run (events.jsonl shows ToolExecutionException with ENABLE_MANAGEMENT_TOOLS / ENABLE_WRITE_TOOLS opt-in errors).",
+  "requirement_results": [
+    {
+      "requirement": "A Python LangChain agent is the single entry point: it accepts a new transaction and runs the fraud check for it.",
+      "status": "not_met",
+      "evidence": "run_agent.py:1-11, run_agent.py does not import or instantiate LangChain agent APIs, it is a CLI script (main) that calls embed_text and vector_search directly.",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap the existing vector_search/compute_risk/explain functions in a LangChain Tool and provide a minimal LangChain Agent instantiation in run_agent.py (or add a separate agent.py that registers the tool and exposes the same CLI)."
+    },
+    {
+      "requirement": "The agent encodes a transaction's features into an embedding vector with an embedding model, and the same model is used for the stored fraud pattern vectors and for new transactions.",
+      "status": "met",
+      "evidence": "embeddings.py:14-18 (embed_text uses model.encode(normalize_embeddings=True)); seed.py:39-41 (embed_many used to compute vectors for patterns); run_agent.py:59 (embed_text used for new transaction).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Known fraud pattern vectors are stored as an embedding field on documents in an Azure DocumentDB collection, written through a MongoDB driver (e.g. PyMongo), with each document carrying the pattern information the explanation draws on.",
+      "status": "met",
+      "evidence": "seed.py:42-54 creates documents with fields pattern_name, description, ts, vector, model, dims, schemaVersion and uses coll.replace_one(..., upsert=True); docdb_client.get_db() uses pymongo (docdb_client.py:7-15).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A cosmosSearch index of kind vector-ivf is created in code on that embedding field, with dimensions matching the embedding model's output (similarity e.g. COS).",
+      "status": "not_met",
+      "evidence": "No createIndexes / createSearchIndexes call in repository files; events.jsonl shows attempted documentdb_create_index calls that failed (ToolExecutionException: Management tools are disabled) (events.jsonl entries at timestamps ~06:28:57 and 06:29:05).",
+      "cause": "builder_error",
+      "smallest_fix": "Add idempotent index-creation code (e.g., a create_index() in seed.py that issues the createIndexes command with cosmosSearchOptions including kind:'vector-ivf' and dimensions=len(vec)) so the sample can create/verify the index from code."
+    },
+    {
+      "requirement": "A LangChain tool performs the vector search against Azure DocumentDB with a $search / cosmosSearch query using the new transaction's embedding as the query vector, and returns the similar historical cases.",
+      "status": "not_met",
+      "evidence": "run_agent.py:18-27 implements vector_search using pymongo.aggregate with $search/cosmosSearch but it is not exposed as a LangChain Tool (no langchain imports or Tool wrapper).",
+      "cause": "builder_error",
+      "smallest_fix": "Wrap vector_search as a LangChain Tool (or Retriever) and register it in the sample agent; add an example of calling the tool from a LangChain Agent in the CLI."
+    },
+    {
+      "requirement": "On each new transaction the agent invokes that vector search tool and derives a fraud risk score from the returned similar cases (e.g. based on how closely they match).",
+      "status": "partly_met",
+      "evidence": "run_agent.py:59-63 (the CLI script calls embed_text(), vector_search(), compute_risk() to derive a numeric score). The flow exists but it is not performed via a LangChain agent/tool.",
+      "cause": "builder_error",
+      "smallest_fix": "Have the LangChain Agent call the registered LangChain Tool that performs the vector search, or document that the CLI is a minimal agent implementation; prefer adding the LangChain Tool wrapper so the sample matches the starter prompt."
+    },
+    {
+      "requirement": "The agent's response contains both the numeric fraud risk score and a natural-language explanation that describes the matching fraud patterns.",
+      "status": "met",
+      "evidence": "run_agent.py:61-66 prints the computed risk and explanation; explain() builds a readable explanation with pattern names and similarity scores (run_agent.py:41-51).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": ".env.example:1-4 contains DOCUMENTDB_URI and OPENAI_API_KEY placeholders; docdb_client.py:10 reads DOCUMENTDB_URI from the environment and raises if absent.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": ".env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example:1-4 includes DOCUMENTDB_URI and OPENAI_API_KEY but does not list MODEL_NAME, EMBEDDING_DIMS or index parameters used by the sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add placeholders to .env.example for MODEL_NAME, EMBEDDING_DIMS (or MODEL_DIMS), INDEX_KIND, INDEX_NUM_LISTS and any other toggles (e.g., USE_LOCAL_EMBEDDINGS, ENABLE_LLM_EXPLANATIONS)."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "embeddings.py uses all-MiniLM-L6-v2 (384 dims) (embeddings.py:7-11, 14-18). The builder recorded a decision to create an IVF index with dimensions=384 (decisions.jsonl / events.jsonl D005), and events show attempted index creation with dimensions=384 (events.jsonl). However, index creation did not succeed in this run and there is no createIndexes call in the repo.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Create the index from code in seed.py (use len(vec) for dimensions) and document the match; if you keep MCP-based verification, add a fallback createIndexes path in code."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "partly_met",
+      "evidence": "decisions.jsonl D005 documents use numLists=1 for a demo and README.md:41-44 and builder_report.open_issues mention numLists=1 and advise changing for production. README notes index tuning but does not provide ranges or explicit step-by-step for larger datasets.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a short README section with recommended index types and parameter ranges (small demo vs medium vs large) and show the exact JSON to change in the createIndexes call."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "docdb_client.py:4-15 implements a module-level MongoClient singleton (_client) and get_client() returns the shared client.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "seed.py:53 uses coll.replace_one(..., upsert=True) (idempotent upserts). However seed.py does not create the vector index; index creation was attempted via MCP tools and failed in this run (events.jsonl shows management/write tools disabled).",
+      "cause": "builder_error",
+      "smallest_fix": "Add idempotent index creation (createIndexes) to seed.py before upserts so seed.py fully prepares the collection and can be re-run safely."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "partly_met",
+      "evidence": "run_agent.py:54-57 checks for missing CLI argument and prints usage. There is no try/except around embed_text() or vector_search() to produce a clear error on embedding failures or runtime exceptions.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Wrap embedding and vector_search calls with explicit exception handling and return/print distinct errors for empty input and embedding failures (catch exceptions from sentence_transformers and pymongo and provide helpful messages)."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "run_agent.py:21-24 uses pipeline projecting {'similarityScore': {'$meta': 'searchScore'}, 'document': '$$ROOT'} and explain() prints sim values (run_agent.py:22-24, 45-50).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt:1-4 pins ranges (pymongo>=4.4,<5.0, sentence-transformers>=2.2.2, langchain>=0.0.300, python-dotenv>=1.0.0) but not exact pinned versions (==).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Pin exact compatible versions (==) or include a constraints file (pip-constraints.txt) with exact hashes to make CI reproducible."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No tests found in repository; no mocking or offline test harness present.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add pytest-based unit tests that mock pymongo (e.g., with mongomock or monkeypatching) to validate compute_risk, explain, and embed logic without a live cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/Terraform) files present in the repository; readiness findings described how to use Microsoft.DocumentDB/mongoClusters but no template is included.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a minimal IaC example (Bicep or Terraform) that creates an Azure DocumentDB mongoClusters resource (Microsoft.DocumentDB/mongoClusters) with cost-saving defaults, and reference it from the README."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "README.md includes sample description, prerequisites, quickstart steps, seeding, run instructions and cleanup guidance (README.md:1-40, 48-49).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md title and text consistently call it 'Azure DocumentDB' (README.md:1-8, 21-23); .env.example and code reference cluster endpoints but do not use older product names.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Instantiate and reuse a single MongoClient per process (module-level singleton) instead of creating a client per request.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "docdb_client.py:4-15 implements a module-level _client and get_client() singleton.",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS on connection",
+      "practice": "Always connect with TLS enabled and do not disable certificate validation in production.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": ".env.example:2 suggests tls=true and docdb_client.py relies on the connection string (docdb_client.py:10-14).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune client connection-pool and timeout options to match workload.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "docdb_client.py uses default MongoClient(...) with no explicit maxPoolSize/connectTimeoutMS options; no commented tuning guidance in code.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": "A short README note or config settings showing recommended pool/timeouts for demo vs production would let an agent confirm appropriate tuning."
+    },
+    {
+      "topic": "Env secrets",
+      "practice": "Keep the cluster connection string and any credentials out of source control and read DOCUMENTDB_URI from environment variables or a secrets store.",
+      "category": "authentication",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "docdb_client.py:10 reads DOCUMENTDB_URI from the environment; .env.example contains a placeholder (app/.env.example:1-4).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": ".env completeness",
+      "practice": ".env.example lists every required setting with placeholder values.",
+      "category": "authentication",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "app/.env.example: only DOCUMENTDB_URI and OPENAI_API_KEY are present; no MODEL_NAME, MODEL_DIMS, INDEX parameters or toggles are listed.",
+      "source": "checklist only",
+      "searched": "Searched repository for .env.* and sample env templates; searched docs for recommended sample env variables (embedding model name, index knobs). Found no canonical .env.example for this sample.",
+      "fix": "Add MODEL_NAME, EMBEDDING_DIMS (or MODEL_DIMS), INDEX_KIND, INDEX_NUMLISTS and optional toggles to .env.example.",
+      "sources": [],
+      "what_would_help": "A public example .env template listing connection, model, index and optional LLM keys so an agent can confirm all required settings."
+    },
+    {
+      "topic": "Schema versioning",
+      "practice": "Use an explicit, consistent document schema for fraud/transaction data and include schemaVersion for migrations.",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "seed.py:44-52 includes model, dims and schemaVersion fields in each inserted document.",
+      "source": "prior_knowledge_only",
+      "searched": "Searched Microsoft docs for canonical fraud schema examples; no single Azure DocumentDB public schema sample for transaction embeddings was found.",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short public page showing recommended schema fields for transaction+embedding documents (transaction_id, account_id, timestamp, features, embedding, model, dims, schemaVersion)."
+    },
+    {
+      "topic": "Document size",
+      "practice": "Keep documents small and move very large raw payloads to an external blob store.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "seed.py creates compact pattern docs with small metadata and vector; no large raw payloads are embedded (seed.py:44-52).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create vector index",
+      "practice": "Create a cosmosSearch vector index on the vector field and declare algorithm-specific options (kind, dimensions, similarity, algorithm params).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index",
+      "status": "violated",
+      "evidence": "No createIndexes call in repo; events.jsonl shows attempted documentdb_create_index calls that failed with 'Management tools are disabled by default' (events.jsonl: entry at 06:28:57 and 06:29:05).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add idempotent createIndexes JSON via pymongo's database.command() or a create_index helper in seed.py using cosmosSearchOptions (kind:'vector-ivf', dimensions=len(vec), similarity:'COS', numLists:1).",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector query projection",
+      "practice": "Use $meta:'searchScore' and returnStoredSource:true to obtain searchScore and matched document for explanations.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "followed",
+      "evidence": "run_agent.py pipeline uses {'$search': {'cosmosSearch': {...}, 'returnStoredSource': True}} and projects similarityScore via {$meta: 'searchScore'} (run_agent.py:21-24).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize embeddings for COS",
+      "practice": "Ensure all embeddings in a collection use the same dimension and, when using COS, normalize vectors to unit length at ingestion and store model name + dimensions.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "embeddings.embed_text normalizes embeddings via model.encode(..., normalize_embeddings=True) (embeddings.py:16); seed.py stores 'model' and 'dims' with each doc (seed.py:48-51).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index tuning for sample size",
+      "practice": "Tune search-time ANN parameters and keep lSearch >= k; choose conservative topK and adjust ef/probe for recall vs latency.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "The sample picks k=5 and a demo index decision numLists=1 (decisions.jsonl D005) but there are no runtime benchmarks or lSearch/efSearch tuning in code to verify appropriate tuning for recall/latency.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": "A short benchmark or guidance section (README) showing how to run recall@k/p95 lat benchmarks and recommended lSearch/efSearch ranges for small/medium/large datasets."
+    },
+    {
+      "topic": "Idempotent seed upserts",
+      "practice": "Make seeding scripts idempotent by using upsert/replaceOne with upsert:true.",
+      "category": "seeding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/how-to-javascript-manage-documents#update-a-document",
+      "status": "followed",
+      "evidence": "seed.py:53 uses coll.replace_one({'pattern_name': ...}, doc, upsert=True) to avoid duplicates.",
+      "source": "Manage a document in Azure Cosmos DB for MongoDB using JavaScript",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage a document in Azure Cosmos DB for MongoDB using JavaScript",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/how-to-javascript-manage-documents#update-a-document"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid logging sensitive data",
+      "practice": "Do not log raw embeddings, transaction PII, or DB credentials in application logs.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "Source files do not write embeddings or credentials to logs or print them; seed.py prints only 'Upserted pattern' and run_agent.py prints risk and explanation but not raw embedding vectors (seed.py:55; run_agent.py:65-66).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Store embedding metadata",
+      "practice": "Store embedding-model metadata (model name, version, dims) with each inserted vector.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "seed.py:48-51 includes 'model' and 'dims' fields in each document.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Limit candidate set",
+      "practice": "Limit the candidate set (topK) used to compute scores; compute fraud risk from a small set of nearest neighbors (e.g., top 5–10).",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "followed",
+      "evidence": "run_agent.py uses k=5 in vector_search() and compute_risk computes score from top similarity (run_agent.py:18-27, 30-38).",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Cluster tier sizing",
+      "practice": "Provision cluster compute/tier to match expected search and ingestion load (choose an appropriate tier such as M30+ for production vector workloads).",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "README notes an M30 cluster in skill_md run environment, and builder_report mentions the live cluster used for verification. The sample does not create the cluster or set tier via IaC.",
+      "source": "documentdb-vector-search",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "what_would_help": "A short note in the README showing how to pick tier and where to edit the IaC template would make this actionable."
+    },
+    {
+      "topic": "Vector value type",
+      "practice": "Vectors must be a number[] in documents to be indexed by a cosmosSearch vector index.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P26",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index",
+      "status": "followed",
+      "evidence": "seed.py stores Python float lists (seed.py:48); embeddings.embed_text returns float list via vec.tolist() (embeddings.py:16-18).",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#example-using-an-hnsw-index"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approving the build with readiness 'ready_with_gaps' is reasonable given the sample is functionally useful but had verification gaps and documentation omissions. The events and files support that the build is partial but deliverable."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python (system Python 3.13 available) is supported by the readiness report and the implementation is in Python. Events.jsonl shows the decision was logged (events entry at ~06:27:48)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choosing pymongo is appropriate for a Python MongoDB-compatible sample; the code uses pymongo and requirements.txt pins a compatible range. The decision was logged (events.jsonl)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Choosing sentence-transformers/all-MiniLM-L6-v2 (384 dims) for a local demo is consistent with the builder's intent to avoid cloud API keys. The choice is implemented (embeddings.py) and logged (events.jsonl)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Choosing vector-ivf with dimensions=384 and numLists=1 is a defensible demo choice; events.jsonl shows the create_index attempt used those parameters. The index create failed because management tools were disabled in this run, not because the choice was incorrect."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Using DOCUMENTDB_URI from the environment is correct and implemented (docdb_client.py); the decision was logged and matches README/.env.example."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Defaulting to deterministic, template-based explanations when an LLM API key is absent keeps the sample runnable without cloud LLM credentials. The code implements a template fallback in run_agent.py and the decision was logged."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "questionable",
+      "comment": "The builder chose to use the MCP server tools for data-plane verification because DOCUMENTDB_URI might be absent. Events.jsonl shows the MCP read tool (list_databases) worked, but management/write tools failed with 'Management tools are disabled by default. Set ENABLE_MANAGEMENT_TOOLS=true' and 'Write tools are disabled by default. Set ENABLE_WRITE_TOOLS=true'. The decision statement that 'MCP tools are available' is partially true (read-only was available) but the write/management calls required opt-in and therefore the verification strategy was fragile."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Binary embedding storage format",
+      "what_was_missing": "Clarification whether Azure DocumentDB supports a binary/compressed embedding storage format or requires number[] float arrays; guidance on recommended storage format and examples for Python.",
+      "where_searched": "Azure DocumentDB vector-search docs (learn.microsoft.com), documentdb-vector-search skill resources, repository files.",
+      "effect_on_this_build": "Builder defaulted to storing float arrays (number[]) in documents (seed.py & embeddings.py). If a developer assumed a binary/compressed format was supported they might store incompatible data and fail to get indexed by cosmosSearch.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Embedding storage formats' doc on the vector-search docs page that states: (1) DocumentDB expects vectors as number[] for cosmosSearch indexing; (2) show Python example: vec.tolist() then createIndexes cosmosSearchOptions; (3) discuss compression tradeoffs (product quantization) and link to product-quantization doc; (4) show how to store model metadata and dims.",
+      "priority": "high"
+    },
+    {
+      "topic": ".env.example completeness",
+      "what_was_missing": "A canonical .env.example listing every setting the sample needs (model name, model dims, index knobs, optional OpenAI key and toggles).",
+      "where_searched": "Repository .env.example and README; installer skills and docs for embedding/index examples.",
+      "effect_on_this_build": "The builder included DOCUMENTDB_URI and OPENAI_API_KEY but omitted explicit placeholders for MODEL_NAME, EMBEDDING_DIMS and index parameters. This caused guesswork and local edits by the developer.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "An agent-kit rule and a sample .env.example template that includes: DOCUMENTDB_URI, MODEL_NAME, EMBEDDING_DIMS (or MODEL_DIMS), INDEX_KIND, INDEX_NUM_LISTS, USE_LOCAL_EMBEDDING (true/false), OPENAI_API_KEY, and an explanation line for each variable.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Seed script should create index idempotently",
+      "what_was_missing": "An example in the docs or a seed script that shows idempotent createIndexes for cosmosSearch vector indexes (so seed.py both creates the index and upserts docs).",
+      "where_searched": "Repository seed.py, documentdb-vector-search skill and Microsoft Learn vector-index pages.",
+      "effect_on_this_build": "Index creation was attempted via MCP and failed in this run; because seed.py lacks index-creation code a user re-running seed.py wouldn't reliably build the index automatically.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A code snippet to include in seed.py that calls db.command({ 'createIndexes': '<collection>', 'indexes': [ { 'name': '...', 'key': {'vector': 'cosmosSearch'}, 'cosmosSearchOptions': { 'kind': 'vector-ivf', 'dimensions': <dims>, 'similarity':'COS', 'numLists': <n> } } ] }) and handles IndexExists gracefully. Document expected parameter choices for demo vs larger datasets.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index tuning guidance in README",
+      "what_was_missing": "Concrete guidance and example parameter ranges in the README for how to change index kind and tuning parameters when moving from demo to production.",
+      "where_searched": "README.md and documentdb-vector-search public docs.",
+      "effect_on_this_build": "The README mentions tuning at a high level but does not give explicit change instructions; a developer may pick unsafe defaults for larger datasets.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A README section with example createIndexes JSON for IVF/HNSW/DiskANN, recommended numLists/m/efConstruction/lBuild ranges for small/medium/large datasets, and commands to update or drop/recreate indexes.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests that run without a live cluster",
+      "what_was_missing": "An offline unit test scaffold that runs without a live DocumentDB cluster (e.g., using mongomock or mocking the MongoClient).",
+      "where_searched": "Repository tests (none) and test guidance in skills.",
+      "effect_on_this_build": "No tests exist; CI or a local contributor cannot validate compute_risk/explain behavior without provisioning a cluster.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add pytest tests: (1) unit tests for compute_risk and explain() using synthetic results; (2) integration-style tests using mongomock for seed upserts and vector_search pipeline shape (mock aggregate results), and a small test that asserts run_agent CLI handles empty input and embedding exceptions.",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC example for DocumentDB",
+      "what_was_missing": "A minimal Bicep/Terraform template using Microsoft.DocumentDB/mongoClusters to provision an Azure DocumentDB cluster for the sample.",
+      "where_searched": "Repository (no IaC) and Microsoft Learn (found examples but none included with sample).",
+      "effect_on_this_build": "Builder relied on an existing cluster and did not provide IaC; repository cannot be used as a full reproducible sample for users who want to provision a test cluster.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Add 'iac/' with a Bicep file and a short Terraform/az API snippet that creates a low-cost cluster (e.g., small test tier) and documents how to retrieve connection strings (az documentdb mongocluster list-connection-strings) and set DOCUMENTDB_URI.",
+      "priority": "high"
+    },
+    {
+      "topic": "Agent-tool integration example",
+      "what_was_missing": "An explicit, minimal example that demonstrates wrapping the vector_search function as a LangChain Tool and invoking it from an Agent.",
+      "where_searched": "Repository run_agent.py (no LangChain Tool), LangChain docs (not packaged in sample).",
+      "effect_on_this_build": "The sample is runnable as a CLI script but does not demonstrate LangChain integration requested by the starter prompt; consumers expecting a LangChain Agent example won't find it.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add agent_wrapper.py showing from langchain.tools import Tool (or the current LangChain Tool pattern) that wraps vector_search, then construct an Agent (or simple LLMChain) that calls the Tool; include an integration example in README.",
+      "priority": "medium"
+    }
+  ]
+}
