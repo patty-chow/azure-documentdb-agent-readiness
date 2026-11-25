@@ -1,0 +1,591 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements a Python LangChain-style agent that combines a DocumentDB aggregation and a pluggable web-search tool, seeds idempotent sample data, and produces a ranked list. Core functionality requested by the starter prompt is present (LangChain agent with two tools, server-side aggregation pipeline, web-search tool and signal combination). Several checklist and best-practice items are missing or only partly implemented (season-to-season delta computation, context-engineered prompt to the model, explicit TLS/retry settings, test harness, strict dependency pinning, /search error contract, and batching for large seed loads). Many DocumentDB best-practices are discoverable and were consulted; some guidance (driver-version recommendations, web-search timeout/backoff sizing, batch-size guidance, UTC date guidance) is either present but hard-to-find, or only prior knowledge and should be documented for agentic builders. See requirement_results, checks, decision_reviews and doc_gaps for details and minimal fixes.",
+  "requirement_results": [
+    {
+      "requirement": "A Python agent built with LangChain, where one agent owns the reasoning loop and is given exactly two tools it can call: an aggregation tool and a web search tool.",
+      "status": "met",
+      "evidence": "app/src/agent.py:21-24 (Tool.from_function registration of 'aggregation_tool' and 'web_search_tool'); agent.run orchestration present in same file.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The aggregation tool runs an aggregation pipeline against Azure DocumentDB through a MongoDB driver and the pipeline's stages compute sales velocity per season and compare it across seasons.",
+      "status": "partly_met",
+      "evidence": "app/src/tools/documentdb_tool.py:52-71 (aggregation pipeline with $match, $addFields deriving season, $group by category+season and $project).",
+      "cause": "builder_error",
+      "smallest_fix": "Add pipeline stages (e.g., $group + $setWindowFields or $group + $lookup + $project) to compute season-to-season change/delta per category and return the derived change field."
+    },
+    {
+      "requirement": "The web search tool calls a live web search service at run time and returns current trend signals for the agent to use.",
+      "status": "met",
+      "evidence": "app/src/tools/web_search_tool.py:11-24 and 52-59 (bing_search calling Bing when BING_API_KEY present; fetch_trend_signals returns 'signal' and evidence; mock fallback when no key).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A context-engineering step shapes the two tool outputs into the prompt sent to the model, combining the sales-velocity comparison and the web trend signals into one prompt context.",
+      "status": "not_met",
+      "evidence": "app/src/agent.py and app/src/main.py show the code directly combines numeric signals and returns a ranking; there is no prompt template or labelled combined context sent to an LLM before reasoning.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a prompt template and a function that formats DB and web signals into labelled sections (e.g., 'DB signals' / 'Web signals') and pass that as context to the LLM call (LangChain chat/call)."
+    },
+    {
+      "requirement": "The agent's final answer is a ranked list of product categories that identifies which are rising and which are declining (ranked by season-to-season change).",
+      "status": "partly_met",
+      "evidence": "app/src/main.py:14-43 (combine_signals produces a ranked list by normalized DB quantities and web signal). The ranking is present but is NOT based on season-to-season deltas.",
+      "cause": "builder_error",
+      "smallest_fix": "Change the DB aggregation to return per-category season totals and compute season-to-season delta per category in code or in the pipeline, then rank by magnitude of the delta and label rising/declining."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example (lists DOCUMENTDB_URI, OPENAI_API_KEY, BING_API_KEY); app/src/db.py:13-17 reads DOCUMENTDB_URI from environment and does not hard-code credentials.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example (DOCUMENTDB_URI, OPENAI_API_KEY, BING_API_KEY, BING_ENDPOINT, TEST_WITH_LIVE).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample intentionally does not create or use a vector index (decision D008).",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vectors are used later, add EMBEDDING_DIM env var and ensure the index creation step uses that value; document the embedding model and dims in README."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index created in the repository; vector-index guidance is absent from README.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding vector support, include recommended index kinds and parameter examples in README and set adjustable defaults in a config/env var."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.py:7-17 (module-level _client, get_client() implements singleton MongoClient). app/src/tools/documentdb_tool.py:17-23 also caches a module-level _client.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed_data.py:59-66 (attempts to create unique tx_id index) and 75-78 (coll.update_one with {'$setOnInsert': d}, upsert=True) implement idempotent upsert semantics.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No HTTP endpoint '/search' in the repository. web_search_tool.bing_search will raise RuntimeError if BING_API_KEY missing, but there is no canonical /search endpoint or explicit empty-query handling.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small HTTP handler (Flask/FastAPI) for /search that validates the query param, returns 400 on empty queries and maps embedding or search exceptions into explicit error payloads."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "app/src/tools/web_search_tool.py:54-56 and 42-56 (mock and bing paths return 'signal' or 'score' fields), app/src/main.py:40-42 uses web_score in combined output.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt lists package constraints (e.g. pymongo>=4.4,<5, langchain>=0.0.300) but does not pin exact patch versions.",
+      "cause": "builder_error",
+      "smallest_fix": "Pin exact versions (e.g. pymongo==4.19.0, langchain==1.5.2, openai==3.59.0) or provide a constraints.txt for reproducible installs."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files found in repository; no test harness that mocks the DB or the web-search provider.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add pytest tests that mock pymongo.MongoClient and the web search calls (use monkeypatch or pytest-mock) and add CI-friendly instructions in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/ARM/Terraform files in the repo; README explicitly states the sample uses an existing cluster.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Include a small optional Bicep or Terraform snippet using Microsoft.DocumentDB/mongoClusters in an infra/ folder and mark it 'optional / do not run in shared accounts'."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md:25-42 (Quickstart), lines 44-51 (Notes and Cleanup) cover these topics.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and app/.env.example use 'DocumentDB' and 'Azure DocumentDB' (search for 'DocumentDB' in app shows references); no 'Cosmos DB' or other competing names are used in sample code or README.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create a single, process-wide MongoClient and reuse it (singleton); tune connection-pool parameters appropriate to deployment.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.py:7-17 (module-level _client and get_client that caches the MongoClient)",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always require TLS on the MongoDB driver connection and validate server certificates in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.py:16-17 (MongoClient(uri) called without explicit TLS options; app/scripts/seed_data.py uses MongoClient(uri) too).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Create MongoClient with TLS options and make tls/allowInvalidCertificates controlled by env (e.g., MongoClient(uri, tls=True, tlsAllowInvalidCertificates=os.environ.get('DB_ALLOW_INVALID_TLS','false')=='true')).",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection string env var",
+      "practice": "Read the cluster connection string from an environment variable (DOCUMENTDB_URI) at runtime and never embed credentials in code.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/.env.example and app/src/db.py:13-17 read DOCUMENTDB_URI; repository contains no credentials.",
+      "source": ".env.example / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example / README.md",
+          "url": ""
+        },
+        {
+          "title": ".env.example / README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregation",
+      "practice": "Run server-side aggregation pipelines (aggregate) to compute metrics like seasonal sales velocity rather than pulling raw documents into the application.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/tools/documentdb_tool.py:52-71 and app/src/tools/aggregation_tool.py:25-45 show server-side aggregation pipelines using $match, $addFields and $group.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Push filter and projection early",
+      "practice": "Push $match and $project stages to the start of aggregation pipelines to minimize scanned documents and I/O.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/tools/documentdb_tool.py:52-66 and app/src/tools/aggregation_tool.py:25-34 (pipeline starts with $match then $addFields, then $group then $project).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain before index changes",
+      "practice": "Before adding or changing indexes, run explain(\"executionStats\") or use the MCP explain_operation to verify the plan and index usage.",
+      "category": "ops",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "Events show the MCP 'documentdb_create_index' call failed (management tools opt-in), and there is no evidence the code invoked explain() before creating the index; documentdb_list_indexes was used after seeding (events: documentdb_create_index exception at events.jsonl:64; documentdb_list_indexes succeeded at events.jsonl:65).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Call documentdb_explain_operation or coll.aggregate([...]).explain('executionStats') before index changes; make explain part of the seed/indexing verification step.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index ESR",
+      "practice": "Design compound indexes following ESR; e.g., create {category:1, sale_date:1} to cover common $match and $sort patterns.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/scripts/seed_data.py:64-66 creates coll.create_index([('category', ASCENDING), ('sale_date', ASCENDING)]) and events.jsonl:65 (documentdb_list_indexes) shows index 'category_1_sale_date_1' present.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries for transient errors",
+      "practice": "Handle transient network and server errors with retries and exponential backoff; enable retryReads/retryWrites for retryable ops.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "No explicit retry/backoff logic or retryReads/retryWrites flags set in app/src/db.py (MongoClient(uri) used with defaults) and the seed script uses update_one in a simple loop (app/scripts/seed_data.py:75-81) without batching/backoff.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Set MongoClient(..., retryWrites=True, retryReads=True) and implement application-level retries with exponential backoff for idempotent operations. For seeding, use bulkWrite with retries/backoff.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring & slow-query logs",
+      "practice": "Enable diagnostic settings and slow-query logging, send them to Log Analytics, and create alerts on CPU/memory/IOPS/storage/connection saturation.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "violated",
+      "evidence": "No monitoring configuration or sample diagnostic settings in the repo or README; build verification used MCP ad-hoc checks but no telemetry setup.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Add a README note with example diagnostic settings (Azure CLI or portal) and a small script that shows how to enable diagnostic settings to Log Analytics for the cluster.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Least privilege credentials",
+      "practice": "Limit credentials to least privilege: prefer Microsoft Entra ID + RBAC and create per-application roles/users with only required permissions.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "violated",
+      "evidence": "Sample uses a single DOCUMENTDB_URI; README and scripts do not instruct to create or use a read-only analysis user or mention Microsoft Entra ID OIDC examples.",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Document a recommended least-privilege credential pattern (read-only user for analysis vs admin for seeding) and include an Entra/OIDC example in README or a separate auth.md.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection to minimize fields",
+      "practice": "Minimize the fields returned by queries using projection and paginate results to reduce memory usage and I/O.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/tools/documentdb_tool.py:66 projects category, season, total_quantity, total_value, avg_price and app/src/tools/aggregation_tool.py:34-41 projects a small set of fields.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Local development gateway",
+      "practice": "For local development, use the DocumentDB Gateway Docker image (Mongo on port 10260) and keep TLS relaxation under environment control.",
+      "category": "local_development",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md",
+      "status": "violated",
+      "evidence": "Repository does not include a docker-compose file or instructions to run the DocumentDB gateway locally; README expects a reachable cluster instead (app/README.md:12-14).",
+      "source": "documentdb-local-deployment",
+      "searched": "",
+      "fix": "Add an optional docker-compose snippet and README section showing how to run the DocumentDB gateway locally (port 10260) and how to set env flags to relax TLS for local dev.",
+      "sources": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seeding at-scale batching",
+      "practice": "Batch large seed ingestion carefully and monitor for throttling; prefer bulkWrite in batches and back off on rate-limiting errors.",
+      "category": "seeding",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P32",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/scripts/seed_data.py:72-81 performs per-document update_one with upsert in a loop rather than bulkWrite; the code ran fine for the small sample data but no DocumentDB-specific batch guidance page was discovered in the installed skills.",
+      "source": "prior_knowledge_only",
+      "searched": "Searched for 'DocumentDB bulkWrite batch size guidance' and related terms during discovery with no DocumentDB-specific guidance returned.",
+      "fix": "Use bulkWrite in batches and monitor cluster metrics; add an idempotent bulk seed path and an env-driven BATCH_SIZE with backoff logic.",
+      "sources": [],
+      "what_would_help": "A short 'seeding at scale' page in the agent kit showing example bulkWrite code with a recommended default batch size and backoff loop."
+    },
+    {
+      "topic": "Use MCP explain/list_indexes",
+      "practice": "Enable and use MCP/mongosh explain, list_indexes and indexStats workflows as part of routine query tuning and index lifecycle management.",
+      "category": "ops",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P29",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "followed",
+      "evidence": "events.jsonl:65 shows documentdb_list_indexes was used and events.jsonl:66 shows documentdb_aggregate ran via MCP; however documentdb_explain_operation was not recorded prior to index changes (documentdb_create_index had an opt-in exception).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Include an explain() call in the seeding/verification script or run documentdb_explain_operation as part of the index lifecycle; handle the MCP management-tools opt-in edge case.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid cross-product assumptions",
+      "practice": "Do not assume Cross-product docs (MongoDB, Cosmos DB, Amazon DocumentDB) are authoritative for Azure DocumentDB; check DocumentDB-specific docs for index types and search commands.",
+      "category": "docs",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P30",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "The sample uses DocumentDB-specific vocabulary (DocumentDB) and the README avoids Cosmos DB naming; the builder consulted DocumentDB skills in events.jsonl (multiple load_skill calls).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Web-search timeouts & fallbacks",
+      "practice": "Application-level external search calls should use timeouts, retries, and fallbacks (mock) so the agent remains responsive.",
+      "category": "resilience",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P31",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/src/tools/web_search_tool.py:18 uses requests.get(..., timeout=10) and fetch_trend_signals implements a mock fallback when no BING_API_KEY is provided; however the practice is prior_knowledge_only (no DocumentDB-specific public doc found).",
+      "source": "prior_knowledge_only",
+      "searched": "Searched for 'DocumentDB web search timeout best practices' with no DocumentDB-specific guidance returned.",
+      "fix": "Document an application-level rule for external API calls (timeout and retry policy) in the agent kit; include example code and reasons.",
+      "sources": [],
+      "what_would_help": "A short agent-kit rule describing a recommended timeout (e.g., 5-10s) and a fallback strategy for web-search calls."
+    },
+    {
+      "topic": "Use UTC for temporal fields",
+      "practice": "Store temporal fields in UTC using BSON Date objects and design seasonal comparisons with explicit date ranges.",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P33",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "app/scripts/seed_data.py:71 uses datetime.utcnow() when generating sale_date and aggregation code uses datetime.utcnow() as reference; this follows UTC usage in practice, but the guidance was prior_knowledge_only and DocumentDB-specific docs for this question were not discovered.",
+      "source": "prior_knowledge_only",
+      "searched": "Searched for 'Azure DocumentDB date UTC best practices' with no definitive DocumentDB-specific guidance returned.",
+      "fix": "Add a short note in the agent-kit or README recommending BSON Date usage and UTC for temporal fields and an explicit example showing how to construct date ranges for season comparisons.",
+      "sources": [],
+      "what_would_help": "A sentence on the aggregation pipeline or data-modeling page saying 'store sale_date as BSON Date in UTC' and showing example queries."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with 'ready_with_gaps' recorded by operator; consistent with the build trace and the flagged readiness gaps."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python 3.11 aligns with the prompt and the used libraries; code and requirements target Python and LangChain."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "Pinned pymongo >=4.4,<5 in requirements.txt (app/requirements.txt) which is a reasonable recent range. The decision reason_source is 'model_default' rather than a DocumentDB doc; a quick Microsoft doc shows a tested driver version (e.g., PyMongo 4.19.0). The choice is defensible but would be stronger if tied to the documented tested version."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from env and using a singleton MongoClient is implemented (app/src/db.py). The decision matches readiness guidance."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Choosing Bing (and a mock fallback) is reasonable for an Azure sample; the code implements Bing usage when BING_API_KEY is set and falls back to deterministic mocks (app/src/tools/web_search_tool.py)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "A compound index {category:1, sale_date:1} was created in the seed script and is present in the cluster (events.jsonl:65 shows 'category_1_sale_date_1')."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "questionable",
+      "comment": "Decision picked OpenAI models by default (model_default). The repository supports optional OPENAI_API_KEY but no live LLM calls were executed during verification (no key supplied). The decision is acceptable as a default but should be documented with explicit model/version guidance and caveats about costs."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Builder explicitly chose not to create a vector index (D008). The sample focuses on aggregation + web signals and does not create or use vector indexes; this is consistent with the code and README."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Duplicate of D001 approval; trace shows build proceeded under that approval."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Redundant Python-3.11 decision; consistent with D002 and the code."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Choosing pymongo >=4.4 and following singleton pattern is implemented (app/src/db.py). The skill documentdb-driver was loaded (events.jsonl:21, 47, 79, 80)."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from the environment is implemented and appears in src/db.py and .env.example (app/.env.example)."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Pluggable approach for Bing with mock fallback was implemented (src/tools/web_search_tool.py) and verified in the run (mock path used since no BING_API_KEY)."
+    },
+    {
+      "decision_id": "D014",
+      "assessment": "questionable",
+      "comment": "Decision: 'create supporting index in the seed script and also record the index via the documentdb MCP server' — the seed script created the index, but the MCP 'documentdb_create_index' call failed due to management-tools opt-in (events.jsonl:64 shows ToolExecutionException). The part about using MCP for verification was only partly successful (list_indexes did succeed later at events.jsonl:65)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Driver version recommendation and tested versions",
+      "what_was_missing": "A clear, discoverable statement in the agent-kit / quickstart that lists the tested pymongo (and related) driver versions for Python and an explicit recommendation to pin to those exact versions.",
+      "where_searched": "Agent loaded documentdb-driver skill and ran learn_microsoft_docs_search; relevant Quickstarts mention tested PyMongo versions (e.g., PyMongo 4.19.0) but the recommendation is not surfaced in the agent-kit README.",
+      "effect_on_this_build": "Builder chose version ranges (pymongo>=4.4,<5). This leaves potential for non-reproducible installs or subtle incompatibilities if a newer patch introduces changes. The build passed but the exact tested version wasn't recorded.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Tested dependencies' section to the sample README and to the documentdb-driver skill that lists pinned versions (example: pymongo==4.19.0, langchain==1.5.2, openai==3.59.0) and provide a constraints.txt for reproducible installs. Include a short sentence linking to Microsoft quickstarts that document tested driver versions.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Unit tests that run without a live cluster",
+      "what_was_missing": "A test harness with unit tests that mock the MongoDB driver and web-search provider so tests run without a live DocumentDB cluster or external API keys.",
+      "where_searched": "Repository (no tests present) and agent-kit skills (no canonical test harness template found).",
+      "effect_on_this_build": "No automated unit tests exist; maintainers must run manual steps or use live resources for verification, which increases reviewer burden and reduces CI friendliness.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Provide a sample pytest test suite in the agent kit demonstrating how to mock pymongo.MongoClient (or use mongomock) and how to monkeypatch web-search calls, including an example CI configuration that runs tests with TEST_WITH_LIVE=false.",
+      "priority": "high"
+    },
+    {
+      "topic": "Seed/ingest batching guidance",
+      "what_was_missing": "DocumentDB-specific guidance on recommended batch sizes and backoff strategy for bulk seeding in the agent-kit; public skills did not include a concrete default batch size to use for bulkWrite.",
+      "where_searched": "searches for 'DocumentDB bulkWrite batch size guidance' and the installed skills; found only general prior knowledge but no DocumentDB-specific batch-size rule.",
+      "effect_on_this_build": "The seed script uses a per-document upsert loop; it worked for small data during verification but lacks scalable bulkWrite examples and backoff logic that a builder would use for larger datasets.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short 'Seeding at-scale' page in the agent kit: show an idempotent bulkWrite example with an env-driven BATCH_SIZE default (e.g., 500), example exponential backoff on transient errors, and how to observe cluster throttling metrics.",
+      "priority": "high"
+    },
+    {
+      "topic": "Web-search timeouts & fallback rule for agents",
+      "what_was_missing": "A concise agent-kit rule saying external search calls should use a bounded timeout, retries, and deterministic fallback (mock) so the agent remains responsive when external APIs are slow or unavailable.",
+      "where_searched": "Installed skills and web searches returned no DocumentDB-specific guidance for external API timeouts (this is application-level best practice).",
+      "effect_on_this_build": "The sample does include a timeout (requests.get timeout=10) and a mock fallback, but this application-level decision is only present in code and not surfaced as a recommended rule in the agent-kit docs, so other builders may omit it.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a one-paragraph rule to the agent-kit recommending default timeouts (e.g., 5–10s), a max retry count, and mandatory deterministic fallback for external web-search tools. Include small code snippets for requests-based and async clients.",
+      "priority": "medium"
+    },
+    {
+      "topic": "UTC temporal-field guidance for seasonal comparisons",
+      "what_was_missing": "A short, public sentence in the agent-kit stating 'store temporal fields as BSON Date in UTC' and an example that shows how to compute seasonal ranges with UTC dates.",
+      "where_searched": "Search for Azure DocumentDB date/time guidance returned no authoritative DocumentDB-specific page; it remains prior knowledge across MongoDB-like systems.",
+      "effect_on_this_build": "The sample uses datetime.utcnow(), which is correct in practice, but an explicit doc would help other builders avoid timezone bugs when authors rely on local time.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "An example snippet in the data-modeling or aggregation quickstart demonstrating 'sale_date: datetime.utcnow()' and showing how to derive seasons with $month and explicit UTC ranges; add a short note on indexing date fields.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Clear /search API contract (empty query and embedding failures)",
+      "what_was_missing": "A canonical example endpoint (e.g., FastAPI snippet) and error payload shape documenting how /search should respond to empty queries and to embedding/search failures.",
+      "where_searched": "No sample HTTP endpoint in repository; agent-kit skills do not include a canonical /search contract for LangChain-style agents combining DB+web signals.",
+      "effect_on_this_build": "No endpoint exists; callers cannot rely on a uniform error contract. This increases integration friction for downstream apps that expect a 400 for empty queries or a structured error if embeddings fail.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Provide a short 'HTTP contract' snippet in the sample README: example FastAPI /search handler that returns 400 on empty q, 502/503 on external-api failure with structured JSON {error:..., code:...}, and an example of the mock fallback path.",
+      "priority": "high"
+    }
+  ]
+}
