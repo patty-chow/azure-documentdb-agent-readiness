@@ -1,0 +1,558 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested daily accrual worker correctly: it uses Mongoose models for accounts and journals, streams active interest-bearing accounts with a cursor, computes a per-account daily accrual, and writes immutable per-account journal documents in unordered bulkWrite batches. The build also provided an idempotent seed, a README, a test for the accrual math, and index creation at startup. Shortcomings found are primarily operational/hardening items that the prompt left unspecified (env listing completeness, projection/lean for queries, cursor.batchSize, retry/backoff handling for transient errors, and the placement of index creation at deployment vs run-time). None of the omissions make the sample functionally incorrect as a demonstration, but several are important for production hardening and for agents that must follow documented best practices.",
+  "requirement_results": [
+    {
+      "requirement": "The batch processor is a Node.js application that uses Mongoose as the ODM for every read and write against Azure DocumentDB, with the account and journal documents defined as Mongoose models.",
+      "status": "met",
+      "evidence": "app/src/models/account.js (lines 3-11); app/src/models/journal.js (lines 3-8); reads/writes use Account and Journal in app/src/worker.js (lines 43-46, 54-60, 65-76).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The processor runs as a scheduled job that executes once per day (e.g. a cron-style daily schedule).",
+      "status": "met",
+      "evidence": "app/src/worker.js schedules node-cron with CRON_SCHEDULE default '0 0 * * *' and timezone: 'UTC' (lines 9-11, 94-102). Supports --once for manual runs (lines 87-92).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The processor queries all account documents that are active and interest-bearing, iterating them through a Mongoose query cursor and grouping the streamed documents into fixed-size batches.",
+      "status": "met",
+      "evidence": "app/src/worker.js defines filter {status:'active', interestBearing:true} and creates a cursor with Account.find(filter).cursor() (lines 43-45); batches using BATCH_SIZE (line 9) and flushes when batch.length >= BATCH_SIZE (lines 62-71).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "For each account document, the processor computes the accrued interest for the run from that account's rate and balance.",
+      "status": "met",
+      "evidence": "computeDailyAccrual(balance, annualRatePercent, days) defined in app/src/worker.js (lines 34-37) and called per document (line 53).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Each computed accrual is written as a new, immutable journal document: one journal document per account per run, created by insert only (e.g. referencing the account and carrying the interest amount).",
+      "status": "met",
+      "evidence": "Journal schema in app/src/models/journal.js (lines 3-8). Worker creates insertOne operations with accountId, runDate, amount and createdAt and sends them as inserts (app/src/worker.js lines 54-60, 65-76). No update operations are used.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Each batch's journal inserts are sent to Azure DocumentDB as exactly one unordered bulk write (bulkWrite with ordered: false on the Mongoose model), containing only that batch's operations.",
+      "status": "met",
+      "evidence": "app/src/worker.js flushes per batch using Journal.collection.bulkWrite(batch, { ordered: false }) (lines 65-66 and 76-77).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/db.js reads process.env.DOCUMENTDB_URI (lines 5-11). app/.env.example contains a placeholder DOCUMENTDB_URI (lines 1-3). No credentials are committed.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI, DB_NAME, BATCH_SIZE and CRON_SCHEDULE (app/.env.example lines 1-8). The seed script accepts SEED_COUNT and uses process.env.SEED_COUNT (app/scripts/seed.js line 37) but SEED_COUNT is not documented in .env.example.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add SEED_COUNT (and any other optional env vars used by scripts) to .env.example with a placeholder and short comment."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or reference any vector/embedding indexes or embedding models; there is no vector-index code to inspect in the repository.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector indexes or parameter choices are present in the repo (not applicable to this sample's functionality).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js implements a singleton connect() that returns the shared mongoose.connection and guards repeated connects with isConnected (lines 13-26). Worker calls connect() once per run (app/src/worker.js line 40).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "app/scripts/seed.js upserts accounts via updateOne upsert operations so it is idempotent (lines 17-23, 26-31). However the seed script does not create the required indexes; index creation is done by the worker's ensureIndexes() at runtime (app/src/worker.js lines 12-31).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Either have the seed script also call ensureIndexes (or a separate idempotent migration script), or document that indexes are created at startup and provide a separate idempotent 'migrate' script for deployment-time index creation."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "This sample has no /search endpoint or embedding pipeline to inspect.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search / embedding functionality in this repository.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "This is a Node project. package-lock.json is present (app/package-lock.json) which pins exact versions for reproducible installs; package.json lists caret ranges (app/package.json lines 15-19) but package-lock.json records resolved versions used in the build.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "app/tests/worker.test.js contains a pure-unit test for computeDailyAccrual (lines 3-7). Tests were run during build and passed (builder report: '1 test passed').",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository contains no IaC (Bicep/ARM/Terraform) for creating a mongo cluster; README explicitly states 'No cloud infrastructure provisioning is performed by this repo' (app/README.md line 34).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an IaC example (Bicep/ARM or Terraform) that uses Microsoft.DocumentDB/mongoClusters with parameters for tier, region, and storage, or add a note explaining why provisioning is out of scope."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes 'What the sample shows' (lines 18-24), prerequisites (lines 8-11), Quickstart/setup/run steps (lines 12-16, 25-29), and cleaning up (lines 36-37).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README and package.json use the name 'DocumentDB' / 'Azure DocumentDB' (app/README.md line 1 and app/package.json line 2). No Cosmos DB or other neighbouring product names appear in the sample.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env-secret handling",
+      "practice": "Keep the cluster connection string out of source: read it at runtime from environment variables or a secret store and provide only a .env.example with a placeholder.",
+      "category": "secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#prerequisites",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 5-11; app/.env.example lines 1-3.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#prerequisites"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS enforcement",
+      "practice": "Always connect with TLS (tls=true / TLS enabled) and do not disable certificate validation in production so traffic to the cluster is encrypted.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication",
+      "status": "violated",
+      "evidence": "app/src/db.js uses the URI supplied in DOCUMENTDB_URI and does not enforce TLS in mongoose.connect options (app/src/db.js lines 15-23). app/.env.example shows an example URI that includes tls=true (app/.env.example line 2) but code does not validate/enforce it.",
+      "source": "Connect to Azure DocumentDB using MongoDB Shell",
+      "searched": "",
+      "fix": "Validate the provided connection string contains tls=true (or set tls: true in mongoose.connect options) and fail early with an explanatory error when TLS appears disabled.",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using MongoDB Shell",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell#connect-with-interactive-password-authentication"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Singleton client",
+      "practice": "Create a single shared MongoClient / Mongoose connection per process (singleton) and reuse it rather than opening many short-lived clients.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js implements a connect() that guards with isConnected and returns the shared mongoose.connection (lines 13-26).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune driver connection options to your environment (pool sizing, timeouts and maxIdleTimeMS) and pick different sensible defaults for serverless vs long-running processes.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "app/src/db.js comments reference sensible defaults but the connect call does not set pool sizing or timeout options (app/src/db.js lines 17-23).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Read pool and timeout settings from environment (e.g., MAX_POOL_SIZE, SERVER_SELECTION_TIMEOUT_MS, SOCKET_TIMEOUT_MS) and pass them into mongoose.connect; document recommended defaults for sample vs production.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry/backoff",
+      "practice": "Enable driver retryable reads/writes where supported and implement application-level exponential backoff + jitter (and respect Retry-After / retry-after-ms headers) for throttling and transient faults.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/azure-app-configuration/rest-api-throttling",
+      "status": "violated",
+      "evidence": "app/src/db.js sets retryWrites: true (line 21) but bulkWrite usage in app/src/worker.js catches errors without inspecting writeErrors, retrying idempotent ops, or honoring Retry-After headers (lines 64-69 and 75-80).",
+      "source": "Throttling (Retry-After guidance)",
+      "searched": "",
+      "fix": "On bulkWrite failures inspect error/writeErrors, treat duplicate-key (11000) as expected for idempotency, and implement retries with exponential backoff + jitter for transient errors/429 responses, respecting Retry-After when provided.",
+      "sources": [
+        {
+          "title": "Throttling (Retry-After guidance)",
+          "url": "https://learn.microsoft.com/azure/azure-app-configuration/rest-api-throttling"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Cursor batch size",
+      "practice": "For large scans use server-side cursors/getMore with a controlled batchSize (cursor + batchSize) instead of fetching all documents at once.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/getmore",
+      "status": "violated",
+      "evidence": "Worker uses Account.find(filter).cursor() (app/src/worker.js line 44) and BATCH_SIZE for write batching (line 9) but does not set cursor.batchSize(BATCH_SIZE) or otherwise control server-side batchSize.",
+      "source": "getMore",
+      "searched": "",
+      "fix": "Use Account.find(filter).select(...).lean().batchSize(BATCH_SIZE).cursor() to control server-side getMore batchSize and reduce memory/RU spikes.",
+      "sources": [
+        {
+          "title": "getMore",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/getmore"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection and lean()",
+      "practice": "Apply projection (return only fields needed) and, in Mongoose, prefer lean() when you don't need full Mongoose documents to reduce memory and driver overhead.",
+      "category": "mongoose_usage",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "violated",
+      "evidence": "Worker reads full account documents via Account.find(filter).cursor() without .select(...) or .lean() (app/src/worker.js line 44).",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "Change the cursor to Account.find(filter).select('balance interestRate _id').lean().batchSize(BATCH_SIZE).cursor() to reduce memory and Mongoose overhead.",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Partial index for scan",
+      "practice": "Create a partial (filtered) index that only indexes active interest-bearing accounts to reduce index size and RU cost for large scans.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/indexing#compound-indexes",
+      "status": "followed",
+      "evidence": "app/src/worker.js ensureIndexes creates a partial index on accounts with partialFilterExpression: { status: 'active', interestBearing: true } (lines 15-18).",
+      "source": "Manage indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/indexing#compound-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unique journal index",
+      "practice": "Create a unique compound index on the journal (for example accountId + runDate) to enforce idempotency so duplicate inserts for the same day fail with duplicate-key errors you can detect and ignore.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field",
+      "status": "followed",
+      "evidence": "app/src/worker.js ensureIndexes creates unique index { accountId: 1, runDate: 1 } with name 'uidx_account_runDate' (lines 25-28).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create indexes idempotently",
+      "practice": "Create indexes idempotently at deployment/migration time and verify index existence before running large scans to avoid runtime index builds during high-load jobs.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation",
+      "status": "violated",
+      "evidence": "Indexes are created by the worker at run time via ensureIndexes() (app/src/worker.js lines 12-31). That causes index creation to happen when the job runs rather than at deployment/migration time.",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "Provide a separate idempotent migration script (or include index creation in seed/migrate step run at deploy time) and have the worker verify index existence but not trigger heavy background builds at job runtime.",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#track-the-status-of-a-createindex-operation"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitor RUs and 429s",
+      "practice": "Monitor request charge (RUs), RU/s utilization and 429 counts (throttling), enable diagnostic/slow-query logging, and alert on saturation so you can scale or reduce batch sizes before jobs fail.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "violated",
+      "evidence": "No code instruments requestCharge, 429 counts, or logs slow queries; worker simply runs queries and prints summary (no monitoring integration).",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "Log requestCharge (if returned), add counters for 429s and total request charge, and document recommended alerts; optionally expose a --dry-run or --profile flag that runs queries with explain('executionStats') and logs keysExamined/docsExamined.",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unordered bulk writes",
+      "practice": "Use unordered bulk writes (ordered: false) to maximize throughput and tune batch size and concurrency for your cluster; avoid extremely large single requests that exceed service limits.",
+      "category": "bulk_writes",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-insert#insert-multiple-documents",
+      "status": "followed",
+      "evidence": "Worker uses Journal.collection.bulkWrite(batch, { ordered: false }) for each flushed batch (app/src/worker.js lines 65-66 and 76-77).",
+      "source": "Insert data into Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Insert data into Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-insert#insert-multiple-documents"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk write partial failures",
+      "practice": "Treat bulkWrite partial failures as an expected outcome: inspect results and writeErrors, retry only idempotent operations, and suppress/handle duplicate-key (11000) errors when using unique constraints for idempotency.",
+      "category": "bulk_writes",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/troubleshoot-common-issues#common-errors-and-solutions",
+      "status": "violated",
+      "evidence": "Worker catches bulkWrite exceptions but does not inspect writeErrors nor retry idempotent operations or specially handle duplicate-key (11000) errors (app/src/worker.js lines 64-69 and 75-80).",
+      "source": "Troubleshoot common issues in Azure DocumentDB",
+      "searched": "",
+      "fix": "Inspect bulkWrite response for writeErrors; treat duplicate-key 11000 as expected and move on; implement retries with backoff for transient failures and log non-idempotent failures for human review.",
+      "sources": [
+        {
+          "title": "Troubleshoot common issues in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/troubleshoot-common-issues#common-errors-and-solutions"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "UTC timestamps",
+      "practice": "Store date/time values in UTC using ISO 8601 format so queries and range filters behave predictably across time zones.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/cosmos-db/query/dates#store-datetimes",
+      "status": "followed",
+      "evidence": "Worker normalizes runDate to UTC midnight (app/src/worker.js lines 48-50) and journal.createdAt uses Date objects (app/src/models/journal.js line 7 and app/src/worker.js line 58).",
+      "source": "Store and query dates - Query language in Cosmos DB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Store and query dates - Query language in Cosmos DB",
+          "url": "https://learn.microsoft.com/cosmos-db/query/dates#store-datetimes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size",
+      "practice": "Keep documents reasonably small (well under the 16 MB BSON limit) and avoid very wide documents so reads/writes and indexes consume fewer RUs.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "Account and Journal schemas are compact (app/src/models/account.js lines 3-11; app/src/models/journal.js lines 3-8). Journal stores only accountId, runDate, amount, createdAt.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transactions avoidance",
+      "practice": "Do not depend on multi-document transactions for high-throughput journal/archival workflows; transactions are supported only with limitations, so prefer idempotent single-document writes.",
+      "category": "transactions",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/use-multi-document-transactions",
+      "status": "followed",
+      "evidence": "Worker uses unordered bulkWrite of single-document inserts and does not use multi-document transactions (app/src/worker.js lines 60-77).",
+      "source": "Use Multi-document transactions in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Multi-document transactions in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/use-multi-document-transactions"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator decision. The run artefacts show work proceeded and gaps were acknowledged in the builder_report; the decision is supported by the report (decisions.jsonl line 1)."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "questionable",
+      "comment": "The builder chose Mongoose 7.x and pinned with a caret in package.json (app/package.json lines 15-19). The decision's reason_source is 'model_default' (decisions.jsonl line 2). Microsoft quickstarts often reference tested Mongoose/driver combinations (the quickstart mentions Mongoose 9 / driver 7.8.0 in docs). The chosen version works for the sample but the decision relied on a model default instead of an explicit guidance source; recommend aligning the package.json pin with an explicit tested combination documented in the quickstart."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Decision to read the connection string from process.env.DOCUMENTDB_URI was implemented (app/src/db.js lines 5-11). events.jsonl shows the readiness guidance and skills were consulted; readiness_report is an appropriate source. The evidence supports the decision."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "The choice of node-cron with default schedule '0 0 * * *' (midnight UTC) and a --once flag was implemented (app/src/worker.js lines 9-11 and 87-96). The reason_source is 'model_default' (decisions.jsonl line 4) but this default is reasonable and clearly documented in README (app/README.md lines 25-29)."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "questionable",
+      "comment": "Default BATCH_SIZE=500 was implemented (app/src/worker.js line 9 and .env.example line 7). The decision reason_source was 'model_default' (decisions.jsonl line 5). Public guidance suggests moderate batch sizes (commonly cited ranges) but does not prescribe an exact value; this choice is defensible but model-default rather than grounded in a public numeric guideline. Recommend documenting the rationale or making BATCH_SIZE conspicuous in README for tuning."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Creating a partial index on accounts and a unique compound index on accrual_journal was implemented by ensureIndexes() in app/src/worker.js (lines 12-31). The decision is supported by index guidance (P10/P11) and events.jsonl shows indexing skill was loaded during the build."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Complete .env.example",
+      "what_was_missing": ".env.example omitted optional env vars used by scripts (for example SEED_COUNT used by scripts/seed.js).",
+      "where_searched": "Inspected repository files app/.env.example and scripts/seed.js; verified seed reads process.env.SEED_COUNT (scripts/seed.js line 37).",
+      "effect_on_this_build": "Builder provided a working .env.example for the critical connection string and common parameters but missed documenting SEED_COUNT; consumers might not know how to change seed size or that seed supports SEED_COUNT.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Update .env.example to list all environment variables used by repository (DOCUMENTDB_URI, DB_NAME, BATCH_SIZE, CRON_SCHEDULE, SEED_COUNT). Add short comments for each variable explaining purpose and sensible defaults (e.g., SEED_COUNT=100).",
+      "priority": "medium"
+    },
+    {
+      "topic": "Driver & Mongoose tested versions (discoverability)",
+      "what_was_missing": "A clear documented, discoverable recommendation for which Mongoose / mongodb-driver versions the quickstart/sample was tested with that agents can find without relying on model defaults.",
+      "where_searched": "I ran a targeted Microsoft docs search (Quickstart: Connect Mongoose to Azure DocumentDB quickstart and related docs) and found tested-driver notes on the quickstart page (mentions Mongoose 9 / driver 7.8.0 in some docs), but the sample's decisions relied on model defaults rather than linking to that page.",
+      "effect_on_this_build": "The builder chose Mongoose 7.x (package.json^7.5.0). That choice works for the sample, but an agent operating from model defaults might pick an older/unsupported combination. This reduces reproducibility and may cause compatibility issues in other environments.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Tested driver versions' paragraph to the Node/Mongoose quickstart for Azure DocumentDB naming the tested Mongoose and Node driver versions and link it from the agent skill. Also update the sample README to cite the tested driver pairing to justify the package.json pin.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Bulk-write batch-size guidance",
+      "what_was_missing": "Public docs and the agent skills do not specify a single recommended exact unordered bulkWrite batch size (e.g., '500' vs '200–1000') for DocumentDB; prior knowledge gave a range but we lacked an authoritative numeric recommendation an agent can follow.",
+      "where_searched": "Searched Microsoft Learn and installed skills; discovery step left two searches with no useful numeric-result 'Azure DocumentDB recommended bulkWrite batch size 200-1000 exact guidance'.",
+      "effect_on_this_build": "Builder picked BATCH_SIZE=500 (a sensible default). However the choice came from model-default reasoning rather than a documented guidance; agents may make inconsistent picks unless guidance is explicit.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add a short sentence to the bulk-write guidance page stating recommended batch-size ranges for unordered bulkWrite (e.g., 'Start with 200–1000 ops per bulkWrite for most clusters; tune down if you see 429s or transient errors; test requestCharge per batch with explain/profiling'). Include an example showing how to expose BATCH_SIZE via environment and ramp it up/down.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Default cron schedule policy for samples",
+      "what_was_missing": "The agent made a model-default decision to use midnight UTC as a succinct sample default, but there's no team-wide rule documented for what default cron/timezone to use in sample gallery jobs.",
+      "where_searched": "Checked repository README and the available agent skill docs; no authoritative gallery-style guidance on default cron timezone was found.",
+      "effect_on_this_build": "Builder chose midnight UTC; that's reasonable. However different sample authors may choose local time or another default leading to inconsistency across gallery samples.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add an agent-kit rule: 'When a sample implements a daily scheduled job and the author does not specify timezone, default to midnight UTC and provide a --once CLI switch and an explicit CRON_SCHEDULE env var in .env.example.'",
+      "priority": "low"
+    },
+    {
+      "topic": "Index creation at deployment vs runtime",
+      "what_was_missing": "Guidance emphasizing that large index builds should be performed at deployment/migration time (idempotently) and not triggered automatically in high-load job runtime without caution.",
+      "where_searched": "Indexing guidance exists (P12) but sample created indexes at worker startup. The docs discuss idempotent index creation but the sample did not follow deployment-time practice.",
+      "effect_on_this_build": "Worker creates indexes at run-time via ensureIndexes(). For small sample datasets that's fine, but in production this pattern risks starting index builds during job runs. An agent following sample code could recommend a pattern that is risky at scale.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a prominent paragraph to the indexing guidance and the sample quickstart: 'Create indexes as part of deployment/migration (idempotent script). If the sample creates indexes at runtime, mark this as a convenience for small datasets and provide an alternative migrate script.' Provide a code snippet for an idempotent index migration script.",
+      "priority": "high"
+    },
+    {
+      "topic": "Retry + backoff example for bulkWrite",
+      "what_was_missing": "A small, copy-pasteable code example showing how to implement retries with exponential backoff, respect Retry-After headers and suppress duplicate-key 11000 errors for unordered bulkWrite workflows.",
+      "where_searched": "Installed skills discuss retries and throttling (P06) but do not include a concise, sample-level code snippet for bulkWrite + backoff + duplicate-key handling.",
+      "effect_on_this_build": "Worker catches bulkWrite errors but does not implement backoff/retry logic or inspect writeErrors; adopters of the sample may not handle partial failures correctly under throttling.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Provide a short code sample (Node.js) implementing: call bulkWrite, on error inspect err.writeErrors, filter out duplicate-key codes (11000), retry transient errors with exponential backoff + jitter, and log the final outcome. Include guidance on respecting Retry-After headers.",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC example for mongoClusters",
+      "what_was_missing": "An example Bicep/ARM or Terraform snippet that creates an Azure DocumentDB mongoClusters resource (Microsoft.DocumentDB/mongoClusters) for sample authors to copy.",
+      "where_searched": "Searched IaC docs during readiness; the correct resource type is documented but the repo lacks an example (see readiness findings).",
+      "effect_on_this_build": "The sample assumes an existing cluster. Lack of an IaC snippet means users who want to reproduce the environment must discover the correct resource type themselves and risk targeting the wrong resource API surface.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Publish a minimal Bicep and Terraform example that provisions a mongoClusters resource (Microsoft.DocumentDB/mongoClusters) with parameterized tier, region, and storage. Include commands to list connection strings (`az documentdb mongocluster list-connection-strings`) and a note warning about Cosmos DB (RU) vs DocumentDB (vCore) resource types.",
+      "priority": "medium"
+    }
+  ]
+}
