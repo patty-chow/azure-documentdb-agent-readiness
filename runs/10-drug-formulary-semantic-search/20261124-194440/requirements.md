@@ -9,10 +9,10 @@
 ## What the starter prompt asks for
 
 - Build the service in Python with LlamaIndex, and use LlamaIndex to generate the embedding vectors for both the stored formulary entries and incoming clinical intent descriptions.
-- Store each drug formulary entry as an Azure DocumentDB document that carries the entry's name, indications, contraindications and dosing together with its embedding vector on the same document.
+- Store each drug formulary entry as an Azure DocumentDB document, written through a Python MongoDB driver (e.g. pymongo), that carries the entry's name, indications, contraindications and dosing together with its embedding vector on the same document.
 - Create a cosmosSearch vector index (kind vector-ivf, vector-hnsw or vector-diskann) on the embedding field in code, with dimensions matching the embedding model's output and a similarity option suited to ranking by vector similarity (e.g. COS).
 - Expose an HTTP endpoint at /formulary-search that accepts a clinical intent description as free text.
-- Embed the incoming clinical intent description with LlamaIndex and run the similarity search in Azure DocumentDB with a $search / cosmosSearch aggregation over the stored embedding field, issued through a Python MongoDB driver (e.g. pymongo).
+- Embed the incoming clinical intent description with LlamaIndex and run the similarity search in Azure DocumentDB with a $search / cosmosSearch aggregation over the stored embedding field, issued through the same driver.
 - Return the top 10 formulary matches from that search (e.g. k set to 10), ranked by vector similarity with the closest match first.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
