@@ -1,0 +1,785 @@
+{
+  "verdict": "ready_with_gaps",
+  "summary": "The builder can start: all required run-time tools and the DocumentDB data-plane MCP server are installed, and the DocumentDB agent skills required to author the sample are present. Several cold answers were confused with Azure Cosmos DB (databaseAccounts / RU model) or other neighbours; those facts are corrected and grounded in the installed skills / Microsoft Learn pages. Missing CLIP-specific docs and a local mongo shell (mongosh) are the main gaps; mongosh is recommended for manual checks but the documentdb MCP server can verify indexes and queries.",
+  "summary_points": [
+    "All operational tooling needed to write, run, and verify the sample is present: python, az, docker, and the documentdb MCP server and the documentdb-* agent skills are installed.",
+    "Many cold answers were wrong or outdated because they described Cosmos DB (databaseAccounts / RU throughput / connection host suffix) instead of the new Azure DocumentDB product; the deploy and vector-search skills and Microsoft Learn pages show the correct resource type, CLI usage, connection string shape, billing model, and vector-search APIs.",
+    "Vector indexes and queries use DocumentDB's cosmosSearch / $search stage and index kinds (vector-ivf / vector-hnsw / vector-diskann) with createIndex syntax using cosmosSearchOptions; Atlas-style $vectorSearch is not supported.",
+    "Local development: there is an official Gateway Docker image exposing Mongo on port 10260 — contrary to the cold answer that said 'no local emulator'.",
+    "Gaps: exact driver-level instructions for AAD (OIDC) auth with current PyMongo, and the concrete CLIP-model packaging choice for generating 512-d embeddings are not present in the installed skills/docs and should be decided by the builder.",
+    "No missing mandatory MCP servers or skills block the build; some optional CLIs (mongosh, azd, bicep, terraform) are not installed — mongosh is worth adding for manual database debugging."
+  ],
+  "tools": [
+    {
+      "name": "python",
+      "kind": "other",
+      "needed_for": "Run and package the sample app, run seed and API server, install CLIP & PyTorch dependencies.",
+      "available": true,
+      "detail": "Python 3.13.13 (resolves to a virtualenv as described in skill_md)",
+      "impact_if_missing": "Cannot run or build the sample app or install pip packages.",
+      "workaround": "None practical — Python is required.",
+      "references": []
+    },
+    {
+      "name": "pip",
+      "kind": "other",
+      "needed_for": "Install Python dependencies (transformers/torch/pymongo/fastapi/uvicorn etc.).",
+      "available": true,
+      "detail": "Pip usage is allowed by run_policy; virtualenv implied by skill_md.",
+      "impact_if_missing": "Unable to install runtime dependencies; cannot run the sample.",
+      "workaround": "Use system package manager to install dependencies or containerize with a Dockerfile that installs them.",
+      "references": []
+    },
+    {
+      "name": "az",
+      "kind": "cli",
+      "needed_for": "Inspect Azure subscription/resources if the builder needs to read cluster metadata or to run the Bicep/CLI deploy path (optional).",
+      "available": true,
+      "detail": "Azure CLI 2.89.1; signed-in (subscription available).",
+      "impact_if_missing": "Cannot inspect Azure control-plane or register provider; but not required to run the sample against the given cluster if DOCUMENTDB_URI is set.",
+      "workaround": "Use the documentdb MCP server for data-plane verification and ask infra team for resource details.",
+      "references": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        }
+      ]
+    },
+    {
+      "name": "docker",
+      "kind": "other",
+      "needed_for": "Optionally run the local DocumentDB Gateway image for local integration tests (recommended for offline development).",
+      "available": true,
+      "detail": "Docker 29.5.3 available; no local DocumentDB gateway container running by default.",
+      "impact_if_missing": "Cannot run local gateway container; must use live cluster for verification.",
+      "workaround": "Run the provided Gateway Docker image (skill `documentdb-local-deployment`) using the documented docker-compose or docker run commands.",
+      "references": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ]
+    },
+    {
+      "name": "documentdb (MCP server)",
+      "kind": "mcp_server",
+      "needed_for": "Data-plane inspection: list databases, collections, indexes, run explain, insert/sample documents and run aggregation queries including $search/cosmosSearch for verification.",
+      "available": true,
+      "detail": "documentdb MCP server present with 18 tools including documentdb_create_index, documentdb_list_indexes, documentdb_aggregate, etc.",
+      "impact_if_missing": "Harder to programmatically verify collections, indexes and query plans; would need mongosh or portal access.",
+      "workaround": "Use mongosh / MongoDB Compass or Azure Portal if documentdb MCP were missing.",
+      "references": []
+    },
+    {
+      "name": "learn (Microsoft Learn MCP server)",
+      "kind": "mcp_server",
+      "needed_for": "Authoritative Microsoft docs search and fetch to ground product facts and CLI/resource references.",
+      "available": true,
+      "detail": "learn_microsoft_docs_search and fetch tools are available and used to verify compatibility, index/create APIs, and product history.",
+      "impact_if_missing": "Harder to ground answers to Microsoft docs; more reliance on installed skills.",
+      "workaround": "Rely on installed documentdb-* skills' references and the documentdb MCP server.",
+      "references": []
+    },
+    {
+      "name": "mongosh",
+      "kind": "other",
+      "needed_for": "Manual interactive checks, ad-hoc queries and debugging during development and verification.",
+      "available": false,
+      "detail": "not found on PATH (inventory).",
+      "impact_if_missing": "Manual interactive debugging of the live cluster is less convenient; you must use the documentdb MCP tools or MongoDB-compatible clients.",
+      "workaround": "Use the documentdb MCP server to inspect collections and indexes, or install mongosh (`npm install -g mongosh`)—recommended.",
+      "references": []
+    },
+    {
+      "name": "azd",
+      "kind": "cli",
+      "needed_for": "Optional: convenience for template-based app deployment; not required for the sample.",
+      "available": false,
+      "detail": "not found on PATH",
+      "impact_if_missing": "Only affects optional deployment flows; not needed to build the sample.",
+      "workaround": "Use `az` or container-based deployments; install azd if desired (`npm i -g @azure/azure-dev` or follow azd docs).",
+      "references": []
+    },
+    {
+      "name": "bicep",
+      "kind": "cli",
+      "needed_for": "Optional: authoring Bicep-based infrastructure templates if the builder wants to include deployment IaC; not required per skill_md which forbids provisioning in this run.",
+      "available": false,
+      "detail": "not found on PATH",
+      "impact_if_missing": "Cannot locally compile Bicep templates to ARM without az CLI bicep support or bicep CLI.",
+      "workaround": "Use `az deployment group create --template-file` or add bicep via `az bicep install` as documented.",
+      "references": []
+    },
+    {
+      "name": "installed documentdb-* skills (documentdb-driver, documentdb-connection, documentdb-vector-search, documentdb-local-deployment, documentdb-azure-deployment, documentdb-security, documentdb-indexing, ...)",
+      "kind": "skill",
+      "needed_for": "Authoritative guidance on driver patterns, connection options, index types, vector-query syntax, local gateway, deployment examples and security best practices.",
+      "available": true,
+      "detail": "A comprehensive set of documentdb skills is installed and will guide implementation & verification.",
+      "impact_if_missing": "Builder would lack authoritative, curated guidance about best practices and the correct createIndex / $search syntax.",
+      "workaround": "Use Microsoft Learn pages returned by `learn_microsoft_docs_search` but installing the agent skills would still be recommended.",
+      "references": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        },
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        },
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        },
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        }
+      ]
+    }
+  ],
+  "accelerators_missed": [
+    "mongosh (installable via npm or MongoDB downloads) — useful for interactive debugging; install command: `npm i -g mongosh` or use distro packages.",
+    "Optional: bicep/terraform if the builder planned to provide IaC for cluster provisioning; not required for the sample but useful for reproducible infra."
+  ],
+  "confusions": [
+    {
+      "question_id": "Q01",
+      "question": "What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster?",
+      "cold_answer": "Provider namespace: Microsoft.DocumentDB. Primary resource type for a Cosmos DB (DocumentDB/MongoDB API) account: Microsoft.DocumentDB/databaseAccounts (sub-resources under that account).",
+      "grounded_answer": "Resource provider namespace: Microsoft.DocumentDB; resource type for an Azure DocumentDB cluster is Microsoft.DocumentDB/mongoClusters (API version examples in skill: 2025-09-01).",
+      "grounding_source": "documentdb-azure-deployment",
+      "grounding_links": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        },
+        {
+          "title": "Microsoft.DocumentDB/mongoClusters resource reference",
+          "url": "https://learn.microsoft.com/azure/templates/microsoft.documentdb/mongoclusters"
+        }
+      ],
+      "outcome": "wrong",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "The cold answer used the older Cosmos DB resource model (databaseAccounts) which applies to Cosmos DB service variants; the new Azure DocumentDB product uses a distinct resource type 'mongoClusters'.",
+      "confusion_sources": [
+        {
+          "title": "Examples & quickstarts that use Microsoft.DocumentDB/databaseAccounts for Cosmos DB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/quickstart-portal"
+        }
+      ],
+      "build_risk": "Using databaseAccounts in ARM/Bicep/az commands would attempt to create the wrong resource type (Cosmos DB account) or fail; deployment templates and CLI commands would be incorrect.",
+      "improvements": [
+        "Add a short note on the Overview or Quickstart page stating: 'For vCore-based Azure DocumentDB clusters use resource type Microsoft.DocumentDB/mongoClusters (not databaseAccounts).'",
+        "Update CLI examples on doc landing pages to show `az resource create --resource-type \"Microsoft.DocumentDB/mongoClusters\"` or Bicep snippet referencing mongoClusters."
+      ]
+    },
+    {
+      "question_id": "Q02",
+      "question": "Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension?",
+      "cold_answer": "Use the built-in az cosmosdb command group (core CLI). Example to create an account: az cosmosdb create --name myAccount --resource-group myRg --kind MongoDB --locations regionName=eastus --default-consistency-level Session",
+      "grounded_answer": "The management flow for Azure DocumentDB vCore clusters uses standard `az deployment` / Bicep templates or `az resource create` against resource-type Microsoft.DocumentDB/mongoClusters (examples provided by the documentdb-azure-deployment skill). There is no single core `az cosmosdb` command group that manages mongoClusters; the sample deployment uses Bicep/`az deployment group create` or `az resource create --resource-type \"Microsoft.DocumentDB/mongoClusters\" --api-version 2025-09-01` (the `cosmosdb` group targets the Cosmos DB databaseAccounts model, not mongoClusters).",
+      "grounding_source": "documentdb-azure-deployment",
+      "grounding_links": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        },
+        {
+          "title": "Quickstart: Deploy an Azure DocumentDB cluster using Bicep",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-bicep"
+        }
+      ],
+      "outcome": "wrong",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "The `az cosmosdb` command group manages Cosmos DB databaseAccounts (the Cosmos DB control-plane); authors conflated Cosmos DB account commands with the new mongoClusters resource.",
+      "confusion_sources": [
+        {
+          "title": "az cosmosdb docs and examples for Cosmos DB (databaseAccounts)",
+          "url": "https://learn.microsoft.com/cli/azure/cosmosdb"
+        }
+      ],
+      "build_risk": "Using `az cosmosdb` commands will not create a mongoClusters resource and will lead to wrong deployment flows or failure when following older quickstarts.",
+      "improvements": [
+        "Add an explicit CLI note in the Azure DocumentDB Quickstart pages: 'To create vCore DocumentDB clusters use `az deployment`/`az resource create` with resource-type `Microsoft.DocumentDB/mongoClusters`; the `az cosmosdb` group targets databaseAccounts and is not the right command for mongoClusters.'"
+      ]
+    },
+    {
+      "question_id": "Q03",
+      "question": "Which Bicep and Terraform resource types deploy a cluster?",
+      "cold_answer": "Bicep: resource of type Microsoft.DocumentDB/databaseAccounts. Terraform (AzureRM): resource \"azurerm_cosmosdb_account\" \"example\" { ... kind = \"MongoDB\" }",
+      "grounded_answer": "Bicep/Terraform should target Microsoft.DocumentDB/mongoClusters (Bicep template reference) or the Terraform resource `azurerm_mongo_cluster` / AzAPI targeting the mongoClusters API (documentdb-azure-deployment skill and Terraform references).",
+      "grounding_source": "documentdb-azure-deployment",
+      "grounding_links": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        },
+        {
+          "title": "Terraform azurerm_mongo_cluster / examples",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-terraform"
+        }
+      ],
+      "outcome": "wrong",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "The cold answer described the older Cosmos DB 'databaseAccounts' and `azurerm_cosmosdb_account` Terraform resource used for Cosmos DB, not the new mongoClusters resource type and Terraform provider resource for vCore DocumentDB clusters.",
+      "confusion_sources": [
+        {
+          "title": "Terraform examples that use azurerm_cosmosdb_account for Cosmos DB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/quickstart-terraform"
+        }
+      ],
+      "build_risk": "Provisioning via the wrong Terraform/Bicep resource would create a different service (Cosmos DB account) or fail; IaC snippets and templates must reference mongoClusters.",
+      "improvements": [
+        "In the Terraform/Bicep quickstart docs, add a clear top-line: 'Use Microsoft.DocumentDB/mongoClusters (Bicep) or azurerm_mongo_cluster (Terraform) for Azure DocumentDB (vCore); do not reuse azurerm_cosmosdb_account / databaseAccounts snippets.'"
+      ]
+    },
+    {
+      "question_id": "Q04",
+      "question": "What does a connection string look like: scheme, host suffix, port, and the options it must carry?",
+      "cold_answer": "Typical MongoDB API connection string for Cosmos DB: mongodb://<username>@<accountName>:<password>@<accountName>.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&retryWrites=false&maxIdleTimeMS=120000&appName=@<accountName>@. Username is usually in the form <dbuser>@<accountName> and TLS (ssl=true) is required. Port 10255 (TLS) is used for Cosmos DB MongoDB API.",
+      "grounded_answer": "Azure DocumentDB cluster connection strings are presented as mongodb+srv or mongodb URIs for the mongoClusters resource, e.g. mongodb+srv://<user>:<password>@<cluster>.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retryWrites=false&maxIdleTimeMS=120000 (see documentdb-azure-deployment). The host suffix and SRV form differ from older Cosmos DB databaseAccounts endpoints.",
+      "grounding_source": "documentdb-azure-deployment",
+      "grounding_links": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        },
+        {
+          "title": "Quickstart: connection strings and examples",
+          "url": "https://learn.microsoft.com/azure/documentdb/connect"
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "The cold answer used the cosmos 'mongo.cosmos.azure.com:10255' pattern used by Cosmos DB databaseAccounts; DocumentDB vCore clusters use different hostnames (mongocluster.cosmos.azure.com, often SRV) and a different control-plane model.",
+      "confusion_sources": [
+        {
+          "title": "Older Cosmos DB MongoDB API connection examples showing account.mongo.cosmos.azure.com:10255",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/connect"
+        }
+      ],
+      "build_risk": "Using the wrong host/port/URI form will fail client connections and cause confusion when constructing MongoClient URIs; developer instructions must use the cluster's actual connection string (DOCUMENTDB_URI) as provided in the environment.",
+      "improvements": [
+        "Add an explicit example in the quickstart showing the SRV form returned by `mongoClusters` and a sample line telling builders to read the cluster string from DOCUMENTDB_URI."
+      ]
+    },
+    {
+      "question_id": "Q05",
+      "question": "How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else?",
+      "cold_answer": "Primary billing model is provisioned throughput measured in Request Units per second (RU/s) or autoscale RU/s; there is also a serverless option ... additionally, Azure offers vCore-based dedicated cluster (M-series) options for dedicated MongoDB-compatible clusters (vCore billing).",
+      "grounded_answer": "Azure DocumentDB (vCore) uses compute tiers (M10..M200) / vCore-like provisioning and predictable compute + storage pricing; it is distinct from Cosmos DB's RU-based model (the latter is the RU/serverless model). DocumentDB supports dedicated compute tiers and the M-series list (M10..M200) — pricing & scale are vCore-based (documentdb-azure-deployment and Learn pages).",
+      "grounding_source": "documentdb-azure-deployment / Learn docs",
+      "grounding_links": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        },
+        {
+          "title": "Azure DocumentDB pricing & overview",
+          "url": "https://learn.microsoft.com/azure/documentdb/overview"
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "azure_cosmos_db_for_nosql",
+      "why_the_confusion_arose": "The cold answer mixed Cosmos DB's RU model (request units) with the new vCore-based Azure DocumentDB offering; these are different billing models for different services.",
+      "confusion_sources": [
+        {
+          "title": "Cosmos DB RU-based docs",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/provision-throughput"
+        }
+      ],
+      "build_risk": "If a builder used RU/s assumptions (throttling, retry strategies, pricing expectations), they would pick wrong instance types and be surprised by billing or capability differences; use the M-series compute-tier guidance instead.",
+      "improvements": [
+        "Add a short decision guide on the product overview page clarifying: 'Use Azure DocumentDB (vCore / M-series) for vCore-based clusters; use Azure Cosmos DB for RU-based or serverless models.'"
+      ]
+    },
+    {
+      "question_id": "Q06",
+      "question": "Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID?",
+      "cold_answer": "Common auth for the MongoDB API is SCRAM (username/password) using the Cosmos DB account keys ... Microsoft Entra ID (Azure AD) integration for the MongoDB API is limited/preview and not universally available; if Entra auth is supported you must obtain an AAD access token and present it via the driver’s SASL/OAUTHBEARER ...",
+      "grounded_answer": "Azure DocumentDB supports SCRAM (SCRAM-SHA-256) credentials and also supports Microsoft Entra ID (Azure AD) authentication with RBAC for applications and managed identities; driver usage for Entra typically uses an OIDC-style authMechanism (examples name `MONGODB-OIDC` or `MONGODB-AAD` and recommend using managed identities). The documentdb-security skill provides guidance and links to official docs showing Entra + RBAC flows (security-entra-rbac.md).",
+      "grounding_source": "documentdb-security (security-entra-rbac.md)",
+      "grounding_links": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        },
+        {
+          "title": "Use Microsoft Entra ID and role-based access control",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control"
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "none",
+      "why_the_confusion_arose": "The cold answer understated Entra support (treated it as preview) and speculated on driver mechanisms; the installed security docs explicitly describe Entra + RBAC and recommend OIDC-style driver auth, but drivers may have slightly different mechanism names and builder should check current driver docs.",
+      "confusion_sources": [
+        {
+          "title": "Old forum threads that treated AAD integration as preview for Cosmos DB",
+          "url": "https://learn.microsoft.com/azure/documentdb/previous-aad-preview"
+        }
+      ],
+      "build_risk": "If the builder assumes AAD is unavailable, they may implement long-lived SCRAM passwords or Key Vault flows instead of using managed identities; this is a security risk and undermines best practices.",
+      "improvements": [
+        "Add a cookbook page that shows a concrete PyMongo / Node example using managed identity / AAD token exchange (exact driver config and sample code) and name the authMechanism string to use against the current stable driver."
+      ]
+    },
+    {
+      "question_id": "Q07",
+      "question": "Which client library should an application use? Is there a service-specific SDK?",
+      "cold_answer": "Use the standard MongoDB drivers for your language (for Python, use pymongo). Do NOT use the azure-cosmos SDK for MongoDB API access — the MongoDB wire protocol is served and you should use MongoDB drivers.",
+      "grounded_answer": "Correct: use standard MongoDB drivers (PyMongo for Python). There is no separate service-specific MongoDB client SDK; azure-cosmos SDK is not for the MongoDB API. The documentdb-driver skill enforces the singleton MongoClient pattern and driver best practices.",
+      "grounding_source": "documentdb-driver",
+      "grounding_links": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        },
+        {
+          "title": "MongoDB drivers compatibility (Learn)",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language"
+        }
+      ],
+      "outcome": "correct",
+      "confused_with": "none",
+      "why_the_confusion_arose": "",
+      "confusion_sources": [],
+      "build_risk": "",
+      "improvements": []
+    },
+    {
+      "question_id": "Q08",
+      "question": "Which vector index types are supported, and what does the command that creates one look like?",
+      "cold_answer": "Newer/documentdb clusters support vector index algorithms such as IVF, HNSW and DiskANN ... Typical index creation is done with the MongoDB-style createIndex API on the collection specifying a vector index on the embedding field. Example (pseudo-command): db.products.createIndex({ embedding: 'vector' }, { name: 'emb_ivf', vectorIndexType: 'ivf', vectorIndexConfig: { dimension: 512, nlist: 1024 } }) — exact option names may differ",
+      "grounded_answer": "Azure DocumentDB supports vector index kinds DiskANN, HNSW and IVF (recommendations depend on scale). Indexes are created with createIndex but the field type is `cosmosSearch` and options live under `cosmosSearchOptions` (example: db.products.createIndex({ embedding: 'cosmosSearch' }, { cosmosSearchOptions: { kind: 'vector-ivf', dimensions:512, similarity:'COS', nlist:1024 } })). Vector query uses $search with cosmosSearch. See documentdb-vector-search and vector-create-diskann-index resources.",
+      "grounding_source": "documentdb-vector-search",
+      "grounding_links": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        },
+        {
+          "title": "Vector search — DiskANN index creation",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search"
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "mongodb_atlas_or_server",
+      "why_the_confusion_arose": "The cold answer used generic Atlas-style or hypothetical option names (`'vector'` / `vectorIndexType`) instead of DocumentDB's `cosmosSearch` field and `cosmosSearchOptions` syntax.",
+      "confusion_sources": [
+        {
+          "title": "MongoDB Atlas vector-search docs showing $vectorSearch syntax",
+          "url": "https://www.mongodb.com/docs/atlas/atlas-search/vector/"
+        }
+      ],
+      "build_risk": "Using Atlas-style index API or wrong option names will fail or create a non-vector index; the index must be created with `cosmosSearchOptions` and matching dimensions.",
+      "improvements": [
+        "On any vector-search quickstart include a minimal `db.collection.createIndex` example with `cosmosSearchOptions` and a note: 'Do not use Atlas $vectorSearch or field name `vector` — use `cosmosSearch` and supply cosmosSearchOptions.'"
+      ]
+    },
+    {
+      "question_id": "Q09",
+      "question": "How are full-text search and hybrid search done?",
+      "cold_answer": "Azure Cosmos DB (DocumentDB) does not expose the same built-in full-text/hybrid search as a dedicated search service; for full-text and hybrid (text + vector) search you typically integrate Cosmos DB with Azure Cognitive Search ...",
+      "grounded_answer": "Incorrect: Azure DocumentDB includes native `cosmosSearch` capabilities that support lexical (text) + vector search and hybrid queries via the `$search` aggregation stage. You do not have to push to Azure Cognitive Search for hybrid text+vector queries. See documentdb-vector-search and vector-knn-query resources.",
+      "grounding_source": "documentdb-vector-search / vector-knn-query",
+      "grounding_links": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        },
+        {
+          "title": "Vector search queries (cosmosSearch / $search)",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search"
+        }
+      ],
+      "outcome": "wrong",
+      "confused_with": "azure_cosmos_db_for_nosql",
+      "why_the_confusion_arose": "The cold answer described older patterns or the Cosmos DB NoSQL API's integration points; it assumed no native vector/text facility, but DocumentDB provides `cosmosSearch` as first-class functionality.",
+      "confusion_sources": [
+        {
+          "title": "Azure Cognitive Search integration examples for Cosmos DB NoSQL",
+          "url": "https://learn.microsoft.com/azure/search/search-howto-index-cosmosdb"
+        }
+      ],
+      "build_risk": "If a builder assumes no native hybrid search, they might add unnecessary synchronization to Cognitive Search and increase complexity/cost.",
+      "improvements": [
+        "Add a short note near vector-search docs: 'DocumentDB includes native text+vector (cosmosSearch) functionality — external search services are optional for advanced indexing/ingestion scenarios only.'"
+      ]
+    },
+    {
+      "question_id": "Q10",
+      "question": "Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not?",
+      "cold_answer": "Supported wire protocol/version depends on the account SKU but modern deployments support up to recent MongoDB server wire versions ... Many administrative and server-side features of a native MongoDB server are not available ... some aggregation operators or latest server-only features are missing or behave slightly differently.",
+      "grounded_answer": "Microsoft docs and compatibility pages state Azure DocumentDB supports MongoDB wire protocol versions 5.0 through 8.0 and implements ~99% of MongoDB operators; some administrative commands and a few server-only features are intentionally not exposed by the managed service (see compatibility guide).",
+      "grounding_source": "Microsoft Learn compatibility pages (queried via learn_microsoft_docs_search)",
+      "grounding_links": [
+        {
+          "title": "MongoDB compatibility and supported wire protocol versions",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language"
+        },
+        {
+          "title": "Azure DocumentDB overview (compatibility summary)",
+          "url": "https://learn.microsoft.com/azure/documentdb/overview"
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "none",
+      "why_the_confusion_arose": "Cold answer was vague; Learn pages confirm explicit supported versions (5.0–8.0) and the managed-service limitations on admin commands.",
+      "confusion_sources": [],
+      "build_risk": "Assuming a different wire version could cause driver incompatibilities; builders must target drivers compatible with the service's advertised wire protocol (5–8).",
+      "improvements": [
+        "Explicitly list the supported wire protocol versions on the product overview and quickstarts so builders can pin driver versions reliably."
+      ]
+    },
+    {
+      "question_id": "Q11",
+      "question": "How do you run the database locally for development and tests: which image or emulator, and which port?",
+      "cold_answer": "There is no full local emulator that reproduces the MongoDB API behavior of Azure Cosmos DB; for local development run a local MongoDB server (docker run -p 27017 ...) The official Azure Cosmos DB Emulator historically does not support the MongoDB API feature set.",
+      "grounded_answer": "There is an official DocumentDB Gateway Docker image intended for local development exposing the MongoDB wire protocol on port 10260; the documentdb-local-deployment skill documents the Gateway image (ghcr.io/documentdb/documentdb/documentdb-local:latest) and port 10260 with TLS and SCRAM-SHA-256 for local tests.",
+      "grounding_source": "documentdb-local-deployment",
+      "grounding_links": [
+        {
+          "title": "documentdb-local-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/local-deployment/SKILL.md"
+        },
+        {
+          "title": "Local Gateway image and ports (Gateway on 10260)",
+          "url": "https://learn.microsoft.com/azure/documentdb/local-development"
+        }
+      ],
+      "outcome": "wrong",
+      "confused_with": "azure_cosmos_db_for_mongodb_ru",
+      "why_the_confusion_arose": "The cold answer referenced Cosmos DB's limitations and the Cosmos DB emulator; DocumentDB (the new product) provides a local Gateway image to reproduce behavior.",
+      "confusion_sources": [
+        {
+          "title": "Azure Cosmos DB emulator limitations for MongoDB API",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/local-emulator"
+        }
+      ],
+      "build_risk": "If the builder believes no local option exists, they may be forced to run everything against the live cluster during development; using the Gateway image improves dev iteration speed.",
+      "improvements": [
+        "Update local-development docs to highlight the Gateway image, port 10260 and TLS guidance, so builders won't default to ephemeral local Mongo images."
+      ]
+    },
+    {
+      "question_id": "Q12",
+      "question": "Are change streams supported, and does anything have to be enabled first?",
+      "cold_answer": "Change streams are supported on MongoDB API accounts that advertise a compatible server version ... verify support on the target account before relying on it.",
+      "grounded_answer": "Learn compatibility pages show `$changeStream` aggregation stage is supported in Azure DocumentDB for supported server versions (documented in the compatibility matrix). No special toggle is required beyond using an account that advertises a compatible MongoDB version.",
+      "grounding_source": "Microsoft Learn compatibility pages",
+      "grounding_links": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility — $changeStream",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#operators"
+        }
+      ],
+      "outcome": "correct",
+      "confused_with": "none",
+      "why_the_confusion_arose": "",
+      "confusion_sources": [],
+      "build_risk": "",
+      "improvements": []
+    },
+    {
+      "question_id": "Q13",
+      "question": "Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it?",
+      "cold_answer": "The dedicated MCP server for this service is the 'documentdb' MCP server ... The general Azure MCP server does not automatically provide documentdb-specific data-plane inspection tools; use the documentdb MCP server’s tooling/profile.",
+      "grounded_answer": "Correct: use the `documentdb` MCP server for data-plane tasks (it is present in inventory). The general `azure` MCP server exists but does not substitute for documentdb data-plane tools.",
+      "grounding_source": "machine inventory + documentdb-mcp-setup skill",
+      "grounding_links": [
+        {
+          "title": "documentdb-mcp-setup",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/mcp-setup/SKILL.md"
+        }
+      ],
+      "outcome": "correct",
+      "confused_with": "none",
+      "why_the_confusion_arose": "",
+      "confusion_sources": [],
+      "build_risk": "",
+      "improvements": []
+    },
+    {
+      "question_id": "Q14",
+      "question": "What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project?",
+      "cold_answer": "Historically Microsoft’s hosted DocumentDB service was the precursor name; that platform evolved into Azure Cosmos DB. 'DocumentDB' was the original name ... Azure Cosmos DB now supports multiple APIs, including the MongoDB-compatible API.",
+      "grounded_answer": "Clarified: The new product 'Azure DocumentDB (with MongoDB compatibility)' was previously named 'vCore-based Azure Cosmos DB for MongoDB' and was later renamed to Azure DocumentDB; it is distinct from the older 2014–2017 'DocumentDB' that became Azure Cosmos DB and is powered by the open-source DocumentDB engine. Azure DocumentDB (vCore) and Cosmos DB for MongoDB (RU) are separate services (vCore vs RU models).",
+      "grounding_source": "Microsoft Learn FAQ and documentdb-azure-deployment",
+      "grounding_links": [
+        {
+          "title": "What is Azure DocumentDB (with MongoDB compatibility)?",
+          "url": "https://learn.microsoft.com/azure/documentdb/overview#naming-and-history"
+        },
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "none",
+      "why_the_confusion_arose": "The cold answer mixed the historical product names; Learn pages clarify that the vCore product was previously called 'vCore-based Azure Cosmos DB for MongoDB' and then renamed 'Azure DocumentDB'.",
+      "confusion_sources": [],
+      "build_risk": "Minor naming confusion only; could lead to referencing wrong docs if the builder searches for the older name.",
+      "improvements": [
+        "Add a short 'names and timelines' paragraph on the product landing page listing: original DocumentDB -> Azure Cosmos DB (2017) -> vCore product rebranded to Azure DocumentDB (year) and how they differ."
+      ]
+    },
+    {
+      "question_id": "Q15",
+      "question": "What engine is underneath, and does that change anything in application code?",
+      "cold_answer": "Underneath is Cosmos DB’s proprietary storage and query engine which implements the MongoDB wire protocol for the MongoDB API. ... use MongoDB drivers unchanged for normal CRUD/aggregation operations, but test advanced features and admin operations.",
+      "grounded_answer": "Azure DocumentDB (vCore) is built on the open-source DocumentDB engine (the project is public) and exposes the MongoDB wire protocol — applications use standard MongoDB drivers. The engine being open-source may allow on-prem or multi-cloud runs, but application-level MongoDB drivers remain the same; only a few administrative operations differ in a managed service.",
+      "grounding_source": "documentdb-azure-deployment and Microsoft Learn pages",
+      "grounding_links": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        },
+        {
+          "title": "What is Azure DocumentDB (with MongoDB compatibility)?",
+          "url": "https://learn.microsoft.com/azure/documentdb/overview"
+        }
+      ],
+      "outcome": "wrong",
+      "confused_with": "azure_cosmos_db_for_nosql",
+      "why_the_confusion_arose": "The cold answer described Cosmos DB's proprietary engine rather than the new DocumentDB engine (open-source) powering the vCore product.",
+      "confusion_sources": [],
+      "build_risk": "Minimal for basic CRUD/aggregation; risk appears only if the builder relies on server admin commands or expects Cosmos DB-specific behaviors.",
+      "improvements": [
+        "Clarify the engine relationship on the overview page: 'Azure DocumentDB (vCore) is powered by the open-source DocumentDB engine; applications use MongoDB drivers unchanged.'"
+      ]
+    },
+    {
+      "question_id": "S01",
+      "question": "What database name should this sample use?",
+      "cold_answer": "Use database name 'sample_retail_11' for all collections and operations.",
+      "grounded_answer": "Correct — the run-environment and prompt_md specify using the database `sample_retail_11` for all sample-created collections.",
+      "grounding_source": "sample prompt skill_md",
+      "grounding_links": [
+        {
+          "title": "sample prompt run environment",
+          "url": ""
+        }
+      ],
+      "outcome": "correct",
+      "confused_with": "none",
+      "why_the_confusion_arose": "",
+      "confusion_sources": [],
+      "build_risk": "",
+      "improvements": []
+    },
+    {
+      "question_id": "S02",
+      "question": "How should the sample store 512-dimension float embeddings as BSON binary with subtype 0x09 from Python?",
+      "cold_answer": "Encode the float32 vector to little-endian bytes and wrap with bson.Binary with subtype 0x09. Example code: bson.Binary(np.array(vec, dtype=np.float32).tobytes(), subtype=0x09).",
+      "grounded_answer": "Correct: store the float32 bytes as BSON binary with subtype 0x09. This is the recommended approach in the sample guidance and matches the vector storage expectations for DocumentDB vector indexes.",
+      "grounding_source": "prompt run-environment & documentdb-vector-search guidance",
+      "grounding_links": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ],
+      "outcome": "correct",
+      "confused_with": "none",
+      "why_the_confusion_arose": "",
+      "confusion_sources": [],
+      "build_risk": "",
+      "improvements": []
+    },
+    {
+      "question_id": "S03",
+      "question": "What createIndex call will the sample use to request an IVF vector index for the embedding field?",
+      "cold_answer": "Use a MongoDB-style createIndex on the embedding field with vector index options. Example (pseudo-code): db.products.createIndex( { embedding: 'vector' }, { name: 'emb_ivf', vectorIndexType: 'ivf', vectorIndexConfig: { dimension: 512, nlist: 1024 } } ). The sample will call collection.create_index(...) with equivalent options via PyMongo.",
+      "grounded_answer": "Partly wrong: the correct DocumentDB pattern is to call createIndex with the field type `cosmosSearch` and pass vector index options under `cosmosSearchOptions`, e.g. db.products.createIndex({ embedding: 'cosmosSearch' }, { cosmosSearchOptions: { kind: 'vector-ivf', dimensions: 512, similarity: 'COS', nlist: 1024 } }). See vector-create-diskann-index and vector-search docs.",
+      "grounding_source": "documentdb-vector-search / vector-create-diskann-index.md",
+      "grounding_links": [
+        {
+          "title": "vector-create-diskann-index",
+          "url": ""
+        },
+        {
+          "title": "Vector search — index creation examples",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search"
+        }
+      ],
+      "outcome": "partly_wrong",
+      "confused_with": "mongodb_atlas_or_server",
+      "why_the_confusion_arose": "The cold answer used a generic 'vector' typed index and option names which match Atlas or hypothetical APIs, rather than the DocumentDB `cosmosSearch` + `cosmosSearchOptions` shape.",
+      "confusion_sources": [
+        {
+          "title": "Atlas vector createIndex examples",
+          "url": "https://www.mongodb.com/docs/atlas/atlas-search/vector/"
+        }
+      ],
+      "build_risk": "If the builder tried to call the wrong option names via PyMongo, index creation would fail; use the `cosmosSearchOptions` wrapper and ensure dimensions/similarity match embeddings.",
+      "improvements": [
+        "Add a small, copy-paste createIndex snippet on the vector-search quickstart that shows the `cosmosSearchOptions` shape for IVF/HNSW/DiskANN so builders don't invent Atlas-like option keys."
+      ]
+    },
+    {
+      "question_id": "S04",
+      "question": "Which image-embedding model will the sample use to get 512-dimensional vectors?",
+      "cold_answer": "Use a CLIP model that produces 512-d vectors, e.g. Hugging Face 'openai/clip-vit-base-patch32' via transformers: from transformers import CLIPProcessor, CLIPModel; processor = CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32'); model = CLIPModel.from_pretrained('openai/clip-vit-base-patch32') — produce a normalized 512-d float32 embedding.",
+      "grounded_answer": "could_not_verify",
+      "grounding_source": "none found",
+      "grounding_links": [],
+      "outcome": "could_not_verify",
+      "confused_with": "none",
+      "why_the_confusion_arose": "The installed DocumentDB skills and Microsoft docs don't prescribe a CLIP checkpoint; the prompt-review assumed a reasonable CLIP model but no installed skill or Learn doc states the exact model to use.",
+      "confusion_sources": [],
+      "build_risk": "If the builder picks a CLIP variant that outputs a different dimensionality (e.g. 768 or 1024), the embedding dimension will mismatch the index and silently return wrong results; the builder must pick a model that outputs 512 dims or change the index to match.",
+      "improvements": [
+        "Add a small 'AI model' guidance doc in the sample template that specifies a recommended checkpoint name, its embedding dimension, and the minimal preprocessing steps (resize / normalization) to avoid dimension mismatches."
+      ]
+    },
+    {
+      "question_id": "S05",
+      "question": "How will the sample issue the vector search query to get top-8 nearest neighbors after encoding a query image?",
+      "cold_answer": "The sample will rely on the server-side vector search facility exposed through the MongoDB API. It will present the query vector as BSON binary subtype 0x09 and call the collection's vector search operator (example pseudo-call): collection.find({ '$vectorSearch': { 'field': 'embedding', 'vector': <Binary>, 'k': 8, 'algorithm': 'ivf' } }) or use the corresponding aggregate stage if required. If exact syntax differs, fall back to client-side similarity ...",
+      "grounded_answer": "Wrong: DocumentDB uses the `$search` aggregation stage with `cosmosSearch` for vector queries. The correct aggregate looks like: db.products.aggregate([ { $search: { cosmosSearch: { path: 'embedding', vector: <binary-or-array>, k: 8, lSearch: <n>, filter: { ... } } } }, { $project: { ..., score: { $meta: 'searchScore' } } } ]). The Atlas-style `$vectorSearch` operator is not supported. See vector-knn-query.md.",
+      "grounding_source": "documentdb-vector-search (vector-knn-query.md)",
+      "grounding_links": [
+        {
+          "title": "vector-knn-query",
+          "url": ""
+        },
+        {
+          "title": "Vector search queries documentation",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search"
+        }
+      ],
+      "outcome": "wrong",
+      "confused_with": "mongodb_atlas_or_server",
+      "why_the_confusion_arose": "The cold answer used Atlas or other-vector-store syntax (`$vectorSearch`) instead of DocumentDB's `$search` + `cosmosSearch` stage.",
+      "confusion_sources": [
+        {
+          "title": "Atlas $vectorSearch examples",
+          "url": "https://www.mongodb.com/docs/atlas/atlas-search/vector/"
+        }
+      ],
+      "build_risk": "Using $vectorSearch or a wrong operator will produce runtime errors; the builder must construct a `$search` aggregation stage with cosmosSearch options and ensure `lSearch >= k`.",
+      "improvements": [
+        "Include a single copy-paste example of the `$search` aggregation with `cosmosSearch` in the sample README (with k=8 and a recommended lSearch), so builders don't reuse Atlas syntax."
+      ]
+    }
+  ],
+  "information_gaps": [
+    {
+      "title": "Exact PyMongo / driver auth flow for Microsoft Entra (OIDC)",
+      "description": "Installed skills/documentation explain that Entra ID + RBAC is supported and recommend OIDC-style driver auth (security-entra-rbac.md), but none of the installed skills or Learn snippets documents the exact PyMongo (or other language driver) options / code to obtain an AAD token and pass it to the driver (e.g., which authMechanism string is required, whether PyMongo supports it natively, or specific code samples). I searched: documentdb-security resources, documentdb-connection, and Microsoft Learn compatibility pages and found no exact PyMongo code sample for AAD auth."
+    },
+    {
+      "title": "CLIP checkpoint and preprocessing canonicalization",
+      "description": "No installed skill prescribes the exact CLIP model checkpoint and precise preprocessing (resize, normalization, pooling) to guarantee 512-d outputs for the sample. I looked in the prompt_review and installed skills; none state a single recommended HF checkpoint and the dependent PyTorch/transformers package pins."
+    },
+    {
+      "title": "Driver API mapping for createIndex cosmosSearchOptions via PyMongo",
+      "description": "The vector-index examples are visible in the documentdb-vector-search skill as JS-like snippets (db.collection.createIndex). There is no explicit PyMongo code sample showing how to pass the `cosmosSearchOptions` options object via the PyMongo create_index() call; I checked the vector-search skill resources and did not find a PyMongo snippet."
+    }
+  ],
+  "blockers": [],
+  "guidance_for_builder": [
+    {
+      "instruction": "Use the resource type Microsoft.DocumentDB/mongoClusters (not Microsoft.DocumentDB/databaseAccounts) when referring to the vCore Azure DocumentDB cluster in ARM/Bicep/az commands.",
+      "sources": [
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        },
+        {
+          "title": "Microsoft.DocumentDB/mongoClusters resource reference",
+          "url": "https://learn.microsoft.com/azure/templates/microsoft.documentdb/mongoclusters"
+        }
+      ]
+    },
+    {
+      "instruction": "Create vector indexes using createIndex with field type 'cosmosSearch' and provide vector options under 'cosmosSearchOptions' (kind: vector-ivf / vector-hnsw / vector-diskann), and query with $search + cosmosSearch; do not use Atlas $vectorSearch or a plain 'vector' field type.",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        },
+        {
+          "title": "Vector search queries documentation",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search"
+        }
+      ]
+    },
+    {
+      "instruction": "Read the cluster connection string from DOCUMENTDB_URI at runtime and use it as-is (do not commit or log it); the deployment skill shows the SRV/host suffix and the requirement for TLS and SCRAM-SHA-256.",
+      "sources": [
+        {
+          "title": "sample prompt run environment",
+          "url": ""
+        },
+        {
+          "title": "documentdb-azure-deployment",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/azure-deployment/SKILL.md"
+        }
+      ]
+    },
+    {
+      "instruction": "Store embeddings as float32 little-endian bytes wrapped in bson.Binary with subtype 0x09 (e.g., bson.Binary(np.array(vec, dtype=np.float32).tobytes(), subtype=0x09)) and ensure the index dimensions match the embedding vector length.",
+      "sources": [
+        {
+          "title": "documentdb-vector-search",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/vector-search/SKILL.md"
+        }
+      ]
+    }
+  ],
+  "inventory_recommendations": [
+    {
+      "name": "mongosh",
+      "worth_adding": true,
+      "recommendation": "Install mongosh for interactive debugging and ad-hoc checks. Simplest: `npm i -g mongosh` (or install the platform package from MongoDB distribution) so developers can run local and live-cluster checks.",
+      "references": [
+        {
+          "title": "MongoDB Shell (mongosh) installation",
+          "url": "https://www.mongodb.com/docs/mongodb-shell/install/"
+        }
+      ]
+    },
+    {
+      "name": "azd",
+      "worth_adding": false,
+      "recommendation": "Not required for this sample; only add if you plan to include azd-based app deploy recipes. If desired, follow azd installation docs (install via package manager) or use az directly.",
+      "references": [
+        {
+          "title": "Azure Developer CLI (azd) install docs",
+          "url": "https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd"
+        }
+      ]
+    },
+    {
+      "name": "bicep",
+      "worth_adding": false,
+      "recommendation": "Optional: add bicep if the team wants to author and validate Bicep templates locally; the simplest route is `az bicep install` or follow the Bicep install docs. Not required to build the sample app against an existing cluster.",
+      "references": [
+        {
+          "title": "Install the Bicep CLI",
+          "url": "https://learn.microsoft.com/azure/azure-resource-manager/bicep/install"
+        }
+      ]
+    },
+    {
+      "name": "terraform",
+      "worth_adding": false,
+      "recommendation": "Optional: add Terraform if IaC artifacts will be produced. Not required to build the sample app. Install via platform package managers or from terraform.io.",
+      "references": [
+        {
+          "title": "Terraform install docs",
+          "url": "https://learn.hashicorp.com/tutorials/terraform/install-cli"
+        }
+      ]
+    },
+    {
+      "name": "dotnet",
+      "worth_adding": false,
+      "recommendation": "Not needed for this Python sample. Add only if .NET samples or tooling are required.",
+      "references": []
+    }
+  ]
+}
