@@ -1,0 +1,76 @@
+# 5a. Best practices: prior knowledge against the public record: 07-voice-of-customer-sentiment-hub
+
+A model first listed the best practices it knew from training, with no tools. An agent then searched public sources without the team's checklist, the way an agent building this app would, and checked each prior belief against what it found.
+
+**24 practices, 13 with a public address.**
+
+| Outcome | Count | What it means |
+|---|---|---|
+| The model believed otherwise; public sources contradict it | 1 | An agent working from memory builds the wrong thing here. |
+| The model knows it; no public source for this service says either way | 2 | Agents will act on it. Nothing public says whether they should. |
+| The model knew it, and public sources agree | 16 | Memory and documentation line up. |
+| Found in public sources only | 5 | Documented; the model did not list it beforehand. |
+
+## Sources that were reachable in this run
+
+| Source | Reachable | Detail |
+|---|---|---|
+| `learn` (documentation search) | yes | 3 tools |
+| Installed agent skills | 17 | 17 have a public address |
+
+## Where public sources contradict the model
+
+### P05: Use cluster tier / vCore and storage sizing (M-tiers) to provision capacity for indexing and vector workloads; Azure DocumentDB uses cluster tiers (e.g., M30+) and not cosmos RU/s as the primary provisioning knob for the managed MongoDB-compatible service.
+
+- **The model believed:** Provision throughput (RU/s) appropriate for indexing and vector search: estimate ingestion, embedding compute and query load and use autoscale or set sufficient RU/s for the sample database/collection to avoid frequent 429s; increase RU during index creation and bulk loads. (knowledge of `azure_cosmos_db`)
+- **The source says:** Use cluster tier / vCore and storage sizing (M-tiers) to provision capacity for indexing and vector workloads; Azure DocumentDB uses cluster tiers (e.g., M30+) and not cosmos RU/s as the primary provisioning knob for the managed MongoDB-compatible service.
+- **Source:** [Integrated vector store in Azure DocumentDB](https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search)
+
+## Known to the model, with no public source for this service
+
+| Id | Practice | Knowledge of | Searches tried |
+|---|---|---|---|
+| P10 | If a native server command for search/indexing isn't available in your environment, implement a graceful fallback path (for example store embeddings and use client-side nearest-neighbour search) rather than failing hard. | azure_documentdb | createSearchIndexes CommandNotSupported fallback; 'Azure DocumentDB createSearchIndexes unsupported' 'createSearchIndexes not supported fallback client side embeddings' |
+| P24 | When enriching text with LLMs store source_text, the structured extracted fields, and metadata (model name/version) so data can be validated and reprocessed if extraction prompts or models change. | general | store model metadata embedding, 'store source_text and canonical fields LLM extraction' searches for Azure DocumentDB guidance on LLM extraction storage |
+
+## All practices
+
+| Id | Practice | Category | Basis | Source | Public address | How it was found | Applies to this app |
+|---|---|---|---|---|---|---|---|
+| P01 | Keep the cluster connection string out of source control (eg. in an environment variable) and use a secret store (for example Azure Key Vault) or managed identity retrieval for production secrets. | secrets & auth | prior_knowledge_confirmed | Migrate from Amazon DocumentDB to Azure DocumentDB (with MongoDB compatibility) (public_doc) | https://learn.microsoft.com/azure/documentdb/migrate-amazon-documentdb#update-your-application | migrate amazon documentdb replace connection string store in config 'Azure DocumentDB migrate from Amazon' | yes |
+| P02 | Create and reuse a single MongoClient/driver client per process (module/global singleton) rather than creating a new client per request. | connection handling | prior_knowledge_confirmed | documentdb-driver (driver-singleton-client) (installed_skill) | **none** | documentdb-driver | yes |
+| P03 | Always connect with TLS (tls=true) and do not disable certificate validation in production. | security / connection | found_in_public_source | documentdb-security (security-tls-required) (installed_skill) | **none** | documentdb-security | yes |
+| P04 | Implement retries for transient faults using exponential backoff and handle rate-limiting (HTTP/Mongo 429) with jitter and honoring any server Retry-After hints. | retries & error handling | prior_knowledge_confirmed | documentdb-connection (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md | documentdb-connection | yes |
+| P05 | Use cluster tier / vCore and storage sizing (M-tiers) to provision capacity for indexing and vector workloads; Azure DocumentDB uses cluster tiers (e.g., M30+) and not cosmos RU/s as the primary provisioning knob for the managed MongoDB-compatible service. | provisioning & performance | prior_knowledge_contradicted | Integrated vector store in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search | Azure DocumentDB vector index DiskANN HNSW IVF 'vector-diskann' 'M30' | yes |
+| P06 | Create conventional single-field and compound indexes for fields used in filters, grouping and sorts (e.g., channel, created_at/timestamp) and prefer designing compound indexes by ESR (Equality → Sort → Range) for common predicates. | indexing | prior_knowledge_confirmed | documentdb-indexing (index-compound-esr) (installed_skill) | **none** | documentdb-indexing | yes |
+| P07 | Use TTL indexes (expireAfterSeconds) on a date field to implement time-based retention so old raw feedback can be purged automatically. | data lifecycle | prior_knowledge_confirmed | documentdb-indexing (index-ttl-expiry) (installed_skill) | **none** | documentdb-indexing | yes |
+| P08 | Store embeddings as number[] with a fixed dimensionality, include metadata for the embedder (model name and dimension) alongside vectors, and (when using cosine similarity) normalize vectors at write time so queries can rely on consistent vector semantics. | vector data modeling | prior_knowledge_confirmed | documentdb-vector-search (vector-normalize-embeddings) (installed_skill) | **none** | documentdb-vector-search | yes |
+| P09 | Pick the vector index type to match scale: use vector-ivf for small sets (<10k), vector-hnsw up to tens of thousands, and vector-diskann for production-scale (M30+); tune index build/query parameters (m/efConstruction for HNSW; maxDegree/lBuild and query-time lSearch for DiskANN) to balance recall, memory and latency. | vector indexing | prior_knowledge_confirmed | documentdb-vector-search (vector-choose-index-type, vector-create-diskann-index) (installed_skill) | **none** | documentdb-vector-search | yes |
+| P10 | If a native server command for search/indexing isn't available in your environment, implement a graceful fallback path (for example store embeddings and use client-side nearest-neighbour search) rather than failing hard. | vector search / robustness | prior_knowledge_only | - (prior_knowledge) | **none** | createSearchIndexes CommandNotSupported fallback; 'Azure DocumentDB createSearchIndexes unsupported' 'createSearchIndexes not supported fallback client side embeddings' | yes |
+| P11 | Prefer atomic update/patch operations ($set, $push, $inc, patch) to replace entire documents when enriching records to avoid large rewrites and the higher RU cost of full-replaces. | data modeling & updates | prior_knowledge_confirmed | Understand request units consumption in Azure Cosmos DB (public_doc) | https://learn.microsoft.com/azure/cosmos-db/understand-request-unit-consumption#document-operations-and-request-units | Azure DocumentDB updates cost more RUs 'update vs create cost' 'request units document operations' | yes |
+| P12 | Use bulk operations (insertMany, bulkWrite) for batch ingestion and tune batch size to the service limits to reduce round-trips and improve throughput; Azure DocumentDB supports large batch writes and documents per-batch limits (documentdb docs note batch limits). | ingest & performance | prior_knowledge_confirmed | Document size and batch write limits in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/max-document-size | Azure DocumentDB batch write limits insertMany 'max writes per batch 25000' | yes |
+| P13 | Enforce lightweight JSON Schema validation at the collection level using $jsonSchema to require essential fields (text, channel, timestamp/created_at, embedding dimensions) so downstream queries and pipelines can assume basic invariants. | data validation | prior_knowledge_confirmed | $jsonSchema (Azure DocumentDB) (public_doc) | https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema | $jsonSchema 'DocumentDB' 'schema validation' | yes |
+| P14 | Store embedding metadata (model name and dimension) with each vector and rebuild indexes when you change embedding dimension/model to avoid silent correctness errors. | vector metadata | prior_knowledge_confirmed | documentdb-vector-search (vector-create-diskann-index) (installed_skill) | **none** | documentdb-vector-search | yes |
+| P15 | Enable diagnostic settings and slow-query logs and alert on CPU/memory/IOPS/connection saturation; use explain() / query plan analysis to detect COLLSCANs and adjust indexes accordingly. | observability & ops | prior_knowledge_confirmed | documentdb-monitoring (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md | documentdb-monitoring | yes |
+| P16 | For production clusters enable in-region HA (availability zones) and consider cross-region replica for DR; be explicit about replication/consistency tradeoffs when designing topology. | high availability & DR | found_in_public_source | documentdb-high-availability (installed_skill) | https://github.com/Azure/documentdb-agent-kit/blob/main/skills/high-availability/SKILL.md | documentdb-high-availability | no |
+| P17 | Use Private Endpoint / firewall rules to restrict access to your cluster; prefer Private Link for production and integrate with private DNS for proper SRV resolution. | networking & security | found_in_public_source | Enable private access in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/documentdb/how-to-private-link | Enable private access Azure DocumentDB private link 'how-to-private-link' | yes |
+| P18 | Prefer the DocumentDB-native search path: create search indexes with createSearchIndexes and query with the $search aggregation stage rather than relying on community text indexes and $text. | full-text search | found_in_public_source | documentdb-full-text-search (fts-create-search-index / index-text-prefer-textsearch) (installed_skill) | **none** | documentdb-full-text-search | yes |
+| P19 | When upgrading encryption key ownership use Customer-Managed Keys (CMK) and user-assigned managed identities; CMK must be prepared in Key Vault in the same region with required permissions and consideration for key rotation/availability. | encryption & compliance | found_in_public_source | Configure customer-managed key (CMK) for data encryption at rest for an Azure DocumentDB cluster (public_doc) | https://learn.microsoft.com/azure/documentdb/how-to-data-encryption#cmk-requirements | Azure DocumentDB CMK 'how-to-data-encryption' 'cmk requirements' | no |
+| P20 | Use deterministic document IDs or composite keys (for example source_channel + source_id) and upsert semantics to make ingestion idempotent and simplify deduplication. | ids & deduplication | prior_knowledge_confirmed | Insert data into Azure Cosmos DB for MongoDB (public_doc) | https://learn.microsoft.com/azure/cosmos-db/mongodb/tutorial-insert#insert-multiple-documents | insertMany insert with _id 'deterministic ids' azure documentdb insertMany | yes |
+| P21 | Store timestamps in UTC as date/ISODate values and index the timestamp field to make time-window aggregations ($bucket, $dateTrunc) efficient. | aggregation & queries | prior_knowledge_confirmed | Document size and batch write limits in Azure DocumentDB (indexing guidance) / Indexing Strategies (public_doc) | https://learn.microsoft.com/azure/documentdb/max-document-size | index timestamp created_at 'date indexing' Azure DocumentDB indexing guidance | yes |
+| P22 | Regularly back up important data and use the platform-provided automatic backups (DocumentDB provides continuous backups with a documented retention window) and test restores rather than relying only on ad-hoc JSON exports. | backup & recovery | prior_knowledge_confirmed | documentdb-high-availability (ha-backup-retention) (installed_skill) | **none** | documentdb-high-availability | no |
+| P23 | Avoid storing raw PII in cleartext in the database; either omit, pseudonymize, mask, or encrypt sensitive customer identifiers and consider PII detection/redaction before indexing/searching. | privacy & compliance | prior_knowledge_confirmed | Security Frame: Sensitive Data \| Mitigations / Data encryption in Azure DocumentDB (public_doc) | https://learn.microsoft.com/azure/security/develop/threat-modeling-tool-sensitive-data#ensure-that-sensitive-data-relevant-to-web-api-is-not-stored-in-browser's-storage | PII protect 'encrypt sensitive data stored in Azure Cosmos DB' 'sensitive data database guidance' | yes |
+| P24 | When enriching text with LLMs store source_text, the structured extracted fields, and metadata (model name/version) so data can be validated and reprocessed if extraction prompts or models change. | LLM & data integrity | prior_knowledge_only | - (prior_knowledge) | **none** | store model metadata embedding, 'store source_text and canonical fields LLM extraction' searches for Azure DocumentDB guidance on LLM extraction storage | yes |
+
+## Searches that returned nothing useful
+
+- createSearchIndexes CommandNotSupported fallback 'Azure DocumentDB createSearchIndexes CommandNotSupported'
+- Azure DocumentDB per-operation consistency override 'DocumentDB consistency per operation'
+- Azure DocumentDB guidance 'deterministic LLM extraction store canonical fields' 'LLM extraction best practices' site:learn.microsoft.com 'DocumentDB'
+
+## Notes
+
+Discovery used a mix of Microsoft Learn documentation (vector-search, createSearchIndexes, private-link, data-encryption, batch write limits, $jsonSchema) and installed domain skills. Installed skills provided targeted driver, connection, vector-index, search-index and indexing guidance; where an installed skill duplicated Microsoft docs the docs were preferred. Prior beliefs K01-K03,K05-K08,K10-K14,K16-K18,K20 were confirmed by Azure DocumentDB public docs or installed skills; K04 (RU/s) was contradicted because Azure DocumentDB uses cluster tiers (M30 etc.) rather than Cosmos RU/s as the primary provisioning model; K09,K15,K19 remained only in prior knowledge because no authoritative Azure DocumentDB public page was found that directly states them (search queries listed above were tried).
+
+Prior beliefs the discovery step did not classify: K15. See 05a-prior-beliefs.json.
+
