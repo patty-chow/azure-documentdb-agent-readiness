@@ -105,6 +105,16 @@ available. The last section counts tool calls per MCP server from `events.jsonl`
 
 Nothing is filed anywhere automatically. Pick rows from the triage file and open the PRs by hand.
 
+## Deviations from the upstream pipeline
+
+The fork changes one line of the pipeline itself. `factory/llm.py` sets Agent Framework's
+`max_consecutive_errors_per_request` to 10 (the library default is 3). With gpt-5-mini, 4 of the
+first 25 builds called the `log_decision` tool with invalid arguments three times in a row, which
+made the framework refuse every further tool call for that request; the builder then returned a
+partial build and the audit failed it. Runs before 2026-11-24 23:10 (retail-07, retail-09,
+retail-13, retail-19) were affected and were rerun afterwards. Everything else in `factory/` is
+upstream as committed.
+
 ## Costs and clean-up
 
 The M30 cluster bills while it exists, roughly $200 a month. `loop/teardown.sh` deletes the

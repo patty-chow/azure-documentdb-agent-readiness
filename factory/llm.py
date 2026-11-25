@@ -31,7 +31,10 @@ def make_client(settings: Settings, max_iterations: int | None = None) -> Any:
 
 
 def _make_client(settings: Settings, max_iterations: int | None = None) -> Any:
-    loop = {"max_iterations": max_iterations or settings.max_iterations}
+    # max_consecutive_errors_per_request: the framework's default of 3 switched the builder's tools off
+    # after three malformed log_decision calls in a row (seen in 4 of the first 25 gpt-5-mini builds),
+    # leaving a partial build that says nothing about the service. Raised so the agent can recover.
+    loop = {"max_iterations": max_iterations or settings.max_iterations, "max_consecutive_errors_per_request": 10}
     if not settings.model:
         raise StageError("FACTORY_MODEL is not set. Copy .env.example to .env and fill it in.")
 
