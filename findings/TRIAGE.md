@@ -1164,14 +1164,14 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 08-insurance-pre-auth-multi-agent | `runs/08-insurance-pre-auth-multi-agent/20261124-194215` | 0 | 0 | 11 | 1 | 0 |
 | 08-interest-rate-scenario-modeler | `runs/08-interest-rate-scenario-modeler/20261124-201113` | 0 | 0 | 12 | 1 | 0 |
 | 08-personalized-email-campaign-builder | `runs/08-personalized-email-campaign-builder/20261124-183709` | 3 | 0 | 21 | 66 | 3 |
-| 08-regulatory-compliance-rag-checker | `runs/08-regulatory-compliance-rag-checker/20261124-190949` | 3 | 0 | 12 | 53 | 2 |
+| 08-regulatory-compliance-rag-checker | `runs/08-regulatory-compliance-rag-checker/20261124-190949` | 4 | 0 | 12 | 73 | 2 |
 | 09-clinical-notes-de-identification | `runs/09-clinical-notes-de-identification/20261124-194349` | 0 | 0 | 12 | 3 | 0 |
-| 09-crypto-wallet-activity-analyzer | `runs/09-crypto-wallet-activity-analyzer/20261124-191004` | 1 | 0 | 19 | 32 | 1 |
+| 09-crypto-wallet-activity-analyzer | `runs/09-crypto-wallet-activity-analyzer/20261124-191004` | 2 | 0 | 31 | 74 | 1 |
 | 09-inventory-reorder-multi-agent-system | `runs/09-inventory-reorder-multi-agent-system/20261124-184020` | 0 | 0 | 15 | 38 | 3 |
 | 09-lead-scoring-agent | `runs/09-lead-scoring-agent/20261124-204408` | 0 | 0 | 9 | 7 | 0 |
 | 09-trade-settlement-tracker | `runs/09-trade-settlement-tracker/20261124-201323` | 0 | 0 | 11 | 0 | 0 |
 | 10-drug-formulary-semantic-search | `runs/10-drug-formulary-semantic-search/20261124-194440` | 0 | 0 | 10 | 1 | 0 |
-| 10-expense-report-auto-categorizer | `runs/10-expense-report-auto-categorizer/20261124-191257` | 0 | 0 | 9 | 10 | 0 |
+| 10-expense-report-auto-categorizer | `runs/10-expense-report-auto-categorizer/20261124-191257` | 3 | 0 | 9 | 54 | 2 |
 | 10-multi-tenant-storefront-saas | `runs/10-multi-tenant-storefront-saas/20261124-184121` | 3 | 0 | 12 | 75 | 0 |
 | 10-support-ticket-rag-assistant | `runs/10-support-ticket-rag-assistant/20261124-204529` | 0 | 0 | 11 | 5 | 0 |
 | 10-wealth-management-rag-portal | `runs/10-wealth-management-rag-portal/20261124-201449` | 0 | 0 | 7 | 4 | 0 |
