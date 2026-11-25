@@ -8,16 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and LangChain to implement an Orchestration pipeline that composes three agents named scraper agent, sentiment agent, and alert agent, with a LangChain orchestrator coordinating their execution.
-- Implement the scraper agent to fetch live financial news headlines over HTTP (RSS, news API, or scraping) and return for each item an object containing at minimum: headline text, source, and timestamp.
-- Implement the sentiment agent to accept a headline and return a numeric sentiment score and an array of extracted ticker symbols (e.g., ["AAPL","MSFT"]); outputs must be typed/structured values (not just console text).
-- Implement the alert agent to query Azure DocumentDB for a watchlist collection and determine matches by exact ticker symbol comparison between extracted tickers and watchlist entries.
-- When a watchlist match occurs, the alert agent must fire a notification by sending a JSON payload that includes the article unique id, headline, matched ticker(s), and sentiment score to a configurable webhook (or other pluggable notification target); notifications must be observable in runtime logs or outgoing requests.
-- Persist every scored article as a document in Azure DocumentDB in a dedicated collection (e.g., "sentiment_signals"); each document must include a unique id, headline, numeric sentiment score, extracted tickers array, source, and timestamp.
-- Use Azure DocumentDB for both the stored signals/articles collection and the watchlist collection—all reads and writes for those features must go to Azure DocumentDB (not to in-memory stores or other databases).
-- Structure the code so each agent is a separate module/function/class and the LangChain orchestrator explicitly invokes the scraper agent → sentiment agent → store in Azure DocumentDB → alert agent sequence for each headline.
-- Make Azure DocumentDB connection parameters (connection string/URI and database/collection names) and the notification webhook endpoint configurable (for example via environment variables) so a reviewer can run the pipeline against a test Azure DocumentDB instance.
-- Include an end-to-end demo or test script that runs the pipeline on at least one scraped headline, shows the sentiment score and extracted tickers, verifies the document was written into Azure DocumentDB, and demonstrates an alert firing when a ticker is present in the watchlist.
+- Implement the pipeline in Node.js with LangChain, with an orchestrator that runs the scraper agent, the sentiment agent and the alert agent in that order and passes each agent's output to the next.
+- Implement a scraper agent that fetches financial news headlines and hands the fetched headlines to the orchestrator.
+- Implement a sentiment agent that assigns a sentiment score to each fetched headline.
+- Have the sentiment agent extract the ticker mentions from each headline alongside its score.
+- Store every scored article as a document in Azure DocumentDB using a MongoDB driver for Node.js (e.g. `mongodb`), with each document carrying the headline, its sentiment score and the extracted ticker mentions.
+- Implement an alert agent that queries Azure DocumentDB for watchlist entries matching the tickers extracted from the scored headlines.
+- Have the alert agent fire a notification for each watchlist match it finds.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 

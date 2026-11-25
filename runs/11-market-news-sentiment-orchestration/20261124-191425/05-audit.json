@@ -1,0 +1,599 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the requested end-to-end pipeline: a scraper, a sentiment/ticker extractor (LLM + heuristic fallback), storage of scored articles in Azure DocumentDB (sample_fintech_11.sentiment_signals), watchlist seeding/upsert, and a webhook notification flow. The builder followed many DocumentDB best practices available in the installed skills (singleton MongoClient, TLS/retryWrites handling, idempotent watchlist upsert, idempotent index creation). Shortcomings: LangChain was requested but the builder dropped it (documented decision) so the sample does not use LangChain; there is no dedicated search endpoint or /search error handling; bulk writes and application-level retry wrappers are absent; no IaC is included to provision a DocumentDB cluster; no unit tests that run offline. Several documentation or agent-kit gaps were exposed (notably: explicit LLM/provider guidance and webhook payload/schema tests, concrete createSearchIndexes examples for vector indexes, guidance on pinned driver versions and how to import LangChain safely). The run environment was reachable and docs/search were available; the builder verified connectivity and index/document creation against the live cluster as recorded in events.jsonl.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the pipeline in Node.js with LangChain, with an orchestrator that runs the scraper agent, the sentiment agent and the alert agent in that order and passes each agent's output to the next.",
+      "status": "not_met",
+      "evidence": "src/demo.js:1-3 shows an orchestrator that calls scraper, sentiment analysis, DB writes and alerting in sequence, but LangChain is not used. The build logs show an import error from langchain and a decision (D010) to drop LangChain (events.jsonl run_command error at 07:02:05 and D010 logged at 07:02:10).",
+      "cause": "builder_error",
+      "smallest_fix": "Require LangChain usage in the starter prompt or agent-kit rule; or update the sample's starter prompt to allow 'LangChain conceptually represented; a direct OpenAI call is acceptable as an explicit alternative' — better: pin a known-working LangChain version and show the supported import pattern in the documentdb agent-kit so builders don't drop it."
+    },
+    {
+      "requirement": "Implement a scraper agent that fetches financial news headlines and hands the fetched headlines to the orchestrator.",
+      "status": "met",
+      "evidence": "src/scraper.js:5-15 implements scrapeReutersBusiness and demo.js:9-14 (and later) calls scraper to obtain headlines.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Implement a sentiment agent that assigns a sentiment score to each fetched headline.",
+      "status": "met",
+      "evidence": "src/agents.js:38-66 defines analyzeHeadline which returns sentiment_score using OpenAI when available or a heuristic fallback when OPENAI_API_KEY is missing, and demo.js:34 uses analyzeHeadline on each headline.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Have the sentiment agent extract the ticker mentions from each headline alongside its score.",
+      "status": "met",
+      "evidence": "src/agents.js:29-36 (heuristic extraction) and src/agents.js:56-60 (parsing LLM output into uppercase tickers); demo.js:42-44 stores tickers in documents.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Store every scored article as a document in Azure DocumentDB using a MongoDB driver for Node.js (e.g. `mongodb`), with each document carrying the headline, its sentiment score and the extracted ticker mentions.",
+      "status": "met",
+      "evidence": "src/demo.js:36-46 constructs doc with headline, sentiment_score and tickers and calls signals.insertOne(doc); src/db.js uses the 'mongodb' MongoClient (src/db.js:1, 34) and DB_NAME 'sample_fintech_11' (src/db.js:43).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Implement an alert agent that queries Azure DocumentDB for watchlist entries matching the tickers extracted from the scored headlines.",
+      "status": "met",
+      "evidence": "src/demo.js:49-51 performs watchlist.find({ ticker: { $in: analysis.tickers } }) and uses the resulting matches for alerts.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Have the alert agent fire a notification for each watchlist match it finds.",
+      "status": "met",
+      "evidence": "src/demo.js:52-55 logs matches and calls notifyWebhook(...) defined in src/agents.js:68-79 which posts to WEBHOOK_URL with optional Authorization: Bearer <WEBHOOK_TOKEN> header.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "src/db.js:6 reads process.env.DOCUMENTDB_URI; src/agents.js:6 reads process.env.OPENAI_API_KEY; .env.example lists placeholders (app/.env.example:2-6). No secret values are committed.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example:1-6 includes DOCUMENTDB_URI, OPENAI_API_KEY, WEBHOOK_URL, WEBHOOK_TOKEN placeholders; README documents the same variables (app/README.md:6-10).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use embedding vectors or vector indexes; no embedding model is configured in code.",
+      "cause": "none",
+      "smallest_fix": "If vectors are added, the sample should require the embedding model and its dimension in .env and create indexes with that exact dimension at seed time."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index creation appears in the repo; README has no vector-index parameter guidance.",
+      "cause": "none",
+      "smallest_fix": "Only required if embedding features are added; otherwise document that the sample does not use vector search."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "src/db.js:33-41 constructs a single MongoClient at module scope; getDb() reuses it (src/db.js:45-50). The client is closed at demo end (demo.js:61) and in test_connection.js finally block (src/test_connection.js:13-15).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "src/db.js:52-69 (ensureIndexes) creates indexes idempotently via createIndex; demo.js:25-30 upserts the AAPL watchlist entry using updateOne with $setOnInsert and upsert:true (src/demo.js:25-30 and 26-28), and the demo was run twice without duplication per builder_report.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint exists in the sample. There is a text index created but no search API (src/db.js:60-66 creates a text index but no route handles search).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an express route /search that validates the query param (return 400 on empty query) and catches embedding/LLM errors, returning a clear JSON error and http 502/503 as appropriate."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search endpoint or vector-search is implemented; therefore no similarity scores are returned.",
+      "cause": "none",
+      "smallest_fix": "If you add a /search endpoint, return similarity scores alongside documents (e.g., { doc: {...}, score: 0.823 })."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "partly_met",
+      "evidence": "This is a Node.js sample. package.json lists dependency ranges (e.g., \"mongodb\": \"^5.8.0\") but package-lock.json is present (app/package-lock.json) which pins exact installed versions. There is no requirements.txt file (Python-style).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Either commit package-lock.json (already present) and document 'Use npm ci' in README, or add an explicit pinned-dependencies manifest (e.g., exact versions in package.json or a shrinkwrap)."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files exist in app/ and README includes no instructions about offline tests. test_connection.js actually connects to a live cluster (src/test_connection.js).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock the MongoDB driver (e.g., use mongodb-memory-server or sinon stubs) and include npm test scripts; document test isolation in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep/ARM/Terraform) are present in the repository; the run-environment provided a pre-provisioned cluster and the builder did not include templates.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep or Terraform example that uses Microsoft.DocumentDB/mongoClusters (or azurerm_mongo_cluster) and parameters for tier/region/storage."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "met",
+      "evidence": "app/README.md includes 'What this sample shows' (README.md:3-5), 'Prerequisites' (README.md:6-10), Setup (README.md:12-15), Run the demo (README.md:16-23), and Cleaning up (README.md:34-35).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md:4 references 'Azure DocumentDB'; code and files reference 'DocumentDB' or 'DocumentDB cluster' and do not use Cosmos DB or Amazon DocumentDB names.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create and reuse a single MongoClient instance for the process (singleton), share across modules.",
+      "category": "connection",
+      "availability": "listed_found_by_name_only",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.js:33-41 (single MongoClient created at module scope) and src/db.js:45-50 (getDb reuses client).",
+      "source": "documentdb-driver (skill)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection options",
+      "practice": "Configure driver connection options (maxPoolSize, timeouts) and ensure tls/retryWrites flags per DocumentDB guidance.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#initialize-the-project",
+      "status": "followed",
+      "evidence": "src/db.js:9-24 (normalizeUri enforces tls and retryWrites=false) and src/db.js:34-41 sets maxPoolSize, connectTimeoutMS, serverSelectionTimeoutMS.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#initialize-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver version pinning",
+      "practice": "Pin the driver version to one the service supports (commit lockfile / show exact versions).",
+      "category": "connection",
+      "availability": "listed_not_found",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "package.json:16-19 lists 'mongodb': '^5.8.0' (range) but package-lock.json is present which pins installed versions.",
+      "source": "checklist only",
+      "searched": "Searched for 'supported Node.js mongodb driver versions Azure DocumentDB'; driver-support guidance exists in documentdb-driver skill but a single 'pin this exact version' page was not found by the open discovery step.",
+      "fix": "Document in README to use the committed package-lock.json and recommend 'npm ci' or change package.json to pinned versions.",
+      "sources": [],
+      "what_would_help": "A short doc or README note listing a recommended Node.js mongodb driver major version (and a sample package.json snippet with exact versions) so an agent can dependably pin dependencies."
+    },
+    {
+      "topic": "No secrets in repo",
+      "practice": "Keep the cluster connection string and all credentials out of source control and read them from environment variables.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#initialize-the-project",
+      "status": "followed",
+      "evidence": "src/db.js:6 reads process.env.DOCUMENTDB_URI; .env.example contains placeholders (app/.env.example:2-6); no secrets are committed.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#initialize-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefer least-privilege auth",
+      "practice": "Prefer Microsoft Entra ID / managed identity or least-privilege credentials in production; avoid embedding admin passwords.",
+      "category": "authentication_and_secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#connect-using-microsoft-entra-id-in-visual-studio-code",
+      "status": "followed",
+      "evidence": "The sample uses env-based connection string; README documents secrets via env (app/README.md:31-33). No long-lived admin creds are embedded.",
+      "source": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using role-based access control and Microsoft Entra ID",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-role-based-access-control#connect-using-microsoft-entra-id-in-visual-studio-code"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document shape",
+      "practice": "Store headline text, extracted tickers array, sentiment score, timestamp, and optional metadata/embedding field.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#how-does-a-vector-store-work",
+      "status": "followed",
+      "evidence": "src/demo.js:36-44 constructs documents with headline, sentiment_score, tickers, timestamp and metadata.",
+      "source": "Integrated vector store in Azure DocumentDB (data-modeling guidance)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#how-does-a-vector-store-work"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size limits",
+      "practice": "Keep documents well under the 16 MB BSON limit; store large bodies externally.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/max-document-size",
+      "status": "followed",
+      "evidence": "The sample stores only headlines and small metadata (src/demo.js:36-44); no large article bodies are kept.",
+      "source": "Document size and batch write limits in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Document size and batch write limits in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/max-document-size"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation idempotent",
+      "practice": "Create indexes idempotently at startup for expected query patterns (e.g., tickers array, timestamp).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/indexing#text-indexes",
+      "status": "followed",
+      "evidence": "src/db.js:52-69 implements ensureIndexes which calls createIndex for tickers and timestamp idempotently; events.jsonl shows documentdb_list_indexes returned idx_tickers and idx_timestamp.",
+      "source": "Manage indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/indexing#text-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound indexes for alerts",
+      "practice": "Use compound indexes to support alert patterns (e.g., tickers + timestamp).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/indexing#compound-indexes",
+      "status": "violated",
+      "evidence": "src/db.js:58-60 creates single-field indexes idx_tickers (tickers:1) and idx_timestamp (timestamp:-1). No compound index exists though the alert pattern would benefit from { ticker:1, timestamp:-1 } for combined filtering & recent ordering. documentdb_list_indexes (events.jsonl) lists only those single-field indexes.",
+      "source": "Manage indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "Create a compound index on the alert query pattern, e.g., signals.createIndex({ tickers: 1, timestamp: -1 }, { name: 'idx_tickers_timestamp' }).",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/indexing#compound-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Text index usage",
+      "practice": "Be aware only one text index per collection and plan usage accordingly.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/indexing#text-indexes",
+      "status": "violated",
+      "evidence": "src/db.js:60-66 attempts to create a text index on headline (idx_headline_text) but the app has no search endpoint that uses it. events.jsonl documentdb_list_indexes shows idx_headline_text exists but is unused in code.",
+      "source": "Manage indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "Either remove/create text index only if you implement a search endpoint that uses $search/$text or document why the text index exists (and show example queries).",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/indexing#text-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry semantics",
+      "practice": "Set retryWrites=false in the connection string and implement application-level retries with idempotent writes (upserts) and exponential backoff.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "src/db.js:18-23 (normalizeUri) enforces retryWrites=false. demo.js uses upsert for the watchlist seed (src/demo.js:25-28). However the main writes to sentiment_signals use insertOne (src/demo.js:45) without application-level retry wrapper for transient failures.",
+      "source": "Quickstart: Connect Mongoose to Azure DocumentDB",
+      "searched": "",
+      "fix": "Wrap DB writes in an application-level retry/backoff helper for transient errors (and consider upsert or idempotent key for article writes).",
+      "sources": [
+        {
+          "title": "Quickstart: Connect Mongoose to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk writes",
+      "practice": "Use bulk or batched writes for higher-volume inserts rather than one-by-one insertOne.",
+      "category": "provisioning_and_performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-go-vector-search#create-the-code-for-vector-search",
+      "status": "violated",
+      "evidence": "demo.js:32-46 iterates over headlines and calls signals.insertOne(doc) inside the loop rather than batching.",
+      "source": "Quickstart: Use vector search with Go in Azure DocumentDB (batching guidance)",
+      "searched": "",
+      "fix": "Accumulate documents and call signals.insertMany(docs) or use bulkWrite in batches.",
+      "sources": [
+        {
+          "title": "Quickstart: Use vector search with Go in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-go-vector-search#create-the-code-for-vector-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent seeding",
+      "practice": "Make demo seed operations idempotent (use $setOnInsert or upsert to avoid duplicates).",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-build-nodejs-console-app#perform-common-operations",
+      "status": "followed",
+      "evidence": "demo.js:25-28 uses updateOne with $setOnInsert and upsert:true to seed the AAPL watchlist entry idempotently.",
+      "source": "Build a Node.js console app with Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Build a Node.js console app with Azure DocumentDB (programming-language-js)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-build-nodejs-console-app#perform-common-operations"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize tickers & index array",
+      "practice": "Store extracted tickers as a normalized uppercase array and index the array (multikey) for membership checks.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#index-types",
+      "status": "followed",
+      "evidence": "agents.js:59-60 normalizes out.tickers to uppercase; db.js:58 creates an index on { tickers: 1 } (idx_tickers).",
+      "source": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "MongoDB Query Language (MQL) compatibility in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/compatibility-query-language#index-types"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain / index validation",
+      "practice": "Run explain('executionStats') on representative queries and use MCP/Index Advisor to validate index usage.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output",
+      "status": "followed",
+      "evidence": "Build verification used documentdb_list_indexes and documentdb_find_documents (events.jsonl: entries at 07:03:16 and 07:03:19). The builder used the MCP inspection tools (documentdb_list_indexes) to confirm indexes and documents after the demo run.",
+      "source": "Read query explain output in Azure DocumentDB",
+      "searched": "",
+      "fix": "Consider adding an explain() example in demo verification to show index usage explicitly.",
+      "sources": [
+        {
+          "title": "Read query explain output in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-read-explain-output"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Input validation",
+      "practice": "Sanitize scraped/third-party input before storing (truncate, strip control chars).",
+      "category": "data_integrity",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/security/develop/threat-modeling-tool-input-validation#ensure-that-type-safe-parameters-are-used-in-web-api-for-data-access",
+      "status": "not_assessable",
+      "evidence": "The demo uses scraped headlines and fallback sample headlines. There is no explicit sanitization/truncation code in src/demo.js or src/agents.js before storing. It is unclear whether the rss-parser output is always safe for DB insertion.",
+      "source": "Security Frame: Input Validation | Mitigations",
+      "searched": "",
+      "fix": "Add a sanitizeHeadline(headline) helper to trim, remove control characters, and enforce max length before DB writes.",
+      "sources": [
+        {
+          "title": "Security Frame: Input Validation | Mitigations",
+          "url": "https://learn.microsoft.com/azure/security/develop/threat-modeling-tool-input-validation#ensure-that-type-safe-parameters-are-used-in-web-api-for-data-access"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Administrative approval to proceed with readiness 'ready_with_gaps' is an operator decision; nothing in the trace contradicts it."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Chosen Node.js 24 is consistent with package.json 'engines' and the prompt asking for Node.js. events.jsonl shows this decision was logged and implemented."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "The decision states the builder would use LangChain plus the mongodb native driver. The repo uses the mongodb native driver, but LangChain was later dropped due to an import error (see D010 and events.jsonl at 07:02:05 showing ERR_PACKAGE_PATH_NOT_EXPORTED). The reason to use the native driver is sound; the LangChain part did not survive the build."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "The builder chose OpenAI via OPENAI_API_KEY. The code implements that (src/agents.js uses openai client) and the decision is recorded (events.jsonl). The readiness file noted LLM provider as an information gap; the builder's choice is a reasonable model_default and was implemented."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Choice of a Reuters RSS feed is implemented in src/scraper.js (feed URL changed to feeds.reuters.com) and events.jsonl shows D011 confirming the final feed URL selection."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choice of Bearer-token webhook is implemented in src/agents.js: notifyWebhook uses the WEBHOOK_TOKEN to set Authorization: Bearer. Decision is implemented and trace shows the webhook call is conditional on WEBHOOK_URL."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Decision to create indexes via the driver and verify via MCP is implemented: src/db.js ensureIndexes uses createIndex and events.jsonl shows documentdb_list_indexes and documentdb_find_documents calls verifying indexes and inserted documents."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Decision to change cross-fetch to a published version is justified by the failed npm install in events.jsonl and was implemented by updating package.json and re-running npm install (events.jsonl shows the npm error and the rerun succeeded)."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Heuristic fallback implemented in src/agents.js and used when OPENAI_API_KEY is not set; events.jsonl shows the demo run used the fallback path and succeeded."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "The log captures a concrete runtime error from langchain subpath exports (events.jsonl at 07:02:05). The builder documented the choice (drop LangChain and call OpenAI directly); the code was updated accordingly (src/agents.js now uses openai). The decision is therefore sound given the environment failure."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Decision to use feeds.reuters.com was recorded and implemented; events.jsonl records the change and subsequent successful fallback behavior."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "Decision to fall back to local sample headlines is implemented in demo.js and allowed the demo to run in an environment where DNS/networking prevented fetching the RSS feed (events.jsonl shows getaddrinfo ENOTFOUND)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "LLM provider & credentials guidance",
+      "what_was_missing": "No agent-kit page or public quickstart that explicitly prescribes a default LLM provider for DocumentDB samples, the env var names to use, and example fallbacks or test-mode heuristics.",
+      "where_searched": "Readiness findings, documentdb skills, and Microsoft docs (learn.microsoft.com) for DocumentDB did not prescribe an LLM provider. The run's readiness_findings also flagged this gap.",
+      "effect_on_this_build": "The builder made a model_default choice (OpenAI) documented as D004; OpenAI calls could not be verified in the run because OPENAI_API_KEY was not present. Without guidance, different builders may pick incompatible providers or env var names, harming consistency.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule + short doc: 'LLM selection for sample gallery: prefer OpenAI (OPENAI_API_KEY) for portability; for Azure OpenAI use AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_KEY, and include a code snippet for both. Provide an explicit 'test-mode' fallback implementation example and an env var naming convention. Include a short automated test (mock) pattern.)'",
+      "priority": "high"
+    },
+    {
+      "topic": "Webhook payload & observable delivery",
+      "what_was_missing": "No recommended JSON schema for watchlist-alert webhook payload, no guidance on test harness to verify webhook delivery (e.g., local receiver or recorded webhook events).",
+      "where_searched": "Readme, skills and public docs; readiness_findings noted the notification JSON shape is unspecified.",
+      "effect_on_this_build": "The builder chose a payload shape (type, tickers, headline, sentiment, docId) and a bearer-token header. Outgoing webhook delivery was not verified in the run because no WEBHOOK_URL was provided. Different builders may choose incompatible shapes or insecure auth.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A page 'Webhook schema for DocumentDB samples' with: canonical JSON payload example, required fields, recommended headers (Authorization: Bearer), examples for HMAC vs bearer, and a tiny test harness (node script) showing how to run a local webhook receiver (eg, using http.createServer) to validate delivery and payload shape.",
+      "priority": "high"
+    },
+    {
+      "topic": "Concrete vector index creation examples (createSearchIndexes)",
+      "what_was_missing": "A concrete, copy-pasteable example of the DocumentDB 'createSearchIndexes' / index-def JSON for HNSW/IVF/DiskANN vector indexes was not present in the agent-kit quick examples.",
+      "where_searched": "documentdb-vector-search skill and learn.microsoft.com vector-search pages; the skill explains concepts but lacks minimal copy-paste index JSON for quick samples.",
+      "effect_on_this_build": "No vector indexes were created by this sample (the sample did not include embeddings), but future samples would risk issuing Atlas-style createIndex calls that DocumentDB rejects. This is a common source of build errors.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "A small page showing a minimal createSearchIndexes JSON for a vector field (embedding) for DiskANN, HNSW, and IVF, with sample engineParams and dimension placeholder (e.g., 'dimensions': 1536). Include a snippet that uses the documentdb MCP tool or driver helper to apply the index.",
+      "priority": "high"
+    },
+    {
+      "topic": "Driver version & LangChain import guidance",
+      "what_was_missing": "A short, discoverable note listing recommended Node.js driver major versions and the LangChain versions/subpath import patterns known to work in the sample environment.",
+      "where_searched": "documentdb-driver skill and quickstart docs; the builder ran into a LangChain subpath export error and had to choose to drop it.",
+      "effect_on_this_build": "The build had to remove LangChain (D010) because of an import/export mismatch; this changes the sample's API surface and the sample no longer demonstrates LangChain orchestration as requested.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Node.js dependencies' snippet to the agent-kit and the documentdb-driver skill: the exact npm versions tested with the sample, the working LangChain import pattern, and a pin recommendation (or a small helper file showing the correct imports).",
+      "priority": "medium"
+    },
+    {
+      "topic": "Idempotent seed + seed-as-script guidance",
+      "what_was_missing": "The team expects an explicit seed script that can be run separately for CI/demo purposes, with idempotency guarantees and a documented CLI. The sample seeds within demo.js but has no dedicated seed script or documented 'seed-only' command.",
+      "where_searched": "sample repo, README and documentdb-data-modeling skill docs.",
+      "effect_on_this_build": "Seeding was implemented in demo.js and is idempotent, but CI authors or reviewers expecting a separate seed script must run the demo to seed data and indexes.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a small 'scripts/seed.js' that calls ensureIndexes() and performs idempotent upserts for watchlist and optionally sample signals; add npm script 'npm run seed' and document it in README.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Unit-test patterns and a local gateway image for CI",
+      "what_was_missing": "A small canonical test pattern and instructions for running tests without a live cluster (use the DocumentDB local Gateway Docker image or mongodb-memory-server and a sample config).",
+      "where_searched": "documentdb-local-deployment skill and repo; readiness flagged local gateway docs but the sample lacks tests.",
+      "effect_on_this_build": "There are no unit tests; the demo had to run against a live cluster for verification. This increases verification friction in CI and among reviewers with restricted network access.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a tests/ folder with a simple mocha/jest test that uses mongodb-memory-server or the DocumentDB Gateway image and a short docker-compose snippet in the repo showing how to run it locally; show how to mock the OpenAI client in tests.",
+      "priority": "high"
+    },
+    {
+      "topic": "Retry design & guidance for DocumentDB (retryWrites=false)",
+      "what_was_missing": "A clear, prominent statement in the DocumentDB quickstarts emphasising that retryWrites should be set to false for DocumentDB clusters and showing an application-level retry pattern with idempotent keys.",
+      "where_searched": "learn.microsoft.com quickstarts and documentdb-driver skill; discovered_practices showed prior-knowledge-contradicted behavior (K05).",
+      "effect_on_this_build": "The sample did set retryWrites=false (src/db.js:21-23) but it does not have an application-level retry wrapper for main writes to sentiment_signals (insertOne). A builder might mistakenly rely on driver-managed retries.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short cookbook snippet demonstrating normalizeUri(...)?retryWrites=false and an application-level retry helper with exponential backoff and idempotent write example (e.g., upsert with article_id).",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC quickstart for Microsoft.DocumentDB/mongoClusters",
+      "what_was_missing": "A simple Bicep/Terraform example in the agent-kit using the new Microsoft.DocumentDB/mongoClusters resource type with minimal parameters and default low-cost tiers for samples.",
+      "where_searched": "documentdb-azure-deployment skill; readiness findings highlighted confused examples referencing databaseAccounts vs mongoClusters.",
+      "effect_on_this_build": "No infrastructure-as-code was included in the sample; if a later builder tries to add IaC and follows older Cosmos DB examples they risk using the wrong resource type.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a `deploy/bicep/main.bicep` and a tiny Terraform example that creates a small test cluster (or documents the exact CLI extension az documentdb usage), with notes about cost and teardown.",
+      "priority": "medium"
+    }
+  ]
+}

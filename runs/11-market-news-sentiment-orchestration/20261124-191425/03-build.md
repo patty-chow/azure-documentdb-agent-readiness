@@ -1,0 +1,42 @@
+# 3. Build report: 11-market-news-sentiment-orchestration
+
+**Status: completed**
+
+Created a small Node.js orchestration sample that scrapes financial headlines (with a network-safe fallback), analyzes each headline for sentiment and ticker mentions (prefers OpenAI via OPENAI_API_KEY but falls back to a heuristic if the key or network is unavailable), stores scored articles in the DocumentDB database sample_fintech_11.sentiment_signals, and posts a bearer-token-protected webhook when a headline contains a ticker present in the watchlist collection. The sample creates indexes idempotently at startup and seeds a demo watchlist entry for AAPL. I verified connectivity to the live DocumentDB cluster, index creation, and insertion of three demo documents.
+
+## How to run
+
+1) Copy .env.example to .env and fill in values (DOCUMENTDB_URI is required; OPENAI_API_KEY is optional; WEBHOOK_URL/WEBHOOK_TOKEN optional). 2) npm install 3) npm run demo — the demo creates indexes and upserts a sample watchlist row, then processes a small batch of headlines (scraped from Reuters when network available, otherwise local fallback) and writes them to sample_fintech_11.sentiment_signals. 4) To test connectivity only: npm run test-connection.
+
+## Verified by running
+
+- npm install: 0 (exit code 0) — dependencies installed successfully after adjusting cross-fetch to a published version.
+- test-connection: executed node src/test_connection.js — connected to the cluster and reported database sample_fintech_11 with no initial collections.
+- demo run: node src/demo.js — ran end-to-end using the heuristic fallback (OPENAI_API_KEY was not set in this environment). The demo inserted 3 documents into sample_fintech_11.sentiment_signals and upserted one watchlist entry (AAPL).
+- DocumentDB MCP inspection: documentdb_list_databases returned sample_fintech_11; documentdb_list_databases(db_name='sample_fintech_11') listed collections 'sentiment_signals' (count: 3) and 'watchlist' (count: 1).
+- Indexes verification: documentdb_list_indexes(collection='sentiment_signals') returned indexes: _id_, idx_tickers (tickers:1), idx_timestamp (timestamp:-1), idx_headline_text (text index on headline).
+- Documents verification: documentdb_find_documents for 'sentiment_signals' returned the 3 inserted documents with expected fields (headline, sentiment_score, tickers, timestamp).
+
+## Not verified
+
+- OpenAI LLM integration with real API key: not verified in this run because OPENAI_API_KEY was not set in the environment. The code paths and prompt exist and will call OpenAI if provided, but no live LLM request was made here.
+- Live RSS scraping of feeds.reuters.com: initial attempt failed due to DNS resolution/blocked network; the demo falls back to a packaged set of sample headlines so the pipeline can be verified in restricted environments.
+- Outgoing webhook delivery to a user-provided WEBHOOK_URL: not verified because no WEBHOOK_URL was configured in this run. The demo will POST JSON to WEBHOOK_URL with Authorization: Bearer <WEBHOOK_TOKEN> when configured.
+- Any DocumentDB control-plane provisioning or ARM/Bicep provisioning: not performed (run policy forbids Azure resource changes). The sample relies on the pre-provisioned cluster whose connection string is read from DOCUMENTDB_URI.
+
+## Open issues
+
+None.
+
+## Files
+
+- `package.json`
+- `README.md`
+- `.env.example`
+- `.gitignore`
+- `src/db.js`
+- `src/scraper.js`
+- `src/agents.js`
+- `src/demo.js`
+- `src/test_connection.js`
+
