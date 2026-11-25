@@ -1,0 +1,60 @@
+# 1. Prompt review: 12-abandoned-cart-recovery-orchestration
+
+**Verdict: sufficient_with_assumptions**
+
+The starter prompt is actionable: it clearly defines a Node.js LangChain orchestration that finds carts abandoned >2 hours, generates copy, selects channel (email/SMS) and logs back to Azure DocumentDB. The run-environment notes (skill_md) supply the DB name, the existing cluster, and Node.js 24. Several implementation details (driver version, exact data model, AI model/provider, seed script, README, tests, and some infra/artifacts) are not specified and will be decided by the builder or filled by installed skills. Build can start, but the builder will make concrete assumptions in those areas.
+
+## Where each answer will come from
+
+| Source | Rubric items |
+|---|---|
+| In the prompt | 6: Goal and scenario, Workflow type, Language and runtime, Target service and tier, Authentication and secrets, Provisioning and deployment |
+| Covered by a skill | 1: Queries and indexes |
+| Ambiguous: builder will guess | 2: Data model, App surface |
+| Missing: builder will guess | 7: Driver and version, Sample data, AI components, Run and test instructions, Definition of done, Constraints and non-goals, Repository conventions |
+| Not applicable | 0: - |
+
+## Reference requirements at risk
+
+- Connection string and model credentials come from environment variables: model credentials are not specified in prompt or skills (only DOCUMENTDB_URI is provided in skill_md) — builder must choose env names and document them.
+- .env.example lists every setting with placeholder values: prompt doesn't request this explicitly; likely omitted unless the builder adds it.
+- The vector index dimensions match the embedding model's output: the prompt doesn't specify an embedding model or dimensions, so vector-index dimension matching is at risk.
+- The vector index parameters are chosen for the sample's data size and README explains how to change them: the prompt doesn't cover vector-index tuning or README guidance; at risk unless builder adds it.
+- A seed script loads sample data and creates the index, and can be run twice without duplicating data: sample data and idempotent seed script are not specified and are at risk.
+- /search returns a clear error for an empty query and when the embedding call fails: the sample doesn't explicitly implement a search endpoint; this requirement is at risk.
+- Search results include the similarity score: not requested by prompt; at risk if search is implemented.
+- Dependencies are pinned in requirements.txt: Node projects use package.json; the analogous requirement (pinned versions) is not specified and at risk unless builder pins versions in package.json/package-lock.
+- Unit tests run without a live cluster: there is no instruction to include offline-capable unit tests or mocks; at risk.
+- Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type: skill_md says the cluster is pre-provisioned and the prompt forbids provisioning another cluster — infra-as-code for the cluster is not provided and is at risk if required by gallery rules.
+- The README covers what the sample shows, prerequisites, setup, run, and clean-up: not provided by the prompt; builder must author it, so it's at risk if omitted.
+- The sample uses the name 'Azure DocumentDB' throughout: the prompt uses 'DocumentDB' and the skill_md references Azure DocumentDB, but the implementer may accidentally use other names (Cosmos DB); consistency is at risk unless enforced.
+
+## Questions for the prompt author
+
+- Do you want sendEmail/sendSMS to be implemented as real provider integrations (e.g., SendGrid/Twilio) or as checkable stub/provider-agnostic functions that are invoked from the channel agent? This changes the networking/integration code and credentials used.
+- Which LLM provider and model should the copy-generation agent use (e.g., OpenAI + model name)? If unspecified, the builder will default to a common OpenAI chat model and expose the model name via env (OPENAI_MODEL).
+
+## Contradictions and missing references
+
+None.
+
+## Rubric
+
+| Item | Status | Blocking | In the prompt | Skill | Assumed if unanswered | Note |
+|---|---|---|---|---|---|---|
+| Goal and scenario | specified | no | build a Node.js LangChain orchestration pipeline that queries DocumentDB for carts abandoned for over 2 hours, passes each cart to a copy-generation agent ... then hands off to a channel agent that sends email or SMS ... Log outcomes back to DocumentDB. | - | - | Business goal and user scenario are explicit. |
+| Workflow type | specified | no | Node.js LangChain orchestration pipeline ... copy-generation agent ... channel agent | - | - | Multi-agent orchestration using LangChain is requested. |
+| Language and runtime | specified | no | Node.js LangChain orchestration pipeline | - | - | Skill_md run-environment supplies Node.js 24 (developer machine). |
+| Driver and version | missing | no | - | documentdb-driver | Builder will use the official MongoDB Node.js driver (npm package 'mongodb') at a current stable version compatible with Node 24 (e.g. mongodb >=5.x/6.x). It will add the driver to package.json with a concrete version (e.g. "mongodb": "^5.7.0" or similar). | Prompt doesn't name a driver/version. documentdb-driver provides singleton-client guidance but not a specific version to pin. |
+| Target service and tier | specified | no | Using the DocumentDB skill ... queries DocumentDB | - | - | skill_md says a vector-capable Azure DocumentDB cluster (compute tier M30, MongoDB 7.0 wire protocol) is already provisioned and reachable; use database 'sample_retail_12'. |
+| Authentication and secrets | specified | no | - | - | - | skill_md instructs the connection string is read at runtime from env DOCUMENTDB_URI and the MCP profile 'default' is connected to that cluster. Builder will therefore use env var(s) for secrets. |
+| Data model | ambiguous | no | carts abandoned for over 2 hours ... customer's stored preference ... Log outcomes with cartId, personalisedMessage, channelUsed, deliveryResult/status, and timestamp | documentdb-data-modeling | Builder will create a minimal schema in database 'sample_retail_12' with collections: 'customers' (fields: _id, customerId, name, contactPreference, email, phone) and 'carts' (fields: _id, cartId, customerId, items: [{sku,name,qty}], updatedAt/lastActivity ISODate, processedAt nullable, deliveryLog array). Processed flag/timestamp will be used to avoid reprocessing. | Prompt implies required fields but does not spell out collection names, exact field names or nested shape; documentdb-data-modeling can guide structure but doesn't supply the concrete schema for this sample. |
+| Sample data | missing | no | - | documentdb-local-deployment | Builder will include an idempotent seed script (e.g., scripts/seed.js) that upserts a small set of sample customers and carts (e.g., 4–10 carts) into sample_retail_12 for demonstration. The seed script will be safe to run multiple times without duplicating data. | Prompt does not provide dataset or size. skill_md requires the build to 'create the collections and indexes, load the sample data' but it doesn't define the data; the sample must add it. |
+| Queries and indexes | covered_by_skill | no | queries DocumentDB for carts abandoned for over 2 hours, only return carts not already marked processed | documentdb-indexing | Builder will implement a find or aggregation such as { updatedAt: { $lt: new Date(Date.now() - 2*60*60*1000) }, processedAt: { $exists: false } } and create an index on { updatedAt: 1, processedAt: 1 } (or a compound index guided by the index cookbook). | The prompt specifies the query pattern but not explicit index definitions; documentdb-indexing provides the guidance to pick a suitable (likely compound) index. |
+| AI components | missing | no | copy-generation agent that writes a personalised recovery message | - | Builder will wire a configurable LLM provider via env vars (e.g., OPENAI_API_KEY and OPENAI_MODEL). Default will be OpenAI via LangChain's OpenAI chat adapter with a reasonable model (e.g., 'gpt-4o-mini' or 'gpt-4o' / whatever LangChain supports at build time). The copy-generation agent will be implemented as a LangChain chain/agent that calls the chat model and returns a single string. | Prompt names an LLM-driven agent but gives no provider, model name, or credentials; those must be chosen by the implementer and exposed via env. |
+| App surface | ambiguous | no | LangChain orchestration pipeline ... passes each cart ... hands off ... | - | Builder will provide an entrypoint script (e.g., src/orchestrator.js or index.js) that runs the LangChain orchestrator as a CLI job (npm run start) to process pending carts. No long-lived HTTP server is required; optional simple status CLI output will be included. | Prompt doesn't require a web UI or API routes; it only requires an orchestration entrypoint. The reference asks for an 'entry point file' — builder will create a CLI-run script. |
+| Provisioning and deployment | specified | no | This sample is being built on a developer machine where an Azure DocumentDB cluster is already provisioned and reachable. | - | - | skill_md says do not provision another cluster; use the existing cluster (no infra provisioning required by the sample). |
+| Run and test instructions | missing | no | - | - | Builder will add README entries and npm scripts: npm install, npm run seed (node scripts/seed.js), npm start (node src/index.js). Tests (if included) will run via npm test with a local mocking strategy. | Prompt and provided skills do not include explicit commands or test instructions; these will be authored by the implementer. |
+| Definition of done | missing | no | - | - | Builder will adopt acceptance criteria matching the reference: pipeline runs, processes all qualifying carts, generates personalized message per cart, calls channel send functions appropriately, logs outcome to DocumentDB, and marks carts processed; errors are persisted. | Prompt implies expected behavior but does not enumerate a testable definition of done; implementer will codify it in README/tests. |
+| Constraints and non-goals | missing | no | - | documentdb-security | Builder will treat provider integrations as out-of-scope for live sends by implementing checkable sendEmail/sendSMS stubs and will provide instructions for replacing stubs with SendGrid/Twilio examples. Also assume no further cloud provisioning (per skill_md). | No cost limits or compliance constraints are given. documentdb-security can guide production hardening, but the sample will implement safe defaults and stubs for sending. |
+| Repository conventions | missing | no | - | - | Builder will use a conventional Node.js layout (package.json, src/, scripts/, README.md, .env.example). .env.example will list DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_MODEL, and any other required envs. package.json will pin explicit dependency versions and include npm scripts for seed, start and test. | Prompt doesn't specify repository layout or naming; implementer will follow gallery conventions. |
