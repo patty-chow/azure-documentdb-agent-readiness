@@ -1,0 +1,171 @@
+{
+  "verdict": "sufficient_with_assumptions",
+  "summary": "The starter prompt clearly defines a Python LlamaIndex RAG agent that uses Azure DocumentDB as a vector store and must return the top-5 similar resolutions injected as context. Many low-level choices (Python version, exact embedding & chat models, collection schema, API surface, seed scripts, infra-as-code, test strategy, pinned deps, README details, index tuning) are not specified and will be chosen by the builder or filled by installed skills (notably documentdb-vector-search, documentdb-driver and documentdb-connection).",
+  "rubric": [
+    {
+      "item": "Goal and scenario",
+      "status": "specified",
+      "blocking": false,
+      "found_in_prompt": "\"build a Python LlamaIndex RAG agent that indexes past ticket resolutions and knowledge base articles in a DocumentDB vector store... retrieve the top 5 similar past resolutions... generate a suggested resolution\"",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "",
+      "note": "Business problem, user (support agent) and what to demonstrate (RAG over DocumentDB) are explicit."
+    },
+    {
+      "item": "Workflow type",
+      "status": "specified",
+      "blocking": false,
+      "found_in_prompt": "\"Python LlamaIndex RAG agent\"",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "",
+      "note": "Single-agent RAG, using LlamaIndex is explicit."
+    },
+    {
+      "item": "Language and runtime",
+      "status": "ambiguous",
+      "blocking": false,
+      "found_in_prompt": "\"Python\"",
+      "skill_that_covers": "skill_md (run environment)",
+      "assumption_if_unanswered": "Use Python 3.11 (virtualenv via python/pip as provided in run environment).",
+      "note": "The prompt states Python but not a version. The supplied run-environment notes say python/pip are available but don't name a version; builder will pick a modern 3.10/3.11 runtime (I assume 3.11)."
+    },
+    {
+      "item": "Driver and version",
+      "status": "covered_by_skill",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "documentdb-driver, documentdb-connection",
+      "assumption_if_unanswered": "Use PyMongo (pymongo>=4.9) and follow the singleton MongoClient pattern; prefer AsyncMongoClient if implementing async code.",
+      "note": "Installed skills give driver best-practices (singleton client, connection reuse) and connection guidance (TLS, SCRAM-SHA-256). The prompt didn't pick a driver or version; the builder will follow those skills' recommendations."
+    },
+    {
+      "item": "Target service and tier",
+      "status": "covered_by_skill",
+      "blocking": false,
+      "found_in_prompt": "\"DocumentDB\" (vector store)",
+      "skill_that_covers": "skill_md (run environment)",
+      "assumption_if_unanswered": "Use the provided vector-capable Azure DocumentDB cluster (M30, MongoDB 7.0 wire protocol) as described in the run environment.",
+      "note": "The sample's skill_md explicitly states a reachable M30 vector-capable cluster is available and must be used."
+    },
+    {
+      "item": "Authentication and secrets",
+      "status": "covered_by_skill",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "skill_md (run environment), documentdb-connection",
+      "assumption_if_unanswered": "Use DOCUMENTDB_URI from environment; TLS required and SCRAM-SHA-256 as auth mechanism; provide a .env.example with placeholders and never commit secrets.",
+      "note": "Run environment instructs the connection string is in DOCUMENTDB_URI and to not write it into files. documentdb-connection documents TLS/auth expectations."
+    },
+    {
+      "item": "Data model",
+      "status": "ambiguous",
+      "blocking": false,
+      "found_in_prompt": "\"indexes past ticket resolutions and knowledge base articles... each stored as a document carrying its own embedding\"",
+      "skill_that_covers": "documentdb-data-modeling",
+      "assumption_if_unanswered": "Use a single collection (e.g., `documents` or `kb_documents`) with documents: {_id, type: 'kb'|'resolution', title, content, embedding: [float], metadata: {...}, created_at}. No sharding for the sample.",
+      "note": "Prompt requires storing docs with embeddings but leaves collection names and exact fields unspecified. documentdb-data-modeling skill provides patterns but not the exact schema; builder will pick a simple document shape as assumed above."
+    },
+    {
+      "item": "Sample data",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "documentdb-local-deployment (guidance only)",
+      "assumption_if_unanswered": "Include a small synthetic seed dataset (~50–200 docs: mix of KB articles and resolved tickets) bundled in a `seed/` folder and a `seed.py` idempotent script that inserts/upserts documents.\n",
+      "note": "The prompt expects indexing of past resolutions and KB articles but does not specify data source, size, license, or a seed script. Local-deployment skill has best-practice guidance but not the actual seed data."
+    },
+    {
+      "item": "Queries and indexes",
+      "status": "covered_by_skill",
+      "blocking": false,
+      "found_in_prompt": "\"indexes ... in a DocumentDB vector store\" and \"retrieve the top 5 similar past resolutions\"",
+      "skill_that_covers": "documentdb-vector-search, documentdb-indexing",
+      "assumption_if_unanswered": "Create a cosmosSearch vector index (choose `vector-diskann` for an M30 cluster) on an `embedding` field with `dimensions` equal to the embedding model's output; query via $search/cosmosSearch returning top-k=5 and include similarity score in results.",
+      "note": "The prompt requests vector search/top-5. documentdb-vector-search prescribes index types and query patterns; exact index parameters and dimensions are not in the prompt and must match the chosen embedding model (see risks)."
+    },
+    {
+      "item": "AI components",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "\"LlamaIndex RAG agent\" (implies embedding and LLM use) but no model/provider specified",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Use OpenAI (or another configured provider) for embeddings and LLM calls. Example defaults: embeddings = text-embedding-3-small (1536 dims) and chat/generation = gpt-4o-mini or gpt-4o. Expose model/provider credentials via environment variables (e.g. OPENAI_API_KEY).",
+      "note": "The prompt does not name embedding model/dimensions or generation model/provider. These are critical because index dimensions and similarity choices must match the embedding model."
+    },
+    {
+      "item": "App surface",
+      "status": "ambiguous",
+      "blocking": false,
+      "found_in_prompt": "\"When a new ticket arrives... generate a suggested resolution\"",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Implement a minimal Flask HTTP API with POST /suggest (JSON {\"ticket_text\": ...}) that returns {suggested_resolution, sources:[...], scores:[...]}. Also include a CLI helper script (e.g., `tools/submit_ticket.py`).",
+      "note": "The prompt expects end-to-end handling of an incoming ticket but doesn't mandate CLI vs API vs UI. Builder will pick an API + CLI for a sample."
+    },
+    {
+      "item": "Provisioning and deployment",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "\"Using the DocumentDB skill\"",
+      "skill_that_covers": "documentdb-azure-deployment (available)",
+      "assumption_if_unanswered": "Do not provision a new cluster for the sample; use the existing cluster in the run environment. If infra-as-code is provided, it would use the Microsoft.DocumentDB/mongoClusters resource via Bicep but the prompt does not request this.",
+      "note": "The run environment states a cluster already exists. The prompt doesn't ask for infrastructure code; a gallery sample often requires it but this starter prompt omits that requirement."
+    },
+    {
+      "item": "Run and test instructions",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "skill_md (run environment) for verification guidance",
+      "assumption_if_unanswered": "Include README with steps: create virtualenv, pip install -r requirements.txt, copy .env.example to .env, run `python seed.py`, run `python app.py`, then POST to /suggest. Provide example curl requests and expected output.",
+      "note": "Prompt does not include concrete commands or what constitutes a successful run; the builder will add these standard instructions."
+    },
+    {
+      "item": "Definition of done",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Definition of done: code runs locally against the provided cluster, seed script populates documents, /suggest returns a suggestion built from top-5 retrieved docs, README documents steps, and no secrets are committed.",
+      "note": "No explicit acceptance criteria in the prompt."
+    },
+    {
+      "item": "Constraints and non-goals",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "documentdb-security (for security guidance)",
+      "assumption_if_unanswered": "Keep costs low by using the existing cluster; do not provision extra clusters. Sample should not target production HA or CMK. No PII beyond synthetic examples.",
+      "note": "Prompt doesn't set cost/scale constraints or compliance limits."
+    },
+    {
+      "item": "Repository conventions",
+      "status": "missing",
+      "blocking": false,
+      "found_in_prompt": "",
+      "skill_that_covers": "",
+      "assumption_if_unanswered": "Use a conventional layout: README.md, requirements.txt (pinned), src/, seed.py, app.py, tests/ with unit tests, .env.example, LICENSE, and an explanation that the sample uses the name \"Azure DocumentDB\".",
+      "note": "Conventions are not specified; builder will pick typical layout and naming for gallery samples."
+    }
+  ],
+  "contradictions": [],
+  "questions_for_author": [
+    "Which embedding model and provider should the sample use (e.g., OpenAI text-embedding-3-small with 1536 dims)? the embedding model choice determines index dimensions and must be fixed.",
+    "Which generation/chat model and provider should the agent call for suggestion generation (e.g., OpenAI gpt-4o-mini)?",
+    "Do you want an HTTP API (e.g., Flask/FastAPI) with a POST /suggest endpoint, or is a CLI/demo script sufficient?",
+    "Should the sample include infrastructure-as-code (Bicep/Terraform) to provision an Azure DocumentDB cluster, or must it only use the existing cluster noted in the run environment?",
+    "Do you require unit tests that run without a live cluster (mocks/fakes)? If so, prefer pytest with fixture mocks for the DocumentDB client and embedding calls."
+  ],
+  "requirements_at_risk": [
+    "The vector index dimensions must match the embedding model's output — embedding model is not specified in the prompt, so builder may choose a model and could set dimensions incorrectly.",
+    "The vector index parameters (lBuild, lSearch, maxDegree, subtype) tuned for the sample's data size and README guidance on scaling — prompt doesn't ask for index parameter choices or guidance for larger data sets.",
+    "A `.env.example` listing every required setting with placeholders — prompt doesn't request it explicitly (though skill_md recommends it).",
+    "A seed script that loads sample data idempotently (can be run twice without duplicating) — prompt asks to index past resolutions but doesn't mandate an idempotent seed script.",
+    "Search results include similarity score — prompt asks for top-5 retrieval but not that results include returned similarity scores.",
+    "/search (or equivalent) returns clear errors for empty queries and when embedding calls fail — prompt doesn't require or specify error handling contract for empty input or embedding failures.",
+    "Dependencies pinned in `requirements.txt` — prompt does not specify dependency pinning.",
+    "Unit tests that run without a live cluster (using mocks) — prompt doesn't demand test coverage or mocking strategy.",
+    "Infrastructure for the cluster provided as code (Azure DocumentDB resource) — prompt does not request infra-as-code; run environment already provides a cluster but the gallery reference wants infra code.",
+    "README must cover what the sample shows, prerequisites, setup, run, and clean-up — prompt does not explicitly require a complete README, though this is expected for gallery samples.",
+    "Context-engineering details that explicitly trim retrieved resolutions to relevant passages before injection — prompt requests concise/focused prompts but does not specify an algorithm (passage-splitting, scoring & trimming) so implementation may vary and may not match the reference expectation exactly."
+  ]
+}

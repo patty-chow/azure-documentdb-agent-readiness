@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LlamaIndex RAG agent that indexes past ticket resolutions and knowledge base articles in a DocumentDB vector store. When a new ticket arrives, retrieve the top 5 similar past resolutions, inject them as context, and generate a suggested resolution using context engineering to keep the prompt concise and focused on the current issue.
