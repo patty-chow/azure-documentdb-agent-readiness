@@ -1,0 +1,639 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core invoice→PO reconciliation flow, uses Mongoose against the DocumentDB cluster, provides an LLM-backed extraction path (with a deterministic fallback), and keeps in-session corrections in memory. Key builder choices (OpenAI models, ephemeral session memory, Using OpenAI SDK rather than LangChain for LLM calls) are recorded and implemented. Verification steps (npm install, seed, one-shot reconcile) ran successfully against the live cluster. Major gaps: no vector-index creation or tuning, connection options/timeouts/retries are left at defaults, missing robust retry/error-handling for external calls, and there are no offline unit tests. The README and .env.example are present but clean-up and EntraID guidance are thin. See requirement_results and checks for details and exact file/line evidence.",
+  "requirement_results": [
+    {
+      "requirement": "Implement a single LangChain agent in Node.js that carries each invoice through the whole flow: read the invoice, extract its fields, search for candidate purchase orders, score them and write the result back.",
+      "status": "met",
+      "evidence": "app/src/reconciler.js lines 88-96 (runReconcile finds unmatched invoices) and lines 21-86 (reconcileOne extracts fields, scores candidates and writes the chosen match to the invoice). The LangChain-style agent wrapper is implemented in app/src/agent.js (class LangChainAgent) and used in reconcile paths (app/src/reconcile.js line 3: const agent = require('./agent')).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Read unmatched invoices from Azure DocumentDB through Mongoose models (e.g. invoices that have no reconciliation result yet).",
+      "status": "met",
+      "evidence": "app/src/reconciler.js line 88: const invoices = await Invoice.find({ status: 'unmatched' }).limit(limit); and app/src/models/invoice.js lines 15-16 (status indexed, default 'unmatched').",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Expose field extraction as an LLM-backed tool the agent calls, returning structured fields from the invoice (e.g. vendor, total amount, invoice number) that the later steps use.",
+      "status": "met",
+      "evidence": "app/src/agent.js lines 24-49 implement extractInvoiceFields using the OpenAI client and parsing JSON outputs; app/src/llm.js lines 24-36 implement extractFieldsLLM and provide a deterministic fallback (lines 14-21). reconcile paths call agent.extractInvoiceFields (app/src/reconcile.js line 57 and app/src/reconciler.js lines 24-30).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Query Azure DocumentDB through Mongoose for candidate purchase orders using the extracted amount and vendor.",
+      "status": "met",
+      "evidence": "app/src/reconciler.js lines 42-45 (PurchaseOrder.find with vendorName regex and totalAmount range) and app/src/reconcile.js lines 9-18 (findCandidatesByInvoice builds a query with vendorName and numeric range and calls PurchaseOrder.find(query)).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Score each candidate purchase order against the invoice (e.g. by vendor-name similarity and amount closeness) and choose the match from those scores.",
+      "status": "met",
+      "evidence": "app/src/reconciler.js lines 47-64 compute amtScore, vScore, embScore and combine them (line 63); reconcile.js lines 21-29 define scoreCandidate used by reconcileAll (lines 61-64) to pick the best candidate.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Write the reconciliation result for the invoice back to Azure DocumentDB through Mongoose.",
+      "status": "met",
+      "evidence": "app/src/reconciler.js lines 78-83 set invoice.matchedPoId, invoice.matchScore, invoice.matchDetails, invoice.status and call await invoice.save(); app/src/reconcile.js lines 66-71 do the same.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Keep agent memory for the session that records manual corrections (e.g. a user overriding the chosen PO) and consult it when matching later invoices in the same session.",
+      "status": "met",
+      "evidence": "app/src/agent.js lines 9-16 implement in-process session memory and addCorrection/getSession; app/src/index.js lines 23-27 expose POST /reconcile/manual-correction that calls agent.addCorrection; app/src/reconcile.js lines 36-55 check session.corrections before performing matching.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example contains placeholders (lines 2-5) and app/src/db.js line 5 reads process.env.DOCUMENTDB_URI; app/src/llm.js lines 5-11 read OPENAI_API_KEY and model env vars.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lines 1-6 list DOCUMENTDB_URI, OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL, OPENAI_EXTRACT_MODEL and DB_NAME.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_met",
+      "evidence": "The code generates embeddings (app/src/llm.js lines 43-46) but the sample does not create vector indexes on the cluster (builder report and events note: \"Vector-index creation on the cluster: this sample code does not create specialized vector indexes\"). No code in app/ creates a vector index or records embedding dimensions.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add vector-index creation to the seed script that reads EMBEDDING_DIM (or uses the chosen embedding model to set dimensions) and create the matching index, or update the documentdb-vector-search skill to require seed scripts create a vector index with dimensions taken from an env var."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "No vector index creation or parameters are set by the seed script (app/src/seed.js). README notes vector indexes are not created (README 'Notes and limitations' lines 33-36) but does not document parameter guidance.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Document recommended index type and parameters for demo vs production in the README and add index-creation code to src/seed.js that accepts environment overrides (e.g., INDEX_ALGORITHM, EMBEDDING_DIM, HNSW_M, efConstruction). Prefer adding this guidance to the documentdb-vector-search skill so all samples inherit it."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js implements a single mongoose.connect call with exported connect() (lines 17-19). Server and CLI code call connect() and reuse mongoose (app/src/index.js line 14 and app/src/server.js line 53).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/src/seed.js lines 10-12 check counts and only insert PO and Invoice documents if counts are zero; the seed is idempotent (lines 14-22 and 26-34).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample does not implement a /search endpoint; search-like behavior is embedded inside reconciliation paths (app/src/reconciler.js and app/src/reconcile.js). There is no dedicated /search route to test.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If the sample is intended to expose a /search endpoint, add one and implement explicit checks: return 400 for empty queries and 502/5xx + descriptive message when embedding / LLM calls fail."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "app/src/reconciler.js lines 63-65 compute combined score and return it as score in the result (line 85 returns { matched: true, invoiceId: ..., score: best.combined }); app/src/reconcile.js returns score fields in results (lines 72-74).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "met",
+      "evidence": "This is a Node.js sample; the repository includes package-lock.json (app/package-lock.json present) and package.json with explicit dependency versions (app/package.json). The presence of package-lock.json ensures reproducible installs.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files or test runner configuration are present in the repository (no test/ or __tests__ folder, no test script in package.json).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a small test suite that mocks Mongoose (or uses an in-memory DocumentDB gateway) and tests reconciliation logic (scoring, thresholding, manual-correction merging). Add a 'npm test' script that runs those tests without requiring DOCUMENTDB_URI."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep, ARM, Terraform) are included. The builder deliberately avoided provisioning resources (README notes lines 33-35). The documentdb-azure-deployment skill was loaded but not used to produce an IaC artifact.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an IaC example (Bicep or Terraform) using Microsoft.DocumentDB/mongoClusters (or AzAPI Terraform snippet). A minimal azuredeploy.bicep or terraform/ directory would satisfy this requirement; reference the documentdb-azure-deployment skill to generate it."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "README includes 'What this sample shows', 'Prerequisites', and 'Quickstart' with install/seed/run steps (app/README.md lines 3-23). It does not provide explicit clean-up commands for seeded data or guidance for tearing down a created cluster (lines 33-36 note the sample avoids provisioning Azure resources).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a 'Cleanup' section showing how to drop the seeded collections (e.g. sample mongo shell or node script) and, if IaC is later added, how to tear down the provisioned resources."
+    },
+    {
+      "requirement": "The sample uses the name 'Azure DocumentDB' throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README and code use 'Azure DocumentDB' and 'DocumentDB' terminology (app/README.md lines 1 and 4; README consistently references DocumentDB).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Credentials from env",
+      "practice": "Keep cluster credentials and connection URIs out of source control and read them from environment variables or secure secret stores at runtime rather than hard-coding or committing them.",
+      "category": "auth",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples",
+      "status": "followed",
+      "evidence": "app/.env.example lines 2-3 provide placeholders; app/src/db.js line 5 reads process.env.DOCUMENTDB_URI; app/src/llm.js line 5 reads OPENAI_API_KEY.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Node.js",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs#code-examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Single client reuse",
+      "practice": "Create and reuse a single MongoDB/Mongoose connection (one client / pool) for the application rather than opening connections per request; tune pool/timeouts for your workload and close gracefully at shutdown.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 12-19 export connect() which calls mongoose.connect(uri, options); server and index call connect() once before serving (app/src/server.js line 53 and app/src/index.js lines 38-42).",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS & auth config",
+      "practice": "Use TLS in the MongoDB connection string (tls=true) and a secure authentication mechanism (SCRAM-SHA-256 or Microsoft Entra ID) and avoid accepting invalid certificates in production.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell",
+      "status": "violated",
+      "evidence": "app/src/db.js sets options = { dbName } only (lines 12-15) and does not set TLS or certificate validation options or explicit retry/timeouts. The .env.example instructs to set a connection string but does not document required TLS options.",
+      "source": "Connect to Azure DocumentDB using MongoDB Shell",
+      "searched": "",
+      "fix": "Add recommended connection options to db.js (e.g., ensure the connection string includes tls=true / tlsAllowInvalidCertificates=false if applicable, set serverSelectionTimeoutMS and appropriate pool settings) and document when to use Microsoft Entra ID. Prefer adding default, safe connection options in the documentdb-connection skill so all samples use them.",
+      "sources": [
+        {
+          "title": "Connect to Azure DocumentDB using MongoDB Shell",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-connect-mongo-shell"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Driver retries",
+      "practice": "Evaluate the driver's retryableWrites option (samples often set retryWrites=false) and design application-level retries and idempotency carefully so retries don't cause duplicate side effects.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose",
+      "status": "violated",
+      "evidence": "app/src/db.js does not set retryWrites, retryReads, serverSelectionTimeoutMS or other retry-related driver settings (options only contains dbName at lines 12-15). No application-level retry wrappers exist for DB writes in the reconciliation paths.",
+      "source": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+      "searched": "",
+      "fix": "Add driver options (e.g., retryWrites=false where recommended) and wrap non-idempotent writes with application-level retry/ idempotency keys; add a short rule to documentdb-connection skill to set safe defaults for samples.",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#already-using-mongoose"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index for vendor+amount",
+      "practice": "Create compound indexes for queries that filter on multiple fields (for example vendor + amount) so the predicate can use an index rather than scanning the collection.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field",
+      "status": "violated",
+      "evidence": "PurchaseOrder and Invoice models index vendorName and totalAmount individually (app/src/models/purchaseOrder.js lines 10-12 and app/src/models/invoice.js lines 10-12), but there is no compound index on vendor+totalAmount. Some queries use regexes that can prevent index use (app/src/reconciler.js line 42 uses vendorName regex without an anchor).",
+      "source": "Indexing Best Practices in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add a compound index on { vendorName: 1, totalAmount: 1 } (create in seed script or model definition) or store a normalized vendor field and index { vendor_normalized: 1, totalAmount: 1 }. Prefer adding a documentdb-indexing skill rule advising compound indexes for matching workloads.",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefilter by numeric range",
+      "practice": "Prefilter candidate sets using indexed numeric range queries for amounts (e.g., totalAmount: { $gte: min, $lte: max }) and ensure the amount field is indexed so range scans use an index.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-index",
+      "status": "followed",
+      "evidence": "The code computes a min/max range and queries totalAmount with $gte/$lte (app/src/reconciler.js lines 39-45 and app/src/reconcile.js lines 11-15). totalAmount is indexed in both models (app/src/models/purchaseOrder.js line 12 and app/src/models/invoice.js line 12).",
+      "source": "Scenario based guide to indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Scenario based guide to indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Limit returned fields / batchSize",
+      "practice": "Limit returned fields with projections and use cursor batchSize when scanning candidate sets to reduce network and deserialization cost.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/query/commands/query-and-write/find#projections",
+      "status": "violated",
+      "evidence": "PurchaseOrder.find calls do not use projection or batchSize in app/src/reconciler.js (line 42-45) and app/src/reconcile.js (line 17), which returns full documents and their lineItems even though scoring only requires id, vendorName and totalAmount.",
+      "source": "find",
+      "searched": "",
+      "fix": "Use .find(query, { poNumber:1, vendorName:1, totalAmount:1 }) and consider .cursor().batchSize(...) for large candidate sets; update findCandidatesByInvoice to project only needed fields.",
+      "sources": [
+        {
+          "title": "find",
+          "url": "https://learn.microsoft.com/azure/documentdb/query/commands/query-and-write/find#projections"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side aggregation for heavy scoring",
+      "practice": "When scoring candidates at scale, use server-side aggregation pipelines (match/project/limit early) so you reduce documents transferred and only fetch the fields required for scoring.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "violated",
+      "evidence": "The sample performs client-side scoring by loading candidates and computing scores in JS (app/src/reconciler.js lines 47-65). No aggregation pipeline usage is present.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "If scaling beyond demos, move prefiltering and projection into an aggregation pipeline (match / project / limit) and only return fields required for scoring. Document this pattern in documentdb-query-optimizer skill.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain and Index Advisor",
+      "practice": "Use explain(), currentOp(), and the Index Advisor tools to inspect query plans, detect COLLSCANs, and validate index effectiveness before running reconciliation at scale.",
+      "category": "monitoring",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/index-advisor",
+      "status": "not_assessable",
+      "evidence": "No run-time explain() calls or Index Advisor usage are present in the sample code. The builder used the MCP tools to list indexes (events include documentdb_list_indexes) during verification but the app does not exercise explain()/index advisor programmatically.",
+      "source": "Tune query performance with Index Advisor in Azure DocumentDB (preview)",
+      "searched": "",
+      "fix": "Add a short verification step in the seed or verification readme showing how to call explain() with the MCP or to run the Index Advisor before large runs.",
+      "sources": [
+        {
+          "title": "Tune query performance with Index Advisor in Azure DocumentDB (preview)",
+          "url": "https://learn.microsoft.com/azure/documentdb/index-advisor"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index selection",
+      "practice": "Choose the vector index algorithm by dataset size and cluster tier: IVF for small demos, HNSW for moderate/accuracy-focused workloads (M30+), and DiskANN for large-scale production (M30+).",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "not_applicable",
+      "evidence": "The sample does not create vector indexes or rely on an index for its current default fallback operation; embedding-based scoring is optional and embeddings are created in code (app/src/reconciler.js lines 54-56 and app/src/llm.js lines 43-46) but no vector index creation exists.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "If vector retrieval is expected, add index-creation and selection guidance to the seed script and README.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vector index parameters & dimensions",
+      "practice": "When creating a vector index, set dimensions and algorithm-specific parameters (numLists, m, efConstruction, lBuild, lSearch, maxDegree) and ensure vectors are stored as number[]; maintain consistent embedding dimension across documents.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "not_assessable",
+      "evidence": "No vector index exists in the seed. The code produces embeddings (app/src/llm.js) but there is no record of embedding dimension in documents and no index creation to validate parameters.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Record embedding dimension and model version in documents, and create the vector index in seed.js using those dimensions; add README guidance for tuning the index parameters.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Use cosine when embeddings normalized",
+      "practice": "If you use OpenAI / Azure OpenAI embeddings, prefer COS (cosine) similarity because those embeddings are normalized; choose the distance function to match whether embeddings are normalized (COS for normalized vectors).",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-select-algorithm#run-the-code",
+      "status": "followed",
+      "evidence": "The reconciler computes cosine similarity when both embeddings exist (app/src/reconciler.js lines 56-61) and falls back to other scores when embeddings are absent.",
+      "source": "Quickstart: Vector index with TypeScript in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Vector index with TypeScript in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-nodejs-select-algorithm#run-the-code"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid leading-wildcard regex",
+      "practice": "Avoid expensive regex and string-function queries for matching; normalize values on write (case) or use indexed fields / text search, and avoid leading-wildcard regexes because they prevent index use.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/troubleshoot-query-performance#queries-where-retrieved-document-count-exceeds-output-document-count",
+      "status": "violated",
+      "evidence": "app/src/reconciler.js line 42 uses vendorName: { $regex: new RegExp(vendor, 'i') } (no anchor) which can cause collection scans; app/src/reconcile.js line 10 uses an anchored regex (^... ) which is index-friendly. The code is inconsistent.",
+      "source": "Troubleshoot query issues when using Azure Cosmos DB",
+      "searched": "",
+      "fix": "Normalize vendor names on write and use equality or anchored regexes; add normalized vendor field and index it. Update findCandidatesByInvoice to use anchored regex or vendor_normalized equality.",
+      "sources": [
+        {
+          "title": "Troubleshoot query issues when using Azure Cosmos DB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/troubleshoot-query-performance#queries-where-retrieved-document-count-exceeds-output-document-count"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monetary storage type",
+      "practice": "Use Decimal128 (or integer cents) to store monetary values instead of IEEE floats; Azure DocumentDB supports Decimal128 BSON type.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$todecimal#examples",
+      "status": "violated",
+      "evidence": "Invoice and PurchaseOrder schemas store totalAmount as Number (app/src/models/invoice.js line 12 and app/src/models/purchaseOrder.js line 12) which maps to JS Number (IEEE float) rather than Decimal128 or integer cents.",
+      "source": "$toDecimal",
+      "searched": "",
+      "fix": "Store monetary amounts as integer cents or use mongoose.Schema.Types.Decimal128 and index that field. Update seed and models to use Decimal128 or a cents integer field.",
+      "sources": [
+        {
+          "title": "$toDecimal",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/aggregation/$todecimal#examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Prefilter before LLM/embedding",
+      "practice": "When prefiltering for client-side (LLM / embedding) scoring, reduce candidates with indexed filters (vendor/amount) before expensive embedding or LLM operations to control cost and latency.",
+      "category": "performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/index-advisor",
+      "status": "followed",
+      "evidence": "The reconciler and reconcile code prefilter candidates by vendor and numeric amount before performing optional embeddings (app/src/reconciler.js lines 42-45, and lines 53-56 only compute embeddings for the small candidate set).",
+      "source": "Tune query performance with Index Advisor in Azure DocumentDB (preview)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Tune query performance with Index Advisor in Azure DocumentDB (preview)",
+          "url": "https://learn.microsoft.com/azure/documentdb/index-advisor"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Vectors stored as number[] and dimensions set",
+      "practice": "When using embeddings in DocumentDB vector indexes, vectors must be stored as number[] and index creation requires specifying the 'dimensions' parameter matching your embeddings.",
+      "category": "vector_search",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search",
+      "status": "not_assessable",
+      "evidence": "Code returns embeddings (app/src/llm.js lines 43-46) but the sample does not store embeddings in documents nor create vector indexes; therefore we cannot assess whether stored vectors would be number[] and match dimensions.",
+      "source": "Integrated vector store in Azure DocumentDB",
+      "searched": "",
+      "fix": "Record embedding vector shape and model version in documents and create the vector index in seed.js with the correct dimensions; include this as a README step.",
+      "sources": [
+        {
+          "title": "Integrated vector store in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/vector-search#perform-vector-similarity-search"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Normalize vendor on write",
+      "practice": "Normalize vendor names on write (e.g., lowercase/trim/canonicalize) if you need reliable equality or indexed lookups rather than relying on ad-hoc regex at query time.",
+      "category": "data_modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P31",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The reconciler implements a runtime normalizeVendor function (app/src/reconciler.js lines 5-8 and vendorScore lines 10-18) but the models do not persist a normalized vendor field to make indexed equality possible (no vendor_normalized field in app/src/models/purchaseOrder.js or app/src/models/invoice.js).",
+      "source": "prior_knowledge_only",
+      "searched": "searches tried: \"Azure DocumentDB normalize vendor field\", \"DocumentDB case insensitive index vendor\"",
+      "fix": "Add a normalized vendor field on write (vendor_normalized) and index it. Provide a short doc page in the agent kit explaining canonicalization & indexing for vendor fields.",
+      "sources": [],
+      "what_would_help": "A sentence in the 'Data modeling' quickstart showing 'store vendor_normalized = vendorName.toLowerCase().trim().replace(/[\\W_]+/g, \"\") and index it' would let agents implement this reliably."
+    },
+    {
+      "topic": "Embedding metadata",
+      "practice": "Record embedding metadata (dimension and model version) in your application documents to detect incompatible embeddings before re-indexing.",
+      "category": "vector_search",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P36",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "No embedding metadata is written by the sample (app/src/seed.js and models do not include embedding/version fields), though embeddings are optionally computed at runtime (app/src/reconciler.js lines 54-56).",
+      "source": "prior_knowledge_only",
+      "searched": "searches tried: \"Azure DocumentDB store embedding version field\", \"DocumentDB embedding metadata dimension version guidance\"",
+      "fix": "Add embeddingModel and embeddingDim fields to documents when storing embeddings; update seed and llm.js to include model/version metadata.",
+      "sources": [],
+      "what_would_help": "A short 'Embedding metadata' paragraph in the vector-search quickstart describing storing { embeddingModel, embeddingDimensions } per doc."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Decision to approve the build as 'ready_with_gaps' is recorded (D001) and consistent with the builder report and events showing the build completed with missing items documented."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Chosen Node.js + Express + Mongoose is implemented in package.json and the app (app/src/index.js / server.js / models)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Mongoose 7.x is recorded and the app's package.json contains mongoose ^7.6.x (app/package.json reflected in events)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI and using dbName 'sample_fintech_12' is implemented in app/src/db.js lines 5-6 and options passed to mongoose.connect."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Ephemeral in-process session memory is implemented (app/src/agent.js lines 9-16 and app/src/index.js manual-correction endpoint)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "questionable",
+      "comment": "The decision to use OpenAI models (gpt-4o-mini and text-embedding-3-small) is implemented in defaults (app/src/llm.js lines 6-7 and app/src/agent.js line 36). The assumed embedding dimension (1536) is an unstated assumption and was not validated by the build; mark as questionable because the dim assumption is unverified in code or README."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "wrong",
+      "comment": "D007 states 'include both LangChain and OpenAI SDK but perform LLM calls via OpenAI SDK'. The final app uses the OpenAI SDK directly and does not include LangChain as a dependency (app/package.json does not list langchain and events show package.json overwritten without langchain). The decision log contradicts the implemented dependency set."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Duplicate approval entry; consistent with D001 and the build log."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Duplicate of D002; implementation matches the decision."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "sound",
+      "comment": "Duplicate of D003; Mongoose 7.x present in package.json."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Decision to use the OpenAI SDK directly is consistent with the code (app/src/llm.js and app/src/agent.js use OpenAI SDK). This supersedes the earlier logged D007 intention to include LangChain as a dependency; the log shows both decisions but the implemented choice is D011."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "questionable",
+      "comment": "The app defaults the embedding model to 'text-embedding-3-small' (app/src/llm.js line 6). The additional assumption of 1536 dimensions is not recorded in code or in index creation—thus defensible but unverified and so questionable."
+    },
+    {
+      "decision_id": "D013",
+      "assessment": "sound",
+      "comment": "Ephemeral session-based agent memory is implemented (app/src/agent.js) and the server offers manual-correction endpoints that use it (app/src/index.js)."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Driver-version pinning & supported driver guidance",
+      "what_was_missing": "A short, public guidance page that states which MongoDB/Mongoose driver versions are recommended/guaranteed for Azure DocumentDB (vCore mongoClusters) and how to pin them in sample package manifests.",
+      "where_searched": "Quickstarts and compatibility pages (learn.microsoft.com DocumentDB quickstarts and Mongoose guides) did not present a concise 'pin to X.Y' statement for samples.",
+      "effect_on_this_build": "The builder chose Mongoose 7.x by convention; lack of explicit pinned-version guidance left the implementer to assume a safe major. This could lead to breakage if incompatible driver versions are chosen.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A short doc page: 'Recommended Node.js driver versions for Azure DocumentDB (Mongo-compatible)'. Outline: supported Mongoose major/minor matrix, Node.js compatibility table, recommended pinning practices (use package-lock or exact versions), and a sample package.json snippet for samples.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Connection defaults for samples (TLS, timeouts, pool sizing, retry behavior)",
+      "what_was_missing": "A canonical sample-level recipe that recommends safe default connection options (serverSelectionTimeoutMS, maxPoolSize, tls and tlsAllowInvalidCertificates handling, retryWrites policy) and an explanation when Microsoft Entra ID vs connection-string auth should be used for samples.",
+      "where_searched": "DocumentDB quickstarts, local deployment docs and the documentdb-connection skill; none provided a single succinct 'use these defaults in samples' snippet.",
+      "effect_on_this_build": "db.js left options minimal, missing recommended retry/timeouts/TLS flags. This increases the chance of connection-time surprises in sample verification or in CI.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule and a one-paragraph doc: recommended default options and env vars (e.g., DB_MAX_POOL_SIZE, SERVER_SELECTION_TIMEOUT_MS, RETRY_WRITES=false). Show example db.js snippet and reasons (connection leaks, TTL on server selection).",
+      "priority": "high"
+    },
+    {
+      "topic": "Vector-index creation and embedding-dimension guidance for samples",
+      "what_was_missing": "Explicit sample code or a README section showing how to create a vector index on the cluster (algorithm choices, dimensions param matching embedding model, and minimal recommended parameters for demo vs production).",
+      "where_searched": "Integrated vector store docs and quickstarts; those pages describe index JSON but there wasn't a short sample seed snippet the agent could apply automatically to seed a demo index with the chosen embedding model.",
+      "effect_on_this_build": "The sample computes embeddings but does not create a vector index. As a result, embedding-based retrieval cannot be verified end-to-end without manual index creation, which the builder flagged in verification.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Add to the documentdb-vector-search skill a seed-snippet and a sample src/seed-vector-index.js that reads EMBEDDING_MODEL and EMBEDDING_DIM from env and runs createIndexes/createSearchIndexes with a minimal HNSW (or IVF) config for demos, plus a README section on scaling these parameters.",
+      "priority": "high"
+    },
+    {
+      "topic": "Normalize vendor name guidance and a canonical field",
+      "what_was_missing": "Public, easily discoverable guidance recommending storing a normalized vendor field (vendor_normalized) at write-time for reliable indexed equality lookups, with a small code example.",
+      "where_searched": "Indexing and query docs; the pattern is commonly used in prior knowledge but not shown as a concise recipe in DocumentDB quickstarts.",
+      "effect_on_this_build": "The app implements runtime normalization for scoring but does not persist a normalized field, which prevents efficient indexed equality lookups and makes some queries rely on regex that may not use indexes.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page: 'Canonicalizing and indexing free-text keys (vendor names)' with code examples (Mongoose middleware to set vendor_normalized) and an index recommendation. Example: add pre('save') hook to set vendor_normalized = normalize(vendorName) and create compound index on vendor_normalized + totalAmount.",
+      "priority": "high"
+    },
+    {
+      "topic": "Recommendation for monetary types (Decimal128 or integer cents)",
+      "what_was_missing": "An explicit sample-recommendation page stating 'store money as Decimal128 or integer cents with examples in Mongoose' for DocumentDB.",
+      "where_searched": "Aggregation and Decimal docs; there are examples for $toDecimal but no single-page 'money storage' guidance.",
+      "effect_on_this_build": "The sample used Number for amounts (JS floats). For financial examples this risks precision issues and is not best-practice.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Short doc 'Representing money' with Mongoose examples (Decimal128 field or integer cents), seeding examples, and migration notes.",
+      "priority": "high"
+    },
+    {
+      "topic": "Agent memory persistence choices",
+      "what_was_missing": "A short page/rule explaining the tradeoffs between in-process ephemeral session memory vs persisted memory (DocumentDB or Redis) for agent corrections, and a recommended default for gallery samples.",
+      "where_searched": "No single DocumentDB doc covers agent memory; this is application-level guidance missing from product docs.",
+      "effect_on_this_build": "Implementer defaulted to an in-process Map (ephemeral). That meets 'within a session' but is easy to misuse in multi-process deployments.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "A short note in the agent kit: 'Use ephemeral memory for single-process demos; use persistent store (DocumentDB/Redis) if you want cross-process persistence; provide examples for both.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests that run without a live cluster (test harness)",
+      "what_was_missing": "An example test harness (jest + mocked mongoose or an in-memory DocumentDB gateway configuration) that agents can copy into samples to run unit tests offline.",
+      "where_searched": "Sample repos and quickstarts; no standard sample harness was found for offline tests of DocumentDB/Mongoose apps.",
+      "effect_on_this_build": "No tests were added; this makes CI and pull-request validation harder for the sample.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add tests/ using jest + mongodb-memory-server or a mock for mongoose, a sample test for reconciliation logic (scoreCandidate, thresholding, and manual-correction handling).",
+      "priority": "high"
+    },
+    {
+      "topic": "Clear procedure to use Microsoft Entra ID for data-plane auth (when applicable)",
+      "what_was_missing": "A short example showing how to configure a sample to authenticate with Microsoft Entra ID (OIDC / managed identity) rather than using a connection string, or an explicit note explaining why the sample uses connection-string auth.",
+      "where_searched": "Auth and quickstart docs; there are references but not a small 'how-to' snippet for Node/Mongoose consumers in sample quickstarts.",
+      "effect_on_this_build": "The sample uses a connection string and README does not explain how to use Entra ID; operators might not know whether it's supported for this scenario.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short README subsection 'Using Microsoft Entra ID for data-plane auth' with example commands / links and a note when connection string is acceptable for demos.",
+      "priority": "medium"
+    }
+  ]
+}
