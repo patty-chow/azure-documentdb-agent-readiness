@@ -1,0 +1,836 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "No external documentation search server was reachable during this run (documentation_search_available=false). The sample builds and runs locally using deterministic mock embeddings when OPENAI_API_KEY is not set; unit tests pass without a live cluster; the seed script loads 12 synthetic pattern documents and the demo/run_demo exercises scoring. The build intentionally implements best-effort server-side index creation and a robust client-side fallback for vector search when the server-side operator or index syntax is unavailable. Key functional requirements are met (agent entry point, embedding + search flow, scoring and explanation, idempotent seed, single shared client), but several checklist items that require authoritative service docs or explicit policy (server-side vector index creation syntax and parameters; use of the same embedding model for stored patterns when using real embeddings; a LangChain vector-search tool using the provider's $search operator) were not implemented or documented and must be addressed before publishing.\n\nWhat I ran and inspected: I read the repository files under app/, the decisions log (decisions.jsonl) and the event trace (events.jsonl). I confirmed the code paths that attempt server-side index creation, the client-side fallback search, the deterministic mock embeddings, the API surface (POST /score and GET /health), and the seed behavior against the live cluster as reported in the builder report and events log.",
+  "requirement_results": [
+    {
+      "requirement": "A Python LangChain agent is the single entry point: it accepts a new transaction and runs the fraud check for it.",
+      "status": "met",
+      "evidence": "app/src/app.py lines 11-23 (agent = FraudAgent() and POST /score calls agent.score_transaction).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The agent encodes a transaction's features into an embedding vector with an embedding model, and the same model is used for the stored fraud pattern vectors and for new transactions.",
+      "status": "partly_met",
+      "evidence": "app/src/agent.py lines 34-39 (get_embedding uses OpenAIEmbeddings when OPENAI_API_KEY is set; otherwise mock_embedding). app/seed_data.py lines 26-30 and 33-37 (generate_pattern uses deterministic_embedding to create stored pattern embeddings).",
+      "cause": "builder_error",
+      "smallest_fix": "Make the seed script use the same embedding provider as the agent when OPENAI_API_KEY is set (e.g., call the same LangChain OpenAIEmbeddings wrapper used by the agent or reorder logic so seed uses the configured embedding provider). Alternatively document clearly in README that patterns must be re-seeded with the real model and add an EMBED_DIM detection/validation step."
+    },
+    {
+      "requirement": "Known fraud pattern vectors are stored as an embedding field on documents in an Azure DocumentDB collection, written through a MongoDB driver (e.g. PyMongo), with each document carrying the pattern information the explanation draws on.",
+      "status": "met",
+      "evidence": "app/seed_data.py line 66-68 (documents created and col.insert_many(docs)); seed pattern documents include 'embedding', 'pattern_id', 'description' and 'metadata' (generate_pattern at line 33-37).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A cosmosSearch index of kind vector-ivf is created in code on that embedding field, with dimensions matching the embedding model's output (similarity e.g. COS).",
+      "status": "not_met",
+      "evidence": "app/seed_data.py lines 52-59 attempt an index create but use a simple create_index([('embedding', 1)]) and comment that exact names may vary; no vectorOptions or dims are specified (see line 56-58).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a verified create_index call that supplies provider-specific vectorOptions including algorithm and dims (e.g., pull dims from an EMBED_DIM constant or from the embedding provider) and catch errors as currently done. Prefer shipping an agent-kit tested snippet for the exact provider syntax rather than inventing options in the sample."
+    },
+    {
+      "requirement": "A LangChain tool performs the vector search against Azure DocumentDB with a $search / cosmosSearch query using the new transaction's embedding as the query vector, and returns the similar historical cases.",
+      "status": "not_met",
+      "evidence": "app/src/agent.py lines 60-79 show a best-effort placeholder pipeline (no $search/knn operator) and then a client-side fallback (lines 83-93). There is no LangChain tool that issues a provider $search/cosmosSearch aggregation with vector semantics.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Implement and expose a LangChain Tool (or a small wrapper function) that executes the provider's tested vector-search aggregation (using the correct $search/$vectorSearch operator and meta-score projection), and have the agent call that tool. If operator names are uncertain, ship a tested example for the supported cluster and keep the current client-side fallback."
+    },
+    {
+      "requirement": "On each new transaction the agent invokes that vector search tool and derives a fraud risk score from the returned similar cases (e.g. based on how closely they match).",
+      "status": "met",
+      "evidence": "app/src/agent.py lines 95-113: score_transaction builds an embedding, calls search_similar(), aggregates similarity*severity and normalizes to 0-100.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The agent's response contains both the numeric fraud risk score and a natural-language explanation that describes the matching fraud patterns.",
+      "status": "met",
+      "evidence": "app/src/agent.py lines 110-113 (normalized risk_score and explanation string are returned) and app/src/app.py lines 19-23 return the agent result from the /score endpoint.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": ".env.example lines 2 and 5; app/seed_data.py line 12 reads DOCUMENTDB_URI; app/src/agent.py line 17 checks OPENAI_API_KEY.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": ".env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI and OPENAI_API_KEY (lines 2 and 5). The code reads only those two environment variables.",
+      "cause": "none",
+      "smallest_fix": "If you add additional configurable parameters (EMBED_DIM, INDEX_ALGO, INDEX_PARAMS, etc.), add them to .env.example as placeholders."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "partly_met",
+      "evidence": "app/seed_data.py sets EMBED_DIM = 128 (line 21) and both the seed deterministic embedding and the agent mock embedding default to 128 (seed_data deterministic_embedding lines 26-30; agent.mock_embedding lines 28-31). However, when OPENAI_API_KEY is used the agent will call a real embedding model (agent lines 19-23) whose dimension may not be 128 and the seed script does not produce matching OpenAI embeddings.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Detect the embedding dimension at runtime (query the model API or expose EMBED_DIM as an env var), validate or fail fast if stored vectors and model dims mismatch, and/or re-seed stored patterns with the chosen model when OPENAI_API_KEY is provided."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_met",
+      "evidence": "app/seed_data.py does not expose tunable vector index parameters (no nlist/efConstruction/etc.). README (app/README.md) mentions index tuning generically but does not document parameters or how to change them for larger datasets.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add clear constants (INDEX_ALGO, INDEX_PARAMS, TOP_K, CANDIDATE_LIMIT) and a README section describing how to tune them for larger datasets, with concrete example values for IVF/HNSW/DiskANN and guidance to validate them against the target cluster."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/agent.py lines 54-58 create self.client = MongoClient(self.uri) and reuse it for queries.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/seed_data.py lines 63-67 delete existing sample documents (delete_many with regex) and then insert_many; lines 45-50 create collection if not present.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "\"/search\" returns a clear error for an empty query and when the embedding call fails.",
+      "status": "partly_met",
+      "evidence": "app/src/app.py POST /score delegates to agent.score_transaction and wraps it in a try/except that returns HTTP 500 for uncaught exceptions (lines 19-25). There is no explicit validation returning a clear 400 for empty/invalid transaction content, nor a specific error map for embedding failures.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add explicit request validation (return 400 with a helpful message for missing/empty required fields) and catch embedding-specific errors in the agent to return a clear 502/5xx with an explanatory message when the embedding provider fails."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "met",
+      "evidence": "app/src/agent.py lines 103-112 and the run_demo output in events.jsonl show 'similarity' in each returned match; returned matches include similarity in the 'matches' array.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt pins lower/upper ranges (e.g., pymongo>=4.0,<5.0, langchain>=0.0.300,<1.0) but does not use exact pinned versions.",
+      "cause": "builder_error",
+      "smallest_fix": "Pin exact versions for reproducible builds (e.g., pymongo==4.20.1, langchain==<tested-version>, openai==<tested-version>) or add a lock file (pip-tools, pipfreeze) and document the tested set in README."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "met",
+      "evidence": "tests/test_utils.py (final version) imports agent.cosine_similarity and the pytest run passed (events.jsonl run_command pytest exit code 0, '1 passed'). The unit test does not require a live cluster.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "There are no IaC files (ARM/Bicep/Terraform) or Azure resource definitions in the repository files under app/ (see file list). Readiness forbids provisioning during the run and the builder did not add IaC.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a folder infra/ with example IaC templates (Bicep, ARM, Terraform) that declare the correct resource type for the managed DocumentDB cluster and default low-cost parameters; include a README explaining that provisioning is optional and how to configure region/tier."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md includes overview, prerequisites, quickstart and files (lines 1-33). It lacks explicit clean-up steps to remove created sample data or indexes.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a 'clean-up' section to README describing how to drop the sample collection (db.fraud_patterns.drop()) and any index cleanup, and when to run any deprovisioning scripts if IaC is provided."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md and other text use 'Azure DocumentDB (MongoDB-compatible)' (README line 1 and throughout).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection env var",
+      "practice": "Read the DocumentDB connection string only from an environment variable (DOCUMENTDB_URI) at runtime and provide a .env.example placeholder rather than committing credentials.",
+      "category": "connection & secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py line 12 reads DOCUMENTDB_URI; app/.env.example lines 2-5 provide placeholders.",
+      "source": ".env.example / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md / .env.example",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Database selection",
+      "practice": "Use the explicit database name sample_fintech_01 for the app's data rather than relying on defaults or other databases.",
+      "category": "provisioning & organization",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py line 16 (DB_NAME = 'sample_fintech_01'); app/src/agent.py line 14 (DB_NAME = 'sample_fintech_01').",
+      "source": "seed_data.py / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed_data.py / README.md",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index fallback",
+      "practice": "Attempt to create a server-side vector index but handle failure gracefully and fall back to client-side similarity search if the cluster does not support the vector index API.",
+      "category": "vector search & fallbacks",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py lines 52-61 (try/except around index creation) and app/src/agent.py lines 62-81 (attempt server-side pipeline then fall back).",
+      "source": "README.md / seed_data.py / src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md / seed_data.py / src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create collection",
+      "practice": "Create the application's collection if it does not exist (create_collection) before seeding data.",
+      "category": "provisioning & organization",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py lines 45-50 checks list_collection_names() and calls create_collection(COLLECTION).",
+      "source": "seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Pattern document model",
+      "practice": "Model pattern documents with a stable unique id (pattern_id), a vector field stored as a numeric array (embedding), and metadata fields used for scoring (e.g., severity).",
+      "category": "data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py function generate_pattern returns dict with 'pattern_id', 'embedding' and 'metadata' (line 37).",
+      "source": "seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Mock embedding fallback",
+      "practice": "Provide a deterministic mock embedding fallback when a real embedding service (OpenAI) is not configured so the demo remains runnable.",
+      "category": "embeddings & dev ergonomics",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py lines 28-39 define mock_embedding and get_embedding fallback; app/seed_data.py lines 26-30 define deterministic_embedding for seeding.",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection",
+      "practice": "Limit returned fields in queries (use projection) to only the fields needed for scoring/explanation to avoid transferring large vectors unnecessarily.",
+      "category": "queries & performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py line 84 uses find({}, {\"_id\": 0, \"pattern_id\": 1, \"description\": 1, \"example_transactions\": 1, \"embedding\": 1, \"metadata\": 1}).",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client-side cosine",
+      "practice": "Implement client-side cosine similarity and return a small top_k set of matches when server-side vector search is not available.",
+      "category": "vector search & fallbacks",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py lines 42-50 (cosine_similarity) and lines 83-93 (client-side fallback and return top_k results).",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk insert and idempotent seed",
+      "practice": "Use bulk insert (insert_many) for seeding multiple pattern documents and clear prior sample docs with a delete_many pattern before re-inserting to keep the seed idempotent.",
+      "category": "ingest & seeding",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py lines 63-68: delete_many and insert_many used for seeding.",
+      "source": "seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "MongoClient reuse",
+      "practice": "Reuse a single MongoClient instance for the running application (instantiate once and share) rather than creating many short-lived clients.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py lines 54-58 instantiate MongoClient once and store on self.client/self.db/self.col.",
+      "source": "src/app.py / src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/app.py / src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation best-effort",
+      "practice": "Attempt server-side vector index creation as a best-effort (create_index) but catch and report failures rather than aborting the seed process.",
+      "category": "vector indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py lines 52-61 wrap create_index in try/except and continue on error.",
+      "source": "seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Score normalization",
+      "practice": "Normalize a computed fraud risk score to a fixed 0–100 scale and derive textual explanations from the top N matching documents and their metadata rather than raw distances alone.",
+      "category": "scoring & explainability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py lines 100-112 compute contribution = sim * severity, sum and normalize (line 111) and build explanation from top matches (line 112).",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Candidate limit",
+      "practice": "Enforce a sensible candidate-size limit for searches (e.g., pipeline $limit or top_k) to bound resource usage during vector search.",
+      "category": "performance & safety",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py pipeline includes a {'$limit': 100} (line 66) and the client-side search returns top_k results (function parameter default top_k=5).",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Server-side preferred",
+      "practice": "Prefer server-side ANN/vector indexes for production when supported and fall back to client-side brute-force for small datasets or demos.",
+      "category": "vector search & provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/README.md line 13 and app/src/agent.py implement a best-effort server-side attempt and client-side fallback.",
+      "source": "README.md / seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md / seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk ingest",
+      "practice": "Use insert_many as a bulk write when ingesting multiple seed/training documents to reduce round trips.",
+      "category": "ingest & performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py line 67 uses col.insert_many(docs).",
+      "source": "seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Health endpoint",
+      "practice": "Provide a lightweight health endpoint (GET /health) for basic service readiness checks.",
+      "category": "operational",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/app.py lines 27-29 define GET /health returning {'status': 'ok'}.",
+      "source": "src/app.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/app.py",
+          "url": ""
+        },
+        {
+          "title": "src/app.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "No secrets committed",
+      "practice": "Do not commit secrets into the repository or write connection strings into logs or README files; keep secrets in environment variables or external config.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "No credentials in repository files; .env.example used (app/.env.example). README warns not to commit secrets (app/README.md line 34-35).",
+      "source": "README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "README.md",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Deterministic seeding",
+      "practice": "Implement deterministic seeding for examples (deterministic_embedding) so sample data and embeddings are reproducible for tests and demos.",
+      "category": "testing & reproducibility",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py deterministic_embedding uses a hash-based RNG (lines 26-30) and generate_pattern uses it (line 36).",
+      "source": "seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Embedding field name",
+      "practice": "Store vectors as dense numeric arrays under a dedicated field name (this sample uses 'embedding') so application code can locate and compare them consistently.",
+      "category": "data modeling & validation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py generate_pattern returns 'embedding' field (line 37); app/src/agent.py expects 'embedding' field (lines 74-76, 87-90).",
+      "source": "seed_data.py / src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed_data.py / src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Best-effort operators",
+      "practice": "When attempting server-side search features, treat operators (e.g., $search with vector semantics) as best-effort placeholders and catch exceptions because cluster syntax/support varies.",
+      "category": "compatibility & resilience",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py lines 62-81 try a $meta searchScore addFields pipeline and except to fall back; seed_data.py similarly catches index create errors (lines 52-61).",
+      "source": "src/agent.py / seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py / seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain match metadata",
+      "practice": "When scoring, include matched document metadata (pattern_id, severity, description) in the explanation items returned to callers for clarity.",
+      "category": "scoring & explainability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/src/agent.py lines 103-112 build explanation_items with pattern_id, similarity, severity, description and return them in 'matches'.",
+      "source": "src/agent.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/agent.py",
+          "url": ""
+        },
+        {
+          "title": "src/agent.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation resilience",
+      "practice": "Catch and continue on index-creation errors during seeding so the demo remains usable even if the cluster does not support the attempted index options.",
+      "category": "provisioning & compatibility",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py lines 52-61 (try/except around create_index) and printed message on failure.",
+      "source": "seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail: embed dim",
+      "practice": "The sample pins an embedding dimension constant (EMBED_DIM = 128) in seed_data.py with no logged decision about why 128 was chosen.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/seed_data.py line 21 (EMBED_DIM = 128) and app/src/agent.py mock embedding default uses 128 (line 28); no corresponding decision in decisions.jsonl about choosing 128.",
+      "source": "seed_data.py",
+      "searched": "",
+      "fix": "Add a logged decision or comment describing how EMBED_DIM was chosen or derive dims from the real embedding provider. Consider exposing EMBED_DIM as an env var so it is explicit.",
+      "sources": [
+        {
+          "title": "seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "The operator-approved 'ready_with_gaps' decision is consistent with the build: the sample runs and the readiness report flagged gaps that were intentionally left for later (index syntax, embedding verification). events.jsonl shows the decision was recorded as D001."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python 3 to implement the LangChain agent matches the prompt. events.jsonl shows the decision was logged and the code is Python."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "Choosing pymongo is reasonable, but the decision's reason_source is 'model_default' and the requirements expect an explicit supported driver version. The code writes a range constraint (pymongo>=4.0,<5.0) rather than an exact pinned version; consider documenting the exact tested version. events.jsonl shows requirements.txt was written with that range."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "questionable",
+      "comment": "The plan to use LangChain + OpenAI with a deterministic fallback is implemented for embeddings in the agent (app/src/agent.py lines 19-39). However the seed script still generates stored embeddings deterministically even when OPENAI_API_KEY is set (app/seed_data.py lines 23-37), so the decision was not fully followed in the seeding path. events.jsonl records the decision but the implementation is partial."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Attempting server-side index creation with a safe client-side fallback was implemented (seed_data.py tries create_index in try/except; agent.search_similar falls back on client-side cosine similarity). This matches the decision and events.jsonl record D005."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Choosing FastAPI for /score and /health is implemented in app/src/app.py. events.jsonl records the decision and the FastAPI app exists with the expected endpoints."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from environment is implemented (seed_data.py line 12; agent.py line 13) and .env.example is provided. events.jsonl shows the decision was logged and the code implements it."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "questionable",
+      "comment": "The requirement to use LangChain is implemented and requirements.txt contains langchain>=0.0.300,<1.0. The decision's reason_source is 'model_default' and the version constraint is permissive. For reproducibility, pin an exact tested LangChain version or add a lock file. events.jsonl shows the requirements.txt write."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Exact vector index creation syntax",
+      "what_was_missing": "A verified, copy-pasteable create_index example for Azure DocumentDB's vector indexes (the exact option names such as vectorOptions/indexOptions, algorithm names, and where to supply dims and distance).",
+      "where_searched": "No documentation server available during this run (documentation_search_available=false); I inspected local files (seed_data.py, README.md) which contain best-effort placeholders but not authoritative syntax.",
+      "effect_on_this_build": "The seed script used a plausible create_index and caught failures; without exact syntax the sample cannot demonstrate a tested server-side vector index creation, and end users will need to verify and update the index code for their cluster.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page in the agent-kit or README titled 'Creating a vector index on Azure DocumentDB (MongoDB-compatible)'. Include: (1) the tested createIndex call (code snippet) that works against the managed cluster, (2) example values for algorithm (ivf/hnsw/diskann), dims (match embedding model), and distance (cosine), (3) example error messages and how to fall back to client-side, (4) a minimal shell and Python/pymongo example. Mark as high priority.",
+      "priority": "high"
+    },
+    {
+      "topic": "Vector-search aggregation/operator names",
+      "what_was_missing": "The exact aggregation stage/operator ($search/$vectorSearch/knnBeta or provider-specific name) and the meta-score key names used to project similarity scores from server-side vector search.",
+      "where_searched": "No external docs available; local code contains placeholders (src/agent.py uses an addFields + $meta placeholder).",
+      "effect_on_this_build": "The implementation falls back to client-side similarity because the operator names and syntax were not verified. Without the operator names the sample cannot demonstrate server-side KNN search semantics or return official server-side similarity scores.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short example in the README or an agent-kit page titled 'Running vector KNN queries' that shows the working aggregation pipeline for the managed cluster, including how to pass the query vector, how to request the top-k, how to project the provider's search score (e.g., $meta: 'searchScore'), and how to interpret returned fields. Include language and Python/pymongo examples, plus fallback recipes.",
+      "priority": "high"
+    },
+    {
+      "topic": "Embedding provider & embedding dimensions",
+      "what_was_missing": "Authoritative guidance on which embedding provider(s) the sample should support, the env var names for provider credentials, and how to determine/check the model output dimensionality so indices and stored vectors match the chosen model.",
+      "where_searched": "Local repo (.env.example, agent.py, seed_data.py) and readiness notes; no external docs reachable in this run.",
+      "effect_on_this_build": "The demo uses mock 128-d embeddings; when switching to a real provider (e.g., OpenAI) real embeddings may have a different dimension (e.g., 1536), which would require re-seeding and index recreation. This mismatch was flagged in the readiness report and partially implemented (seed remains deterministic).",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add an agent-kit rule and README section 'Embedding provider selection' that: (1) lists supported providers (OpenAI, etc.), (2) declares the env var names (e.g., OPENAI_API_KEY), (3) shows how to query or assert the embedding dimension and set EMBED_DIM via env var or model metadata, (4) instructs to re-seed stored vectors when switching providers, and (5) includes a short Python snippet to validate stored vectors' length against the model output at startup.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index tuning parameters for sample size",
+      "what_was_missing": "Practical guidance and example parameter values (nlist, probes, efConstruction, M, etc.) appropriate for small demo datasets vs. production-scale collections.",
+      "where_searched": "Local README and seed script do not contain concrete parameter suggestions; no external docs reachable.",
+      "effect_on_this_build": "No tuning or parameter guidance was provided; seed_data does not set or expose these parameters, so an operator would not know how to adapt index options for larger datasets.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A 'Vector index tuning' page showing recommended defaults for demo (<10k vectors), medium (10k–1M), and large (>1M) datasets; provide sample create_index parameter sets for IVF and HNSW, guidance on measuring recall/throughput, and commands to rebuild indexes. Include examples and recommended monitoring metrics.",
+      "priority": "medium"
+    },
+    {
+      "topic": "LangChain tool / example for provider-side vector search",
+      "what_was_missing": "An example LangChain Tool wrapper that executes the provider's vector-search aggregation and returns scored results (including provider search score).",
+      "where_searched": "No external docs available; local code implements a client-side fallback instead.",
+      "effect_on_this_build": "The sample does not ship a LangChain Tool for server-side vector search; users have to implement it themselves and may implement incorrect aggregation stages.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a small module 'docdb_vector_tool.py' that defines a LangChain Tool (or simple function) that executes the tested aggregation pipeline for vector search and returns structured matches. Include usage examples in README and a test that mocks the driver to validate the tool.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Client library version and pinning guidance",
+      "what_was_missing": "A short authoritative note stating which client library and exact versions are supported/tested (e.g., pymongo X.Y.Z) and an explanation of pinning policy for the sample.",
+      "where_searched": "The repo's requirements.txt contains ranged constraints but no exact tested versions. No external docs were reachable.",
+      "effect_on_this_build": "The sample currently uses range constraints; reproducibility may suffer and unexpected incompatibilities could arise for consumers of the sample.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a README subsection 'Tested dependency set' listing the exact versions used to verify the sample and consider shipping a pip freeze or constraints.txt. Also add a note advising how to update/pin safely.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Infrastructure as code (IaC) examples",
+      "what_was_missing": "Sample IaC templates (Bicep/ARM/Terraform) that declare the managed DocumentDB resource type expected by the sample.",
+      "where_searched": "No IaC files in the repo; no external docs reachable to confirm resource type.",
+      "effect_on_this_build": "No IaC shipped; consumers who want to provision a test cluster lack an example to follow. The readiness report flagged accelerator tooling that would normally help but was not available.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Add an infra/ directory with minimal Bicep and Terraform examples that create a low-cost, test DocumentDB cluster with notes on region/tier, plus a README link explaining this is optional and when to use it.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Decisions recorded as model_default",
+      "what_was_missing": "For decisions made from model defaults (e.g., choosing driver type and version constraints), an explicit source or link to authoritative guidance was not recorded.",
+      "where_searched": "Decisions D003 and D008 in decisions.jsonl have reason_source 'model_default'. No local docs or references were provided to justify the choices.",
+      "effect_on_this_build": "Model-default choices are acceptable for prototypes but may surprise maintainers; lacking a documented rationale makes future maintenance harder.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Why we chose this driver/version' note in README (or as comments in requirements.txt) that cites a stable upstream compatibility matrix or a pinned tested version to explain the choice.",
+      "priority": "low"
+    }
+  ]
+}

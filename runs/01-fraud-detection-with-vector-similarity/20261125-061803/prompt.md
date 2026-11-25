@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent that encodes transaction features as embeddings, stores known fraud pattern vectors in a DocumentDB vector-ivf index, and on each new transaction uses a vector search tool to find similar historical cases. The agent should return a fraud risk score and a natural language explanation of the matching patterns.
