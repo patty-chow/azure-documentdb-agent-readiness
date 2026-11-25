@@ -50,12 +50,12 @@ def main() -> int:
         rows.append({"file": f, "id": fm.get("id", f.stem[:3]), "title": fm.get("title", f.stem), "repo": fm.get("repo", "other"),
                      "type": fm.get("type", ""), "status": fm.get("status", ""), "priority": fm.get("priority", "P3"),
                      "samples": fm.get("sample_count", ""), "members": count_members(fm.get("member_drafts", "")),
-                     "open": fm.get("open_questions", "0")})
+                     "open": fm.get("open_questions", "0"), "merged_from": fm.get("merged_from", "")})
     rows.sort(key=lambda r: (r["priority"], r["id"]))
     n_sme = sum(1 for r in rows if r["status"] == "needs_sme")
     L = ["# Phase 4 filings: consolidated issues and pull requests", "",
          f"{len(rows)} filings in `findings/phase4/filings/`, each merging the overlapping drafts the reviewer identified "
-         f"(see REVIEW.md). {n_sme} carry status `needs_sme`: a claim in them needs an engineering or docs owner's answer "
+         f"(see REVIEW.md); first-pass filings that were merged again are archived in `filings/merged/`. {n_sme} carry status `needs_sme`: a claim in them needs an engineering or docs owner's answer "
          "before it goes public; the open questions are listed inside each file. Nothing has been filed. "
          "Sample counts come from one experiment run of 100 prompts and are stated as such in every filing.", ""]
     seen = set()
@@ -68,7 +68,8 @@ def main() -> int:
             continue
         L += [f"## {heading}", "", "| Id | Pri | Status | Type | Samples | Drafts merged | Open q. | Title |", "|---|---|---|---|---|---|---|---|"]
         for r in sub:
-            L.append(f"| [{r['id']}](filings/{r['file'].name}) | {r['priority']} | {r['status']} | {r['type']} | {r['samples']} | {r['members']} | {r['open']} | {r['title']} |")
+            title = r["title"] + (f" (merges {r['merged_from']})" if r["merged_from"] else "")
+            L.append(f"| [{r['id']}](filings/{r['file'].name}) | {r['priority']} | {r['status']} | {r['type']} | {r['samples']} | {r['members']} | {r['open']} | {title} |")
         L.append("")
     OUT.write_text("\n".join(L), encoding="utf-8")
     print(f"{len(rows)} filings -> {OUT.relative_to(PROJECT)}")
