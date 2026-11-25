@@ -1,0 +1,56 @@
+# 3. Build report: 02-real-time-event-stream-ingestion
+
+**Status: partial**
+
+Built a small Node.js (Express) event ingestion sample that bulk-writes events to an Azure DocumentDB (MongoDB-compatible) cluster using unordered bulkWrite and creates the required compound unique index for deduplication. I verified dependency installation, index creation, seeding of idempotent sample data, sampling documents, and that unordered bulk writes behave as expected (duplicates cause single-operation failures but do not stop other writes). I could NOT validate the change-stream end-to-end in this environment: a short change-stream test timed out even though the test document was inserted successfully. See verifications and open_issues for details.
+
+## How to run
+
+1) Copy .env.example -> .env and set DOCUMENTDB_URI to your cluster connection string and optionally adjust DATABASE_NAME, EVENTS_BATCH_SIZE, EVENTS_FLUSH_INTERVAL_MS, PORT.
+2) npm install
+3) npm run setup   # ensures the compound unique index on events
+4) npm run seed    # idempotent seed script (uses upserts)
+5) npm start       # starts Express ingestion service (POST /events)
+6) In a separate terminal: npm run watch   # runs change-stream watcher (simulated downstream jobs)
+
+Quick test scripts included:
+- node scripts/test_ingest.js  — adds two duplicate test events and flushes the buffer (demonstrates unordered bulk behavior)
+- node scripts/watch_once.js  — starts a change stream and inserts a test doc; waits for one change then exits (used for verification attempt)
+
+Notes: Do NOT put real secrets in .env. The sample reads DOCUMENTDB_URI from env at runtime.
+
+## Verified by running
+
+- npm install: success (dependencies installed).
+- npm run setup: success (created/ensured index customer_event_unique on sample_customer_360_02.events).
+- documentdb_list_indexes (MCP): returned indexes including customer_event_unique (unique compound index on {customerId:1, eventId:1}).
+- npm run seed: success (200 upserts applied; reported nUpserted=200).
+- documentdb_find_documents (MCP): sampled documents from sample_customer_360_02.events; total_count reported 200.
+- node scripts/test_ingest.js: ran flush -> unordered bulkWrite inserted first op and reported Duplicate key violation for duplicate op as expected (other inserts succeeded).
+
+## Not verified
+
+- Change-stream end-to-end trigger (collection.watch): attempted scripts/watch_once.js but it timed out waiting for a change event even though the inserted document was present in the collection. Possible reasons: cluster-level change-stream setting, required resume token handling, driver/cluster mismatch, or networking permissions. I could not confirm change-stream events were received in this environment.
+- Exact recommended npm mongodb driver pin for Node 24 + MongoDB 7.0: I selected mongodb@^5.9.0 after an initial attempted pin failed at install time. The readiness report noted no single pinned driver version in docs; this selection is conservative and worked in this environment but is recorded under not_verified for absolute correctness against Microsoft recommendation.
+
+## Open issues
+
+- Change-stream verification failed (timeout). Confirm that the target cluster has change-streams enabled and that the connection user/role has permission to open change streams. Persisting and using resume tokens is recommended for production; this sample uses an in-memory watch (src/watch.js) and a small demo script (scripts/watch_once.js).
+- Recommend installing mongosh locally for ad-hoc inspection and troubleshooting (not present on PATH in this run environment). The documentdb MCP server was used instead for index and data verification.
+- Driver version selection: I used mongodb@^5.9.0 after npm rejected ^5.10.0. If the project wants a different major release (e.g., mongodb@6.x), update package.json and re-run npm install and test change-stream behavior against your cluster.
+
+## Files
+
+- `package.json`
+- `.gitignore`
+- `.env.example`
+- `README.md`
+- `src/db.js`
+- `src/setup.js`
+- `src/ingest.js`
+- `src/index.js`
+- `src/watch.js`
+- `scripts/seed.js`
+- `scripts/test_ingest.js`
+- `scripts/watch_once.js`
+

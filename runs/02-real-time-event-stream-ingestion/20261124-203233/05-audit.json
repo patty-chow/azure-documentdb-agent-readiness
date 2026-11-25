@@ -1,0 +1,661 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core prompt requirements: a Node.js (Express) ingestion service, unordered bulk writes with configurable batching, a compound unique index for deduplication, an idempotent seed, and a change-stream consumer that enqueues simulated downstream profile-update jobs. It follows several discovered best practices (singleton MongoClient, unordered bulkWrite, idempotent seed, index creation at startup). Shortcomings: change-stream resiliency (no persisted resume tokens, no backoff/retry), limited bulk-failure handling (no selective retry of retryable errors), incomplete .env.example (missing optional tunables), no offline-capable unit tests, and no IaC for provisioning mongoClusters. Change-stream end-to-end verification timed out in this environment (watch_once.js timed out despite inserted document being present); that is documented as an open issue and is likely due to cluster/permission or resume-token handling rather than the sample's wiring. See Requirement Results, Practice Checks and Doc Gaps for details and minimal fixes to get each item to 'met'.",
+  "requirement_results": [
+    {
+      "requirement": "The service is implemented in Node.js and exposes an entry point that receives customer behavioural events (page views, clicks, purchases) for ingestion.",
+      "status": "met",
+      "evidence": "app/src/index.js lines 15-23 (POST /events handler that accepts a JSON body and calls addEvents()).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Received events are grouped into batches and written to Azure DocumentDB through a MongoDB-compatible Node.js driver as unordered bulk operations.",
+      "status": "met",
+      "evidence": "app/src/ingest.js lines 5-6 (BATCH_SIZE/FLUSH_INTERVAL_MS), lines 48-66 (addEvents buffer and trigger flush), and lines 34-39 (bulkWrite(..., { ordered: false })).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A composite unique index on (customerId, eventId) is created in code on the collection that holds the events and is the mechanism used for deduplication.",
+      "status": "met",
+      "evidence": "app/src/setup.js line 9 (createIndex({ customerId: 1, eventId: 1 }, { unique: true, name: 'customer_event_unique' })); app/src/index.js ensures the same index on startup.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A change stream is opened in code against Azure DocumentDB.",
+      "status": "met",
+      "evidence": "app/src/watch.js line 13: const changeStream = coll.watch([], { fullDocument: 'updateLookup' });",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "Each change reported by the change stream triggers a downstream profile update job.",
+      "status": "met",
+      "evidence": "app/src/watch.js lines 15-23: change handler logs and simulates enqueue of profile-update job (log: 'Enqueued profile-update job').",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI placeholder (app/src/db.js lines 6-12 read process.env.DOCUMENTDB_URI and exit if unset). .gitignore includes .env so secrets are not committed.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": "app/.env.example lines 1-6 list DOCUMENTDB_URI, DATABASE_NAME, EVENTS_BATCH_SIZE, EVENTS_FLUSH_INTERVAL_MS, PORT. app/src/db.js references an optional MAX_POOL_SIZE env var (app/src/db.js lines 21-24) that is not present in .env.example.",
+      "cause": "builder_error",
+      "smallest_fix": "Add optional and recommended env variables to .env.example (e.g., MAX_POOL_SIZE, MAX_IDLE_TIME_MS, SERVER_SELECTION_TIMEOUT_MS, LOG_LEVEL, and any auth-mode toggle) with placeholder values and short comments."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not create or use vector indexes or embeddings.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If the sample will include vector search, add a clear ENV or config for EMBEDDING_DIM and create vector index payload with that dimension in the setup script."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index is created by the sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Document vector-index tuning guidance or add a sample vector-index creation snippet in src/setup.js with comments on parameters and where to change them."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/db.js lines 14-29 implement a process-wide singleton MongoClient and clientPromise; getDb awaits clientPromise (lines 32-35).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "app/scripts/seed.js uses updateOne with upsert:true in bulk ops (lines 23-24) and app/src/setup.js ensures the unique index (line 9). The builder ran npm run seed successfully (events show nUpserted=200).",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "No /search endpoint implemented in app/src/index.js.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a /search route that validates the query body and returns 400 for empty queries; wrap embedding calls in try/catch and return a 502/500 with a clear error message on embedding failure."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search endpoint or embedding workflow is implemented.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If search is added, include returned similarity scores in the response objects."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "partly_met",
+      "evidence": "This is a Node.js sample; dependencies are declared in package.json with semver ranges (e.g. \"mongodb\": \"^5.9.0\") and a package-lock.json is present which pins installed versions.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Document the supported driver version in README and commit package-lock.json (already present) or pin exact versions in package.json; for cross-language consistency, the README can note that package-lock.json pins transitive versions."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files or test runner present in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock the MongoDB driver or use mongodb-memory-server so tests run without a live cluster; document test steps in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "Repository contains no bicep/ARM/Terraform/azcli IaC files for Microsoft.DocumentDB/mongoClusters.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an example Bicep (or Terraform) snippet showing Microsoft.DocumentDB/mongoClusters and parameters (tier, storage, region) in an infra/ or infra/examples/ folder; mark it optional and mention run policy if the reader should not run it against production."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md lines 5-23 cover prerequisites, setup and run; README does not include explicit clean-up steps (e.g., how to remove created documents/collections or indexes).",
+      "cause": "builder_error",
+      "smallest_fix": "Add a 'Clean-up' section to README that shows commands to drop the events collection or remove seed data and instructions to delete any test artifacts."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "app/README.md line 3 uses 'Azure DocumentDB (MongoDB-compatible)'; package.json description references Azure DocumentDB.",
+      "cause": "none",
+      "smallest_fix": "n/a"
+    }
+  ],
+  "checks": [
+    {
+      "topic": "MongoClient singleton",
+      "practice": "Create and reuse a single MongoClient instance (process-wide singleton) rather than opening/closing clients per request, and await a single client.connect() promise at startup.",
+      "category": "Connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 14-29 implement a singleton client and clientPromise; getDb awaits clientPromise (lines 32-35).",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection tuning",
+      "practice": "Tune connection-pool and timeout settings to match the runtime and set retryReads/retryWrites and sensible timeouts.",
+      "category": "Connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/db.js sets maxPoolSize (line 23) and retryWrites:true (line 24).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "The sample should expose and document additional tuneable env vars (e.g., SERVER_SELECTION_TIMEOUT_MS, SOCKET_TIMEOUT_MS, maxIdleTimeMS) and set sensible defaults in getClient().",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Secrets from env",
+      "practice": "Read the cluster connection string from an environment variable at runtime and never commit credentials to source; provide a .env.example with a placeholder instead.",
+      "category": "Authentication & secrets",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python",
+      "status": "followed",
+      "evidence": "app/src/db.js lines 6-12 read DOCUMENTDB_URI from process.env and exit if not set; app/.env.example contains a placeholder for DOCUMENTDB_URI (app/.env.example lines 1-3); .gitignore includes .env.",
+      "source": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Use Azure DocumentDB with MongoDB driver for Python",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound unique index",
+      "practice": "Create a composite unique index on (customerId, eventId) so duplicate events are rejected at write time, and name it so you can manage it reliably.",
+      "category": "Indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/setup.js line 9 creates the index; app/src/index.js also ensures the same index at startup.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent bootstrap",
+      "practice": "Make index and collection setup idempotent in a bootstrap step so repeated runs check for and create only missing indexes/collections instead of failing.",
+      "category": "Provisioning / setup",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/setup.js uses createIndex (idempotent) and app/scripts/seed.js uses upsert bulk ops so seed can be re-run (scripts/seed.js line 23-24).",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unordered bulk writes",
+      "practice": "For high-throughput ingestion set bulk writes to unordered (ordered:false) to maximize throughput and treat duplicate-key errors (11000) as expected individual failures rather than aborting the whole batch.",
+      "category": "Bulk operations",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes",
+      "status": "followed",
+      "evidence": "app/src/ingest.js lines 34-39 uses bulkWrite(..., { ordered: false }); test script scripts/test_ingest.js demonstrated unordered bulk behavior (events show Duplicate key violation logged but other ops succeeded).",
+      "source": "Optimize write performance in Azure DocumentDB for MongoDB",
+      "searched": "",
+      "fix": "Consider explicitly inspecting BulkWriteResult or catching MongoBulkWriteError and treating duplicate-key errors as expected (log count) and retrying only retryable errors.",
+      "sources": [
+        {
+          "title": "Optimize write performance in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#reduce-the-number-of-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Batch sizing",
+      "practice": "Limit per-process batch sizes for bulk writes (tune around ~1,000 documents per process/thread as a sensible starting point).",
+      "category": "Bulk operations / performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#tune-for-the-optimal-batch-size-and-thread-count",
+      "status": "followed",
+      "evidence": "app/src/ingest.js line 5 sets BATCH_SIZE default to 1000 and exposes ENV EVENTS_BATCH_SIZE.",
+      "source": "Optimize write performance in Azure DocumentDB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Optimize write performance in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/optimize-write-performance#tune-for-the-optimal-batch-size-and-thread-count"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent eventId",
+      "practice": "Design ingestion idempotently by including an application-level unique eventId (and a deduplication unique index) so retries don't create duplicate logical events.",
+      "category": "Data modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "app/src/ingest.js lines 52-56 assign a default eventId if not provided; seed creates eventId values. The unique index on (customerId, eventId) enforces deduplication.",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Upsert usage",
+      "practice": "Use upsert where appropriate for idempotent writes, but use it judiciously in high-throughput paths.",
+      "category": "Data modeling & writes",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/how-to-javascript-manage-documents#update-a-document",
+      "status": "followed",
+      "evidence": "scripts/seed.js uses updateOne with upsert:true for idempotent seed (lines 23-24). In production ingest path the app uses unordered inserts (ingest.js lines 34-39), which is an acceptable design trade-off.",
+      "source": "Manage a document in Azure Cosmos DB for MongoDB using JavaScript",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage a document in Azure Cosmos DB for MongoDB using JavaScript",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/how-to-javascript-manage-documents#update-a-document"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transactions for ingestion",
+      "practice": "Avoid multi-document transactions for high-throughput ingestion; prefer single-document writes and idempotent design.",
+      "category": "Transactions",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "The app does not use multi-document transactions; it uses unordered bulk inserts and upserts for seed. The discovered practice P11 was marked prior_knowledge_only (no Azure DocumentDB doc explicitly advising 'avoid transactions').",
+      "source": "prior_knowledge_only",
+      "searched": "searches for guidance on avoiding multi-document transactions for ingestion returned no authoritative Azure DocumentDB doc",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A public document that explicitly discusses transaction trade-offs for high-throughput ingestion in Azure DocumentDB would let agents evaluate this more confidently."
+    },
+    {
+      "topic": "Resume tokens",
+      "practice": "Persist and periodically checkpoint change-stream resume tokens so a consumer can resume after crashes.",
+      "category": "Change streams / streaming",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream",
+      "status": "violated",
+      "evidence": "app/src/watch.js opens a change stream but does not persist resume tokens; changeStream.on('change', ...) does not checkpoint lastResumeToken. scripts/watch_once.js timed out during verification (events show a timeout), and watch.js exits on error (lines 29-32) rather than implementing durable resume logic.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Persist change.stream.resumeToken (or change._id) to a durable store (collection or external store) after successful processing; on restart use resumeAfter or startAtOperationTime. Add retry/backoff on transient errors.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams#resume-a-change-stream"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change-stream options & resiliency",
+      "practice": "Open change streams with appropriate pipeline/options and monitor resumability; implement backoff/retry on transient errors.",
+      "category": "Change streams / reliability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams",
+      "status": "violated",
+      "evidence": "app/src/watch.js uses coll.watch([], { fullDocument: 'updateLookup' }) (line 13) but lacks resumeAfter/startAtOperationTime handling, no maxAwaitTimeMS, and the error handler exits the process (lines 29-32) instead of implementing exponential backoff and restart logic.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Implement a restart loop that records the last resume token, handles resumable vs non-resumable errors, uses exponential backoff with jitter on retry, and configures options like maxAwaitTimeMS and fullDocument per workload.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Parallel change-streams",
+      "practice": "When scaling change-stream consumption, parallelize by obtaining per-physical-partition resume tokens (GetChangeStreamTokens) and run watchers per token.",
+      "category": "Change streams / scaling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/custom-commands#parallelizing-change-streams",
+      "status": "not_applicable",
+      "evidence": "Sample targets a single-process demo watcher; it does not attempt cluster-scale parallel consumption.",
+      "source": "Use MongoDB extension commands to manage data stored in Azure Cosmos DB for MongoDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use MongoDB extension commands to manage data stored in Azure Cosmos DB for MongoDB",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/custom-commands#parallelizing-change-streams"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change-stream debugging",
+      "practice": "If change-stream tests time out, verify cluster-level support and account roles/permissions and add diagnostic logs and short-lived test streams to capture resume tokens.",
+      "category": "Debugging / change streams",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams#limitations",
+      "status": "followed",
+      "evidence": "The repo includes a short-lived test script scripts/watch_once.js that attempts to insert a doc and wait for a change (scripts/watch_once.js). The builder recorded the test timed out (events show a timeout) and documented it in builder_report/open_issues.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "Record resume tokens and additional diagnostics when watch_once times out to capture the cluster response and any non-resumable error codes.",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams#limitations"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring & diagnostics",
+      "practice": "Enable diagnostic settings and slow-query logs; alert on cluster-level saturation metrics.",
+      "category": "Monitoring & diagnostics",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Sample is a small demo and does not set up cluster monitoring or diagnostic-config; monitoring is out-of-scope for this sample repo.",
+      "source": "documentdb-monitoring",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-monitoring",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/monitoring/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index budget",
+      "practice": "Avoid creating many large or wide compound indexes that include low-selectivity fields and keep an index budget to reduce write amplification.",
+      "category": "Indexing / performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "Sample creates a single, focused unique compound index on (customerId, eventId) (setup.js line 9) and no other wide indexes.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Bulk failure handling",
+      "practice": "Examine BulkWriteResult/writeErrors on partial bulk failures and retry only the failed operations that are retryable.",
+      "category": "Bulk operations / retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P23",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/bulk-executor-java#bulk-execution-in-azure-cosmos-db",
+      "status": "violated",
+      "evidence": "app/src/ingest.js calls bulkWrite and in its catch block logs the error (lines 40-42) but does not inspect err.writeErrors or retry retryable ops selectively.",
+      "source": "Perform bulk operations on Azure Cosmos DB data",
+      "searched": "",
+      "fix": "On MongoBulkWriteError inspect err.writeErrors, filter out duplicate-key errors (11000) and only retry retryable errors; consider returning failed-op ids to a retry queue.",
+      "sources": [
+        {
+          "title": "Perform bulk operations on Azure Cosmos DB data",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/bulk-executor-java#bulk-execution-in-azure-cosmos-db"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Least privilege auth",
+      "practice": "Prefer Microsoft Entra ID / managed identities with RBAC for service authentication and avoid long-lived credentials.",
+      "category": "Security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "Sample reads credentials from DOCUMENTDB_URI env; README warns not to commit real secrets (README lines 38-40).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "Add a README section describing Microsoft Entra ID as a recommended option for production and give an example OIDC/MONGODB-OIDC connection string or link to the Entra ID docs so authors can adopt least-privilege auth.",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Document size limits",
+      "practice": "Make event documents small (stay well under the 16 MB BSON limit).",
+      "category": "Data modeling / limits",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md",
+      "status": "followed",
+      "evidence": "seed documents in scripts/seed.js contain small payload fields (payload:{ idx: i }), and default ingestion normalizes payload to an object (ingest.js lines 52-58).",
+      "source": "documentdb-data-modeling",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-data-modeling",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/data-modeling/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries & backoff",
+      "practice": "Normalize exponential backoff with jitter for retries and respect server retry-after headers for rate-limited responses.",
+      "category": "Retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P27",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "violated",
+      "evidence": "ingest.flush() catch block logs errors but does not implement retry/backoff policy (app/src/ingest.js lines 40-42).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "Implement idempotent retry mechanism with exponential backoff and jitter for retryable write failures; consider an outbox/queue for permanent retries.",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Change-stream platform guidance",
+      "practice": "Azure DocumentDB exposes MongoDB change streams as the recommended change feed mechanism for MongoDB-compatible workloads.",
+      "category": "Change streams / platform integration",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P28",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/change-streams",
+      "status": "followed",
+      "evidence": "The sample uses MongoDB change streams (app/src/watch.js) consistent with the service doc guidance.",
+      "source": "Change streams in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Change streams in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/change-streams"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator choice; events.jsonl shows the build proceeded with documented gaps and verification; the decision is supported."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "The choice of Node.js with Express is implemented (app/src/index.js uses Express). The logged decision matches the code and events show Express files were written and tested."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "wrong",
+      "comment": "Decision selected mongodb@^5.10.0 (reason_source: model_default) but npm install failed for ^5.10.0 (events.jsonl shows 'No matching version found for mongodb@^5.10.0'). The tool trace records the failure; the decision was not viable."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Decision to read the connection string from DOCUMENTDB_URI matches app/src/db.js lines 6-12 and is consistent with skills guidance; events show the behavior."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Decision to use the pre-provisioned cluster is consistent with the run environment and the build (no infra provisioning attempted); events show operations against the provided cluster (index creation, seed)."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Decision to use unordered bulkWrite for ingestion and upserts for idempotent seed is implemented (app/src/ingest.js uses unordered bulkWrite; scripts/seed.js uses upsert bulk ops)."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "Decision to create the compound unique index customer_event_unique is implemented (app/src/setup.js and index.js ensure the index) and verified via documentdb_list_indexes in events.jsonl."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "Choice of default batch size 1000 (EVENTS_BATCH_SIZE) is reflected in app/src/ingest.js and exposed by .env.example; this is a conservative default and was tested via scripts/test_ingest.js."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "Decision to change the driver dependency to mongodb@^5.9.0 is recorded and validated by a successful npm install (events.jsonl shows npm install succeeded after the change). The decision is supported by the tool trace."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Complete .env.example",
+      "what_was_missing": "The repository's .env.example lists only DOCUMENTDB_URI, DATABASE_NAME, EVENTS_BATCH_SIZE, EVENTS_FLUSH_INTERVAL_MS, and PORT. It omits optional and recommended tunables referenced in code (e.g., MAX_POOL_SIZE) and connection-timeout settings.",
+      "where_searched": "Inspected app/.env.example and app/src/db.js. Reviewed documentdb-connection skill docs for recommended env tunables.",
+      "effect_on_this_build": "Led to a partly-complete configuration example; users copying .env.example may miss important tuning knobs such as MAX_POOL_SIZE or timeout env variables, potentially causing suboptimal connection behavior.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Add an expanded .env.example that lists required and optional settings with placeholders and short comments: DOCUMENTDB_URI, DATABASE_NAME, EVENTS_BATCH_SIZE, EVENTS_FLUSH_INTERVAL_MS, PORT, MAX_POOL_SIZE, MAX_IDLE_TIME_MS, SERVER_SELECTION_TIMEOUT_MS, SOCKET_TIMEOUT_MS, LOG_LEVEL, AUTH_MODE_HINT. Include a one-paragraph note in README explaining which to tune for local dev vs production.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Driver-version recommendation & sample pinning",
+      "what_was_missing": "There is no single, authoritative driver version recommended for Node.js 24 + MongoDB 7.0 in Microsoft Learn; the builder initially chose ^5.10.0 which failed to install and then settled on ^5.9.0. The docs and quickstarts show tested driver versions in some tutorials but no single pinned recommendation.",
+      "where_searched": "Microsoft Learn quickstarts and compatibility docs (quickstart-nodejs, Mongoose quickstarts) and readiness findings.",
+      "effect_on_this_build": "The builder attempted to pin to a non-existent npm version, delaying installs and requiring a follow-up decision (D009). Consumers copying the sample may be unsure which major driver version to pin for full change-stream support.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Tested driver versions' section in the quickstart README that states the driver major/minor tested with Node 24 (e.g., 'Tested with mongodb@5.9.x; update to the latest 5.x if available; see the Node quickstart for per-driver notes'). Also add a line in the documentdb-driver skill referencing an explicit recommended npm driver version for Node 24.",
+      "priority": "high"
+    },
+    {
+      "topic": "Change-stream resume-token guidance and sample code",
+      "what_was_missing": "The sample opens a change stream but does not persist resume tokens or implement a restart/backoff policy; the quick verification timed out in this environment. Public docs explain resumeAfter/startAtOperationTime but the sample does not demonstrate checkpointing.",
+      "where_searched": "Inspected app/src/watch.js and scripts/watch_once.js; reviewed Microsoft Learn 'Change streams in Azure DocumentDB' and documentdb-change-streams guidance.",
+      "effect_on_this_build": "Caused incomplete verification of end-to-end change-stream behavior in this run; a developer following the sample may run into missed events or inability to resume after process failure without extra code.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a short sample to src/watch.js (or src/watch_persistent.js) that writes the last resume token to a durable 'watch_checkpoints' collection after processing each change; on startup the watcher should read the last token and call coll.watch({ }, { resumeAfter: token }). Also provide a small README section explaining resumability, example token schema, and how to test locally (watch_once with token snapshot).",
+      "priority": "high"
+    },
+    {
+      "topic": "Bulk-write partial-failure handling",
+      "what_was_missing": "The ingest path does unordered bulk writes but does not inspect individual writeErrors to retry only retryable failures (it only logs the error). The public guidance recommends inspecting BulkWriteResult/writeErrors and not re-running whole batches.",
+      "where_searched": "Inspected app/src/ingest.js and searched Microsoft Learn bulk-write guidance and the documentdb-agent-kit for best-practice handling of bulk failures.",
+      "effect_on_this_build": "Leaves production ingestion fragile: transient or rate-limit failures are not retried in an idempotent, selective way; duplicate-key errors are not explicitly counted or surfaced for monitoring.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a helper that, given a BulkWriteResult or MongoBulkWriteError, extracts writeErrors and partitions them into non-retryable (duplicate-key 11000) and retryable sets. Retry only the retryable operations with backoff; record metrics for duplicate-key counts. Provide example code and tests.",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC: example for Microsoft.DocumentDB/mongoClusters",
+      "what_was_missing": "The sample repo contains no Bicep/Terraform example using the Microsoft.DocumentDB/mongoClusters resource type. Readiness findings show several agents confuse databaseAccounts (Cosmos/RU) with the vCore mongoClusters resource.",
+      "where_searched": "Repo files, and Microsoft Learn 'mongoClusters' docs during readiness scanning.",
+      "effect_on_this_build": "No direct effect on the runtime sample (build used an existing cluster), but omission can mislead users about how to provision the vCore DocumentDB product or cause them to use the wrong resource type.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Add infra/examples/mongocluster.bicep (and a Terraform example) that shows minimal mongoClusters creation with parameters for tier (M30), storage, and firewall/Private Endpoint options. Include a README note 'Do not run without explicit approval' and explain how to get a pre-provisioned cluster for sample verification.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Tests without live cluster",
+      "what_was_missing": "No unit tests or test fixtures that can run without a live cluster (e.g., mocked MongoDB or in-memory server).",
+      "where_searched": "Repository 'tests' or 'spec' directories; none found. Reviewed local-deployment skill for recommended local gateway image.",
+      "effect_on_this_build": "Makes CI/testability harder; contributors cannot run automated tests without a cluster or extra local infra.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a lightweight test suite using jest/mocha that uses mongodb-memory-server or sinon/mocks for the MongoClient to exercise addEvents, flush, and error paths. Document commands in README.",
+      "priority": "medium"
+    },
+    {
+      "topic": "DocumentDB vs Cosmos naming & CLI guidance",
+      "what_was_missing": "Agent readiness analysis found frequent confusion between Azure DocumentDB (vCore mongoClusters) and Azure Cosmos DB (databaseAccounts/RU). Quickstarts and agent skills should make this distinction more prominent.",
+      "where_searched": "Readiness findings and Microsoft Learn; several CLI/Bicep docs differ between mongoClusters and databaseAccounts.",
+      "effect_on_this_build": "Risk that a user following an IaC example or CLI guidance could deploy or target the wrong resource type.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Add a brief 'Which service is this sample for?' note in README and agent skills that explicitly maps: 'use Microsoft.DocumentDB/mongoClusters for vCore DocumentDB; use Microsoft.DocumentDB/databaseAccounts for Cosmos DB RU-based API' with links.",
+      "priority": "high"
+    }
+  ]
+}
