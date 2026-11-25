@@ -1,0 +1,542 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements the core starter-prompt requirements: a Node.js + Mongoose service, a single interactions collection, the two compound indexes, a seed script that upserts idempotently, a cursor-based paginated history endpoint, and a channel-breakdown aggregation. The app reads DOCUMENTDB_URI from the environment and supplies .env.example. Verification steps (npm run seed, npm run test-queries) and a DocumentDB MCP index listing were performed against the live cluster. Findings: several gallery expectations beyond the prompt were omitted (no unit tests that run offline, no IaC for the cluster, missing projection on history queries, no explicit production autoIndex disabling and only minimal retry/backoff handling). A number of product-team best practices are present and discoverable; a few checklist items (driver pinning guidance, test guidance, IaC examples) are not documented or were hard to find and should be added to the public docs or agent kit.",
+  "requirement_results": [
+    {
+      "requirement": "Service is Node.js and uses Mongoose: one Mongoose schema and model describes a customer interaction document, backed by a single Azure DocumentDB collection holding interactions from every channel.",
+      "status": "met",
+      "evidence": "app/src/models/interaction.js (lines 3-12 defines InteractionSchema; option { collection: 'interactions' } present) and package.json lists mongoose dependency.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Interaction schema has channel, customerId and timestamp fields, with channel identifying the source of the interaction.",
+      "status": "met",
+      "evidence": "app/src/models/interaction.js (customerId: line 5, channel: line 6, timestamp: line 7)",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Interactions from any channel are stored through that same model (e.g. a create endpoint or model method that saves an interaction document).",
+      "status": "met",
+      "evidence": "scripts/seed.js uses Interaction.updateOne(..., { upsert: true }) to store sample documents (scripts/seed.js lines 26-29).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A compound index on (customerId, timestamp) is declared on the Mongoose schema and created on the Azure DocumentDB collection by the application.",
+      "status": "met",
+      "evidence": "app/src/models/interaction.js lines 14-16 declare InteractionSchema.index({ customerId: 1, timestamp: -1 }); app/src/index.js line 28 calls Interaction.syncIndexes(); scripts/seed.js line 23 also syncs indexes.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A compound index on (channel, timestamp) is declared on the Mongoose schema and created on the Azure DocumentDB collection by the application.",
+      "status": "met",
+      "evidence": "app/src/models/interaction.js line 16 declares InteractionSchema.index({ channel: 1, timestamp: -1 }); index creation synced at startup (src/index.js line 28) and in the seed script (scripts/seed.js line 23).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The history endpoint returns a customer's interactions filtered by customerId and sorted by timestamp, and is paginated (cursor or skip).",
+      "status": "met",
+      "evidence": "app/src/index.js lines 49-76 implement GET /interactions/history with a base64 cursor (timestamp + _id), sort { timestamp: -1, _id: -1 } and nextCursor returned.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The channel-breakdown endpoint runs a Mongoose aggregation pipeline grouping interactions by channel and optionally scoped to a customerId.",
+      "status": "met",
+      "evidence": "app/src/index.js lines 78-86 build a pipeline with optional $match on customerId, then $group and $project, and call Interaction.aggregate(...).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/src/index.js line 10 reads process.env.DOCUMENTDB_URI; app/.env.example contains a placeholder (app/.env.example lines 1-4); no credentials in repo.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains a placeholder DOCUMENTDB_URI and an SRV-style example comment (app/.env.example lines 1-4).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample does not add vector/embedding fields or any vector index; not relevant here.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index created by this sample; README does not mention vector index tuning.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "app/src/index.js connect() calls mongoose.connect(...) once at startup (lines 16-26) and the server is started after connect(); the Interaction model is then reused across handlers.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "scripts/seed.js calls Interaction.syncIndexes() (line 23) and uses Interaction.updateOne(..., { upsert: true }) per document (line 27) to ensure idempotent upserts.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "The application does not implement a /search endpoint; no embedding calls or error-handling for search cases exist in code.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If /search is desired, add a route (e.g. GET /search) that validates the query parameter and returns 400 for empty queries; wrap the embedding service call in try/catch and return a user-facing error (e.g. 502 / 'embedding service failed') while logging full diagnostics. Alternatively remove the requirement from the gallery checklist for samples that do not implement search."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No /search endpoint or vector search implemented in this sample.",
+      "cause": "prompt_silent",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt.",
+      "status": "partly_met",
+      "evidence": "This is a Node.js sample. package.json lists semver ranges and a package-lock.json is present which pins exact installed versions (app/package-lock.json present). There is no requirements.txt (Python-specific).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Update the gallery checklist to use node-specific guidance (require a committed package-lock.json or npm-shrinkwrap) or, minimally, commit package-lock.json and note in the README that the lockfile pins dependencies."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "Repository contains no test suite; no mocking or in-memory MongoDB-based tests are present.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a test folder with unit tests that use an in-memory MongoDB (e.g., mongodb-memory-server) or mock Mongoose, and a test script (npm test) that passes without a live cluster."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC files (Bicep/ARM/Terraform) are present in the repository.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Supply a small Bicep or ARM template (or Terraform example) that provisions Microsoft.DocumentDB/mongoClusters with defaults (region, tier M30, storage) and document the az/az documentdb CLI commands to create and retrieve connection strings. Recommend the 'documentdb-azure-deployment' skill to authors."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "app/README.md documents what the sample shows, prerequisites, setup, and run (lines 3-13, 15-20) but does not include an explicit clean-up step (no 'how to drop the sample DB/collection' or 'teardown' command).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a brief 'Clean-up' section to README describing how to remove the sample data (e.g., run a script to drop the sample database or delete the interactions collection), and any Azure resource cleanup notes if IaC is added."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README and comments use the term 'Azure DocumentDB' (app/README.md lines 3, and .env.example comment). No references to Amazon DocumentDB or legacy product names are present.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create a single shared MongoClient/Mongoose connection per process and reuse it rather than opening a client per request; size the pool for expected concurrency.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project",
+      "status": "followed",
+      "evidence": "app/src/index.js connect() calls mongoose.connect(...) once at startup (lines 16-26); server started after connect() (lines 90-92).",
+      "source": "documentdb-connection skill",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "TLS & connection security",
+      "practice": "Always connect with TLS enabled and do not disable certificate validation in production.",
+      "category": "connection_handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/security",
+      "status": "followed",
+      "evidence": "Repository does not disable TLS; .env.example shows an SRV example with tls=true and authMechanism (app/.env.example lines 2-4). No code sets tlsAllowInvalidCertificates.",
+      "source": "documentdb-security skill",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Security — Azure DocumentDB (transport security / TLS)",
+          "url": "https://learn.microsoft.com/azure/documentdb/security"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index ESR",
+      "practice": "Create compound indexes using the ESR rule; for history queries prefer { customerId: 1, timestamp: -1 } and { channel: 1, timestamp: -1 }.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/indexing#compound-indexes",
+      "status": "followed",
+      "evidence": "app/src/models/interaction.js lines 14-16 declare the required compound indexes; Interaction.syncIndexes() is called at startup (src/index.js line 28) and in the seed script (scripts/seed.js line 23). documentdb_list_indexes output in events confirms the indexes were created.",
+      "source": "documentdb-indexing skill",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Strategies — Azure DocumentDB (compound index / ESR)",
+          "url": "https://learn.microsoft.com/azure/documentdb/indexing#compound-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Cursor pagination (no skip)",
+      "practice": "For large-offset pagination avoid skip-based paging; use cursor (keyset) pagination using the compound index and return an opaque resume token.",
+      "category": "queries_and_pagination",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#define-the-product-model",
+      "status": "followed",
+      "evidence": "app/src/index.js implements base64-encoded cursor with {ts, id} (encodeCursor/decodeCursor lines 31-47) and the history route uses a keyset filter on timestamp and _id to return pageSize+1 (lines 60-73).",
+      "source": "documentdb-connection / tutorial",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#define-the-product-model"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotency",
+      "practice": "Make seed/import scripts idempotent by using upsert operations to avoid duplicate documents on repeated runs.",
+      "category": "data_loading",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/update#examples",
+      "status": "followed",
+      "evidence": "scripts/seed.js iterates sample-data.json and uses Interaction.updateOne({ interactionId }, { $set: doc }, { upsert: true }) (scripts/seed.js lines 26-28), printing 'Upserted' for each document.",
+      "source": "learn.microsoft.com updateUpsert examples",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Updating data in Azure Cosmos DB for MongoDB (update / upsert examples)",
+          "url": "https://learn.microsoft.com/documentdb/query/commands/query-and-write/update#examples"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Timestamps as Date",
+      "practice": "Store timestamps as Date/ISODate (UTC) values and index the timestamp field.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/date-expression/$week",
+      "status": "followed",
+      "evidence": "InteractionSchema defines timestamp: { type: Date, required: true } (app/src/models/interaction.js line 7). test_queries.js output shows timestamp values as Date objects (events logs of test-queries).",
+      "source": "learn.microsoft.com date guidance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Date operators and examples (ISODate usage)",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/date-expression/$week"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Schema validation",
+      "practice": "Use database-side JSON Schema validators or application schemas (Mongoose schemas) to enforce required fields and basic structure.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema#supported-keywords",
+      "status": "followed",
+      "evidence": "The application uses a Mongoose schema with required fields and enums (app/src/models/interaction.js lines 3-12) to enforce shape at the application level.",
+      "source": "documentdb JSON Schema docs / skill",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "$jsonSchema (validation) — Azure DocumentDB",
+          "url": "https://learn.microsoft.com/documentdb/query/operators/evaluation-query/$jsonschema#supported-keywords"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Disable autoIndex in production",
+      "practice": "Disable automatic Mongoose index creation (autoIndex: false) in production and create indexes explicitly during deployment.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#start-the-application",
+      "status": "violated",
+      "evidence": "The sample calls Interaction.syncIndexes() at startup (app/src/index.js line 28) and in scripts/seed.js line 23, but does not set autoIndex: false or explicitly configure autoIndex behavior for production in mongoose.connect options.",
+      "source": "documentdb-indexing / Mongoose guidance",
+      "searched": "",
+      "fix": "Set autoIndex:false in production config (e.g., mongoose.connect(..., { autoIndex: false }) or set the schema option { autoIndex: false } and run createIndexes/syncIndexes as an explicit idempotent deployment step).",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (index creation guidance)",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-nodejs-mongoose#start-the-application"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Aggregation filter order",
+      "practice": "Make aggregation endpoints efficient by filtering ($match) on indexed fields first, then using $group / $sort so the pipeline can rely on indexes and avoid full scans.",
+      "category": "queries_and_pagination",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/optimize-cost-reads-writes#query-operations",
+      "status": "followed",
+      "evidence": "GET /interactions/channel-breakdown builds pipeline with $match on customerId (an indexed field) when provided, then $group and $project (app/src/index.js lines 81-86).",
+      "source": "documentdb-query-optimizer skill",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Optimize request cost in Azure Cosmos DB (queries and indexing guidance)",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/optimize-cost-reads-writes#query-operations"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection to reduce RU",
+      "practice": "Project only required fields in queries and aggregations to lower RU consumption and network payloads.",
+      "category": "queries_and_pagination",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/understand-request-unit-consumption#document-operations-and-request-units",
+      "status": "violated",
+      "evidence": "History endpoint returns full documents from Interaction.find(...) with no projection (app/src/index.js line 70). test_queries.js also queries without projection (scripts/test_queries.js line 17).",
+      "source": "learn.microsoft.com RU guidance",
+      "searched": "",
+      "fix": "Apply a projection to history queries (e.g., Interaction.find(filter).select({ interactionId:1, customerId:1, channel:1, timestamp:1, subject:1 }).sort(...)).",
+      "sources": [
+        {
+          "title": "Understand request units consumption in Azure Cosmos DB (projection affects RU)",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/understand-request-unit-consumption#document-operations-and-request-units"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retry and transient errors",
+      "practice": "Handle rate limits and transient errors by implementing retries with exponential backoff and jitter, honoring the service's retry headers.",
+      "category": "retries_and_resilience",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/troubleshoot-request-rate-too-large#request-rate-is-large",
+      "status": "violated",
+      "evidence": "mongoose.connect includes retryWrites:true (src/index.js line 25) but the app does not implement per-operation retry/backoff logic or inspect Retry-After headers for throttling. No retry wrapper is used for read/aggregate operations in routes.",
+      "source": "learn.microsoft.com retry guidance",
+      "searched": "",
+      "fix": "Add retry logic for transient errors (exponential backoff with jitter) for long-running queries/aggregations or handle 429s by reading Retry-After/x-ms-retry-after-ms headers; consider using a retry library or the driver's built-in retryable writes plus explicit retry on read/aggregate operations.",
+      "sources": [
+        {
+          "title": "Diagnose and troubleshoot \"Request rate too large\" (429) exceptions",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/troubleshoot-request-rate-too-large#request-rate-is-large"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Monitoring & explain()",
+      "practice": "Run explain() / executionStats for representative queries during development to confirm intended indexes are used and to detect COLLSCANs.",
+      "category": "monitoring_and_diagnostics",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P21",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/indexing#compound-indexes",
+      "status": "not_assessable",
+      "evidence": "The developer used DocumentDB MCP tooling to list indexes (documentdb_list_indexes event) and ran sample queries, but the app does not include a script that runs explain() for representative queries; no explain() calls are present in code.",
+      "source": "documentdb-monitoring skill",
+      "searched": "",
+      "fix": "Add a small dev script (e.g., scripts/explain_queries.js) that runs .explain('executionStats') on representative queries and prints index usage so reviewers and CI can detect COLLSCANs.",
+      "sources": [
+        {
+          "title": "Indexing Strategies — Azure DocumentDB (compound index / explain example)",
+          "url": "https://learn.microsoft.com/azure/documentdb/indexing#compound-indexes"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Channel discriminator",
+      "practice": "Include a lightweight 'channel' discriminator and design indexes (channel + timestamp) around access patterns.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P20",
+      "source_url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/connect-using-mongoose#best-practices-for-using-mongoose-with-azure-cosmos-db",
+      "status": "followed",
+      "evidence": "Interaction schema includes channel enum and a compound index on { channel:1, timestamp:-1 } (app/src/models/interaction.js lines 6 and 16).",
+      "source": "documentdb Mongoose guidance",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Mongoose with Azure DocumentDB: Build a Node.js inventory API (discriminators / one-collection patterns)",
+          "url": "https://learn.microsoft.com/azure/cosmos-db/mongodb/connect-using-mongoose#best-practices-for-using-mongoose-with-azure-cosmos-db"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Index creation idempotent",
+      "practice": "Make index creation idempotent in setup scripts (createIndexes) and avoid dropping/recreating indexes in production.",
+      "category": "provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P24",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field",
+      "status": "followed",
+      "evidence": "The app calls Interaction.syncIndexes() during startup (src/index.js line 28) and in the seed script (scripts/seed.js line 23), which creates indexes idempotently.",
+      "source": "documentdb indexing docs",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Indexing Best Practices in Azure DocumentDB (createIndex guidance)",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-create-indexes#for-multiple-indexes-created-on-historical-data,-issue-nonblocking-createindex-commands-for-each-field"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Return minimal error details",
+      "practice": "Return minimal error details to callers while logging full diagnostics to protected logs.",
+      "category": "security_and_observability",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P25",
+      "source_url": "https://learn.microsoft.com/azure/architecture/best-practices/monitoring#instrument-an-application",
+      "status": "violated",
+      "evidence": "Startup connect().catch prints the full error to console and exits (app/src/index.js lines 92-95). API routes lack an express error handler that maps internal errors to minimal responses. No logging configuration or protected diagnostics pipeline is present.",
+      "source": "documentdb-monitoring/security best practices",
+      "searched": "",
+      "fix": "Add an Express error handler that returns minimal error messages (e.g., { error: 'internal server error' }) while logging stack and diagnostics to a protected log sink; avoid returning connection strings or internal stack traces to callers.",
+      "sources": [
+        {
+          "title": "Best practices for monitoring and diagnostics (don't log secrets / scrub logs)",
+          "url": "https://learn.microsoft.com/azure/architecture/best-practices/monitoring#instrument-an-application"
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "unverifiable",
+      "comment": "Decision D001 records approval with readiness 'ready_with_gaps' and cites operator as the reason source. There is no trace in events.jsonl that provides supporting evidence for the approval text beyond the decision file itself, so the rationale can't be checked here."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "D002: The choice of Node.js + Express + Mongoose is exactly what the prompt requested and the code implements it (package.json, src/index.js, src/models/interaction.js). The events trace shows the decision was logged."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "D003: The builder selected Mongoose ^7 (package.json lists \"mongoose\": \"^7.6.0\"). The decision reason is 'model_default' (no authoritative doc recommended this exact range). The readiness report flagged a documentation gap about exact recommended Mongoose driver pinning for wire protocol versions; choosing ^7.x is defensible but not grounded in a public guidance page, so the reason is questionable."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "D004: The code reads DOCUMENTDB_URI from the environment (src/index.js line 10) and .env.example is provided. The events log shows this decision was recorded and implemented."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "D005: The builder did not provision new resources and used the provided cluster. The run log shows npm run seed and test-queries executed against the live cluster via DOCUMENTDB_URI; no provisioning steps were executed."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "D006: Cursor-based pagination (timestamp + _id encoded base64) was implemented (src/index.js lines 31-47 and 60-73). The events trace contains the recorded decision and the code matches it."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "D007: The code declares and creates the two required compound indexes; schema indexes are in src/models/interaction.js lines 14-16 and syncIndexes() is invoked (src/index.js line 28). Verified by documentdb_list_indexes in events."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "D008: Requiring DOCUMENTDB_URI and providing .env.example was implemented (app/.env.example and env checks in src/index.js). The event trace shows the write_actions and file creation logs."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "D009: Tuned connection options (maxPoolSize, timeouts) were set in mongoose.connect in src/index.js lines 18-26. The build loaded the documentdb-connection skill prior to making these choices (events show load_skill), so the decision is grounded in skill guidance."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Mongoose driver version compatibility",
+      "what_was_missing": "Authoritative public guidance stating the recommended exact Mongoose/mongodb-driver version (or minimal tested version) for Node.js 24 and MongoDB wire protocol 7.0/8.0 on Azure DocumentDB.",
+      "where_searched": "Readiness searches and skill documents; readiness findings flagged the missing guidance. Searches used Learn (terms: 'Mongoose version compatibility Node 24 MongoDB wire protocol 7.0') and the documentdb skills but found no pinned recommendation.",
+      "effect_on_this_build": "The builder used a model-default choice (^7.x). This leaves ambiguity and produces a decision recorded as 'model_default' rather than grounded in a public doc.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short guidance page 'Driver compatibility and recommended versions' that lists supported Node versions, recommended Mongoose major/minor versions, and mapping to the cluster's supported MongoDB wire-protocol versions. Include example package.json snippets and a CI check that fails if an unsupported driver version is used.",
+      "priority": "high"
+    },
+    {
+      "topic": "Unit test template for samples (offline)",
+      "what_was_missing": "A lightly opinionated test template and guidance for writing unit tests that run without a live Azure DocumentDB cluster (using mongodb-memory-server or mock techniques).",
+      "where_searched": "Searches for 'DocumentDB samples tests offline mongodb-memory-server' and installed sample guidance; no ready-to-copy test template was found for DocumentDB samples.",
+      "effect_on_this_build": "The sample contains no tests. Authors are likely to omit tests unless a ready template or a required checklist item exists.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Provide an example test directory with 2–3 Jest/Mocha tests that use mongodb-memory-server or sinon to mock Mongoose, plus instructions in README and an npm test script. Include a short demonstration for verifying schema validation, pagination logic, and aggregation without a live cluster.",
+      "priority": "high"
+    },
+    {
+      "topic": "IaC example for Microsoft.DocumentDB/mongoClusters",
+      "what_was_missing": "A short, copy-pasteable Bicep/ARM and Terraform example showing how to deploy an Azure DocumentDB mongoClusters resource (vCore), with reasonable defaults (region, tier, storage) and how to output the connection string.",
+      "where_searched": "Quickstart and deployment docs were consulted; while the provider docs exist, a small sample targeting gallery authors was not discoverable as a one-file example.",
+      "effect_on_this_build": "No IaC included; authors may ship samples that assume a pre-provisioned cluster. That reduces sample completeness for users who want a one-click reproduction.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "A 'deploy-mongoCluster.bicep' and Terraform HCL example that sets region, tier (M30), storage, and outputs the SRV connection string; plus a short README section describing cost trade-offs and a note: 'Use az documentdb mongocluster list-connection-strings to retrieve the URI.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Driver pinning / lockfile discoverability",
+      "what_was_missing": "Guidance that the gallery checks for pinned dependencies should be node-aware (check package-lock.json or npm-shrinkwrap.json) rather than expecting requirements.txt.",
+      "where_searched": "Team checklist and sample conventions; mismatch surfaced in the readiness review where requirements.txt was expected.",
+      "effect_on_this_build": "The sample committed package-lock.json which pins versions; the checklist's Python-centric wording caused an apparent unmet requirement.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "Update the gallery 'dependencies pinned' checklist to state per-language expectations (e.g., 'Node: commit package-lock.json or npm-shrinkwrap.json; Python: requirements.txt/poetry.lock').",
+      "priority": "medium"
+    },
+    {
+      "topic": "Search endpoint expectations",
+      "what_was_missing": "Clear gallery guidance (or a rule) that only samples implementing search must include error handling for empty queries and for embedding-call failures, and an example of error messages and logging policy for such endpoints.",
+      "where_searched": "No single public rule or sample-template was found that ties '/search' endpoint behavior to gallery publishing requirements.",
+      "effect_on_this_build": "The starter prompt did not request a /search endpoint and the builder did not add one; the checklist nevertheless contained expectations about search behavior which caused a mismatch.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "An agent-kit rule: 'If your sample implements a /search endpoint, include: 1) server-side validation returning 400 for empty queries, 2) try/catch around embedding service calls returning 502 with a brief message, 3) logs with full diagnostics to protected logs, and 4) example tests mocking embedding errors.'",
+      "priority": "low"
+    }
+  ]
+}
