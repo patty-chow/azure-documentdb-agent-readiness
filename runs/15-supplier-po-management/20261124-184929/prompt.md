@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python FastAPI service using Beanie ODM that models suppliers and purchase orders as DocumentDB documents with Pydantic schema validation. Implement full CRUD endpoints, enforce required fields at the application layer, and add an aggregation endpoint that summarises open PO value by supplier.
