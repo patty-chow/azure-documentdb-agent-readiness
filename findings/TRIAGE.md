@@ -1,12 +1,12 @@
 # Findings triage
 
-3024 findings from 105 runs, grouped by the repository that would change. Pick the ones to turn into PRs; nothing here has been filed anywhere. Regenerate with `python loop/findings.py`.
+3025 findings from 105 runs, grouped by the repository that would change. Pick the ones to turn into PRs; nothing here has been filed anywhere. Regenerate with `python loop/findings.py`.
 
 ## agent-kit: Azure/documentdb-agent-kit
 
 | Pri | Samples | Topic | Proposed change | Evidence |
 |---|---|---|---|---|
-| high | 9 (01-product-catalog-with-vector-search, 02-transaction-categorization-agent, 04-regulatory-reporting-orchestration, 07-customer-review-sentiment-pipeline +5) | Builder did not use the DocumentDB MCP server | Kit rule: when a DocumentDB MCP connection is available, verify collections, indexes and queries against it instead of (or before) a local container; MCP description should say it is the data-plane for the connected cluster. | `runs/01-product-catalog-with-vector-search/20261124-175429/events.jsonl` |
+| high | 10 (01-product-catalog-with-vector-search, 02-transaction-categorization-agent, 04-regulatory-reporting-orchestration, 07-customer-review-sentiment-pipeline +6) | Builder did not use the DocumentDB MCP server | Kit rule: when a DocumentDB MCP connection is available, verify collections, indexes and queries against it instead of (or before) a local container; MCP description should say it is the data-plane for the connected cluster. | `runs/01-product-catalog-with-vector-search/20261124-175429/events.jsonl` |
 | high | 1 (01-anti-money-laundering-pattern-detector) | Management tools opt-in (MCP) and index creation | [agent_kit_rule] Add a rule and README note: 'To use MCP management tools set ENABLE_MANAGEMENT_TOOLS=true in your environment or use the MCP proper connection profile; otherwise the sample will fall back to driver-based index creation. Pro | `runs/01-anti-money-laundering-pattern-detector/20261124-200112/doc-gaps.md` |
 | high | 1 (02-ai-powered-product-recommendations) | LlamaIndex Node integration guidance | [agent_kit_rule] Add a skill 'llamaindex-node' to the agent kit with: (1) a minimal example that constructs a LlamaIndex index over DocumentDB's DiskANN-backed collection; (2) an adapter module that shows how to translate LlamaIndex semanti | `runs/02-ai-powered-product-recommendations/20261124-181835/doc-gaps.md` |
 | high | 1 (02-clinical-trial-matching-orchestration) | Connection options and retry semantics | [agent_kit_rule] Add an agent-kit rule named 'mongodb-connection-sample' that enforces: use a singleton client, include recommended options (e.g., maxPoolSize, minPoolSize or documentdb-specific flags), and assert retryWrites=false or docum | `runs/02-clinical-trial-matching-orchestration/20261124-193208/doc-gaps.md` |
@@ -1592,15 +1592,15 @@ Tool calls recorded in each run's events.jsonl, by server. A zero in documentdb 
 | 10-expense-report-auto-categorizer | `runs/10-expense-report-auto-categorizer/20261124-191257` | 4 | 0 | 10 | 114 | 2 |
 | 10-multi-tenant-storefront-saas | `runs/10-multi-tenant-storefront-saas/20261124-184121` | 3 | 0 | 12 | 75 | 0 |
 | 10-support-ticket-rag-assistant | `runs/10-support-ticket-rag-assistant/20261124-204529` | 0 | 0 | 11 | 5 | 0 |
-| 10-wealth-management-rag-portal | `runs/10-wealth-management-rag-portal/20261124-201449` | 1 | 0 | 7 | 73 | 11 |
+| 10-wealth-management-rag-portal | `runs/10-wealth-management-rag-portal/20261124-201449` | 1 | 0 | 15 | 87 | 11 |
 | 11-care-gap-identification-pipeline | `runs/11-care-gap-identification-pipeline/20261124-194646` | 6 | 0 | 14 | 100 | 3 |
-| 11-correspondent-banking-risk-screener | `runs/11-correspondent-banking-risk-screener/20261124-201541` | 0 | 0 | 9 | 43 | 2 |
+| 11-correspondent-banking-risk-screener | `runs/11-correspondent-banking-risk-screener/20261124-201541` | 0 | 0 | 10 | 64 | 2 |
 | 11-market-news-sentiment-orchestration | `runs/11-market-news-sentiment-orchestration/20261124-191425` | 4 | 0 | 16 | 65 | 0 |
 | 11-preference-center-consent-store | `runs/11-preference-center-consent-store/20261124-204614` | 0 | 0 | 8 | 8 | 0 |
 | 11-visual-similarity-search-image-embeddings | `runs/11-visual-similarity-search-image-embeddings/20261124-184225` | 5 | 0 | 14 | 92 | 7 |
 | 12-abandoned-cart-recovery-orchestration | `runs/12-abandoned-cart-recovery-orchestration/20261124-184507` | 3 | 0 | 7 | 93 | 6 |
 | 12-clv-prediction-pipeline | `runs/12-clv-prediction-pipeline/20261124-204841` | 0 | 0 | 7 | 6 | 0 |
-| 12-cross-border-payment-audit-trail | `runs/12-cross-border-payment-audit-trail/20261124-201744` | 0 | 0 | 6 | 10 | 0 |
+| 12-cross-border-payment-audit-trail | `runs/12-cross-border-payment-audit-trail/20261124-201744` | 2 | 0 | 6 | 29 | 2 |
 | 12-hospital-bed-occupancy-tracker | `runs/12-hospital-bed-occupancy-tracker/20261124-194835` | 3 | 0 | 15 | 68 | 2 |
 | 12-invoice-matching-reconciliation | `runs/12-invoice-matching-reconciliation/20261124-191603` | 4 | 0 | 23 | 66 | 0 |
 | 13-algorithmic-trade-journal | `runs/13-algorithmic-trade-journal/20261124-191835` | 3 | 0 | 24 | 126 | 1 |
