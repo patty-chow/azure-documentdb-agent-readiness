@@ -1,0 +1,449 @@
+{
+  "verdict": "fail",
+  "summary": "No application files were produced in the workspace: the builder produced a design (03-build.json) and logged a few decisions, loaded many DocumentDB skills, but did not create the Node.js project, models, server, scripts or README. The reference requirements that the starter prompt explicitly requested are mostly present as design intent but not implemented (partly_met). Several gallery expectations were not produced (many prompt_silent). The installed DocumentDB skills provide authoritative public guidance for many checklist practices (connection-from-env, singleton client, TLS, idempotency unique-index, aggregation best-practices, TTL, ESR indexing, explain()), but a set of important developer-facing recipes are still only prior knowledge (Decimal128/currency math, explicit Mongoose-with-session recipe, exchange-rate indexing pattern, canonical seed dataset and idempotent seed script). Because the sample cannot be run or verified (no code created, no seed executed), the build fails to produce a runnable gallery sample. The product team should publish the few missing public recipes and a driver-compatibility table to prevent agents from making risky assumptions.",
+  "requirement_results": [
+    {
+      "requirement": "A Node.js application that uses Mongoose as the ODM against Azure DocumentDB, with Mongoose models for ledger transactions and for exchange-rate documents, each kept in its own collection.",
+      "status": "partly_met",
+      "evidence": "03-build.json lines 1-5 (design asserts an Express + Mongoose app with models for transactions and exchange_rates).",
+      "cause": "builder_error",
+      "smallest_fix": "Create the project files (package.json, src/, models/transaction.js, models/exchangeRate.js) and add a README. Add code that imports mongoose and defines the two models."
+    },
+    {
+      "requirement": "The transaction model has a currency field and a reference to an exchange-rate document, and each posted transaction is stored with the reference to the rate document it was recorded against.",
+      "status": "partly_met",
+      "evidence": "03-build.json line 3 (design declares models with exchange_rate reference and currency field).",
+      "cause": "builder_error",
+      "smallest_fix": "Add Mongoose schemas implementing { amount: Decimal128|Number, currency: String, exchangeRate: { type: ObjectId, ref: 'ExchangeRate' }, idempotencyKey: String, createdAt: Date } and export the models."
+    },
+    {
+      "requirement": "Every transaction posting carries an idempotency key, and posting the same key a second time does not create another ledger entry.",
+      "status": "partly_met",
+      "evidence": "03-build.json lines 3-4 (design lists DB-level unique index on transactions.idempotencyKey and idempotent seed/upsert idea).",
+      "cause": "builder_error",
+      "smallest_fix": "Implement and create a unique (partial) index on transactions.idempotencyKey and add handler code that either uses findOneAndUpdate with $setOnInsert or catches duplicate-key errors and returns the existing document."
+    },
+    {
+      "requirement": "Posting a transaction performs its writes inside an Azure DocumentDB multi-document transaction using a Mongoose session (session.withTransaction or explicit start/commit/abort), and the model operations for the posting are passed that session.",
+      "status": "partly_met",
+      "evidence": "03-build.json line 3 (design: 'transactionally-protected transaction posting with idempotency behavior').",
+      "cause": "builder_error",
+      "smallest_fix": "Add code that starts a Mongoose session and uses session.withTransaction or startTransaction/commitTransaction and passes { session } to all Mongoose operations involved in the post."
+    },
+    {
+      "requirement": "An HTTP endpoint for posting transactions (e.g. POST /transactions) that accepts the transaction to record and persists it through the Mongoose models.",
+      "status": "partly_met",
+      "evidence": "03-build.json 'how_to_run' section (describes POST /transactions) and builder report summary.",
+      "cause": "builder_error",
+      "smallest_fix": "Add Express route POST /transactions that validates payload (accountId, amount, currency, exchangeRateId, idempotencyKey), starts a session, and persists within the transaction."
+    },
+    {
+      "requirement": "An HTTP endpoint for querying balances that takes the requested base currency as a request parameter (e.g. base=USD) and returns the ledger balances expressed in that currency.",
+      "status": "partly_met",
+      "evidence": "03-build.json 'how_to_run' section (describes GET /balances?baseCurrency=USD) and design summary.",
+      "cause": "builder_error",
+      "smallest_fix": "Add Express route GET /balances that accepts baseCurrency, runs the aggregation pipeline and returns results."
+    },
+    {
+      "requirement": "Balance conversion is a Mongoose aggregation pipeline executed by Azure DocumentDB: pipeline joins transactions to exchange-rate docs ($lookup), converts each amount into the base currency and sums the converted amounts, and the endpoint returns the pipeline's output.",
+      "status": "partly_met",
+      "evidence": "03-build.json line 3 (design asserts aggregation-based conversion and grouping).",
+      "cause": "builder_error",
+      "smallest_fix": "Implement the aggregation pipeline in code (e.g., Transaction.aggregate([...]) with $lookup, $addFields or $project using Decimal128 arithmetic where appropriate, $group to sum per account, and return the aggregation result from the endpoint."
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "partly_met",
+      "evidence": "03-build.json lines 3-5 (design states: read DOCUMENTDB_URI from env at runtime; do not commit secrets).",
+      "cause": "builder_error",
+      "smallest_fix": "Implement config/ env-loading code (e.g., dotenv) and ensure no secrets are checked in. Add .env.example (see next requirement)."
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "not_met",
+      "evidence": "Workspace contains no .env.example; 03-build.json open_issues line 14 lists .env.example as still to be created.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a .env.example file listing required variables (DOCUMENTDB_URI, NODE_ENV, PORT, SEED_SKIP, etc.) with placeholders. Suggested prompt addition: 'Create .env.example listing DOCUMENTDB_URI and other settings.'"
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The ledger sample does not use embeddings or vector indexes; no files present to inspect.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If vectors are added, record the embedding model dims in README and set vector index dims accordingly when creating the index."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "Not applicable to this ledger sample; no vector indexes were created.",
+      "cause": "could_not_determine",
+      "smallest_fix": "Omit vector guidance for this sample or add a README section if vector features are introduced."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "partly_met",
+      "evidence": "03-build.json line 3 (design: 'singleton Mongoose connection').",
+      "cause": "builder_error",
+      "smallest_fix": "Implement a single connection module that connects once (mongoose.connect) and exports the connection; have server code import and reuse it."
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "partly_met",
+      "evidence": "03-build.json lines 3 and 5 (design includes idempotent seed script and instructions to run node scripts/seed.js).",
+      "cause": "builder_error",
+      "smallest_fix": "Add scripts/seed.js implementing idempotent upserts for exchange rates and sample transactions and ensure index creation uses createIndex or upsert semantics."
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_met",
+      "evidence": "This ledger sample does not define /search; no code exists.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If a search endpoint is added, implement explicit validation returning 400 for empty queries and error-handling for embedding failures."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_met",
+      "evidence": "No search functionality present or implemented.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If adding search, include score fields returned from $search or cosmosSearch and document them in the API responses."
+    },
+    {
+      "requirement": "Dependencies are pinned in requirements.txt (or equivalent for Node).",
+      "status": "not_met",
+      "evidence": "No package.json or package-lock.json in workspace; builder_report planned dependencies but did not create files (03-build.json open_issues).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Create package.json with explicit version pins (or include package-lock.json). Example: add \"mongoose\": \"^7.0.0\" and lock with npm ci / package-lock.json."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "No test files exist in the workspace; builder_report did not create tests (03-build.json open_issues).",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add unit tests that mock Mongoose (e.g., use in-memory Mongo or sinon/stub) and document test command in README."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "03-build.json open_issues line 14 explicitly notes IaC was not created; run policy also indicated cluster already exists.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a Bicep/ARM or Terraform example using Microsoft.DocumentDB/mongoClusters (or az documentdb CLI) in an infra/ directory, but mark as optional since the run environment provided the cluster."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "not_met",
+      "evidence": "No README.md in workspace; 03-build.json open_issues calls out README.md as missing.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add README.md with sample summary, prerequisites (DOCUMENTDB_URI), install, seed, run, and cleanup instructions."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "not_met",
+      "evidence": "No README or docs to inspect; prompt and builder design use the term 'DocumentDB' but no published text to verify exact naming conventions.",
+      "cause": "prompt_silent",
+      "smallest_fix": "When authoring README and docs, consistently use the term 'Azure DocumentDB' and include a short 'naming' sentence to distinguish it from Cosmos DB (RU) and Amazon DocumentDB."
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection from env",
+      "practice": "Read the cluster connection URI from an environment variable (e.g., process.env.DOCUMENTDB_URI) and do not commit credentials to source control; use a secrets store for production.",
+      "category": "secrets & configuration",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "followed",
+      "evidence": "03-build.json lines 3-5 (design explicitly states reading DOCUMENTDB_URI from environment and not committing it).",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Singleton client reuse",
+      "practice": "Create a single shared MongoClient (singleton) for the process and tune connection-pool options (maxPoolSize, ...).",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md",
+      "status": "followed",
+      "evidence": "03-build.json line 3 (design: 'singleton Mongoose connection').",
+      "source": "documentdb-driver",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-driver",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/driver/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Require TLS",
+      "practice": "Require TLS on all client connections to Azure DocumentDB; do not disable TLS verification in production.",
+      "category": "security",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md",
+      "status": "followed",
+      "evidence": "Events: read_skill_resource documentdb-security/security-tls-required.md (events.jsonl) and 03-build.json note to not commit connection strings; design ensures TLS in the recommended URI (skill_md).",
+      "source": "documentdb-security",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-security",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/security/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Retries & transaction retry",
+      "practice": "Implement retries for transient network and rate errors with exponential backoff and explicit retry loop for transactions.",
+      "category": "retries & fault tolerance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "No code present to inspect retry loops; the connection skill was loaded (events.jsonl entries), but no implementation exists in the workspace.",
+      "source": "documentdb-connection",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-connection",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/connection/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotency unique index",
+      "practice": "Protect against duplicate postings by creating a unique (or partial unique) index on transactions.idempotencyKey and using upsert/$setOnInsert or catching duplicate-key errors.",
+      "category": "idempotency & indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "followed",
+      "evidence": "03-build.json line 3 explicitly states 'DB-level unique index on transactions.idempotencyKey' in the design and open_issues calls out verifying index creation at seed time.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "Ensure createIndex({ idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $exists: true } } }) is called in the idempotent seed script.",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotency TTL",
+      "practice": "If you only need idempotency for a bounded window, make idempotency records compact and expire them with a TTL index.",
+      "category": "idempotency & retention",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_applicable",
+      "evidence": "Builder design did not state a bounded idempotency-window or TTL usage; no code present.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Aggregation pipeline hygiene",
+      "practice": "Write compact aggregation pipelines: $match early, project only needed fields, use allowDiskUse for large groups, and verify with explain(\"executionStats\").",
+      "category": "queries & aggregation",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "Design asserts an aggregation-based balance conversion (03-build.json) but no pipeline code is present to verify use of early $match, $project, allowDiskUse or explain().",
+      "source": "documentdb-query-optimization",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimization",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimization/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Compound index for ledger queries",
+      "practice": "Design compound indexes using ESR and create compound index for ledger queries (e.g., accountId + timestamp).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "03-build.json lists index plans ('additional indexes on accountId and a compound index for exchange rate lookups') but no index-creation code or DDL is present.",
+      "source": "documentdb-indexing",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-indexing",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/indexing/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain usage",
+      "practice": "Use explain(\"executionStats\") to confirm queries use intended indexes and watch docsExamined/keysExamined.",
+      "category": "monitoring & provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md",
+      "status": "not_assessable",
+      "evidence": "No explain() calls or test harness present; events show the query-explain guidance resource was loaded (events.jsonl) but no verify-run occurred.",
+      "source": "documentdb-query-optimizer",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "documentdb-query-optimizer",
+          "url": "https://github.com/Azure/documentdb-agent-kit/blob/main/skills/query-optimizer/SKILL.md"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Decimal128 for money",
+      "practice": "Store monetary amounts using Decimal128 or integer minor-units; do not use JavaScript Number for currency values.",
+      "category": "data modeling",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P21",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "This was a prior-knowledge belief (P21). No DocumentDB-specific public doc was discovered proving or refuting it. The builder design mentions 'amount' but did not produce model code to confirm Decimal128 usage (03-build.json).",
+      "source": "prior_knowledge",
+      "searched": "Searched: 'Azure DocumentDB Decimal128 currency', 'Cosmos DB MongoDB Decimal128 money' (no authoritative public guidance found).",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short authoritative sentence in the DocumentDB data-modeling docs: 'For monetary values use Decimal128 or integer minor-units; avoid JavaScript Number due to floating-point inaccuracy.'"
+    },
+    {
+      "topic": "Mongoose sessions pattern",
+      "practice": "When using Mongoose with sessions, pass { session } to all queries/updates and use session.withTransaction or explicit startTransaction/commitTransaction.",
+      "category": "Mongoose usage",
+      "availability": "prior_knowledge_only",
+      "discovery_id": "P29",
+      "source_url": "",
+      "status": "not_assessable",
+      "evidence": "This is a prior-knowledge belief (P29). The builder design references transactions with Mongoose sessions (03-build.json) but did not produce code to verify session usage or passing { session } to every operation.",
+      "source": "prior_knowledge",
+      "searched": "Searched: 'Mongoose sessions Azure DocumentDB withTransaction', 'Cosmos DB Mongoose session example' with no definitive DocumentDB-hosted Mongoose recipe found.",
+      "fix": "",
+      "sources": [],
+      "what_would_help": "A short example page showing Mongoose session usage with DocumentDB, including session.withTransaction and passing { session } to model calls."
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Decision D001 (approve build as 'ready_with_gaps') is an operator choice and is supported by the events/decisions log. It is a valid decision given the readiness report caveats."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Decision D002 (choose Node.js + Express + Mongoose) directly follows the prompt and is recorded in decisions.jsonl and events.jsonl; evidence matches the prompt."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "questionable",
+      "comment": "Decision D003 (choose Mongoose 7.x) cites the readiness_report as the reason. The readiness findings flagged a missing driver-compatibility mapping; choosing Mongoose 7.x is reasonable but should be validated against the cluster's actual server wire-version before locking. Marked 'questionable' because compatibility was assumed rather than verified and no dependency files were created to lock the version."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Driver compatibility mapping (Mongoose/mongodb-driver → server wire-version)",
+      "what_was_missing": "A concise, authoritative table mapping common Mongoose (and underlying mongodb-driver) versions to the Azure DocumentDB supported server-wire protocol / server versions and recommended pinned releases.",
+      "where_searched": "Searched installed skills (documentdb-driver, connection) and Learn quickstarts; readiness_findings lists this gap.",
+      "effect_on_this_build": "Builder assumed Mongoose 7.x compatibility. Without a compatibility table the builder may pick an incompatible driver causing runtime connection or aggregation errors and delaying validation.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A one-page 'Driver compatibility' doc: rows mapping Mongoose major versions → mongodb-driver versions → supported server-wire versions (5.x/6.x/7.x), recommended pin, and example package.json lines. Include verification command (connect and run db.adminCommand({ buildInfo: 1 }) or show serverVersion from cluster) and a note about SRV/URI options (tls/retryWrites).",
+      "priority": "high"
+    },
+    {
+      "topic": "Mongoose-with-session recipe for DocumentDB",
+      "what_was_missing": "A short, public recipe that shows how to use Mongoose sessions with Azure DocumentDB, including session.startTransaction/session.withTransaction, passing { session } to all model calls, and an explicit retry loop for transient transaction errors.",
+      "where_searched": "Searched DocumentDB skills and Learn quickstarts (documentdb-driver, query-optimization); found no concrete Mongoose-with-session example for DocumentDB.",
+      "effect_on_this_build": "The builder designed transactional posting but did not create code. Without a tested example, agents may implement transactions incorrectly (forgetting to pass { session } to all operations) and produce non-atomic writes.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a short skill/resource: 'Mongoose sessions on DocumentDB' containing minimal code example (connect, startSession(), await session.withTransaction(async () => { await Model.create([..], { session }); await OtherModel.updateOne(..., { session }); }), retry-loop skeleton to re-run transaction on TransientTransactionError) and a note about session timeouts.",
+      "priority": "high"
+    },
+    {
+      "topic": "Decimal128 / currency arithmetic guidance",
+      "what_was_missing": "Authoritative guidance for DocumentDB on storing and computing monetary amounts (Decimal128 vs integer minor units) and how to propagate Decimal128 in aggregation ($toDecimal) for safe conversion arithmetic.",
+      "where_searched": "Searched DocumentDB skills (data-modeling, query-optimization) and public Learn pages; found only prior-knowledge statements, no DocumentDB-specific recipe.",
+      "effect_on_this_build": "Builder design lists 'amount' but did not produce the model code specifying Decimal128. Lack of authoritative guidance risks using JavaScript Number and floating-point errors in currency conversions.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short page 'Monetary values on Azure DocumentDB' explaining recommended storage types (Decimal128 or integer cents), code examples for Mongoose schema using mongoose.Types.Decimal128, aggregation examples showing $toDecimal and $multiply/$divide with Decimal128, and test cases demonstrating rounding behavior.",
+      "priority": "high"
+    },
+    {
+      "topic": "Canonical idempotent seed pattern and sample dataset for ledger",
+      "what_was_missing": "A canonical idempotent seed script pattern and sample seed data (exchange rate documents with effectiveDate, transaction examples) for the multi-currency ledger scenario.",
+      "where_searched": "Searches over skills and quickstarts; readiness_findings noted no canonical seed dataset for ledger scenario.",
+      "effect_on_this_build": "Builder planned an idempotent seed but did not author it. Without example data and a robust idempotent upsert pattern, agents are likely to write brittle seed scripts or duplicate data during repeated runs.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Provide scripts/seed.js example that upserts exchange rate docs keyed by (fromCurrency,toCurrency,effectiveDate) with createIndex for the compound index, sample transactions, and usage instructions. Include an idempotencyKey pattern for seed transactions and a --force option to reset sample data.",
+      "priority": "medium"
+    },
+    {
+      "topic": ".env.example and required config list",
+      "what_was_missing": "A small example .env.example showing exactly which environment variables the sample expects (DOCUMENTDB_URI, PORT, NODE_ENV, SEED_SKIP, etc.) and placeholder values.",
+      "where_searched": "No .env.example in workspace; searched skills and quickstarts for recommended variable names but no unified sample file exists for this scenario.",
+      "effect_on_this_build": "Builder recorded the need to read DOCUMENTDB_URI from env but did not publish .env.example. This makes it harder for users to run the sample safely without exposing secrets.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a .env.example in the repo root and a README section that says 'Copy .env.example to .env and fill DOCUMENTDB_URI'.",
+      "priority": "high"
+    },
+    {
+      "topic": "Exchange-rate document indexing pattern",
+      "what_was_missing": "A public example recommending an ExchangeRate document shape (fromCurrency, toCurrency, rate: Decimal128, effectiveDate) and a compound index { fromCurrency:1, toCurrency:1, effectiveDate:-1 } for latest-rate lookups.",
+      "where_searched": "Searched DocumentDB indexing and data-modeling skills; the general compound-index ESR recipe exists but no canonical currency-pair + effectiveDate example was found.",
+      "effect_on_this_build": "Builder's design includes exchange rate docs and a compound index but with no public example to cite agents may choose a suboptimal index or model shape and make lookups inefficient.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A short doc: 'Modeling exchange rates' with schema, recommended indexes, $lookup example to fetch latest effectiveRate in an aggregation, and a note on TTL or archiving older rates.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Transaction lifetime and retry limits guidance",
+      "what_was_missing": "Authoritative statement on recommended transaction duration limits and the recommended retry-loop for transactions on Azure DocumentDB with Mongoose (timeouts, backoff).",
+      "where_searched": "Searched skills and Learn pages; readiness_findings flagged missing single-page guidance for transaction lifetime and retry behaviour.",
+      "effect_on_this_build": "Builder assumed conservative timeouts but did not implement or verify retry/timeouts. Missing guidance risks long-running transactions that get aborted and unexpected failures in production.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A small guidance page: 'Transactions on DocumentDB' stating recommended max duration, how to set timeouts and serverSelectionTimeoutMS, sample retry-loop pattern for transient errors, and a note about keeping transactions short and touching few documents.",
+      "priority": "high"
+    },
+    {
+      "topic": "Tests that run without live cluster (mocking patterns)",
+      "what_was_missing": "A documented pattern and example tests that run without a live DocumentDB cluster (in-memory server or mocking Mongoose models) for CI.",
+      "where_searched": "Searched skills and quickstarts; no sample tests were found that demonstrate an offline test harness for DocumentDB-specific features.",
+      "effect_on_this_build": "No tests were produced; team and agents lack a quick recipe for creating unit tests that don't require the live cluster, slowing CI setup and making regression checks harder.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a tests/ folder with example unit tests using sinon or an in-memory MongoDB library and instructions for which tests require live cluster vs mocked behavior. Include a CI snippet that runs unit tests without network access.",
+      "priority": "medium"
+    }
+  ]
+}

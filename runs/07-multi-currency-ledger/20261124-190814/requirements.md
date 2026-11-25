@@ -8,17 +8,13 @@
 
 ## What the starter prompt asks for
 
-- Use Node.js and Mongoose as the application's runtime and ODM for all database models and operations.
-- Define a Transaction Mongoose model that includes at minimum: amount, currency (string), accountId (or ledger identifier), a reference field to an exchange rate document (ObjectId ref to the exchange-rate collection), a timestamp, and an idempotencyKey field.
-- Define an ExchangeRate Mongoose model (exchange rate documents) that includes baseCurrency, quoteCurrency, numeric rate, and timestamp fields.
-- Create a unique index on the idempotencyKey field (DB-level uniqueness) to enforce idempotency for transaction postings.
-- Expose an HTTP endpoint to post transactions (e.g., POST /transactions) that accepts payload fields including accountId, amount, currency, exchangeRateId (or other exchange rate reference), and idempotencyKey.
-- The POST /transactions handler must check the idempotencyKey and avoid creating duplicate postings (returning the existing transaction or a suitable status) and must rely on the DB-level unique constraint as part of the protection.
-- When posting a transaction, perform the write(s) that record the transaction and update any related balance or ledger documents inside a single DocumentDB transaction (using Mongoose sessions / session.withTransaction) so the create and balance updates are atomic.
-- The transaction document stored must include the currency field and a reference to the exchange rate document (do not inline the rate as the only source of truth).
-- Expose an HTTP endpoint to query balances in any base currency (e.g., GET /balances?baseCurrency=USD) that implements the conversion and aggregation using a Mongoose aggregation pipeline.
-- The balance aggregation must use $lookup (or equivalent aggregation stages) to reference the ExchangeRate documents and convert transaction amounts to the requested base currency within the pipeline, then sum/group per account to produce balances.
-- The application must be configured to connect to Azure DocumentDB (MongoDB-compatible service) for its database operations (connection code / configuration points to Azure DocumentDB).
+- A Node.js application that uses Mongoose as the ODM against Azure DocumentDB, with Mongoose models for ledger transactions and for exchange-rate documents, each kept in its own collection.
+- The transaction model has a currency field and a reference to an exchange-rate document (e.g. a Mongoose `ref` holding that document's `_id`), and each posted transaction is stored with the reference to the rate document it was recorded against.
+- Every transaction posting carries an idempotency key, and posting the same key a second time does not create another ledger entry (e.g. the key is persisted alongside the transaction and checked before the write).
+- Posting a transaction performs its writes inside an Azure DocumentDB multi-document transaction using a Mongoose session (`session.withTransaction`, or `startTransaction` followed by `commitTransaction`/`abortTransaction`), and the model operations for the posting are passed that session.
+- An HTTP endpoint for posting transactions (e.g. `POST /transactions`) that accepts the transaction to record (e.g. amount, currency, exchange-rate reference and idempotency key) and persists it through the Mongoose models.
+- An HTTP endpoint for querying balances that takes the requested base currency as a request parameter (e.g. a `base=USD` query-string value) and returns the ledger balances expressed in that currency, for any currency that has an exchange-rate document.
+- Balance conversion is a Mongoose aggregation pipeline executed by Azure DocumentDB: the pipeline joins transactions to their referenced exchange-rate documents (e.g. `$lookup`), converts each amount into the base currency (e.g. `$multiply`/`$divide`) and sums the converted amounts (e.g. `$group`), and the endpoint returns the pipeline's output.
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
