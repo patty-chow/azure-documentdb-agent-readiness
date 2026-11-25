@@ -1,0 +1,124 @@
+{
+  "answers": [
+    {
+      "question_id": "Q01",
+      "question": "What is the Azure resource provider namespace and resource type of an Azure DocumentDB cluster?",
+      "answer": "Resource provider namespace: Microsoft.DocumentDB. Resource type for a MongoDB-compatible account/cluster (management unit): Microsoft.DocumentDB/databaseAccounts (child resources use Microsoft.DocumentDB/databaseAccounts/mongodbDatabases or similar). For a managed MongoDB cluster SKU I would create a databaseAccount resource: resource type \"Microsoft.DocumentDB/databaseAccounts\" (name = <accountName>).",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q02",
+      "question": "Which Azure CLI command group creates and manages a cluster? Is it in the core CLI or an extension?",
+      "answer": "Use the core CLI group az cosmosdb. Example to create a Mongo-compatible account: az cosmosdb create -g myRG -n myAccount --kind MongoDB --locations regionName=\"westus2\" --default-consistency-level Session. (This command group is part of the main az CLI, not a separate extension.)",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q03",
+      "question": "Which Bicep and Terraform resource types deploy a cluster?",
+      "answer": "Bicep: Microsoft.DocumentDB/databaseAccounts (apiVersion e.g. '2021-04-15' or newer). Example snippet: resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2021-04-15' = { name: 'myAccount' location: resourceGroup().location kind: 'MongoDB' properties: { locations: [ { locationName: resourceGroup().location } ] } }  \nTerraform (AzureRM provider): azurerm_cosmosdb_account. Example: resource \"azurerm_cosmosdb_account\" \"db\" { name = \"myAccount\" location = azurerm_resource_group.rg.location offer_type = \"Standard\" kind = \"MongoDB\" consistency_policy { ... } }",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q04",
+      "question": "What does a connection string look like: scheme, host suffix, port, and the options it must carry?",
+      "answer": "Use a standard MongoDB URI. Example form I would use in code: mongodb://<username>:<password>@<account>.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&retrywrites=false&maxIdleTimeMS=120000. Key requirements: scheme mongodb:// (or mongodb+srv:// if SRV is provided), host is the account-specific host (e.g. <account>.mongo.cosmos.azure.com), port 10255 for TLS in Cosmos-style endpoints, and options: ssl=true (or tls=true), retryWrites=false (Cosmos-compatibility), replicaSet=globaldb, and any driver-specific appName/timeout options.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q05",
+      "question": "How is capacity provisioned and billed: request units, compute tiers with vCores, serverless, or something else?",
+      "answer": "Billing is typically by provisioned throughput (Request Units / RU/s) or autoscale RUs for Cosmos-style accounts. Some SKUs expose vCore/compute-tier billing (managed MongoDB clusters or dedicated tiers) and there can be a serverless option in specific regions/SKUs. In practice I would assume RU-based billing for a Microsoft-managed Mongo/MongoDB-compatible DocumentDB account unless the SKU advertises vCore/compute tiers.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q06",
+      "question": "Which authentication methods are supported, and how does a driver authenticate with Microsoft Entra ID?",
+      "answer": "Supported authentication methods: MongoDB SCRAM credentials (username/password) as primary. Many managed Mongo-compatible services also support X.509 client certs and (in newer offerings) Microsoft Entra ID (Azure AD) token-based auth. To use Entra ID I would obtain an Azure AD access token (client credentials flow) for the resource, then pass it to the driver as the password in the connection string or use the driver’s SASL/OAUTHBEARER mechanism if supported. Concretely when using a URI: mongodb://<user>@<host>:<port>/?authMechanism=PLAIN (or the provider-specific mechanism), and insert the AAD access token in place of password after acquiring it with az login or MSAL. (Exact mechanism is provider-specific.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q07",
+      "question": "Which client library should an application use? Is there a service-specific SDK?",
+      "answer": "Use the standard MongoDB drivers for the language (pymongo / motor for Python, mongodb npm driver for Node.js). There is no separate service-specific MongoDB driver; the service implements the MongoDB wire protocol so the official MongoDB drivers are the correct client libraries. For ODM in Python use Beanie (on top of Motor) or MongoEngine; for async use Motor + Beanie.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q08",
+      "question": "Which vector index types are supported, and what does the command that creates one look like?",
+      "answer": "The cluster I will target supports DiskANN, HNSW and IVF vector index types. The index creation is done through a Mongo-style createIndex with a provider-specific options block. A concrete command I would run in the mongo shell (example HNSW): db.collection.createIndex( { embedding: \"vector\" }, { name: \"emb_hnsw\", vectorIndex: { type: \"hnsw\", dims: 1536, metric: \"cosine\", m: 16, efConstruction: 200 } } );  (This is provider-specific syntax; replace vectorIndex with the exact option name the service expects.)",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q09",
+      "question": "How are full-text search and hybrid search done?",
+      "answer": "Full-text search can be done with MongoDB text indexes (db.collection.createIndex({ field: 'text' })) or with the service's integrated full-text/search subsystem (a managed search index / Lucene-based search) exposed through a $search aggregation stage (Atlas-style) or a portal-managed index. Hybrid search (text + vector) is typically done with a single search pipeline combining a full-text clause and a kNN/vector clause (for example an aggregation $search compound combining text and knn). Exact syntax is provider-specific (e.g. $search stage or an SDK); otherwise fallback is to combine a text index for keywords and a vector KNN query in two steps on the client.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q10",
+      "question": "Which MongoDB wire protocol or server versions are supported, and which commonly used MongoDB features are not?",
+      "answer": "Targeted support is MongoDB 7.0 wire protocol (the managed cluster advertises MongoDB 7.0 compatibility). Commonly missing or limited features on Mongo-compatible managed services: server-side JavaScript ($where/eval) often disabled, file-system-level commands, some admin/diagnostic commands, and occasionally limitations on transactions or certain aggregation stages. Expect small compatibility differences vs. a stock upstream MongoDB server (transactions, explain plans, server-side eval, some replication/ops commands may be restricted).",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q11",
+      "question": "How do you run the database locally for development and tests: which image or emulator, and which port?",
+      "answer": "There is no full local emulator that perfectly matches a cloud Mongo-compatible DocumentDB cluster with vendor extensions (vectors, DiskANN, etc.). For basic MongoDB protocol tests use the official MongoDB Docker image (e.g. mongo:7.0) and default Mongo port 27017. For Cosmos DB-specific features you would need the cloud service; the Cosmos DB emulator (Windows) supports some APIs but not all Mongo-specific cloud extensions. For this sample I will run against the live cluster in DOCUMENTDB_URI rather than a local emulator.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q12",
+      "question": "Are change streams supported, and does anything have to be enabled first?",
+      "answer": "Change streams are supported by MongoDB wire-protocol-compatible managed services that implement replica-set/oplog semantics. I would assume change streams (collection.watch() / db.watch()) are available on the managed cluster and do not require extra provisioning, but some accounts require enabling a feature flag or using a replica-set/cluster SKU that supports them. Practically: try db.collection.watch() — if blocked, enable the feature in the account settings in the portal.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "Q13",
+      "question": "Which MCP server gives an agent data-plane tools for this service? Does the general Azure MCP Server cover it?",
+      "answer": "Management/control-plane integrations for this service are covered by the general Azure management plane (Azure Resource Manager). For data-plane agent tooling (backup/restore, diagnostics) use the vendor-provided tools or the Azure-supported data-plane agent that integrates with the general Azure MCP server. In short: the general Azure MCP server should cover control-plane operations; data-plane operations (metrics, logs) are surfaced through standard Azure monitoring/diagnostics and any service-specific agent provided by Microsoft.",
+      "confidence": "low"
+    },
+    {
+      "question_id": "Q14",
+      "question": "What was this service called before, and how does it relate to Azure Cosmos DB and to the open-source DocumentDB project?",
+      "answer": "Historically Microsoft called its original JSON document DB 'DocumentDB' and later evolved the platform into Azure Cosmos DB which supports multiple APIs (SQL/Core, MongoDB, Gremlin, Table). \"Azure DocumentDB\" as a name was used early; Cosmos DB is the evolution. The open-source DocumentDB project is unrelated; Microsoft’s DocumentDB/Cosmos DB is a proprietary managed service that provides a MongoDB-compatible API among others.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "Q15",
+      "question": "What engine is underneath, and does that change anything in application code?",
+      "answer": "The underlying engine is a Microsoft-managed engine that implements the MongoDB wire protocol (not a plain upstream mongod process in many SKUs). That means application code using standard MongoDB drivers should work, but some server behaviors (consistency, performance characteristics, supported admin commands, certain aggregation features, and IAM integration) can differ from a vanilla MongoDB installation — test critical features. For example, consistency semantics and RU billing are provider-specific and can affect large write/transaction patterns.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "S01",
+      "question": "What index definition does this sample need for TTL enforcement?",
+      "answer": "Create a TTL index on a timestamp field that marks when history items or documents should expire. Two approaches: (A) per-document expiry using an expiresAt top-level field: db.preferences.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }) — set expiresAt to an ISODate when the document should be removed. (B) TTL on embedded history items: if using a separate collection for history, createIndex({ createdAt: 1 }, { expireAfterSeconds: retentionSeconds }). For the sample I will add a top-level expiresAt TTL index (expireAfterSeconds: 0) and set expiresAt when a consent record should be removed.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "S02",
+      "question": "What aggregation returns the current preference state from append-only consent history?",
+      "answer": "Pipeline (conceptual): 1) $match by customer_id, 2) $unwind: \"$consent_history\", 3) $sort by consent_history.timestamp (or consentVersion) descending, 4) $group by channel (or by document) and take $first consent_history entry per channel, 5) reconstruct current preferences. Example pipeline: [ { $match: { customer_id: 'C123' } }, { $unwind: '$consent_history' }, { $sort: { 'consent_history.timestamp': -1 } }, { $group: { _id: '$consent_history.channel', current: { $first: '$consent_history' } } }, { $replaceRoot: { newRoot: '$current' } } ]. In code I will implement a single-document read and compute the latest per-channel in app code for simplicity.",
+      "confidence": "medium"
+    },
+    {
+      "question_id": "S03",
+      "question": "How will the app authenticate and connect in the sample code?",
+      "answer": "Read the connection URI from the environment variable DOCUMENTDB_URI and connect with Motor/Beanie: from motor.motor_asyncio import AsyncIOMotorClient; client = AsyncIOMotorClient(os.environ['DOCUMENTDB_URI']); db = client['sample_customer_360_11']. This assumes the URI contains credentials and TLS options. Do not log or write the URI; keep it in env. If using Azure AD tokens, exchange with MSAL and inject token per provider docs, but the sample will use the provided DOCUMENTDB_URI.",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S04",
+      "question": "What collection schema (Beanie model) will I use for consent + append-only history?",
+      "answer": "Define a Beanie Document model CustomerConsent with fields: customer_id: str (indexed), consentVersion: int, channel_preferences: dict (or mapping of channel->bool), consent_history: List[EmbeddedDocument] where each history item has {version:int, channel:str, action:str('grant'|'withdraw'), metadata:dict, timestamp: datetime, expiresAt?: datetime}. Add indexes: unique index on (customer_id), TTL index on expiresAt. Example: class ConsentHistory(EmbeddedModel): version: int; channel: str; action: str; timestamp: datetime; metadata: dict = {}  class CustomerConsent(Document): customer_id: str; consentVersion: int; consent_history: List[ConsentHistory]; class Settings: name = 'customer_consents'; indexes = [ 'customer_id', [('expiresAt', 1)], ]",
+      "confidence": "high"
+    },
+    {
+      "question_id": "S05",
+      "question": "Which database and collections will the sample create and operate on?",
+      "answer": "Use the database named sample_customer_360_11 (as required). Create a collection named customer_consents in that DB for the main documents. Optionally create customer_consent_history if you prefer to store history in a separate collection (with a TTL index on createdAt). All operations in the sample will be limited to sample_customer_360_11 and the collections it creates.",
+      "confidence": "high"
+    }
+  ]
+}
