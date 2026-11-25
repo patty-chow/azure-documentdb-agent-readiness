@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent using Beanie ODM that reads unclassified complaint documents from DocumentDB, uses prompt engineering to assign product category, root cause, and urgency tier, embeds the complaint text for similarity search, and writes the enriched document back. Add an aggregation that surfaces complaint hotspots by category.
