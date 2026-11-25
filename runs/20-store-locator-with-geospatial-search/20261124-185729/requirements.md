@@ -8,16 +8,12 @@
 
 ## What the starter prompt asks for
 
-- Implement the service in Node.js using the Mongoose ODM (i.e., Mongoose models and queries are used for all DB operations).
-- Define a Store Mongoose schema where the location is stored as a GeoJSON Point document (an object with "type": "Point" and a "coordinates" array) and ensure coordinates are stored in GeoJSON order [longitude, latitude].
-- Create a 2dsphere index on the location field in the Mongoose schema (schema-level index or index option) so Azure DocumentDB can serve geospatial queries.
-- Include opening hours and stock availability fields on the Store schema and persist them with each store document; those fields must be returned by queries.
-- Expose an HTTP endpoint at /nearby that accepts latitude, longitude, and radius (as query parameters or JSON body), parses them as numbers, and returns a 400 error for missing or invalid values.
-- Construct and execute a $geoNear aggregation stage in the query pipeline, supplying the provided coordinates as the near GeoJSON Point and applying the provided radius via maxDistance (so the aggregation is actually limited to the radius).
-- Specify a distanceField in the $geoNear aggregation and return that distance with each store result; ensure the aggregation output is sorted by that distance.
-- Ensure the $geoNear aggregation is used (i.e., the pipeline contains a $geoNear stage) rather than only using other operators like $nearSphere or manual filtering.
-- Connect Mongoose to an Azure DocumentDB (MongoDB‑compatible) endpoint for data storage; the connection URI must be configurable (e.g., via an environment variable) and used by the service at runtime.
-- Return a JSON response from /nearby containing an array of stores sorted by distance where each item includes the computed distance, opening hours, and stock availability fields from the stored documents.
+- Define a Mongoose model for stores in a Node.js service whose location is stored as a GeoJSON Point (type "Point" with a [longitude, latitude] coordinates array) in Azure DocumentDB.
+- Create a 2dsphere index on the GeoJSON location field in code (e.g. declared on the Mongoose schema with schema.index({ location: '2dsphere' })).
+- Expose a /nearby HTTP endpoint that accepts a latitude, a longitude and a radius as inputs (e.g. query parameters).
+- Have the /nearby handler run a $geoNear aggregation through Mongoose against Azure DocumentDB, using the request's latitude and longitude as the near point and the request's radius as the maximum distance.
+- Return the matching stores ordered by distance from the request point, nearest first (the $geoNear stage supplies the ordering).
+- Include each store's opening hours and stock availability in the /nearby response, taken from the stored store document (e.g. openingHours and stock fields).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
