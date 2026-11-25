@@ -1,0 +1,1 @@
+Using the DocumentDB skill, build a Python LangChain agent with a DocumentDB aggregation tool that follows transaction document references to build counterparty chains, applies known AML typology rules via aggregation, and flags suspicious patterns. The agent should generate a structured suspicious activity narrative for each flagged chain.
