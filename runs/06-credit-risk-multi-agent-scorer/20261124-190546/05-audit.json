@@ -1,0 +1,447 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "The sample implements a working, small credit-scoring pipeline that reads applicants from an Azure DocumentDB cluster, computes a deterministic rule-based score, optionally calls an LLM (mockable), generates an explanation, and writes score+explanation back to the applicant document. Tests and the seed script run in the build environment. Key functional requirements from the reference file are implemented, but several gallery expectations and best-practices are incomplete: the code does not use LangChain as the prompt required, LLM calls are direct OpenAI SDK calls (not LangChain), there is no retry/backoff for transient DB faults, dependencies are not pinned, tests require a live DocumentDB instance (no offline/mock DB tests), and infrastructure-as-code for provisioning the cluster is missing. I list per-requirement results, reconciled practice checks, decision reviews, and documentation gaps with prioritized fixes below.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the pipeline in Python with LangChain as a multi-agent setup with three distinct agents, a data-fetch agent, a scoring agent and an explainer agent, coordinated by a pipeline that runs them in that order for an applicant and passes each agent's output on to the next.",
+      "status": "not_met",
+      "evidence": "No usage of LangChain in repository files. No imports from langchain or agent orchestration constructs. Files: sample_fintech_06/agents.py (all functions are plain Python functions), sample_fintech_06/run.py (sequential function calls, not a LangChain orchestrator).",
+      "cause": "builder_error",
+      "smallest_fix": "Replace the direct function-based orchestration with a small LangChain orchestrator: add LangChain agent wrappers for fetch/score/explain and use a LangChain-run orchestration step in run.py; or add an agent-kit rule requiring LangChain for multi-agent gallery samples."
+    },
+    {
+      "requirement": "The data-fetch agent takes an applicant as input and retrieves that applicant's history from Azure DocumentDB through a Python MongoDB driver (e.g. pymongo), returning the fetched history to the pipeline.",
+      "status": "met",
+      "evidence": "sample_fintech_06/agents.py: fetch_applicant(applicant_id) uses get_db().applicants.find_one({'_id': applicant_id}) and returns the document (lines 12-17).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The scoring agent applies risk rules to the fetched history and calls an LLM through LangChain to produce a credit score.",
+      "status": "partly_met",
+      "evidence": "A rule-based scorer exists and is deterministic: sample_fintech_06/agents.py:_rule_based_base_score (lines 20-43). The code calls an LLM when use_llm is True, but it calls the OpenAI SDK directly (openai.OpenAI) instead of using LangChain (score_applicant lines 56-69).",
+      "cause": "builder_error",
+      "smallest_fix": "Use LangChain's LLM wrapper (e.g. langchain.OpenAI) or a thin adapter so the scoring agent invokes the model via LangChain; expose the rule evaluations (per-rule outputs) in the returned details object."
+    },
+    {
+      "requirement": "The explainer agent calls an LLM through LangChain to generate a human-readable rationale for the credit score from the scoring agent's result.",
+      "status": "partly_met",
+      "evidence": "sample_fintech_06/agents.py: explain_score exists and calls the OpenAI SDK directly when use_llm=True (lines 87-93). It returns a deterministic explanation in mock/no-LLM mode (lines 77-86). There is no LangChain usage.",
+      "cause": "builder_error",
+      "smallest_fix": "Switch the direct OpenAI client call to a LangChain LLM wrapper (or add a tiny adapter) and document the model env var; keep mock behavior for CI."
+    },
+    {
+      "requirement": "After the explainer agent runs, the pipeline stores the final credit score and the explanation back in Azure DocumentDB for that applicant (e.g. as fields on the applicant's document).",
+      "status": "met",
+      "evidence": "sample_fintech_06/run.py: run_pipeline performs an update_one with $set adding creditScore, creditScoreDetails, creditScoreExplanation (lines 14-21 and update_one at line 21).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "sample_fintech_06/db.py reads DOCUMENTDB_URI from the environment via os.getenv (lines 5-10). sample_fintech_06/agents.py reads OPENAI_API_KEY from environment (line 9). .env.example contains placeholders (app/.env.example lines 3-5).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A `.env.example` lists every setting with placeholder values.",
+      "status": "partly_met",
+      "evidence": ".env.example contains DOCUMENTDB_URI and OPENAI_API_KEY placeholders (app/.env.example lines 3-5) but does not include a MODEL_NAME / LLM_MODEL or LLM_PROVIDER env var while the code hardcodes the model name 'gpt-3.5-turbo' in agents.py (line 61 & line 91).",
+      "cause": "builder_error",
+      "smallest_fix": "Add placeholders to .env.example (and document them in README) for LLM model/provider (e.g., LLM_PROVIDER or OPENAI_MODEL) and for any other runtime flags (e.g., DB_NAME if configurable)."
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "The sample intentionally does not use vector/embeddings (decision log D010), so there is no vector index or embedding model in the repository to check.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add vector search later, add an env var for EMBEDDING_DIM and create/check the index with that dimension in the seed script or index creation step."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index created; no parameters in README.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is added, include index parameter defaults and a short README section showing how to tune them for larger datasets."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "met",
+      "evidence": "sample_fintech_06/db.py implements a module-global _client and get_client() that creates a MongoClient singleton (lines 12-19).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "sample_fintech_06/seed.py: SAMPLE list and main() use coll.replace_one({'_id': doc['_id']}, doc, upsert=True) to make the seed idempotent (lines 31-36).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample has no /search endpoint or HTTP server to validate; search functionality is not implemented.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If you add a /search API, validate empty-query and embedding failure cases and return 400/5xx with clear messages."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search functionality implemented.",
+      "cause": "prompt_silent",
+      "smallest_fix": "If vector search is added, return a similarity_score field in each hit."
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "not_met",
+      "evidence": "app/requirements.txt uses open-ended constraints (pymongo>=4.4, langchain>=0.0.300, openai>=0.27.0) rather than exact pinned versions.",
+      "cause": "builder_error",
+      "smallest_fix": "Pin the tested package versions (e.g., pymongo==4.20.1, python-dotenv==1.2.4, langchain==1.5.2, openai==3.59.0) in requirements.txt that match the environment used to validate the sample."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "tests/test_pipeline.py runs seed.main() and run_pipeline and connects to the real cluster via get_db(); the test relies on a reachable DocumentDB instance in the run (events show tests pass against the live cluster). No mock DB or local gateway is used.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Provide a mockable DB adapter or add a test-mode that uses an in-memory/mock pymongo or a local gateway; alternatively add separate unit tests that mock get_db() for CI."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No Bicep/Terraform/az CLI IaC files present in the repository. The README states a pre-provisioned cluster is required.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add an optional IaC example (Bicep or Terraform) that uses Microsoft.DocumentDB/mongoClusters (the vCore resource) with low-cost defaults in a separate infra/ directory, or state explicitly in README why IaC is omitted."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "README.md covers what the sample shows, prerequisites, setup, run and tests (lines 1-25) but does not include explicit clean-up steps or an IaC explanation for how to tear down resources (README lacks a cleanup section).",
+      "cause": "builder_error",
+      "smallest_fix": "Add a short Cleanup section to README explaining how to delete sample documents and (if IaC added) how to tear down provisioned resources."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README.md and .env.example use \"Azure DocumentDB\" and the code/README avoid the older 'Cosmos DB' naming (README lines 3 and .env.example line 3).",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Connection client reuse",
+      "practice": "Create and reuse a single MongoClient (one per process) rather than opening a new client per request; let the application/framework share and close it on shutdown.",
+      "category": "connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-mongodb-ef-core#run-crud-operations",
+      "status": "followed",
+      "evidence": "sample_fintech_06/db.py lines 12-19 implement a module-global _client and get_client() that instantiates MongoClient once.",
+      "source": "Quickstart: Connect MongoDB EF Core Provider to Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Quickstart: Connect MongoDB EF Core Provider to Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-mongodb-ef-core#run-crud-operations"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Connection timeouts & pool options",
+      "practice": "Tune driver connection options including serverSelectionTimeoutMS, connectTimeoutMS, socketTimeoutMS and maxPoolSize and size pools per-node when using SRV/query-from-any-node to avoid excessive connections.",
+      "category": "connection handling / performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/query-from-any-node#verify-that-query-from-any-node-is-enabled",
+      "status": "violated",
+      "evidence": "sample_fintech_06/db.py creates MongoClient(_DOCUMENTDB_URI) with no explicit socket/selection/connect timeouts or maxPoolSize (line 18).",
+      "source": "Query from any node in Azure DocumentDB",
+      "searched": "",
+      "fix": "Add sensible client options in get_client(), e.g. MongoClient(_DOCUMENTDB_URI, serverSelectionTimeoutMS=5000, connectTimeoutMS=10000, socketTimeoutMS=120000, maxPoolSize=100).",
+      "sources": [
+        {
+          "title": "Query from any node in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/query-from-any-node#verify-that-query-from-any-node-is-enabled"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Enforce TLS",
+      "practice": "Enforce TLS for all client connections to Azure DocumentDB (connection strings include tls=true/ssl=true) and use current trusted certificates.",
+      "category": "security / connection handling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/security#transport-security",
+      "status": "followed",
+      "evidence": ".env.example contains a tls=true example in the DOCUMENTDB_URI placeholder (line 3), and db.py reads the DOCUMENTDB_URI (lines 8-10) so TLS is driven by the connection string.",
+      "source": "Secure your Azure DocumentDB cluster",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Secure your Azure DocumentDB cluster",
+          "url": "https://learn.microsoft.com/azure/documentdb/security#transport-security"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Seed idempotency",
+      "practice": "When seeding sample documents, use upsert (replace_one/update_one with upsert=True) keyed on the document id so the seed script is idempotent.",
+      "category": "data modeling / provisioning",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "sample_fintech_06/seed.py uses coll.replace_one({'_id': doc['_id']}, doc, upsert=True) in main() (lines 31-36).",
+      "source": "local seed script (.replace_one upsert used in workspace)",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "local seed script (.replace_one upsert used in workspace)",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Atomic write of score",
+      "practice": "Perform updates that set score/explanation with single atomic update operations (e.g., update_one with $set or findAndModify) instead of read–modify–write sequences to avoid race conditions.",
+      "category": "writes / concurrency",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/tutorial-java-spring-data#create-the-project",
+      "status": "followed",
+      "evidence": "sample_fintech_06/run.py: update uses db.applicants.update_one({'_id': applicant_id}, {'$set': {...}}) to write creditScore, creditScoreDetails, creditScoreExplanation (lines 14-21 and call at line 21).",
+      "source": "Use Spring Data MongoDB with Azure DocumentDB: Build an inventory API",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Use Spring Data MongoDB with Azure DocumentDB: Build an inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/tutorial-java-spring-data#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Avoid large LLM storage",
+      "practice": "Avoid storing large LLM raw responses inside documents; if you must store raw LLM text for audits, consider storing pointers to blob storage and a small summary in the document.",
+      "category": "data modeling / storage",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P43",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/max-document-size",
+      "status": "violated",
+      "evidence": "score_applicant records details['llm_raw'] = text when parsing LLM output (agents.py lines 66-69), and run.py writes creditScoreExplanation directly into the applicant document (run.py lines 14-21). No truncation or external storage is used.",
+      "source": "Document size and batch write limits in Azure DocumentDB",
+      "searched": "",
+      "fix": "Persist only a short summary / pointer for raw LLM output (store raw text in blob storage and save a pointer plus a short digest in the document), or truncate LLM raw text before writing.",
+      "sources": [
+        {
+          "title": "Document size and batch write limits in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/max-document-size"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transient-fault retries",
+      "practice": "Handle transient faults with bounded retries and exponential backoff (add jitter); avoid retrying non-idempotent operations unless you implement idempotency de-duplication.",
+      "category": "retries / resilience",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults",
+      "status": "violated",
+      "evidence": "No retry/backoff logic around DB operations. get_client() and update/find calls are direct (db.py lines 14-19; run.py/agents.py calls no retries).",
+      "source": "Reliability in Azure DocumentDB",
+      "searched": "",
+      "fix": "Wrap database operations in a small retry helper with exponential backoff and jitter for transient errors, or enable driver retryable-writes where applicable and document idempotency considerations.",
+      "sources": [
+        {
+          "title": "Reliability in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/reliability/reliability-documentdb#resilience-to-transient-faults"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Test isolation",
+      "practice": "For tests and CI use a dedicated test database/collection or a dedicated test cluster and mock external LLM calls so tests run deterministically without secrets or production data.",
+      "category": "testing / development",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P22",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project",
+      "status": "violated",
+      "evidence": "tests/test_pipeline.py seeds real documents and uses get_db() to access the live cluster (test file lines 11-24). The tests passed in the build only because a reachable cluster was available during the run.",
+      "source": "Use Beanie with Azure DocumentDB: Build a Python inventory API",
+      "searched": "",
+      "fix": "Add tests that mock the DB adapter or run against an in-memory or local gateway; make live-cluster tests optional/integration-only with clear tags.",
+      "sources": [
+        {
+          "title": "Use Beanie with Azure DocumentDB: Build a Python inventory API",
+          "url": "https://learn.microsoft.com/azure/documentdb/quickstart-python-beanie#create-the-project"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Indexing for queries",
+      "practice": "Create single-field and compound indexes on all fields used in query filters and sorts (follow the Equality→Sort→Range ES R rule) to avoid collection scans.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "https://learn.microsoft.com/azure/documentdb/how-to-index",
+      "status": "followed",
+      "evidence": "The sample queries applicants by _id only, and relies on the default _id index (no additional indexes required for this equality pattern).",
+      "source": "Manage indexing in Azure DocumentDB",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "Manage indexing in Azure DocumentDB",
+          "url": "https://learn.microsoft.com/azure/documentdb/how-to-index"
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Audit trail / LangChain usage",
+      "practice": "Log and implement the intended multi-agent approach using LangChain; record the builder choice when deviating from the starter prompt.",
+      "category": "audit trail",
+      "availability": "discovered_not_listed",
+      "discovery_id": "",
+      "source_url": "",
+      "status": "violated",
+      "evidence": "The starter prompt explicitly requested \"Python LangChain multi-agent pipeline\". The code contains no LangChain usage; this deviation is not recorded as a decision in decisions.jsonl. Files show no imports from langchain (scan of repository).",
+      "source": "checklist only",
+      "searched": "",
+      "fix": "Either implement LangChain multi-agent orchestration or add a logged decision explaining why plain functions were used and update README to reflect the actual implementation.",
+      "sources": [],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is consistent with the build artifacts and the builder_report's stated open_issues; the trace shows tests ran and known gaps remain."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choosing Python is supported by the prompt and the repository code. The build used Python 3.13 in this environment (pip install logs in events.jsonl)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Selecting pymongo (pymongo>=4.4) matches requirements.txt and is consistent with the cluster server version and pymongo usage in db.py. The requirement file uses >=4.4 (events and requirements.txt)."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "The code implements a singleton MongoClient (sample_fintech_06/db.py lines 12-19). The documentdb-driver skill was loaded (events.jsonl) and the implementation follows it."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "The code reads DOCUMENTDB_URI from the environment and raises if absent (db.py lines 8-10). This matches the decision."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "The sample uses OpenAI directly (agents.py) with model 'gpt-3.5-turbo' and provides a mock mode. The decision to have a mock fallback is implemented and tests exercise mock mode."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "The build used the existing pre-provisioned cluster and did not attempt to create resources; events show no IaC actions and the README requires a pre-provisioned cluster."
+    },
+    {
+      "decision_id": "D008",
+      "assessment": "sound",
+      "comment": "The seed script and sample use an embedded data model (single applicants collection with embedded transactions/pastLoans) (seed.py lines 4-27). The decision is reflected in code."
+    },
+    {
+      "decision_id": "D009",
+      "assessment": "sound",
+      "comment": "The decision not to add indexes is reflected in the code and in the build/verification notes: queries use _id only so the default index suffices. The reasoning is explicit in the decision log."
+    },
+    {
+      "decision_id": "D010",
+      "assessment": "questionable",
+      "comment": "The decision not to use vector/embeddings was taken as a model_default. That choice is defensible for a small sample but is based on a model-default rather than explicit guidance; the readiness findings show public docs supporting vector features, so this default can be risky if the gallery expected a RAG example. Flagged as 'questionable' because it should have an explicit rationale in the repo or a documented trade-off."
+    },
+    {
+      "decision_id": "D011",
+      "assessment": "sound",
+      "comment": "Adding a mock-LLM mode is implemented in agents.py (mock branches) and the tests exercise mock mode; events.jsonl shows the test run used mock mode and passed."
+    },
+    {
+      "decision_id": "D012",
+      "assessment": "sound",
+      "comment": "The test modification to insert the project root onto sys.path was recorded and the events show the initial PYTHONPATH approach was refused; the change allowed pytest to run. The events.jsonl shows the refused run_command and subsequent write_file updating tests/test_pipeline.py."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "LangChain multi-agent sample guidance",
+      "what_was_missing": "A short gallery-level example and rule that mandates how to implement 'LangChain multi-agent' samples: minimal skeletons showing agent wrappers, tool contracts (input/output JSON shapes), and how to orchestrate three agents (fetch->score->explain) with LangChain.",
+      "where_searched": "Inspected repository and loaded documentdb-* skills; no public Microsoft Learn page provides a small canonical LangChain multi-agent sample for Azure DocumentDB.",
+      "effect_on_this_build": "The builder implemented the pipeline as plain Python functions instead of using LangChain, violating the starter prompt's explicit requirement and making the sample inconsistent with gallery conventions.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Agent-kit rule: include a reference LangChain 'three-agent' skeleton in the agent-kit that shows (1) how to wrap fetch/score/explain as LangChain agents/tools, (2) the expected JSON contract between agents (applicant document shape, score_result details schema), (3) how to run sequential orchestration and record agent metadata in write-back. Include a small code snippet and tests that exercise the LangChain orchestrator in mock mode.",
+      "priority": "high"
+    },
+    {
+      "topic": "Pin dependencies for gallery samples",
+      "what_was_missing": "A short guidance page telling builders to pin exact package versions in requirements.txt for gallery samples and example pinned versions used in CI/verification.",
+      "where_searched": "Searched sample repo and Microsoft Learn quickstarts; no explicit gallery guidance for pinned requirements was found by the discovery agent.",
+      "effect_on_this_build": "The repository uses open-ended version ranges (>=) which risks future breakage in CI and in user environments if transitive updates are incompatible.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A page titled 'Pinning Python dependencies for sample stability' describing why pinning is required for gallery samples, showing an example requirements.txt with pinned versions used in build verification, and instructions for periodic maintenance.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Test isolation / mock DocumentDB guidance",
+      "what_was_missing": "A recommended pattern and example for running tests without a live cluster: either a local gateway (docker) pattern, a mock pymongo adapter, or a documented test database/collection naming convention for isolated integration tests.",
+      "where_searched": "Searched Learn and quickstarts; while there are local-deployment tips, there was no single authoritative pattern or sample in the agent-kit demonstrating how to structure unit vs integration tests for DocumentDB+LLM samples.",
+      "effect_on_this_build": "The tests in this repo require a live cluster. That made CI/verification dependent on the environment and increased the chance of flakiness or secret exposure in some contexts.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add a short test-pattern doc and a sample test folder showing: unit tests that mock get_db() and the LLM, and a separate integration test profile that uses a local gateway docker-compose or a dedicated test cluster. Include a small helper to switch the DB adapter to a mock implementation inside tests.",
+      "priority": "high"
+    },
+    {
+      "topic": "Entra ID auth example for Python apps",
+      "what_was_missing": "A short, copy-paste Python example showing how to connect to an Azure DocumentDB managed MongoDB cluster using Microsoft Entra ID (OIDC) and azure.identity.DefaultAzureCredential with pymongo, plus the env vars and cluster settings needed.",
+      "where_searched": "Microsoft docs on Entra ID and DocumentDB exist but a concise, language-specific example that gallery builders could paste into samples was not surfaced in the agent-kit.",
+      "effect_on_this_build": "The sample defaults to connection-string auth and does not document why Entra ID was not used; builders could miss the recommended secure option for production.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "Add a short 'Use Microsoft Entra ID for authentication (Python)' snippet to the documentdb-security or documentdb-driver skill: show how to obtain an OIDC token and supply it to pymongo with authMechanism=MONGODB-OIDC and the azure.identity DefaultAzureCredential flow.",
+      "priority": "medium"
+    },
+    {
+      "topic": "IaC for vCore DocumentDB clusters (mongoClusters)",
+      "what_was_missing": "Clear example Bicep/Terraform snippets that create a managed MongoDB cluster using Microsoft.DocumentDB/mongoClusters (vCore) rather than the older databaseAccounts resource, plus a note on low-cost default parameters for gallery samples.",
+      "where_searched": "The discovery found the mongoClusters ARM docs but the agent-kit lacks a snippet to copy into sample repos.",
+      "effect_on_this_build": "No IaC was added; builders might attempt to use the wrong resource type or CLI commands (databaseAccounts/cosmosdb) and fail to provision the intended vCore clusters.",
+      "proposed_fix_type": "mcp_tool_or_description",
+      "proposed_content": "Provide a small 'iac/mongocluster.bicep' example and a README section demonstrating az documentdb mongocluster create with low-cost defaults, or explain why the sample avoids provisioning and link to authoritative IaC modules.",
+      "priority": "high"
+    },
+    {
+      "topic": "Guidance on recording agent metadata and audit fields",
+      "what_was_missing": "A short recommended write-back schema for samples that combine deterministic rules and LLM outputs: include fields for deterministic score, LLM score (if any), timestamp, model id/deployment, agent names, and pointer for raw LLM content.",
+      "where_searched": "Searches located RAG and governance pages but no small copy-paste schema for gallery samples was found.",
+      "effect_on_this_build": "The sample writes creditScoreDetails and creditScoreExplanation but does not add timestamp or agent metadata; auditability is reduced.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A one-page guideline 'Write-back schema for AI-augmented samples' with a recommended JSON shape (e.g., creditScore, deterministicScore, llmScore, llm_model, llm_prompt_hash, timestamp, agent_names, llm_raw_pointer) and small code snippets for atomic $set updates.",
+      "priority": "high"
+    }
+  ]
+}

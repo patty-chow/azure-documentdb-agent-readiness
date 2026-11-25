@@ -8,16 +8,11 @@
 
 ## What the starter prompt asks for
 
-- Implement the app in Python and build the pipeline using LangChain as a multi-agent system, explicitly defining three agents named "data-fetch agent", "scoring agent", and "explainer agent".
-- The data-fetch agent must connect to Azure DocumentDB (MongoDB-compatible) using a configurable connection string (not hard-coded) and query an applicant collection by applicant ID to return the applicant's persisted history (credit history/transactions, income, debts, past loans).
-- The data-fetch agent must return a structured Python dict/JSON containing the retrieved fields so the pipeline can pass them to downstream agents.
-- The scoring agent must include deterministic, inspectable risk-rule code (at least two explicit rules, e.g., debt-to-income threshold and missed-payments threshold) that computes a rule-based score and exposes the rule evaluations in its output.
-- The scoring agent must also invoke an LLM via LangChain (e.g., an LLMChain or equivalent LangChain call) to produce or refine a final credit score, and include both the rule-based score and the LLM-derived final score in its output.
-- The explainer agent must consume the applicant data and scoring outputs and produce a human-readable rationale (explanation text) that cites the key rule evaluations and LLM reasoning used to arrive at the score.
-- The pipeline must be orchestrated so agents run sequentially in this order: data-fetch agent -> scoring agent -> explainer agent, with each agent receiving the prior agent's output programmatically (no manual copy-paste).
-- After the explainer agent completes, the app must write the final credit score and the generated explanation back into the same applicant document in Azure DocumentDB, adding a timestamp and agent metadata (agent names, rule summary, and LLM output snippet) to the document.
-- The code must handle missing applicants or Azure DocumentDB errors gracefully: log the error, avoid writing incomplete results back to the database, and return a clear error/status from the pipeline.
-- Include an automated test or runnable example that exercises the full pipeline end-to-end against a test Azure DocumentDB dataset and asserts that the final score and explanation were written to Azure DocumentDB for the test applicant.
+- Implement the pipeline in Python with LangChain as a multi-agent setup with three distinct agents, a data-fetch agent, a scoring agent and an explainer agent, coordinated by a pipeline that runs them in that order for an applicant and passes each agent's output on to the next.
+- The data-fetch agent takes an applicant as input and retrieves that applicant's history from Azure DocumentDB through a Python MongoDB driver (e.g. pymongo), returning the fetched history to the pipeline.
+- The scoring agent applies risk rules to the fetched history and calls an LLM through LangChain to produce a credit score.
+- The explainer agent calls an LLM through LangChain to generate a human-readable rationale for the credit score from the scoring agent's result.
+- After the explainer agent runs, the pipeline stores the final credit score and the explanation back in Azure DocumentDB for that applicant (e.g. as fields on the applicant's document).
 
 ## What a gallery sample also needs (the starter prompt does not say these)
 
