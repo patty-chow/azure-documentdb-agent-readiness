@@ -1,0 +1,706 @@
+{
+  "verdict": "pass_with_findings",
+  "summary": "I read the sample under app/. A working Python sample is present: it connects to a DocumentDB cluster via DOCUMENTDB_URI, seeds an idempotent dataset, creates indexes, attempts a server-side $graphLookup and falls back to a bounded client-side traversal, applies AML heuristics, and emits structured Pydantic SuspiciousChain objects. The build ran seed and detector against the live cluster in this environment. Important gaps: the typology matching was not implemented as server-side aggregation stages (the detection logic runs in Python), a single shared MongoClient singleton was not implemented, tests require a live cluster (no offline unit tests), and some dependency versions are not fully pinned. Also, external documentation was not searchable from this run (documentation_search_available=false), so many external best-practice checks could not be verified beyond the local code. See requirement_results, checks and doc_gaps for details and minimal fixes.",
+  "requirement_results": [
+    {
+      "requirement": "Implement the agent in Python with LangChain as a single agent that is given a DocumentDB aggregation tool and invokes that tool to analyse transactions.",
+      "status": "partly_met",
+      "evidence": "src/detector.py defines AggregationTool that the CLI uses (src/run_detector.py lines 7-12) but there is no LangChain AgentExecutor or agent orchestration that loads this tool as a LangChain tool.",
+      "cause": "builder_error",
+      "smallest_fix": "Add a tiny example that registers AggregationTool as a LangChain Tool and runs an AgentExecutor (one file with a few lines showing Tool/AgentExecutor usage), or add an example function in run_detector.py demonstrating using LangChain to call the tool."
+    },
+    {
+      "requirement": "The DocumentDB aggregation tool runs aggregation pipelines against the transaction documents in Azure DocumentDB through a MongoDB driver (e.g. PyMongo's `aggregate`).",
+      "status": "met",
+      "evidence": "src/detector.py uses a PyMongo aggregation pipeline (lines ~34-46) and calls list(self.tx.aggregate(pipeline)). Requirements pin pymongo==4.4.0 (app/requirements.txt line 1).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Transactions are modelled as documents that reference other documents (e.g. a counterparty account or a linked transaction), and the aggregation tool follows those references to assemble counterparty chains (e.g. with `$graphLookup` or chained `$lookup` stages).",
+      "status": "met",
+      "evidence": "src/seed_data.py creates transaction documents with fields _id, from_account, to_account, timestamp (e.g. lines ~35-46). src/detector.py implements follow_chain using $graphLookup when supported (lines ~34-45) and a client-side BFS fallback (lines ~54-70).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Known AML typology rules are expressed as stages of the aggregation pipeline, so the typology matching runs in Azure DocumentDB (e.g. circular transfers, structuring just below a threshold, rapid pass-through of funds).",
+      "status": "not_met",
+      "evidence": "Detector applies rules in Python within detect_suspicious (src/detector.py lines ~72-128): structuring, rapid pass-through and cycle detection are implemented by Python queries and logic rather than as aggregation pipeline stages executed server-side.",
+      "cause": "builder_error",
+      "smallest_fix": "Move the heuristic computations into aggregation stages returned by the aggregation tool (e.g., construct a pipeline that $graphLookup -> $unwind/$group to compute tx_count, total_amount, time_span, and $match on thresholds) and return only flagged chains from the tool."
+    },
+    {
+      "requirement": "Chains that match a typology rule are flagged as suspicious, and the flagged chains are what the tool returns to the agent.",
+      "status": "met",
+      "evidence": "detect_suspicious builds SuspiciousChain objects when reasons exist and returns them; examples printed by python -m src.run_detector are the serialized flagged chains (events.jsonl run output). See src/detector.py lines ~118-128 and src/run_detector.py lines ~7-12.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "For each flagged chain the agent generates a structured suspicious activity narrative: an object with defined fields (e.g. a Pydantic model or JSON) that describes the chain and the suspicious pattern it matched.",
+      "status": "met",
+      "evidence": "src/detector.py defines SuspiciousChain as a Pydantic model (lines ~18-24) and populates narrative via _generate_narrative (lines ~130-148). The CLI prints JSON (src/run_detector.py lines ~7-12).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The connection string and model credentials come from environment variables; none appear in the repository.",
+      "status": "met",
+      "evidence": "app/.env.example lists DOCUMENTDB_URI and OPENAI_API_KEY (app/.env.example lines 4-7); src/db.py reads DOCUMENTDB_URI via os.getenv (lines ~9-16). No secrets are committed in the repo.",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "A .env.example lists every setting with placeholder values.",
+      "status": "met",
+      "evidence": "app/.env.example contains DOCUMENTDB_URI, OPENAI_API_KEY and DB_NAME (lines 4-10).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "The vector index dimensions match the embedding model's output.",
+      "status": "not_checkable",
+      "evidence": "This sample does not create vector indexes or call an embedding model; no vector-index code is present in the repo.",
+      "cause": "could_not_determine",
+      "smallest_fix": "If vector search will be added, add explicit embedding-dimension constants and verify index creation uses that dimension; include a short test that validates dimension consistency."
+    },
+    {
+      "requirement": "The vector index parameters are chosen for the sample's data size, and the README says how to change them for a larger one.",
+      "status": "not_checkable",
+      "evidence": "No vector index code or parameter guidance in the repository.",
+      "cause": "could_not_determine",
+      "smallest_fix": "Only applicable if the sample includes vector search: add index-parameter guidance and examples in README and the seed/index script."
+    },
+    {
+      "requirement": "One database client is created and reused across requests.",
+      "status": "partly_met",
+      "evidence": "src/db.py get_client() constructs a new MongoClient on each call (lines ~13-19). The CLI calls get_db() once for a single run, but other code paths call get_db() separately (seed_data and run_detector each call get_db()), so there is no module-level shared client singleton.",
+      "cause": "builder_error",
+      "smallest_fix": "Create a module-level client in src/db.py (e.g., instantiate MongoClient once on first call and cache it) and have get_client()/get_db reuse that client."
+    },
+    {
+      "requirement": "A seed script loads sample data and creates the index, and can be run twice without duplicating data.",
+      "status": "met",
+      "evidence": "src/seed_data.py creates indexes in ensure_indexes (lines ~7-13), inserts accounts and uses replace_one(..., upsert=True) for transactions (lines ~47-52) and uses a metadata marker to skip rerun (lines ~18-21 and 51-52).",
+      "cause": "none",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "/search returns a clear error for an empty query and when the embedding call fails.",
+      "status": "not_checkable",
+      "evidence": "The sample does not implement a /search web endpoint.",
+      "cause": "could_not_determine",
+      "smallest_fix": "Not applicable unless a search endpoint is added; then validate empty-query behavior and embed-failure handling."
+    },
+    {
+      "requirement": "Search results include the similarity score.",
+      "status": "not_checkable",
+      "evidence": "No search endpoint or vector similarity code present in the repo.",
+      "cause": "could_not_determine",
+      "smallest_fix": ""
+    },
+    {
+      "requirement": "Dependencies are pinned in `requirements.txt`.",
+      "status": "partly_met",
+      "evidence": "app/requirements.txt pins pymongo==4.4.0, pydantic==1.10.11, python-dotenv==1.0.0 but uses openai>=1.0.0 and langchain>=0.0.200 (lines 1-5).",
+      "cause": "builder_error",
+      "smallest_fix": "Pin openai and langchain to tested versions (replace >= with exact versions) and run a quick install to verify compatibility."
+    },
+    {
+      "requirement": "Unit tests run without a live cluster.",
+      "status": "not_met",
+      "evidence": "tests/test_seed_and_detect.py is explicitly skipped if DOCUMENTDB_URI is not set (tests/test_seed_and_detect.py line 7); it requires a live cluster to run.",
+      "cause": "prompt_silent",
+      "smallest_fix": "Add a separate unit-test module that uses a mocking library (e.g., mongomock or patching MongoClient) so tests can run offline and deterministically."
+    },
+    {
+      "requirement": "Infrastructure for the cluster is provided as code, using the Azure DocumentDB resource type.",
+      "status": "not_met",
+      "evidence": "No IaC (Bicep/Terraform/ARM) files are present and README explicitly states the sample expects an existing cluster and does not provision one.",
+      "cause": "tool_unavailable",
+      "smallest_fix": "Add optional IaC snippets (Bicep/Terraform) as examples (clearly marked optional) using the appropriate Azure resource type; include a note the sample runs against an existing cluster by default."
+    },
+    {
+      "requirement": "The README covers what the sample shows, prerequisites, setup, run, and clean-up.",
+      "status": "partly_met",
+      "evidence": "README.md documents what the sample shows, prerequisites and quickstart run steps (app/README.md lines ~5-13 and ~32-47) but does not include explicit clean-up steps (no drop/teardown guidance).",
+      "cause": "builder_error",
+      "smallest_fix": "Add a short 'clean-up' section to README that explains how to remove seed data (e.g., commands to drop the sample_banking_01 database or delete sample collections)."
+    },
+    {
+      "requirement": "The sample uses the name \"Azure DocumentDB\" throughout, and no former or neighbouring product name.",
+      "status": "met",
+      "evidence": "README and .env.example refer to 'DocumentDB (MongoDB-compatible)' / 'Azure DocumentDB' consistently (app/README.md line 1 and lines ~7). No mention of a neighbouring product was found.",
+      "cause": "none",
+      "smallest_fix": ""
+    }
+  ],
+  "checks": [
+    {
+      "topic": "Env var for connection",
+      "practice": "Read the DocumentDB connection string from the DOCUMENTDB_URI environment variable at runtime and provide a .env.example placeholder rather than committing credentials.",
+      "category": "authentication",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P01",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/.env.example lines 1-7; src/db.py lines 7-16 (load_dotenv and os.getenv('DOCUMENTDB_URI')).",
+      "source": ".env.example / src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example / src/db.py / README.md",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent seeding",
+      "practice": "Seed sample data idempotently using replace_one(..., upsert=True) for each seeded document and mark seeding completion with a dedicated metadata document to avoid duplicate seeds on re-run.",
+      "category": "testing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P02",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/seed_data.py lines ~47-52 use db.transactions.replace_one(..., upsert=True) and meta.replace_one(..., upsert=True); seed checks meta.find_one({'sample_seeded': True}) (lines ~18-21).",
+      "source": "src/seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create indexes",
+      "practice": "Create single-field indexes on transactions for fields used in traversal and filtering (from_account, to_account, timestamp) and a unique index on accounts.account_id before running queries.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P03",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/seed_data.py ensure_indexes creates idx_from_account, idx_to_account, idx_timestamp and idx_account_id unique on accounts (lines ~7-13).",
+      "source": "src/seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "GraphLookup detection",
+      "practice": "Detect whether the server supports $graphLookup by issuing a minimal aggregation with explain and, if unsupported, fall back to a client-side traversal implementation.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P04",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py supports_graph_lookup runs an aggregate with explain (lines ~36-48) and src/detector.py uses supports_graph_lookup result (line ~30) to choose pipeline vs client-side BFS.",
+      "source": "src/db.py / src/detector.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/detector.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Limit graph depth",
+      "practice": "When using $graphLookup in aggregation pipelines, set maxDepth to limit recursion and bound server-side graph traversal work.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P05",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/detector.py constructs $graphLookup with 'maxDepth': max_hops (lines ~36-43).",
+      "source": "src/detector.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/detector.py",
+          "url": ""
+        },
+        {
+          "title": "src/detector.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Client-side BFS fallback",
+      "practice": "Implement a bounded client-side BFS traversal fallback that tracks visited transaction IDs and limits hops to avoid unbounded in-memory expansion and cycles.",
+      "category": "performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P06",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/detector.py client-side fallback uses visited set, queue and hops limit (lines ~54-70).",
+      "source": "src/detector.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/detector.py",
+          "url": ""
+        },
+        {
+          "title": "src/detector.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Projection in aggregation",
+      "practice": "Use projection (e.g., $project) in aggregation pipelines to return only the necessary fields (for example, project only the assembled 'chain') to reduce network and memory use.",
+      "category": "performance",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P07",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/detector.py pipeline includes {'$project': {'chain': 1}} (lines ~44-45).",
+      "source": "src/detector.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/detector.py",
+          "url": ""
+        },
+        {
+          "title": "src/detector.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Explain aggregation operators",
+      "practice": "Use aggregate explain (or explain-mode aggregation) to validate whether certain aggregation operators are accepted by the server without scanning or requiring actual data.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P08",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py supports_graph_lookup calls db.command({'aggregate': 'transactions', 'pipeline': pipeline, 'explain': True}) (lines ~47-48).",
+      "source": "src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Create indexes before data insert",
+      "practice": "Create the indexes the application needs before inserting the sample data (ensure indexes are created in the seed script prior to data writes).",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P09",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/seed_data.py main() calls ensure_indexes(db) then seed(db) (lines ~56-59).",
+      "source": "src/seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Optional external keys",
+      "practice": "Read optional external API keys (e.g., OPENAI_API_KEY) from the environment and only invoke external services when the key is present to keep optional dependencies conditional.",
+      "category": "authentication",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P10",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/detector.py reads OPENAI_API_KEY via os.getenv and uses OpenAI only if present (lines ~13-16 and ~130-141).",
+      "source": "src/detector.py / README.md",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/detector.py / README.md",
+          "url": ""
+        },
+        {
+          "title": "src/detector.py",
+          "url": ""
+        },
+        {
+          "title": "README.md",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Fail fast on missing URI",
+      "practice": "Fail fast with a clear error if the required DOCUMENTDB_URI environment variable is not set so the operator can supply configuration before runtime.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P11",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py get_client() raises EnvironmentError if DOCUMENTDB_URI is not set (lines ~13-17).",
+      "source": "src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Place $match early",
+      "practice": "Place $match early in aggregation pipelines (before expensive stages) and use projection; validate heavy pipelines with explain to avoid long-running scans.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P12",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/detector.py pipeline starts with {'$match': {'from_account': start_account}} (line ~35) and includes projection (line ~44). supports_graph_lookup uses explain (src/db.py line ~48).",
+      "source": "src/detector.py / src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/detector.py / src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/detector.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Transaction doc fields",
+      "practice": "Design transaction documents with explicit fields used by detectors (from_account, to_account, timestamp, amount, and a consistent _id) to support deterministic queries and joins.",
+      "category": "data_modeling",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P13",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/seed_data.py constructs transactions with _id, amount, timestamp, from_account, to_account (lines ~33-46).",
+      "source": "src/seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Time-window queries",
+      "practice": "Use timestamp sorting and explicit time-window queries (ranges) when checking for rapid pass-through behavior.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P14",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/detector.py computes in_time and queries for outgoing tx within timedelta(minutes=15) (lines ~97-104).",
+      "source": "src/detector.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/detector.py",
+          "url": ""
+        },
+        {
+          "title": "src/detector.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Idempotent upserts",
+      "practice": "Use replace_one(..., upsert=True) for idempotent writes when seeding or when a retried operation should not create duplicates.",
+      "category": "retries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P15",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/seed_data.py uses db.transactions.replace_one({'_id': doc['_id']}, doc, upsert=True) when inserting transactions (lines ~47-49).",
+      "source": "src/seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Example connection string TLS",
+      "practice": "Include an example connection string showing SSL/TLS options (e.g., ssl=true) in .env.example to indicate TLS should be used in production connections.",
+      "category": "connection",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P16",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "app/.env.example includes a commented example with ssl=true (lines ~2-4).",
+      "source": ".env.example",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": ".env.example",
+          "url": ""
+        },
+        {
+          "title": ".env.example",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Validate operators with explain",
+      "practice": "If an aggregation operator may be unavailable on the server, use explain rather than running the pipeline to validate operator acceptance without executing heavy work.",
+      "category": "queries",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P17",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/db.py uses {'explain':True} in the aggregate command to validate $graphLookup (lines ~47-48).",
+      "source": "src/db.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/db.py",
+          "url": ""
+        },
+        {
+          "title": "src/db.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Optional LLM conditional",
+      "practice": "Keep optional external integrations conditional (check for API key presence at runtime) and fall back to local deterministic templates if the external LLM is not available.",
+      "category": "architecture",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P18",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/detector.py uses OPENAI_API_KEY conditional and falls back to templated narrative if OpenAI call fails (lines ~13-16, ~131-148).",
+      "source": "src/detector.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/detector.py",
+          "url": ""
+        },
+        {
+          "title": "src/detector.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    },
+    {
+      "topic": "Unique account index",
+      "practice": "Use a unique index on accounts.account_id to enforce uniqueness for account lookup and to support deterministic traversal starting points.",
+      "category": "indexing",
+      "availability": "discovered_and_listed",
+      "discovery_id": "P19",
+      "source_url": "",
+      "status": "followed",
+      "evidence": "src/seed_data.py creates acc.create_index([('account_id', ASCENDING)], unique=True, name='idx_account_id') (lines ~12-13).",
+      "source": "src/seed_data.py",
+      "searched": "",
+      "fix": "",
+      "sources": [
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        },
+        {
+          "title": "src/seed_data.py",
+          "url": ""
+        }
+      ],
+      "what_would_help": ""
+    }
+  ],
+  "decision_reviews": [
+    {
+      "decision_id": "D001",
+      "assessment": "sound",
+      "comment": "Approval with readiness 'ready_with_gaps' is an operator action. The decision is recorded and consistent with the build/run events."
+    },
+    {
+      "decision_id": "D002",
+      "assessment": "sound",
+      "comment": "Choice of Python 3.13 is supported by the environment and reflected in the build logs (events show Python 3.13 on PATH)."
+    },
+    {
+      "decision_id": "D003",
+      "assessment": "sound",
+      "comment": "Choice of PyMongo (pymongo==4.4) is implemented in code and requirements.txt. The decision's reason_source is 'model_default' (the implementer selected a reasonable default); consider documenting the chosen driver/version in README for discoverability."
+    },
+    {
+      "decision_id": "D004",
+      "assessment": "sound",
+      "comment": "Reading DOCUMENTDB_URI from the environment is implemented (src/db.py lines ~13-19) and correctly recorded."
+    },
+    {
+      "decision_id": "D005",
+      "assessment": "sound",
+      "comment": "Attempting $graphLookup then falling back is implemented: supports_graph_lookup in src/db.py and follow_chain in src/detector.py. Events show the check and fallback were executed during runs."
+    },
+    {
+      "decision_id": "D006",
+      "assessment": "sound",
+      "comment": "Optional OpenAI summarization is implemented conditionally. The reason_source is 'model_default' (a default design choice); it is defensible but would benefit from a README note describing how narratives are generated and which OpenAI versions were tested."
+    },
+    {
+      "decision_id": "D007",
+      "assessment": "sound",
+      "comment": "The decision to skip pytest is recorded with reason_source 'tool_unavailable' and the events show pytest was not on PATH (events.jsonl). The alternative (installing pytest) was available but the run exercised the main scripts directly instead."
+    }
+  ],
+  "doc_gaps": [
+    {
+      "topic": "Single shared MongoClient",
+      "what_was_missing": "Guidance in public docs or an explicit sample-level rule advising that a single MongoClient instance should be created and reused for the life of the process (module-level client or cached factory).",
+      "where_searched": "Local code only (documentation_search_available=false). I inspected src/db.py, src/seed_data.py, src/run_detector.py.",
+      "effect_on_this_build": "The sample constructs a new MongoClient in get_client() each call; this is functional but not optimal for connection pooling and can lead to extra connections.",
+      "proposed_fix_type": "agent_kit_rule",
+      "proposed_content": "Add a short rule in the agent kit: 'Create and reuse a single MongoClient per process; expose get_client() that returns a cached client. Example code snippet and rationale.'",
+      "priority": "medium"
+    },
+    {
+      "topic": "Server feature and operator compatibility for DocumentDB",
+      "what_was_missing": "Authoritative, discoverable guidance that states which MongoDB aggregation operators ($graphLookup, explain, server-side JS, etc.) and vector-index createIndex options the managed DocumentDB cluster supports and the exact parameter names/syntax.",
+      "where_searched": "Local code and readiness notes; no external docs reachable (documentation_search_available=false).",
+      "effect_on_this_build": "Implementer added a runtime supports_graph_lookup check and a client-side fallback. Without official operator support docs, implementers must rely on runtime checks and cannot author guaranteed server-side pipelines or index creation snippets.",
+      "proposed_fix_type": "discoverability",
+      "proposed_content": "A small 'Feature matrix' page listing supported aggregation operators, the exact createIndex syntax for vector indexes and the recommended engine options and example commands tested against the validated cluster SKU; include an index-creation sample and an explain-based operator-test snippet.",
+      "priority": "high"
+    },
+    {
+      "topic": "Vector index parameters and embedding-dimension guidance",
+      "what_was_missing": "Explicit, public guidance connecting embedding model output dimensions to the vector index 'dims' parameter and recommended HNSW/IVF/DiskANN tuning values for small sample datasets vs production.",
+      "where_searched": "Local repository and prior-belief searches recorded in discovery; external docs were not reachable (documentation_search_available=false).",
+      "effect_on_this_build": "The sample does not implement vector indexes; if vector search is added later, implementers will lack authoritative defaults to choose safe parameters or to tune them for recall/latency.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "A page titled 'Vector search on Azure DocumentDB — dimensions and index tuning' that states: the tested embedding dimensions for recommended models, how to create indexes with exact `createIndex` fields, and suggested efConstruction/efSearch/nprobe equivalents for small vs large datasets.",
+      "priority": "medium"
+    },
+    {
+      "topic": "Secrets best practices (Key Vault / managed identity)",
+      "what_was_missing": "Clear guidance for storing/rotating long-lived secrets (DOCUMENTDB_URI, OPENAI_API_KEY) in Azure Key Vault and how to use a managed identity for least-privilege access for data-plane where supported.",
+      "where_searched": "Local repository, readiness notes; external docs not reachable.",
+      "effect_on_this_build": "Sample correctly avoids committing secrets but provides only .env-based usage. Operators may expect a recommended production path to Key Vault/managed identity.",
+      "proposed_fix_type": "learn_doc",
+      "proposed_content": "Short 'Secrets & production config' page showing (1) example of reading secrets from Azure Key Vault using DefaultAzureCredential where supported, (2) fallback to env var for local dev, (3) explanation of which data-plane auth methods are supported for the validated cluster SKU.",
+      "priority": "high"
+    },
+    {
+      "topic": "Offline unit-testing guidance",
+      "what_was_missing": "A recommended pattern and example tests that run without a live cluster (e.g., using mongomock or patching MongoClient) so CI can run tests offline.",
+      "where_searched": "Local tests and README; external docs not reachable.",
+      "effect_on_this_build": "Current test requires a live cluster and therefore will not run in an offline CI job; developers will be unable to get quick feedback without a cluster.",
+      "proposed_fix_type": "sample_or_quickstart",
+      "proposed_content": "Add 'tests_offline.md' and a small test module demonstrating how to patch the pymongo.MongoClient to use mongomock or a fake collection for unit tests; include a tox/pytest marker example.",
+      "priority": "high"
+    },
+    {
+      "topic": "Index and createIndex syntax for vector indexes (naming/disambiguation)",
+      "what_was_missing": "A clear, authoritative example showing exact createIndex keys and accepted parameter names for HNSW/IVF/DiskANN on the managed DocumentDB SKU (names and allowed ranges).",
+      "where_searched": "Local repo; no external docs available.",
+      "effect_on_this_build": "Without exact option names, a script that attempts to create vector indexes may fail at runtime on some SKUs.",
+      "proposed_fix_type": "naming_or_disambiguation",
+      "proposed_content": "A minimal 'create_vector_index.py' sample with validated syntax and annotated parameter descriptions for the supported index types; include a short README paragraph about compatibility caveats.",
+      "priority": "high"
+    }
+  ]
+}
