@@ -1,6 +1,6 @@
 # Questions for the Azure DocumentDB engineering and docs owners
 
-Distilled from the open-question sections of the 43 phase-4 filings (`findings/phase4/filings/`). Each
+Distilled from the open-question sections of the 44 phase-4 filings (`findings/phase4/filings/`). Each
 block lists the filings that cannot go public until it is answered. One answer per block clears every
 filing that cites it. Decisions that belong to a repository maintainer rather than a service SME are at
 the end.
@@ -20,13 +20,13 @@ timeouts and latency? Which error codes does a client see during HA or cross-reg
 stepdown, or network errors only)? Does the engine return the `TransientTransactionError` and
 `UnknownTransactionCommitResult` labels that drivers' `withTransaction` retry relies on (also L08)?
 
-## 3. Host forms (K01, K03, K10, L05, L06, L07). RESEARCHED 2026-11-25: 9 sub-questions settled from sources, 3 open, see DECISIONS.md
+## 3. Host forms (K01, K03, K10, L05, L06, L07). RESEARCHED 2026-11-25: 9 sub-questions settled from sources, 3 open; the managed test answered the connection-string names for a single cluster, see DECISIONS.md
 
 Learn shows both `<cluster>.mongocluster.cosmos.azure.com` and `<cluster>.global.mongocluster.cosmos.azure.com`.
 When is the `.global.` host required (clusters with a cross-region replica only?), and does the plain
 host work for a single cluster? Should guidance say "keep whichever the portal gives"?
 
-## 4. Driver and ODM version floors (K03, K07, K20, L01, L05, H11). RESEARCHED 2026-11-25: 12 sub-questions settled from sources, 5 open, see DECISIONS.md
+## 4. Driver and ODM version floors (K03, K07, K20, L01, L05, H11). RESEARCHED 2026-11-25: 12 sub-questions settled from sources, 5 open; the managed test answered the OIDC item for 8.0 and moved the PyMongo OIDC floor to 4.11 (or 4.7 with ALLOWED_HOSTS), see DECISIONS.md
 
 Minimum driver versions for `MONGODB-OIDC` (drafts cite PyMongo 4.7 and Node `mongodb` 6.7; Java and
 .NET unknown). The PyMongo floor for `AsyncMongoClient` (4.9 beta, 4.11, or 4.13 GA). Whether the kit
@@ -35,7 +35,7 @@ correct Motor deprecation and end-of-life dates. Minimum driver version per lang
 versions 5.0 to 8.0, and whether Node 24 is tested. Tested pins for the LlamaIndex, Java, .NET, Go and
 Rust quickstarts. Should any skill state version minimums at all?
 
-## 5. Microsoft Entra ID specifics (K03, L05, L07). RESEARCHED 2026-11-25: 10 sub-questions settled from sources, 2 open, see DECISIONS.md
+## 5. Microsoft Entra ID specifics (K03, L05, L07). RESEARCHED 2026-11-25: 10 sub-questions settled from sources, 2 open; tested on the managed service the same day, see DECISIONS.md
 
 Must `readWriteAnyDatabase` and `clusterAdmin` be granted together for non-admin Entra identities, or
 are they separate roles? Accepted `--type` values for `az documentdb mongocluster microsoft-entra-user
@@ -58,7 +58,7 @@ return, and is an identical `createIndexes` a no-op? Can a new index return empt
 and for how long? Are BSON Binary vectors definitely not indexed, and is the "expected an array type
 field" error worth documenting? Is the MCP README's minimal `vector-hnsw` example valid as written?
 
-## 7. Full-text and hybrid search status (K05, K17, K22, K23, L02, L09). SETTLED 2026-11-25 except whether code 115 also appears during activation, see DECISIONS.md
+## 7. Full-text and hybrid search status (K05, K17, K22, K23, L02, L09). SETTLED 2026-11-25; the managed test answered the activation question (115, then 67, then success after about 3.5 minutes), see DECISIONS.md
 
 Is full-text search (`createSearchIndexes`, `$search`) still preview with the `FullTextSearch` preview
 feature and a roughly 10-minute activation, or GA? Is `CommandNotSupported` (code 115, "Search index
@@ -68,7 +68,7 @@ on every tier with no SKU restriction? Learn's hybrid-search tuning text says a 
 arm while its example uses the smaller one: which is right? `compatibility-query-language` marks
 `$listSearchIndexes` unsupported while the search pages use it: which is correct?
 
-## 8. Change streams (K04, K07, K32, L03, L09). RESEARCHED 2026-11-25: 7 sub-questions settled from sources, 6 open, see DECISIONS.md
+## 8. Change streams (K04, K07, K32, L03, L09). RESEARCHED 2026-11-25: 7 sub-questions settled from sources, 6 open; the managed test answered the expired-token item in part, see DECISIONS.md
 
 Is the active change log 400 MB, and is that where `resumeAfter` stops working? Do historical streams
 reach back up to 35 days through point-in-time restore? Can multishard change streams still not be
@@ -77,7 +77,7 @@ still preview? Do single-shard clusters need no enablement step? What error does
 a token that can no longer be resumed? Is there a CLI, ARM or Bicep property for the multishard toggle?
 Is `fullDocument: 'updateLookup'` supported on all tiers?
 
-## 9. Transactions, write semantics and bulk operations (K07, L03, L04, L08). RESEARCHED 2026-11-25: 14 sub-questions settled from sources, 8 open, see DECISIONS.md
+## 9. Transactions, write semantics and bulk operations (K07, L03, L04, L08). RESEARCHED 2026-11-25: 14 sub-questions settled from sources, 8 open; the managed test answered 3 of them and part of a fourth and found a silent rollback after a snapshot conflict, see DECISIONS.md
 
 Are multi-document transactions supported across shards, with the same 30-second lifetime, and are
 there limits on operations, documents or size per transaction? Which `w`, `j`, `wtimeoutMS`,
@@ -87,7 +87,7 @@ collection-level `bulkWrite()` working in current drivers? Is there any server-s
 concurrency token? Recommended starting batch sizes per M-series tier; are foreground unique-index
 builds and the `blocking: true` option current for all server versions?
 
-## 10. Schema validation, TTL, indexing and query behaviour (K11, K32, L08, L10). RESEARCHED 2026-11-25: 12 sub-questions settled from sources, 5 open, see DECISIONS.md
+## 10. Schema validation, TTL, indexing and query behaviour (K11, K32, L08, L10). RESEARCHED 2026-11-25: 12 sub-questions settled from sources, 5 open; the managed test answered 3 and narrowed 1, see DECISIONS.md
 
 Does `$jsonSchema` support `enum`, `additionalProperties`, `allOf`/`anyOf`/`oneOf`/`not`,
 `patternProperties` and `dependencies` today? Is `{ unique: true, partialFilterExpression: { key: { $exists: true } } }`
@@ -100,7 +100,7 @@ checking for `COLLSCAN` anywhere in explain output work with DocumentDB's explai
 monitoring facts: diagnostic logs unavailable on M30 and lower and free tiers; the `vCoreMongoRequests`
 category and table; metric names `CpuPercent`, `MemoryPercent`, `StoragePercent`, `IOPS`.
 
-## 11. CLI, IaC and server versions (K20, K34, X01, H09, H11). RESEARCHED 2026-11-25: 17 sub-questions settled from sources, 5 open, see DECISIONS.md
+## 11. CLI, IaC and server versions (K20, K34, X01, H09, H11). RESEARCHED 2026-11-25: 17 sub-questions settled from sources, 5 open; the managed test saw an 8.0-to-7.0 downgrade accepted without warning on one cluster, see DECISIONS.md
 
 Is `az cosmosdb mongocluster` (cosmosdb-preview) deprecated or only superseded by `az documentdb
 mongocluster`, and is a deprecation redirect the owners' plan? Are both groups still preview, and is
@@ -140,6 +140,8 @@ of `MetadataFilters`) still hold?
   Step 8; bulk-load rule in `driver` or `local-deployment`; install-script URI edits now or later.
 - MCP server (M01): hide tools whose tier is off from `tools/list`, or keep the description note; move
   `create_index` to the write tier.
+- CLI extension (X02): warn when `update` gets a `--server-version` lower than the current one, or only
+  fix the help text.
 - Harness (H01 to H12): intent of the experiment (management and write tools on or off); keep
   `max_consecutive_errors_per_request=10` upstream or fork-only; `run_policy` as a `ReasonSource`; pin
   Python 3.12; where shared prompt blocks live; LLM defaults for builders; re-baseline runs before quoting

@@ -1,0 +1,1245 @@
+{
+  "test": "m-cli",
+  "goal": "CLI and control-plane behaviour: (a) server-version downgrade on the 8.0 test cluster; (b) first-use dynamic install of the documentdb extension in a brand-new AZURE_CONFIG_DIR without a TTY; (c) which server versions a NEW cluster accepts (5.0, 6.0).",
+  "database": "none (no database was read or written; the only data-plane calls were hello and buildInfo on admin)",
+  "observed_on": "2026-11-25",
+  "run_window_utc": {
+    "started": "2026-11-25T23:14:09+00:00",
+    "finished": "2026-11-25T23:22:39+00:00"
+  },
+  "cluster": {
+    "resource": "Microsoft.DocumentDB/mongoClusters ddb-samples-shared, resource group documentdb-samples-rg, eastus",
+    "shape_before": "M30, shardCount 1, serverVersion 8.0, PremiumSSDv2 128 GB, HA Disabled, public network access, auth modes MicrosoftEntraID + NativeAuth",
+    "shape_after": "identical except serverVersion 7.0",
+    "engine_identity_before": {
+      "hello.maxWireVersion": 25,
+      "hello.internal.documentdb_versions": [
+        "2.2-1",
+        "2.3.0",
+        "12.1-1"
+      ],
+      "hello.internal.kind": "azuredocumentdb",
+      "buildInfo.version": "8.0.0 (recorded by m-hosts, m-query and m-txn-bulk earlier on 2026-11-25)"
+    },
+    "engine_identity_after": {
+      "hello.maxWireVersion": 21,
+      "hello.internal.documentdb_versions": [
+        "2.2-1",
+        "2.3.0",
+        "12.1-1"
+      ],
+      "hello.internal.kind": "azuredocumentdb",
+      "buildInfo.version": "7.0.0"
+    }
+  },
+  "client": {
+    "az": "azure-cli 2.89.1 (Homebrew, Python 3.14), extension documentdb 1.0.0 (api-version 2026-06-01)",
+    "python": "/Users/julietai/claude/azure-documentdb-agent-readiness/.venv/bin/python, PyMongo 4.20.1",
+    "shell": "agent Bash tool, stdin not a TTY"
+  },
+  "sources_read_first": [
+    "findings/phase4/DECISIONS.md, 'CLI, IaC and server versions (SME topic 11)': settled items on dynamic install without a TTY, accepted --server-version values at create time, in-place upgrade, required create parameters; open items 2 (downgrade) and 3 (5.0 and 6.0 for new clusters)",
+    "findings/phase4/ENGINE-TESTS.md: no CLI or control-plane section (the open-source engine has no control plane); documentdb-local 0.117 and 1.2.0 advertise wire version 21 / MongoDB 7.0.0"
+  ],
+  "steps": [
+    {
+      "id": "p0-shell-tty",
+      "step": "Does the agent's own shell give az a TTY?",
+      "command": "python: sys.stdin.isatty() / os.isatty(0) in the agent's Bash tool process",
+      "response": {
+        "kind": "derived",
+        "stdin_isatty": false,
+        "note": "pre.py itself is launched from the agent's Bash tool"
+      },
+      "reading": "The agent's Bash tool runs commands with a non-TTY stdin, so any az call it makes takes the no-prompt dynamic-install path by default.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p1-az-version",
+      "step": "Client versions",
+      "command": "az version -o json",
+      "response": {
+        "started_at": "2026-11-25T23:14:09+00:00",
+        "duration_s": 0.11,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": {
+          "azure-cli": "2.89.1",
+          "azure-cli-core": "2.89.1",
+          "azure-cli-telemetry": "1.1.0",
+          "extensions": {
+            "account": "0.2.5",
+            "cosmosdb-preview": "1.7.0",
+            "documentdb": "1.0.0"
+          }
+        },
+        "stderr": ""
+      },
+      "reading": "azure-cli 2.89.1 with the documentdb extension 1.0.0 (plus account 0.2.5 and cosmosdb-preview 1.7.0) in the user's normal config dir.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p2-extension-list",
+      "step": "Installed extensions in the normal config dir",
+      "command": "az extension list --query '[].{name:name, version:version, preview:preview, experimental:experimental}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:14:09+00:00",
+        "duration_s": 0.11,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": [
+          {
+            "experimental": false,
+            "name": "account",
+            "preview": false,
+            "version": "0.2.5"
+          },
+          {
+            "experimental": false,
+            "name": "cosmosdb-preview",
+            "preview": false,
+            "version": "1.7.0"
+          },
+          {
+            "experimental": false,
+            "name": "documentdb",
+            "preview": false,
+            "version": "1.0.0"
+          }
+        ],
+        "stderr": ""
+      },
+      "reading": "documentdb 1.0.0 is installed in the normal config dir and is not a preview build, so steps a and c use the stable command surface.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p3-dynamic-install-config",
+      "step": "Dynamic-install configuration",
+      "command": "az config get extension -o json",
+      "response": {
+        "started_at": "2026-11-25T23:14:09+00:00",
+        "duration_s": 0.11,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": [],
+        "stderr": "WARNING: Command group 'config' is experimental and under development. Reference and support levels: https://aka.ms/CLI_refstatus\n"
+      },
+      "reading": "No extension.* keys are configured (empty list), so use_dynamic_install, dynamic_install_allow_preview and run_after_dynamic_install all take their built-in defaults.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p4-help-update",
+      "step": "update --help (flag names for step a)",
+      "command": "az documentdb mongocluster update --help",
+      "response": {
+        "started_at": "2026-11-25T23:14:10+00:00",
+        "duration_s": 0.13,
+        "exit_code": 0,
+        "stdout": "\nCommand\n    az documentdb mongocluster update : Update a mongo cluster. Only the properties specified in the\n    request are modified; all other properties are left unchanged (HTTP PATCH). Generic update\n    arguments (--set, --add, --remove) are supported.\n\nArguments\n    --no-wait                      : Do not wait for the long-running operation to finish.  Allowed\n                                     values: 0, 1, f, false, n, no, t, true, y, yes.\n\nAdministrator Arguments\n    --admin-password --password -p : The administrator password.  If value is blank it's asked from\n                                     the tty.\n    --admin-user -u                : The administrator user name.\n\nAuthConfig Arguments\n    --auth-allowed-modes           : Space-separated list of allowed authentication modes for data\n                                     access. Allowed values: NativeAuth, MicrosoftEntraID. Example:\n                                     --auth-allowed-modes NativeAuth MicrosoftEntraID  Support\n                                     shorthand-syntax, json-file and yaml-file. Try \"??\" to show\n                                     more.\n\nCompute Arguments\n    --tier                         : The compute tier to assign to the cluster, where each tier maps\n                                     to a virtual-core and memory size. Example values: 'M30',\n                                     'M40'.\n\nDataApi Arguments\n    --data-api-mode                : Enable or disable the Mongo Data API on the cluster. Allowed\n                                     values: Enabled, Disabled. Example: --data-api-mode Enabled.\n                                     Allowed values: Disabled, Enabled.\n\nGeneric Update Arguments\n    --add                          : Add an object to a list of objects by specifying a path and key\n                                     value pairs.  Example: `--add property.listProperty <key=value,\n                                     string or JSON string>`.\n    --force-string                 : When using 'set' or 'add', preserve string literals instead of\n                                     attempting to convert to JSON.  Allowed values: 0, 1, f, false,\n                                     n, no, t, true, y, yes.\n    --remove                       : Remove a property or an element from a list.  Example:\n                                     `--remove property.list <indexToRemove>` OR `--remove\n                                     propertyToRemove`.\n    --set                          : Update an object by specifying a property path and value to\n                                     set.  Example: `--set property1.property2=<value>`.\n\nGlobal Policy Arguments\n    --acquire-policy-token         : Acquiring an Azure Policy token automatically for this resource\n                                     operation.\n    --change-reference             : The related change reference ID for this resource operation.\n\nHighAvailability Arguments\n    --high-availability            : The target high availability mode requested for the cluster.\n                                     Allowed values: Disabled, SameZone, ZoneRedundantPreferred.\n\nProperties Arguments\n    --encryption                   : The encryption configuration for the cluster. Depends on\n                                     identity being configured.  Support shorthand-syntax, json-file\n                                     and yaml-file. Try \"??\" to show more.\n    --network-bypass-mode          : The network bypass mode for the cluster. Setting to\n                                     'AzureCosmosDB' allows Azure Cosmos DB service to bypass\n                                     network restrictions.  Allowed values: AzureCosmosDB, None.\n    --preview-features             : Space-separated list of preview features to enable on the\n                                     cluster. Preview feature names are free-form strings; refer to\n                                     the mongo cluster feature documentation for the currently\n                                     available values.  Support shorthand-syntax, json-file and\n                                     yaml-file. Try \"??\" to show more.\n    --public-network-access        : Whether or not public endpoint access is allowed for this mongo\n                                     cluster.  Allowed values: Disabled, Enabled.\n    --server-version               : The Mongo DB server version. Defaults to the latest available\n                                     version if not specified.\n\nResource Arguments\n    --tags                         : Resource tags.  Support shorthand-syntax, json-file and yaml-\n                                     file. Try \"??\" to show more.\n\nResource Id Arguments\n    --cluster-name --name -n       : The name of the mongo cluster.\n    --ids                          : One or more resource IDs (space-delimited). It should be a\n                                     complete resource ID containing all information of 'Resource\n                                     Id' arguments. You should provide either --ids or other\n                                     'Resource Id' arguments.\n    --resource-group -g            : Name of resource group. You can configure the default group\n                                     using `az configure --defaults group=<name>`.\n    --subscription                 : Name or ID of subscription. You can configure the default\n                                     subscription using `az account set -s NAME_OR_ID`.\n\nSharding Arguments\n    --shard-count                  : Number of shards to provision on the cluster.\n\nStorage Arguments\n    --storage-size                 : The size of the data disk assigned to each server.\n    --storage-type                 : The type of storage to provision the cluster servers with.\n                                     Allowed values: PremiumSSD, PremiumSSDv2.\n\nGlobal Arguments\n    --debug                        : Increase logging verbosity to show all debug logs.\n    --help -h                      : Show this help message and exit.\n    --only-show-errors             : Only show errors, suppressing warnings.\n    --output -o                    : Output format.  Allowed values: json, jsonc, none, table, tsv,\n                                     yaml, yamlc.  Default: json.\n    --query                        : JMESPath query string. See http://jmespath.org/ for more\n                                     information and examples.\n    --verbose                      : Increase logging verbosity. Use --debug for full debug logs.\n\nExamples\n    Update a mongo cluster's compute tier.\n        az documentdb mongocluster update -n MyCluster -g MyResourceGroup --tier M40\n\n",
+        "stdout_json": null,
+        "stderr": "WARNING: This command is from the following extension: documentdb\n"
+      },
+      "reading": "The downgrade flag is --server-version; its help says only 'Defaults to the latest available version if not specified' and nothing restricts it to upgrades or warns that a lower value downgrades; the command is described as an HTTP PATCH (the 1.0.0 source does GET, edits the body, then PATCH at api-version 2026-06-01).",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p4-help-create",
+      "step": "create --help (flags for step c)",
+      "command": "az documentdb mongocluster create --help",
+      "response": {
+        "started_at": "2026-11-25T23:14:10+00:00",
+        "duration_s": 0.13,
+        "exit_code": 0,
+        "stdout": "\nCommand\n    az documentdb mongocluster create : Create a mongo cluster. Update overwrites all properties for\n    the resource. To only modify some of the properties, use PATCH.\n\nArguments\n    --cluster-name --name -n       [Required] : The name of the mongo cluster.\n    --resource-group -g            [Required] : Name of resource group. You can configure the\n                                                default group using `az configure --defaults\n                                                group=<name>`.\n    --no-wait                                 : Do not wait for the long-running operation to\n                                                finish.  Allowed values: 0, 1, f, false, n, no, t,\n                                                true, y, yes.\n\nAdministrator Arguments\n    --admin-password --password -p [Required] : The administrator password.  If value is blank it's\n                                                asked from the tty.\n    --admin-user -u                [Required] : The administrator user name.\n\nAuthConfig Arguments\n    --auth-allowed-modes                      : Space-separated list of allowed authentication modes\n                                                for data access. Allowed values: NativeAuth,\n                                                MicrosoftEntraID. Example: --auth-allowed-modes\n                                                NativeAuth MicrosoftEntraID  Support shorthand-\n                                                syntax, json-file and yaml-file. Try \"??\" to show\n                                                more.\n\nCompute Arguments\n    --tier                         [Required] : The compute tier to assign to the cluster, where\n                                                each tier maps to a virtual-core and memory size.\n                                                Example values: 'M30', 'M40'.\n\nDataApi Arguments\n    --data-api-mode                           : Enable or disable the Mongo Data API on the cluster.\n                                                Allowed values: Enabled, Disabled. Example: --data-\n                                                api-mode Enabled.  Allowed values: Disabled,\n                                                Enabled.\n\nGlobal Policy Arguments\n    --acquire-policy-token                    : Acquiring an Azure Policy token automatically for\n                                                this resource operation.\n    --change-reference                        : The related change reference ID for this resource\n                                                operation.\n\nHighAvailability Arguments\n    --high-availability            [Required] : The target high availability mode requested for the\n                                                cluster.  Allowed values: Disabled, SameZone,\n                                                ZoneRedundantPreferred.\n\nIdentity Arguments\n    --mi-user-assigned --user-assigned        : Set the user managed identities.  Support shorthand-\n                                                syntax, json-file and yaml-file. Try \"??\" to show\n                                                more.\n\nProperties Arguments\n    --encryption                              : The encryption configuration for the cluster.\n                                                Depends on identity being configured.  Support\n                                                shorthand-syntax, json-file and yaml-file. Try \"??\"\n                                                to show more.\n    --network-bypass-mode                     : The network bypass mode for the cluster. Setting to\n                                                'AzureCosmosDB' allows Azure Cosmos DB service to\n                                                bypass network restrictions.  Allowed values:\n                                                AzureCosmosDB, None.\n    --preview-features                        : Space-separated list of preview features to enable\n                                                on the cluster. Preview feature names are free-form\n                                                strings; refer to the mongo cluster feature\n                                                documentation for the currently available values.\n                                                Support shorthand-syntax, json-file and yaml-file.\n                                                Try \"??\" to show more.\n    --public-network-access                   : Whether or not public endpoint access is allowed for\n                                                this mongo cluster.  Allowed values: Disabled,\n                                                Enabled.\n    --server-version                          : The Mongo DB server version. Defaults to the latest\n                                                available version if not specified.\n\nResource Arguments\n    --location -l                             : The geo-location where the resource lives  When not\n                                                specified, the location of the resource group will\n                                                be used.\n    --tags                                    : Resource tags.  Support shorthand-syntax, json-file\n                                                and yaml-file. Try \"??\" to show more.\n\nSharding Arguments\n    --shard-count                  [Required] : Number of shards to provision on the cluster.\n\nStorage Arguments\n    --storage-size                 [Required] : The size of the data disk assigned to each server.\n    --storage-type                            : The type of storage to provision the cluster servers\n                                                with.  Allowed values: PremiumSSD, PremiumSSDv2.\n\nGlobal Arguments\n    --debug                                   : Increase logging verbosity to show all debug logs.\n    --help -h                                 : Show this help message and exit.\n    --only-show-errors                        : Only show errors, suppressing warnings.\n    --output -o                               : Output format.  Allowed values: json, jsonc, none,\n                                                table, tsv, yaml, yamlc.  Default: json.\n    --query                                   : JMESPath query string. See http://jmespath.org/ for\n                                                more information and examples.\n    --subscription                            : Name or ID of subscription. You can configure the\n                                                default subscription using `az account set -s\n                                                NAME_OR_ID`.\n    --verbose                                 : Increase logging verbosity. Use --debug for full\n                                                debug logs.\n\nExamples\n    Create a mongo cluster with Premium SSD v2 storage.\n        az documentdb mongocluster create -n MyCluster -g MyResourceGroup --location eastus --admin-\n        user dbadmin --admin-password MyP@ssw0rd123! --tier M30 --storage-size 128 --storage-type\n        PremiumSSDv2 --shard-count 1 --high-availability Disabled\n\n",
+        "stdout_json": null,
+        "stderr": "WARNING: This command is from the following extension: documentdb\n"
+      },
+      "reading": "Required: --admin-password, --admin-user, --name, --resource-group, --high-availability, --shard-count, --storage-size, --tier; --server-version is a free string; the summary line still says 'Update overwrites all properties for the resource'.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p4-help-delete",
+      "step": "delete --help (flags for step c)",
+      "command": "az documentdb mongocluster delete --help",
+      "response": {
+        "started_at": "2026-11-25T23:14:10+00:00",
+        "duration_s": 0.13,
+        "exit_code": 0,
+        "stdout": "\nCommand\n    az documentdb mongocluster delete : Delete a mongo cluster.\n\nArguments\n    --no-wait                : Do not wait for the long-running operation to finish.  Allowed\n                               values: 0, 1, f, false, n, no, t, true, y, yes.\n    --yes -y                 : Do not prompt for confirmation.\n\nGlobal Policy Arguments\n    --acquire-policy-token   : Acquiring an Azure Policy token automatically for this resource\n                               operation.\n    --change-reference       : The related change reference ID for this resource operation.\n\nResource Id Arguments\n    --cluster-name --name -n : The name of the mongo cluster.\n    --ids                    : One or more resource IDs (space-delimited). It should be a complete\n                               resource ID containing all information of 'Resource Id' arguments.\n                               You should provide either --ids or other 'Resource Id' arguments.\n    --resource-group -g      : Name of resource group. You can configure the default group using `az\n                               configure --defaults group=<name>`.\n    --subscription           : Name or ID of subscription. You can configure the default\n                               subscription using `az account set -s NAME_OR_ID`.\n\nGlobal Arguments\n    --debug                  : Increase logging verbosity to show all debug logs.\n    --help -h                : Show this help message and exit.\n    --only-show-errors       : Only show errors, suppressing warnings.\n    --output -o              : Output format.  Allowed values: json, jsonc, none, table, tsv, yaml,\n                               yamlc.  Default: json.\n    --query                  : JMESPath query string. See http://jmespath.org/ for more information\n                               and examples.\n    --verbose                : Increase logging verbosity. Use --debug for full debug logs.\n\nExamples\n    Delete a mongo cluster.\n        az documentdb mongocluster delete -n MyCluster -g MyResourceGroup\n\n",
+        "stdout_json": null,
+        "stderr": "WARNING: This command is from the following extension: documentdb\n"
+      },
+      "reading": "delete takes --yes to skip the confirmation prompt and --no-wait; it was never run because no cluster was created.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p4-help-check-name-availability",
+      "step": "check-name-availability --help",
+      "command": "az documentdb mongocluster check-name-availability --help",
+      "response": {
+        "started_at": "2026-11-25T23:14:10+00:00",
+        "duration_s": 0.13,
+        "exit_code": 0,
+        "stdout": "\nCommand\n    az documentdb mongocluster check-name-availability : Check if mongo cluster name is available\n    for use.\n\nArguments\n\nBody Arguments\n    --name                 : The name of the resource for which availability needs to be checked.\n    --type                 : The resource type.  Default: Microsoft.DocumentDB/mongoClusters.\n\nGlobal Policy Arguments\n    --acquire-policy-token : Acquiring an Azure Policy token automatically for this resource\n                             operation.\n    --change-reference     : The related change reference ID for this resource operation.\n\nResource Id Arguments\n    --ids                  : One or more resource IDs (space-delimited). It should be a complete\n                             resource ID containing all information of 'Resource Id' arguments. You\n                             should provide either --ids or other 'Resource Id' arguments.\n    --location -l          : Location. Values from: `az account list-locations`. You can configure\n                             the default location using `az configure --defaults\n                             location=<location>`.\n    --subscription         : Name or ID of subscription. You can configure the default subscription\n                             using `az account set -s NAME_OR_ID`.\n\nGlobal Arguments\n    --debug                : Increase logging verbosity to show all debug logs.\n    --help -h              : Show this help message and exit.\n    --only-show-errors     : Only show errors, suppressing warnings.\n    --output -o            : Output format.  Allowed values: json, jsonc, none, table, tsv, yaml,\n                             yamlc.  Default: json.\n    --query                : JMESPath query string. See http://jmespath.org/ for more information\n                             and examples.\n    --verbose              : Increase logging verbosity. Use --debug for full debug logs.\n\nExamples\n    Check if a mongo cluster name is available.\n        az documentdb mongocluster check-name-availability --location eastus --name MyCluster\n\n",
+        "stdout_json": null,
+        "stderr": "WARNING: This command is from the following extension: documentdb\n"
+      },
+      "reading": "Takes --location, --name and --type (default Microsoft.DocumentDB/mongoClusters).",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p4-help-wait",
+      "step": "wait --help",
+      "command": "az documentdb mongocluster wait --help",
+      "response": {
+        "started_at": "2026-11-25T23:14:10+00:00",
+        "duration_s": 0.13,
+        "exit_code": 0,
+        "stdout": "\nCommand\n    az documentdb mongocluster wait : Place the CLI in a waiting state until a condition is met.\n\nArguments\n\nGlobal Policy Arguments\n    --acquire-policy-token   : Acquiring an Azure Policy token automatically for this resource\n                               operation.\n    --change-reference       : The related change reference ID for this resource operation.\n\nResource Id Arguments\n    --cluster-name --name -n : The name of the mongo cluster.\n    --ids                    : One or more resource IDs (space-delimited). It should be a complete\n                               resource ID containing all information of 'Resource Id' arguments.\n                               You should provide either --ids or other 'Resource Id' arguments.\n    --resource-group -g      : Name of resource group. You can configure the default group using `az\n                               configure --defaults group=<name>`.\n    --subscription           : Name or ID of subscription. You can configure the default\n                               subscription using `az account set -s NAME_OR_ID`.\n\nWait Condition Arguments\n    --created                : Wait until created with 'provisioningState' at 'Succeeded'.\n    --custom                 : Wait until the condition satisfies a custom JMESPath query. E.g.\n                               provisioningState!='InProgress',\n                               instanceView.statuses[?code=='PowerState/running'].\n    --deleted                : Wait until deleted.\n    --exists                 : Wait until the resource exists.\n    --interval               : Polling interval in seconds.  Default: 30.\n    --timeout                : Maximum wait in seconds.  Default: 3600.\n    --updated                : Wait until updated with provisioningState at 'Succeeded'.\n\nGlobal Arguments\n    --debug                  : Increase logging verbosity to show all debug logs.\n    --help -h                : Show this help message and exit.\n    --only-show-errors       : Only show errors, suppressing warnings.\n    --output -o              : Output format.  Allowed values: json, jsonc, none, table, tsv, yaml,\n                               yamlc.  Default: json.\n    --query                  : JMESPath query string. See http://jmespath.org/ for more information\n                               and examples.\n    --verbose                : Increase logging verbosity. Use --debug for full debug logs.\n\n",
+        "stdout_json": null,
+        "stderr": "WARNING: This command is from the following extension: documentdb\n"
+      },
+      "reading": "wait supports --created, --deleted, --exists and --custom with a 30 s default interval and 3600 s timeout; recorded for completeness.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p5-rg-show",
+      "step": "Resource group location",
+      "command": "az group show -n documentdb-samples-rg --query '{name:name, location:location, provisioningState:properties.provisioningState}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:14:10+00:00",
+        "duration_s": 1.1,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": {
+          "location": "eastus",
+          "name": "documentdb-samples-rg",
+          "provisioningState": "Succeeded"
+        },
+        "stderr": ""
+      },
+      "reading": "documentdb-samples-rg is in eastus, which the create commands of step c would have inherited.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p6-resource-list-baseline",
+      "step": "Resource baseline before the test",
+      "command": "az resource list -g documentdb-samples-rg --query '[].{name:name, type:type, location:location, tags:tags}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:14:11+00:00",
+        "duration_s": 1.45,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": [
+          {
+            "location": "eastus",
+            "name": "ddb-samples-shared",
+            "tags": {
+              "purpose": "samples-factory"
+            },
+            "type": "Microsoft.DocumentDB/mongoClusters"
+          }
+        ],
+        "stderr": ""
+      },
+      "reading": "The resource group held exactly one resource, the shared cluster ddb-samples-shared.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p7-mongocluster-list-baseline",
+      "step": "Cluster baseline before the test",
+      "command": "az documentdb mongocluster list -g documentdb-samples-rg --query '[].{name:name, serverVersion:properties.serverVersion, tier:properties.compute.tier, provisioningState:properties.provisioningState, clusterStatus:properties.clusterStatus}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:14:13+00:00",
+        "duration_s": 0.71,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": [
+          {
+            "clusterStatus": "Ready",
+            "name": "ddb-samples-shared",
+            "provisioningState": "Succeeded",
+            "serverVersion": "8.0",
+            "tier": "M30"
+          }
+        ],
+        "stderr": ""
+      },
+      "reading": "ddb-samples-shared was serverVersion 8.0, M30, Succeeded and Ready before the test.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p8-name-availability-ddb-ver-test-50",
+      "step": "Name ddb-ver-test-50 available?",
+      "command": "az documentdb mongocluster check-name-availability --location eastus --name ddb-ver-test-50 --type Microsoft.DocumentDB/mongoClusters -o json",
+      "response": {
+        "started_at": "2026-11-25T23:14:13+00:00",
+        "duration_s": 1.88,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": {
+          "message": "",
+          "nameAvailable": true,
+          "reason": ""
+        },
+        "stderr": ""
+      },
+      "reading": "The name was available globally (nameAvailable true), so a create would not have failed on the name.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "p8-name-availability-ddb-ver-test-60",
+      "step": "Name ddb-ver-test-60 available?",
+      "command": "az documentdb mongocluster check-name-availability --location eastus --name ddb-ver-test-60 --type Microsoft.DocumentDB/mongoClusters -o json",
+      "response": {
+        "started_at": "2026-11-25T23:14:15+00:00",
+        "duration_s": 5.06,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": {
+          "message": "",
+          "nameAvailable": true,
+          "reason": ""
+        },
+        "stderr": ""
+      },
+      "reading": "The name was available globally (nameAvailable true).",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "a0-hello-before",
+      "step": "(a) hello before the downgrade",
+      "command": "pymongo.MongoClient($MANAGED_URI, serverSelectionTimeoutMS=20000).admin.command('hello')",
+      "response": {
+        "kind": "driver",
+        "pymongo_version": "4.20.1",
+        "duration_s": 1.16,
+        "response": {
+          "ok": 1.0,
+          "maxWireVersion": 25,
+          "minWireVersion": 0,
+          "msg": "isdbgrid",
+          "internal": {
+            "documentdb_versions": [
+              "2.2-1",
+              "2.3.0",
+              "12.1-1"
+            ],
+            "kind": "azuredocumentdb"
+          }
+        },
+        "error": null
+      },
+      "reading": "Before the attempt the gateway advertised maxWireVersion 25 (MongoDB 8.0) with engine versions 2.2-1, 2.3.0 and 12.1-1; documentdb-local 0.117 and 1.2.0 advertise wire version 21 (7.0.0), so this differs from the open-source image.",
+      "vs_open_source": "different"
+    },
+    {
+      "id": "a1-state-before",
+      "step": "(a) control-plane state before the downgrade",
+      "command": "az documentdb mongocluster show -g documentdb-samples-rg -n ddb-samples-shared --query '{serverVersion:properties.serverVersion, provisioningState:properties.provisioningState, clusterStatus:properties.clusterStatus, tier:properties.compute.tier, storage:properties.storage, shardCount:properties.sharding.shardCount, haTargetMode:properties.highAvailability.targetMode, authAllowedModes:properties.authConfig.allowedModes, publicNetworkAccess:properties.publicNetworkAccess, lastModifiedAt:systemData.lastModifiedAt}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:15:55+00:00",
+        "duration_s": 0.7,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": {
+          "authAllowedModes": [
+            "MicrosoftEntraID",
+            "NativeAuth"
+          ],
+          "clusterStatus": "Ready",
+          "haTargetMode": "Disabled",
+          "lastModifiedAt": "2026-11-25T22:28:32.9215263Z",
+          "provisioningState": "Succeeded",
+          "publicNetworkAccess": "Enabled",
+          "serverVersion": "8.0",
+          "shardCount": 1,
+          "storage": {
+            "sizeGb": 128,
+            "type": "PremiumSSDv2"
+          },
+          "tier": "M30"
+        },
+        "stderr": ""
+      },
+      "reading": "serverVersion 8.0, provisioningState Succeeded, clusterStatus Ready, M30, PremiumSSDv2 128 GB, HA Disabled, auth modes MicrosoftEntraID and NativeAuth (left by m-entra).",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "a2-update-server-version-7.0",
+      "step": "(a) az documentdb mongocluster update --server-version 7.0 on the 8.0 cluster",
+      "command": "az documentdb mongocluster update -g documentdb-samples-rg -n ddb-samples-shared --server-version 7.0",
+      "response": {
+        "started_at": "2026-11-25T23:16:13+00:00",
+        "duration_s": 93.54,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": {
+          "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared",
+          "identity": {
+            "type": "None"
+          },
+          "location": "eastus",
+          "name": "ddb-samples-shared",
+          "properties": {
+            "administrator": {
+              "userName": "factoryadmin"
+            },
+            "authConfig": {
+              "allowedModes": [
+                "MicrosoftEntraID",
+                "NativeAuth"
+              ]
+            },
+            "backup": {
+              "earliestRestoreTime": "2026-11-25T20:55:55Z"
+            },
+            "clusterStatus": "Updating",
+            "compute": {
+              "tier": "M30"
+            },
+            "connectionString": "mongodb+srv://<user>:<password>@ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+            "createMode": "Default",
+            "dataApi": {
+              "mode": "Disabled"
+            },
+            "highAvailability": {
+              "targetMode": "Disabled"
+            },
+            "infrastructureVersion": "2.0",
+            "networkBypassMode": "None",
+            "previewFeatures": [
+              "FullTextSearch"
+            ],
+            "privateEndpointConnections": [],
+            "provisioningState": "Updating",
+            "publicNetworkAccess": "Enabled",
+            "replica": {
+              "role": "Primary"
+            },
+            "serverVersion": "7.0",
+            "sharding": {
+              "shardCount": 1
+            },
+            "storage": {
+              "sizeGb": 128,
+              "type": "PremiumSSDv2"
+            }
+          },
+          "resourceGroup": "documentdb-samples-rg",
+          "systemData": {
+            "createdAt": "2026-11-25T20:35:33.2901136Z",
+            "createdBy": "<email-masked>",
+            "createdByType": "User",
+            "lastModifiedAt": "2026-11-25T23:16:14.2039025Z",
+            "lastModifiedBy": "<email-masked>",
+            "lastModifiedByType": "User"
+          },
+          "tags": {
+            "purpose": "samples-factory"
+          },
+          "type": "Microsoft.DocumentDB/mongoClusters"
+        },
+        "stderr": ""
+      },
+      "reading": "The control plane accepted the downgrade: no error, exit code 0 after 93.5 s, and the returned resource already showed serverVersion 7.0 while provisioningState and clusterStatus still read Updating.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "a2b-update-wall",
+      "step": "(a) wall time of the update",
+      "command": "wall time of the update command",
+      "response": {
+        "kind": "derived",
+        "wall_s": 93.5
+      },
+      "reading": "The CLI waited 93.5 s for the long-running operation.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "a4-poll-1795648689",
+      "step": "(a) poll show after the update returned",
+      "command": "az documentdb mongocluster show -g documentdb-samples-rg -n ddb-samples-shared --query '{serverVersion:properties.serverVersion, provisioningState:properties.provisioningState, clusterStatus:properties.clusterStatus, tier:properties.compute.tier, storage:properties.storage, shardCount:properties.sharding.shardCount, haTargetMode:properties.highAvailability.targetMode, authAllowedModes:properties.authConfig.allowedModes, publicNetworkAccess:properties.publicNetworkAccess, lastModifiedAt:systemData.lastModifiedAt}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:18:09+00:00",
+        "duration_s": 0.6,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": {
+          "authAllowedModes": [
+            "MicrosoftEntraID",
+            "NativeAuth"
+          ],
+          "clusterStatus": "Ready",
+          "haTargetMode": "Disabled",
+          "lastModifiedAt": "2026-11-25T23:16:14.2039025Z",
+          "provisioningState": "Succeeded",
+          "publicNetworkAccess": "Enabled",
+          "serverVersion": "7.0",
+          "shardCount": 1,
+          "storage": {
+            "sizeGb": 128,
+            "type": "PremiumSSDv2"
+          },
+          "tier": "M30"
+        },
+        "stderr": ""
+      },
+      "reading": "2026-11-25T23:18:09+00:00: serverVersion 7.0, provisioningState Succeeded, clusterStatus Ready; the first poll, 23 s after the CLI returned, already showed the downgrade complete.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "a5-hello-after",
+      "step": "(a) hello after the downgrade",
+      "command": "pymongo.MongoClient($MANAGED_URI, serverSelectionTimeoutMS=20000).admin.command('hello')",
+      "response": {
+        "kind": "driver",
+        "pymongo_version": "4.20.1",
+        "duration_s": 1.16,
+        "response": {
+          "ok": 1.0,
+          "maxWireVersion": 21,
+          "minWireVersion": 0,
+          "msg": "isdbgrid",
+          "internal": {
+            "documentdb_versions": [
+              "2.2-1",
+              "2.3.0",
+              "12.1-1"
+            ],
+            "kind": "azuredocumentdb"
+          }
+        },
+        "error": null
+      },
+      "reading": "After the downgrade the gateway advertises maxWireVersion 21 (MongoDB 7.0) with unchanged engine versions 2.2-1, 2.3.0, 12.1-1, so the version switch is a wire-compatibility level on the same engine build; wire 21 is what documentdb-local 0.117 and 1.2.0 advertise.",
+      "vs_open_source": "same"
+    },
+    {
+      "id": "a6-buildinfo-after",
+      "step": "(a) buildInfo after the downgrade",
+      "command": "pymongo.MongoClient($MANAGED_URI, serverSelectionTimeoutMS=20000).admin.command('buildInfo')",
+      "response": {
+        "kind": "driver",
+        "pymongo_version": "4.20.1",
+        "duration_s": 1.1,
+        "response": {
+          "version": "7.0.0",
+          "versionArray": [
+            7,
+            0,
+            0,
+            0
+          ],
+          "maxBsonObjectSize": 16777216,
+          "ok": 1.0,
+          "all_keys": [
+            "bits",
+            "maxBsonObjectSize",
+            "ok",
+            "version",
+            "versionArray"
+          ]
+        },
+        "error": null
+      },
+      "reading": "buildInfo now reports version 7.0.0 / versionArray [7,0,0,0] where sibling tests recorded 8.0.0 earlier the same day; documentdb-local also advertises 7.0.0.",
+      "vs_open_source": "same"
+    },
+    {
+      "id": "a4-state-after",
+      "step": "(a) control-plane state after the downgrade",
+      "command": "az documentdb mongocluster show -g documentdb-samples-rg -n ddb-samples-shared --query '{serverVersion:properties.serverVersion, provisioningState:properties.provisioningState, clusterStatus:properties.clusterStatus, tier:properties.compute.tier, storage:properties.storage, shardCount:properties.sharding.shardCount, haTargetMode:properties.highAvailability.targetMode, authAllowedModes:properties.authConfig.allowedModes, publicNetworkAccess:properties.publicNetworkAccess, lastModifiedAt:systemData.lastModifiedAt}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:18:18+00:00",
+        "duration_s": 0.91,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": {
+          "authAllowedModes": [
+            "MicrosoftEntraID",
+            "NativeAuth"
+          ],
+          "clusterStatus": "Ready",
+          "haTargetMode": "Disabled",
+          "lastModifiedAt": "2026-11-25T23:16:14.2039025Z",
+          "provisioningState": "Succeeded",
+          "publicNetworkAccess": "Enabled",
+          "serverVersion": "7.0",
+          "shardCount": 1,
+          "storage": {
+            "sizeGb": 128,
+            "type": "PremiumSSDv2"
+          },
+          "tier": "M30"
+        },
+        "stderr": ""
+      },
+      "reading": "The cluster settled at serverVersion 7.0, provisioningState Succeeded, clusterStatus Ready, with every other property unchanged.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "a7-activity-log",
+      "step": "(a) activity log three minutes after the update",
+      "command": "az monitor activity-log list --resource-group documentdb-samples-rg --offset 30m --query '[?contains(resourceId, '\"'\"'ddb-samples-shared'\"'\"')].{time:eventTimestamp, op:operationName.value, status:status.value, subStatus:subStatus.value, httpStatus:properties.statusCode, statusMessage:properties.statusMessage, caller:caller, correlationId:correlationId}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:19:03+00:00",
+        "duration_s": 1.04,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": [
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/read",
+            "status": "Running",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:16:45.3086562Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/read",
+            "status": "Running",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:16:29.9205385Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": "Accepted",
+            "op": "Microsoft.DocumentDB/mongoClusters/write",
+            "status": "Accepted",
+            "statusMessage": null,
+            "subStatus": "Accepted",
+            "time": "2026-11-25T23:16:14.4538996Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/write",
+            "status": "Started",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:16:14.1257803Z"
+          }
+        ],
+        "stderr": ""
+      },
+      "reading": "ARM logged the write as Started then Accepted (HTTP 202) at 23:16:14Z, then 'read' events with status Running at about 15 s intervals, which fits the CLI polling the long-running operation; the final event had not been ingested yet.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "a7b-activity-log-recheck",
+      "step": "(a) activity log re-checked",
+      "command": "az monitor activity-log list --resource-group documentdb-samples-rg --offset 40m --query '[?contains(resourceId, '\"'\"'ddb-samples-shared'\"'\"')].{time:eventTimestamp, op:operationName.value, status:status.value, subStatus:subStatus.value, httpStatus:properties.statusCode, statusMessage:properties.statusMessage, caller:caller, correlationId:correlationId}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:22:38+00:00",
+        "duration_s": 0.92,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": [
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/write",
+            "status": "Succeeded",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:17:47.81286Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/read",
+            "status": "Running",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:17:31.9408775Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/read",
+            "status": "Running",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:17:16.7731818Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/read",
+            "status": "Running",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:17:01.5129782Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/read",
+            "status": "Running",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:16:45.3086562Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/read",
+            "status": "Running",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:16:29.9205385Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": "Accepted",
+            "op": "Microsoft.DocumentDB/mongoClusters/write",
+            "status": "Accepted",
+            "statusMessage": null,
+            "subStatus": "Accepted",
+            "time": "2026-11-25T23:16:14.4538996Z"
+          },
+          {
+            "caller": "<email-masked>",
+            "correlationId": "<guid-masked>",
+            "httpStatus": null,
+            "op": "Microsoft.DocumentDB/mongoClusters/write",
+            "status": "Started",
+            "statusMessage": null,
+            "subStatus": "",
+            "time": "2026-11-25T23:16:14.1257803Z"
+          }
+        ],
+        "stderr": ""
+      },
+      "reading": "The same write finished as Succeeded at 23:17:47.8Z with no statusMessage, about 94 s after it was accepted, so the platform records the downgrade as a normal successful update.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b1-mktemp",
+      "step": "(b) brand-new config dir",
+      "command": "mktemp -d /private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.XXXXXX",
+      "response": {
+        "started_at": "2026-11-25T23:19:51+00:00",
+        "duration_s": 0.01,
+        "exit_code": 0,
+        "stdout": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw\n",
+        "stdout_json": null,
+        "stderr": ""
+      },
+      "reading": "mktemp -d created a fresh directory under the scratchpad root to serve as AZURE_CONFIG_DIR.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b1-mktemp-contents",
+      "step": "(b) config dir is empty",
+      "command": "os.listdir('/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw')",
+      "response": {
+        "kind": "derived",
+        "entries": []
+      },
+      "reading": "The new directory was empty before az ran.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b1b-env",
+      "step": "(b) child environment",
+      "command": "environment of the child az process",
+      "response": {
+        "kind": "derived",
+        "AZURE_CONFIG_DIR": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw",
+        "AZURE_EXTENSION_DIR_in_parent": false,
+        "AZURE_EXTENSION_DIR_in_child": false,
+        "stdin": "/dev/null",
+        "stdout": "pipe",
+        "stderr": "pipe"
+      },
+      "reading": "Only AZURE_CONFIG_DIR was set for the child; AZURE_EXTENSION_DIR was not set in the parent and was removed from the child, and stdin was /dev/null.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b2-first-run-no-tty",
+      "step": "(b) az documentdb mongocluster list in the fresh dir with stdin from /dev/null",
+      "command": "AZURE_CONFIG_DIR=/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw az documentdb mongocluster list < /dev/null",
+      "response": {
+        "started_at": "2026-11-25T23:19:51+00:00",
+        "duration_s": 3.8,
+        "exit_code": 1,
+        "stdout": "",
+        "stdout_json": null,
+        "stderr": "WARNING: Preview version of extension is disabled by default for extension installation, enabled for modules without stable versions. \nWARNING: Please run 'az config set extension.dynamic_install_allow_preview=true or false' to config it specifically. \nWARNING: The command requires the extension documentdb. It will be installed first.\nWARNING: Extension 'documentdb' has a later preview version to install, add `--allow-preview True` to try preview version.\nERROR: Please run 'az login' to setup account.\n"
+      },
+      "reading": "No prompt: az printed four WARNING lines (preview installs disabled by default; how to configure that; 'The command requires the extension documentdb. It will be installed first.'; a later preview version exists), installed the extension, re-ran the command, and exited 1 only because the fresh dir has no login ('ERROR: Please run 'az login' to setup account.'); nothing went to stdout and the whole run took 3.8 s.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b3-config-dir-after-first-run",
+      "step": "(b) what the first run wrote",
+      "command": "walk of $AZURE_CONFIG_DIR to depth 2 (/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw)",
+      "response": {
+        "kind": "derived",
+        "entries": [
+          {
+            "path": "az.json",
+            "bytes": 5
+          },
+          {
+            "path": "az.sess",
+            "bytes": 5
+          },
+          {
+            "path": "azureProfile.json",
+            "bytes": 61
+          },
+          {
+            "path": "commandIndex.json",
+            "bytes": 58
+          },
+          {
+            "path": "config",
+            "bytes": 27
+          },
+          {
+            "path": "extensionCommandTree.json",
+            "bytes": 241107
+          },
+          {
+            "path": "extensionHelpIndex.json",
+            "bytes": 136
+          },
+          {
+            "path": "extensionIndex.json",
+            "bytes": 104
+          },
+          {
+            "path": "helpIndex.json",
+            "bytes": 20
+          },
+          {
+            "path": "versionCheck.json",
+            "bytes": 211
+          },
+          {
+            "path": "cliextensions/"
+          },
+          {
+            "path": "commands/"
+          },
+          {
+            "path": "logs/"
+          },
+          {
+            "path": "telemetry/"
+          },
+          {
+            "path": "cliextensions/documentdb/"
+          },
+          {
+            "path": "cliextensions/documentdb/documentdb-1.0.0-py3-none-any.whl",
+            "bytes": 97139
+          },
+          {
+            "path": "cliextensions/documentdb/azext_documentdb/"
+          },
+          {
+            "path": "cliextensions/documentdb/documentdb-1.0.0.dist-info/"
+          },
+          {
+            "path": "logs/telemetry.log",
+            "bytes": 1133
+          },
+          {
+            "path": "commands/2026-11-25.15-19-52.unknown_command.17224.log",
+            "bytes": 226
+          },
+          {
+            "path": "commands/2026-11-25.15-19-55.documentdb_mongocluster_list.17227.log",
+            "bytes": 574
+          },
+          {
+            "path": "telemetry/20261125151955775/"
+          },
+          {
+            "path": "telemetry/20261125151955775/cache",
+            "bytes": 4123
+          }
+        ]
+      },
+      "reading": "The run downloaded extensionCommandTree.json (241,107 bytes) and installed cliextensions/documentdb from documentdb-1.0.0-py3-none-any.whl (97,139 bytes), the stable build rather than the 1.1.0b2 preview.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b4-extension-list-in-temp-dir",
+      "step": "(b) extension list in the temp dir",
+      "command": "AZURE_CONFIG_DIR=/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw az extension list --query \"[].{name:name, version:version, preview:preview, path:path}\" -o json < /dev/null",
+      "response": {
+        "started_at": "2026-11-25T23:19:55+00:00",
+        "duration_s": 0.11,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": [
+          {
+            "name": "documentdb",
+            "path": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw/cliextensions/documentdb",
+            "preview": false,
+            "version": "1.0.0"
+          }
+        ],
+        "stderr": ""
+      },
+      "reading": "The auto-installed extension is documentdb 1.0.0, preview false, installed under the temporary config dir.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b5-second-run-no-tty",
+      "step": "(b) second identical run",
+      "command": "AZURE_CONFIG_DIR=/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw az documentdb mongocluster list < /dev/null",
+      "response": {
+        "started_at": "2026-11-25T23:19:55+00:00",
+        "duration_s": 0.19,
+        "exit_code": 1,
+        "stdout": "",
+        "stdout_json": null,
+        "stderr": "ERROR: Please run 'az login' to setup account.\n"
+      },
+      "reading": "With the extension present the second run printed only 'ERROR: Please run 'az login' to setup account.' and exited 1 in 0.19 s, so the install happens once per config dir.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b6-remove-temp-dir",
+      "step": "(b) remove the temp dir",
+      "command": "shutil.rmtree('/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw'); os.path.exists afterwards",
+      "response": {
+        "kind": "derived",
+        "exists_after": false
+      },
+      "reading": "shutil.rmtree succeeded and the path was gone immediately afterwards.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b6b-temp-dir-recreated-then-removed",
+      "step": "(b) temp dir reappeared and was removed again",
+      "command": "os.walk('/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw') after b6, then shutil.rmtree again, then os.path.exists after 20 s",
+      "response": {
+        "kind": "derived",
+        "observation": "b6 removed the dir at 23:19:56Z, but the Azure CLI telemetry uploader that az starts in the background after a command (pid shown in the log) wrote logs/telemetry.log into $AZURE_CONFIG_DIR a moment later and so recreated the dir; no az process was running when it was removed again here.",
+        "found_before_second_removal": [
+          {
+            "path": "logs/telemetry.log",
+            "bytes": 476
+          }
+        ],
+        "telemetry_log": "17247 : 2026-11-25 15:19:56,121 : INFO : telemetry.main : Attempt start. Configuration directory [/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw]. Cache directory [/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli.TZ6fWw/telemetry/20261125151956068].\n17247 : 2026-11-25 15:19:56,125 : INFO : telemetry.client : Accumulated 0 events. Flush the clients.\n",
+        "exists_after_20s": false
+      },
+      "reading": "The Azure CLI telemetry uploader, which az starts in the background after a command, wrote logs/telemetry.log a moment after b6 and so recreated the dir; it was removed again and stayed gone, so scripts that delete a throwaway AZURE_CONFIG_DIR right after az exits should wait or disable telemetry.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b7-mktemp-tty",
+      "step": "(b, contrast) second fresh config dir for a TTY run",
+      "command": "mktemp -d /private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli-tty.XXXXXX",
+      "response": {
+        "started_at": "2026-11-25T23:21:01+00:00",
+        "duration_s": 0.0,
+        "exit_code": 0,
+        "stdout": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli-tty.yoRox4\n",
+        "stdout_json": null,
+        "stderr": ""
+      },
+      "reading": "A second empty directory was created for the pseudo-terminal contrast.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b7-mktemp-tty-contents",
+      "step": "(b, contrast) dir is empty",
+      "command": "os.listdir('/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli-tty.yoRox4')",
+      "response": {
+        "kind": "derived",
+        "entries": []
+      },
+      "reading": "The second directory was empty before az ran.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b8-first-run-pty",
+      "step": "(b, contrast) the same command on a pseudo-terminal, answering n",
+      "command": "AZURE_CONFIG_DIR=/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli-tty.yoRox4 az documentdb mongocluster list   (stdin/stdout/stderr on a pseudo-terminal; the script types 'n' + Enter when '(Y/n)' appears)",
+      "response": {
+        "kind": "pty",
+        "started_at": "2026-11-25T23:21:01+00:00",
+        "duration_s": 1.54,
+        "exit_code": 2,
+        "timed_out": true,
+        "answered": {
+          "answer": "n",
+          "after_s": 1.47
+        },
+        "pty_output": "\u001b[93mPreview version of extension is disabled by default for extension installation, enabled for modules without stable versions. \u001b[0m\r\n\u001b[93mPlease run 'az config set extension.dynamic_install_allow_preview=true or false' to config it specifically. \u001b[0m\r\nThe command requires the extension documentdb. Do you want to install it now? The command will continue to run after the extension is installed. (Y/n): n\r\n\u001b[91mThe command requires the latest version of extension documentdb. To install, run 'az extension add --upgrade -n documentdb'.\u001b[0m\r\n"
+      },
+      "reading": "With a TTY az blocks on 'The command requires the extension documentdb. Do you want to install it now? The command will continue to run after the extension is installed. (Y/n):' (default Y); answering n printed 'The command requires the latest version of extension documentdb. To install, run 'az extension add --upgrade -n documentdb'.' and exited 2 without installing anything.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b8b-correction",
+      "step": "(b, contrast) correction of b8's timed_out flag",
+      "command": "review of b8's bookkeeping",
+      "response": {
+        "kind": "derived",
+        "note": "b8 recorded timed_out=true, but the run lasted 1.54 s against a 240 s deadline: the read loop ended on pty EOF (az had exited and closed the terminal) before os.waitpid(WNOHANG) had reaped it, and the script then took the timeout branch. The kill hit an already-exited child; the reaped status was a normal exit with code 2 (not -9), which is the parser.exit(2) path in dynamic_install.py. So: no timeout, exit code 2. step_b.py was fixed after the run to reap on EOF before treating a run as timed out."
+      },
+      "reading": "b8's timed_out=true is a script bookkeeping error (the loop ended on pty EOF after 1.54 s); the run did not time out and az exited normally with code 2.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b9-config-dir-after-pty-run",
+      "step": "(b, contrast) what the TTY run wrote",
+      "command": "walk of $AZURE_CONFIG_DIR to depth 2 (/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli-tty.yoRox4)",
+      "response": {
+        "kind": "derived",
+        "entries": [
+          {
+            "path": "az.json",
+            "bytes": 5
+          },
+          {
+            "path": "az.sess",
+            "bytes": 5
+          },
+          {
+            "path": "az_survey.json",
+            "bytes": 67
+          },
+          {
+            "path": "azureProfile.json",
+            "bytes": 61
+          },
+          {
+            "path": "commandIndex.json",
+            "bytes": 5
+          },
+          {
+            "path": "config",
+            "bytes": 27
+          },
+          {
+            "path": "extensionCommandTree.json",
+            "bytes": 241107
+          },
+          {
+            "path": "extensionHelpIndex.json",
+            "bytes": 5
+          },
+          {
+            "path": "extensionIndex.json",
+            "bytes": 5
+          },
+          {
+            "path": "helpIndex.json",
+            "bytes": 5
+          },
+          {
+            "path": "versionCheck.json",
+            "bytes": 211
+          },
+          {
+            "path": "commands/"
+          },
+          {
+            "path": "telemetry/"
+          },
+          {
+            "path": "commands/2026-11-25.15-21-02.unknown_command.17294.log",
+            "bytes": 437
+          },
+          {
+            "path": "telemetry/20261125152103517/"
+          },
+          {
+            "path": "telemetry/20261125152103517/cache",
+            "bytes": 4088
+          }
+        ]
+      },
+      "reading": "After the declined prompt the dir held the downloaded extensionCommandTree.json but no cliextensions folder, confirming nothing was installed.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "b10-remove-temp-dir-tty",
+      "step": "(b, contrast) remove the second temp dir",
+      "command": "sleep 15; shutil.rmtree('/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/azcfg-m-cli-tty.yoRox4'); sleep 20; remove again if the telemetry uploader recreated it; os.path.exists",
+      "response": {
+        "kind": "derived",
+        "removal_passes": 1,
+        "exists_after": false
+      },
+      "reading": "Removed after waiting for the telemetry uploader; it did not reappear.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "c1-create-ddb-ver-test-50-M10",
+      "step": "(c) create ddb-ver-test-50 with --server-version 5.0, M10, 32 GB, --no-wait",
+      "command": "python -I step_c.py create ddb-ver-test-50 5.0 M10 32  (would run: az documentdb mongocluster create --resource-group documentdb-samples-rg --name ddb-ver-test-50 --server-version 5.0 --tier M10 --storage-size 32 --shard-count 1 --high-availability Disabled --admin-user vertestadmin --admin-password <generated-password-masked> --tags purpose=samples-factory --no-wait)",
+      "response": {
+        "kind": "refused_locally",
+        "exit_code": null,
+        "local_refusal": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: [Destructive or Unwanted Actions].",
+        "note": "The Bash call was refused before it ran: no password was generated, no az process started, no request reached Azure."
+      },
+      "reading": "Refused by local permissions before it ran (Claude Code auto-mode classifier, 'Destructive or Unwanted Actions'), so no password was generated and no request reached Azure; the 5.0 question stays open.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "c1-create-ddb-ver-test-60-M10",
+      "step": "(c) create ddb-ver-test-60 with --server-version 6.0, M10, 32 GB, --no-wait",
+      "command": "az documentdb mongocluster create --resource-group documentdb-samples-rg --name ddb-ver-test-60 --server-version 6.0 --tier M10 --storage-size 32 --shard-count 1 --high-availability Disabled --admin-user vertestadmin --admin-password <generated-password-masked> --tags purpose=samples-factory --no-wait",
+      "response": {
+        "kind": "not_attempted",
+        "exit_code": null,
+        "note": "Skipped as the spec instructs ('If the creation is refused by local permissions, record that and skip'): the same action class was refused for ddb-ver-test-50 a moment earlier."
+      },
+      "reading": "Not attempted: the spec says to record a local refusal and skip, and the same action class had just been refused; the 6.0 question stays open.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "c9-verify-absent-show-ddb-ver-test-50",
+      "step": "(c) confirm no cluster ddb-ver-test-50 exists",
+      "command": "az documentdb mongocluster show --resource-group documentdb-samples-rg --name ddb-ver-test-50 --query '{name:name, provisioningState:properties.provisioningState}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:15:29+00:00",
+        "duration_s": 0.66,
+        "exit_code": 3,
+        "stdout": "",
+        "stdout_json": null,
+        "stderr": "ERROR: (ResourceNotFound) The Resource 'Microsoft.DocumentDB/mongoClusters/ddb-ver-test-50' under resource group 'documentdb-samples-rg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix\nCode: ResourceNotFound\nMessage: The Resource 'Microsoft.DocumentDB/mongoClusters/ddb-ver-test-50' under resource group 'documentdb-samples-rg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix\n"
+      },
+      "reading": "show returned ResourceNotFound (exit 3), confirming the refused create left nothing behind.",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "c9-verify-absent-show-ddb-ver-test-60",
+      "step": "(c) confirm no cluster ddb-ver-test-60 exists",
+      "command": "az documentdb mongocluster show --resource-group documentdb-samples-rg --name ddb-ver-test-60 --query '{name:name, provisioningState:properties.provisioningState}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:15:29+00:00",
+        "duration_s": 0.6,
+        "exit_code": 3,
+        "stdout": "",
+        "stdout_json": null,
+        "stderr": "ERROR: (ResourceNotFound) The Resource 'Microsoft.DocumentDB/mongoClusters/ddb-ver-test-60' under resource group 'documentdb-samples-rg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix\nCode: ResourceNotFound\nMessage: The Resource 'Microsoft.DocumentDB/mongoClusters/ddb-ver-test-60' under resource group 'documentdb-samples-rg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix\n"
+      },
+      "reading": "show returned ResourceNotFound (exit 3).",
+      "vs_open_source": "n/a"
+    },
+    {
+      "id": "c9-verify-absent-resource-list",
+      "step": "(c) az resource list -g documentdb-samples-rg after the skip",
+      "command": "az resource list -g documentdb-samples-rg --query '[].{name:name, type:type, location:location, tags:tags}' -o json",
+      "response": {
+        "started_at": "2026-11-25T23:15:30+00:00",
+        "duration_s": 0.99,
+        "exit_code": 0,
+        "stdout": null,
+        "stdout_json": [
+          {
+            "location": "eastus",
+            "name": "ddb-samples-shared",
+            "tags": {
+              "purpose": "samples-factory"
+            },
+            "type": "Microsoft.DocumentDB/mongoClusters"
+          }
+        ],
+        "stderr": ""
+      },
+      "reading": "The resource group still holds only ddb-samples-shared, so there was nothing to delete.",
+      "vs_open_source": "n/a"
+    }
+  ],
+  "config_changes": [
+    "ddb-samples-shared properties.serverVersion changed from 8.0 to 7.0 with `az documentdb mongocluster update -g documentdb-samples-rg -n ddb-samples-shared --server-version 7.0` (started 2026-11-25T23:16:13Z; ARM write Accepted 23:16:14Z, Succeeded 23:17:47Z; CLI exit 0 after 93.5 s). Not reverted: the spec did not ask for it. The cluster now advertises hello.maxWireVersion 21 and buildInfo 7.0.0 instead of 25 / 8.0.0; any later test that assumes the 8.0 / wire-25 baseline needs `az documentdb mongocluster update -g documentdb-samples-rg -n ddb-samples-shared --server-version 8.0` first (not run here)."
+  ],
+  "not_config_changes": "No cluster was created or deleted: both creates in step (c) were refused locally or skipped, and show/resource list confirm the resource group still holds only ddb-samples-shared. No database was touched. Both temporary AZURE_CONFIG_DIRs (and the documentdb 1.0.0 copy auto-installed into the first) were removed and confirmed gone; AZURE_EXTENSION_DIR was never set; the user's normal ~/.azure configuration was not changed.",
+  "scripts": {
+    "common": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-cli/common.py",
+    "preliminaries": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-cli/pre.py",
+    "step_a": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-cli/step_a.py",
+    "step_b": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-cli/step_b.py",
+    "step_c": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-cli/step_c.py",
+    "build_report": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-cli/build_report.py",
+    "conclusions": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-cli/conclusions.json",
+    "raw_records": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-cli/raw/steps.jsonl"
+  },
+  "masking": "Password, URIs that carry it, subscription id, subscription name, tenant id/domain/name, object ids, e-mail addresses (systemData.createdBy, caller) and every other GUID (including correlation ids) are masked. step_c.py would have generated the new clusters' admin password in memory and registered it with the masker; because the create was refused before it ran, no such password was ever generated.",
+  "conclusions": [
+    {
+      "question": "Is a server-version downgrade (8.0 to 7.0) blocked by the control plane, and what error does it return? (DECISIONS topic 11, open item 2)",
+      "answer": "Not blocked, and there is no error. `az documentdb mongocluster update -g documentdb-samples-rg -n ddb-samples-shared --server-version 7.0` (documentdb 1.0.0, api-version 2026-06-01) exited 0 with empty stderr after 93.5 s. ARM logged the write as Accepted (202) at 23:16:14Z and Succeeded at 23:17:47Z with no statusMessage. The cluster settled at serverVersion 7.0, provisioningState Succeeded, clusterStatus Ready. The UpdateFailed / 409 state described in Microsoft Q&A 5860936 did not occur on this cluster shape: M30, one shard, PremiumSSDv2, HA off, engine 2.2/2.3. The control plane will not stop an accidental downgrade, so the kit has to say 'do not lower --server-version' itself.",
+      "vs_open_source": "n/a",
+      "confidence": "observed"
+    },
+    {
+      "question": "What does the downgrade change on the data plane?",
+      "answer": "Only the MongoDB compatibility level the gateway advertises. hello.maxWireVersion went from 25 to 21 and buildInfo.version from 8.0.0 to 7.0.0. hello.internal.documentdb_versions stayed [\"2.2-1\",\"2.3.0\",\"12.1-1\"], kind azuredocumentdb, msg isdbgrid. The engine build stays the same, and the cluster now advertises the same wire version 21 / 7.0.0 as documentdb-local 0.117 and 1.2.0. Before the downgrade it advertised 25 / 8.0.0, which differed from the local image. Availability during the switch was not measured.",
+      "vs_open_source": "same",
+      "confidence": "observed"
+    },
+    {
+      "question": "How long does a version change take, and does the CLI's output show it finished?",
+      "answer": "The CLI waited 93.5 s, which matches the roughly 94 s between Accepted and Succeeded in the activity log. The resource body the CLI printed already had serverVersion 7.0 but still showed provisioningState Updating and clusterStatus Updating. A show 23 s later returned Succeeded and Ready. A script should therefore poll `az documentdb mongocluster show` until provisioningState is Succeeded and clusterStatus is Ready, and not trust the body the update command prints.",
+      "vs_open_source": "n/a",
+      "confidence": "observed"
+    },
+    {
+      "question": "Does the CLI help warn that a lower --server-version downgrades the cluster?",
+      "answer": "No. On `update`, --server-version reads only 'The Mongo DB server version. Defaults to the latest available version if not specified.' It states no upgrade-only rule and gives no downgrade warning. The 'defaults to latest' sentence is also misleading on update. The command does GET, edits the body, then PATCH, so leaving the flag out keeps the current version: the m-entra update earlier the same day (auth modes only) left serverVersion at 8.0.",
+      "vs_open_source": "n/a",
+      "confidence": "observed"
+    },
+    {
+      "question": "Without a TTY, does the first `az documentdb ...` in a brand-new AZURE_CONFIG_DIR prompt, auto-install, or fail? (DECISIONS topic 11, settled item on dynamic install)",
+      "answer": "It installs automatically, with no prompt. With stdin from /dev/null, stdout was empty and stderr was exactly: 'WARNING: Preview version of extension is disabled by default for extension installation, enabled for modules without stable versions. ' / 'WARNING: Please run 'az config set extension.dynamic_install_allow_preview=true or false' to config it specifically. ' / 'WARNING: The command requires the extension documentdb. It will be installed first.' / 'WARNING: Extension 'documentdb' has a later preview version to install, add `--allow-preview True` to try preview version.' / 'ERROR: Please run 'az login' to setup account.' The exit code was 1, which is the exit code of the command az re-runs after installing. It failed only because the fresh config dir had no login. The whole run took 3.8 s, and a second run in the same dir did not reinstall. This confirms the DECISIONS reading of dynamic_install.py by observation.",
+      "vs_open_source": "n/a",
+      "confidence": "observed"
+    },
+    {
+      "question": "Which extension version does the dynamic install pick?",
+      "answer": "The stable documentdb 1.0.0: preview false, installed from documentdb-1.0.0-py3-none-any.whl (97,139 bytes) into $AZURE_CONFIG_DIR/cliextensions/documentdb. It did not pick the 1.1.0b2 preview, and az printed a warning that a later preview exists. A fresh agent machine therefore gets the same 1.0.0 command surface that was used for step (a).",
+      "vs_open_source": "n/a",
+      "confidence": "observed"
+    },
+    {
+      "question": "What happens instead when az has a TTY?",
+      "answer": "On a pseudo-terminal az stopped at 'The command requires the extension documentdb. Do you want to install it now? The command will continue to run after the extension is installed. (Y/n): ' (default Y). The prompt came after 1.5 s. Answering n printed 'The command requires the latest version of extension documentdb. To install, run 'az extension add --upgrade -n documentdb'.', exited 2 and installed nothing. An agent or CI step that runs az on a pseudo-terminal and never answers will hang at this prompt. The agent's own Bash tool has a non-TTY stdin, so it takes the no-prompt path. Scripts should install the extension up front with `az extension add --name documentdb`, or set extension.use_dynamic_install=yes_without_prompt.",
+      "vs_open_source": "n/a",
+      "confidence": "observed"
+    },
+    {
+      "question": "Does the control plane accept serverVersion 5.0 and 6.0 for brand-new clusters? (DECISIONS topic 11, open item 3)",
+      "answer": "Not tested. Local permissions refused the first create (ddb-ver-test-50, --server-version 5.0, M10, 32 GB, --no-wait): the Claude Code auto-mode classifier denied it as 'Destructive or Unwanted Actions' before the command ran. No password was generated and no request reached Azure. As the spec says, the 6.0 create was skipped. show (ResourceNotFound for both names) and `az resource list` confirm that nothing was created. The open item stays open.",
+      "vs_open_source": "n/a",
+      "confidence": "inconclusive"
+    },
+    {
+      "question": "Is a throwaway AZURE_CONFIG_DIR gone as soon as az exits and it is deleted?",
+      "answer": "Not reliably. After a command, az starts a background telemetry uploader. That uploader wrote logs/telemetry.log into the temporary config dir right after the first removal (its log line is stamped 23:19:56.121Z, the same second), which recreated the dir. Scripts that delete the dir should wait a few seconds and check again. Turning telemetry off would probably also avoid this, but that was not tested.",
+      "vs_open_source": "n/a",
+      "confidence": "observed"
+    }
+  ]
+}

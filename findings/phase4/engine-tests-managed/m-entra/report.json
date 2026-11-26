@@ -1,0 +1,3628 @@
+{
+ "test": "m-entra",
+ "goal": "Microsoft Entra ID on the managed service: enable it, register the signed-in identity as administrator, and find which PyMongo and Node driver versions can authenticate with MONGODB-OIDC.",
+ "database": "mt_entra (seeded over native auth, used by the OIDC finds and inserts, dropped at the end)",
+ "observed_on": "2026-11-25",
+ "run_window_utc": {
+  "started": "2026-11-25T22:27:48+00:00",
+  "finished": "2026-11-25T22:40:36+00:00",
+  "note": "g1 (raw saslStart, no database access) ran after the cleanup steps y1/y2"
+ },
+ "cluster": {
+  "resource": "Microsoft.DocumentDB/mongoClusters ddb-samples-shared, resource group documentdb-samples-rg, eastus",
+  "shape": "M30, shardCount 1, serverVersion 8.0, PremiumSSDv2 128 GB, HA Disabled, public network access",
+  "engine_identity": {
+   "hello.maxWireVersion": 25,
+   "hello.internal.documentdb_versions": [
+    "2.2-1",
+    "2.3.0",
+    "12.1-1"
+   ],
+   "hello.internal.kind": "azuredocumentdb"
+  }
+ },
+ "signed_in_identity": {
+  "object_id": "<object-id-masked>",
+  "kind": "personal Microsoft account (token idp live.com) that is a Member of its own directory; UPN has the #EXT# marker; identities: federated/MicrosoftAccount and userPrincipalName",
+  "token": "v1.0, aud https://ossrdbms-aad.database.windows.net, scp user_impersonation, appid Azure CLI"
+ },
+ "client": {
+  "az": "azure-cli 2.89.1, extension documentdb 1.0.0",
+  "python": "3.13.13 (Homebrew) in throwaway venvs",
+  "pymongo_tested": [
+   "4.6.3",
+   "4.7.0",
+   "4.10.1 (extra)",
+   "4.11 (extra)",
+   "4.20.2 (latest)"
+  ],
+  "azure_identity_python": "1.27.0",
+  "native_helper": "project venv pymongo 4.20.1",
+  "node": "v24.21.0",
+  "npm": "11.19.0",
+  "node_mongodb_tested": [
+   "6.6.0",
+   "6.7.0",
+   "7.9.1 (latest, extra)"
+  ],
+  "azure_identity_node": "4.14.1"
+ },
+ "sources_read_first": [
+  "findings/phase4/DECISIONS.md: 'Driver and ODM version floors (SME topic 4)' items 4.1, 4.2, 4.12-open; 'Microsoft Entra ID specifics (SME topic 5)' (all items)",
+  "findings/phase4/ENGINE-TESTS.md: 'Local gateway parity (topic 12)' and 'Driver floors (topic 4)'; engine-tests-1.2/local-gateway-parity/report.json steps 00d-00f2",
+  "https://learn.microsoft.com/en-us/azure/documentdb/how-to-connect-role-based-access-control (ms.date 2026-03-11, updated_at 2026-11-23; saved as learn/rbac.html and learn/rbac.txt)"
+ ],
+ "steps": [
+  {
+   "id": "a1",
+   "step": "Record properties.authConfig before the change",
+   "command": "az documentdb mongocluster show --resource-group documentdb-samples-rg --name ddb-samples-shared --query properties.authConfig -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 1.26,
+    "stdout_json": {
+     "allowedModes": [
+      "NativeAuth"
+     ]
+    },
+    "stderr": ""
+   },
+   "reading": "Before the test the cluster allowed only native (SCRAM) authentication: allowedModes was [\"NativeAuth\"].",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "a2",
+   "step": "Full cluster resource before the change (masked)",
+   "command": "az documentdb mongocluster show --resource-group documentdb-samples-rg --name ddb-samples-shared -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.66,
+    "stdout_json": {
+     "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared",
+     "identity": {
+      "type": "None"
+     },
+     "location": "eastus",
+     "name": "ddb-samples-shared",
+     "properties": {
+      "administrator": {
+       "userName": "factoryadmin"
+      },
+      "authConfig": {
+       "allowedModes": [
+        "NativeAuth"
+       ]
+      },
+      "backup": {
+       "earliestRestoreTime": "2026-11-25T20:55:55Z"
+      },
+      "clusterStatus": "Ready",
+      "compute": {
+       "tier": "M30"
+      },
+      "connectionString": "mongodb+srv://<user>:<password>@ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+      "createMode": "Default",
+      "dataApi": {
+       "mode": "Disabled"
+      },
+      "highAvailability": {
+       "targetMode": "Disabled"
+      },
+      "infrastructureVersion": "2.0",
+      "networkBypassMode": "None",
+      "previewFeatures": [
+       "FullTextSearch"
+      ],
+      "privateEndpointConnections": [],
+      "provisioningState": "Succeeded",
+      "publicNetworkAccess": "Enabled",
+      "replica": {
+       "role": "Primary"
+      },
+      "serverVersion": "8.0",
+      "sharding": {
+       "shardCount": 1
+      },
+      "storage": {
+       "sizeGb": 128,
+       "type": "PremiumSSDv2"
+      }
+     },
+     "resourceGroup": "documentdb-samples-rg",
+     "systemData": {
+      "createdAt": "2026-11-25T20:35:33.2901136Z",
+      "createdBy": "<email-masked>",
+      "createdByType": "User",
+      "lastModifiedAt": "2026-11-25T21:50:26.4164906Z",
+      "lastModifiedBy": "<email-masked>",
+      "lastModifiedByType": "User"
+     },
+     "tags": {
+      "purpose": "samples-factory"
+     },
+     "type": "Microsoft.DocumentDB/mongoClusters"
+    },
+    "stderr": ""
+   },
+   "reading": "The cluster was Ready/Succeeded, M30, serverVersion 8.0, identity type None, previewFeatures [FullTextSearch] (left by m-fts), lastModifiedAt 2026-11-25T21:50:26Z.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "a3",
+   "step": "Connection strings before the change",
+   "command": "az documentdb mongocluster list-connection-strings --resource-group documentdb-samples-rg --cluster-name ddb-samples-shared -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.66,
+    "stdout_json": {
+     "connectionStrings": [
+      {
+       "connectionString": "mongodb+srv://<user>:<password>@ddb-samples-shared.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+       "description": "Global read-write cluster connection string",
+       "name": "GlobalReadWrite"
+      },
+      {
+       "connectionString": "mongodb+srv://<user>:<password>@ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+       "description": "Cluster connection string",
+       "name": "Self"
+      }
+     ]
+    },
+    "stderr": ""
+   },
+   "reading": "With NativeAuth only, list-connection-strings returned just the two SCRAM-SHA-256 strings (GlobalReadWrite and Self).",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "a4",
+   "step": "hello saslSupportedMechs before enabling Entra (native SCRAM client, pymongo 4.20.1)",
+   "command": [
+    "client.admin.command({'hello': 1, 'saslSupportedMechs': 'admin.factoryadmin'})   # client: MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+    "client.admin.command({'hello': 1, 'saslSupportedMechs': 'admin.<object-id>'})   # client: MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+    "client.admin.command({'hello': 1, 'saslSupportedMechs': '$external.<object-id>'})   # client: MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000"
+   ],
+   "response": [
+    {
+     "name": "hello saslSupportedMechs admin.factoryadmin",
+     "call": "client.admin.command({'hello': 1, 'saslSupportedMechs': 'admin.factoryadmin'})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "isWritablePrimary": true,
+      "msg": "isdbgrid",
+      "maxWireVersion": 25,
+      "saslSupportedMechs": [
+       "SCRAM-SHA-256"
+      ],
+      "internal": {
+       "documentdb_versions": [
+        "2.2-1",
+        "2.3.0",
+        "12.1-1"
+       ],
+       "kind": "azuredocumentdb"
+      },
+      "ok": 1.0
+     },
+     "ok": true,
+     "duration_s": 1.008
+    },
+    {
+     "name": "hello saslSupportedMechs admin.<object-id>",
+     "call": "client.admin.command({'hello': 1, 'saslSupportedMechs': 'admin.<object-id>'})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "isWritablePrimary": true,
+      "msg": "isdbgrid",
+      "maxWireVersion": 25,
+      "saslSupportedMechs": [
+       "SCRAM-SHA-256"
+      ],
+      "internal": {
+       "documentdb_versions": [
+        "2.2-1",
+        "2.3.0",
+        "12.1-1"
+       ],
+       "kind": "azuredocumentdb"
+      },
+      "ok": 1.0
+     },
+     "ok": true,
+     "duration_s": 0.081
+    },
+    {
+     "name": "hello saslSupportedMechs $external.<object-id>",
+     "call": "client.admin.command({'hello': 1, 'saslSupportedMechs': '$external.<object-id>'})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "isWritablePrimary": true,
+      "msg": "isdbgrid",
+      "maxWireVersion": 25,
+      "saslSupportedMechs": [
+       "SCRAM-SHA-256"
+      ],
+      "internal": {
+       "documentdb_versions": [
+        "2.2-1",
+        "2.3.0",
+        "12.1-1"
+       ],
+       "kind": "azuredocumentdb"
+      },
+      "ok": 1.0
+     },
+     "ok": true,
+     "duration_s": 0.075
+    }
+   ],
+   "reading": "Before enabling Entra, hello returned saslSupportedMechs ['SCRAM-SHA-256'] for the native admin, for admin.<object-id> and for $external.<object-id> alike, which is the same static list the open-source 1.2.0 gateway returns for any user.",
+   "vs_open_source": "same",
+   "open_source_reference": "findings/phase4/engine-tests-1.2/local-gateway-parity/report.json (documentdb-local pg17-1.2.0) steps 00e/00f: saslSupportedMechs ['SCRAM-SHA-256'] for admin.testadmin and for an unknown user"
+  },
+  {
+   "id": "a5",
+   "step": "Seed mt_entra.items with two documents over native auth",
+   "command": [
+    "client['mt_entra']['items'].drop()",
+    "client['mt_entra']['items'].insert_many([{'n': 1, 'src': 'native-seed'}, {'n': 2, 'src': 'native-seed'}])"
+   ],
+   "response": [
+    {
+     "name": "drop collection (idempotent)",
+     "call": "client['mt_entra']['items'].drop()",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": null,
+     "ok": true,
+     "duration_s": 0.945
+    },
+    {
+     "name": "insert_many",
+     "call": "client['mt_entra']['items'].insert_many([{'n': 1, 'src': 'native-seed'}, {'n': 2, 'src': 'native-seed'}])",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "inserted": 2
+     },
+     "ok": true,
+     "duration_s": 0.136
+    }
+   ],
+   "reading": "Two documents (n 1 and 2) were inserted with the native admin so that OIDC finds have something to return.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "a6a",
+   "step": "Acquire an Entra access token for the DocumentDB scope (claims subset only, token never recorded)",
+   "command": "AzureCliCredential().get_token('https://ossrdbms-aad.database.windows.net/.default') (claims subset only)",
+   "response": {
+    "ok": true,
+    "duration_s": 0.779,
+    "result": {
+     "acquired": true,
+     "get_token_s": 0.78,
+     "expires_in_s": 4653,
+     "claims_subset": {
+      "aud": "https://ossrdbms-aad.database.windows.net",
+      "ver": "1.0",
+      "idp": "live.com",
+      "acct": null,
+      "amr": [
+       "pwd",
+       "mfa"
+      ],
+      "scp": "user_impersonation",
+      "iss_is_sts_windows_net_for_tenant": true,
+      "tid_matches_signed_in_tenant": true,
+      "oid_matches_signed_in_user": true,
+      "appid_is_azure_cli": true,
+      "claim_names": [
+       "acr",
+       "aio",
+       "altsecid",
+       "amr",
+       "appid",
+       "appidacr",
+       "aud",
+       "email",
+       "exp",
+       "family_name",
+       "given_name",
+       "groups",
+       "iat",
+       "idp",
+       "idtyp",
+       "ipaddr",
+       "iss",
+       "name",
+       "nbf",
+       "oid",
+       "puid",
+       "rh",
+       "scp",
+       "sid",
+       "sub",
+       "tid",
+       "unique_name",
+       "upn",
+       "uti",
+       "ver",
+       "xms_act_fct",
+       "xms_aud_guid",
+       "xms_ftd",
+       "xms_idrel",
+       "xms_sub_fct"
+      ]
+     }
+    }
+   },
+   "reading": "AzureCliCredential returned a v1.0 token for aud https://ossrdbms-aad.database.windows.net with idp live.com (a personal Microsoft account), scp user_impersonation, issued by the signed-in tenant with oid equal to the signed-in user's object id.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "a6b",
+   "step": "MONGODB-OIDC ping before Entra is enabled (PyMongo 4.20.2, Learn-shaped OIDCCallback, plain host)",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=30000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential())})",
+    "client.admin.command('ping')"
+   ],
+   "response": {
+    "construct": {
+     "ok": true,
+     "duration_s": 0.082,
+     "result": "constructed"
+    },
+    "ping": {
+     "ok": false,
+     "duration_s": 0.998,
+     "error": {
+      "type": "pymongo.errors.OperationFailure",
+      "code": 18,
+      "codeName": "AuthenticationFailed",
+      "errmsg": "The authentication mechanism provided is not supported in the service.",
+      "str": "The authentication mechanism provided is not supported in the service., full error: {'ok': 0.0, 'code': 18, 'codeName': 'AuthenticationFailed', 'errmsg': 'The authentication mechanism provided is not supported in the service.'}",
+      "errorLabels_in_reply": null
+     },
+     "traceback_tail": [
+      "  File \"/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/venvs/pm-latest/lib/python3.13/site-packages/pymongo/helpers_shared.py\", line 327, in _check_command_response",
+      "    raise OperationFailure(errmsg, code, response, max_wire_version)",
+      "pymongo.errors.OperationFailure: The authentication mechanism provided is not supported in the service., full error: {'ok': 0.0, 'code': 18, 'codeName': 'AuthenticationFailed', 'errmsg': 'The authentication mechanism provided is not supported in the service.'}"
+     ]
+    },
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:28:06+00:00",
+      "context": {
+       "timeout_seconds": 60,
+       "username": "",
+       "version": 1,
+       "refresh_token": null,
+       "idp_info": null
+      }
+     },
+     {
+      "at": "2026-11-25T22:28:07+00:00",
+      "context": {
+       "timeout_seconds": 60,
+       "username": "",
+       "version": 1,
+       "refresh_token": null,
+       "idp_info": null
+      }
+     }
+    ]
+   },
+   "reading": "With NativeAuth only, the service rejects a token-bearing MONGODB-OIDC saslStart with code 18 AuthenticationFailed \"The authentication mechanism provided is not supported in the service.\" and no errorLabels; the open-source gateway also answers code 18 AuthenticationFailed but with \"'MONGODB-OIDC' is not a supported authentication scheme.\", so the code is the same and the message differs.",
+   "vs_open_source": "different",
+   "open_source_reference": "findings/phase4/engine-tests-1.2/local-gateway-parity/report.json (documentdb-local pg17-1.2.0) step 00f2: code 18 AuthenticationFailed \"'MONGODB-OIDC' is not a supported authentication scheme.\" (empty payload)"
+  },
+  {
+   "id": "b0",
+   "step": "Check whether the CLI has a flag for authConfig (Learn's CLI pivot uses --auth-allowed-modes)",
+   "command": "az documentdb mongocluster update --help",
+   "response": {
+    "exit_code": 0,
+    "excerpt_verbatim": "AuthConfig Arguments\n    --auth-allowed-modes           : Space-separated list of allowed authentication modes for data\n                                     access. Allowed values: NativeAuth, MicrosoftEntraID. Example:\n                                     --auth-allowed-modes NativeAuth MicrosoftEntraID  Support\n                                     shorthand-syntax, json-file and yaml-file. Try \"??\" to show\n                                     more.\n\n"
+   },
+   "reading": "The documentdb extension 1.0.0 exposes --auth-allowed-modes with allowed values NativeAuth and MicrosoftEntraID, so the CLI method from Learn was used instead of az rest PATCH.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "b1",
+   "step": "Enable MicrosoftEntraID alongside NativeAuth (Learn method)",
+   "command": "az documentdb mongocluster update --name ddb-samples-shared --resource-group documentdb-samples-rg --auth-allowed-modes NativeAuth MicrosoftEntraID",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 155.37,
+    "stdout_json": {
+     "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared",
+     "identity": {
+      "type": "None"
+     },
+     "location": "eastus",
+     "name": "ddb-samples-shared",
+     "properties": {
+      "administrator": {
+       "userName": "factoryadmin"
+      },
+      "authConfig": {
+       "allowedModes": [
+        "MicrosoftEntraID",
+        "NativeAuth"
+       ]
+      },
+      "backup": {
+       "earliestRestoreTime": "2026-11-25T20:55:55Z"
+      },
+      "clusterStatus": "Updating",
+      "compute": {
+       "tier": "M30"
+      },
+      "connectionString": "mongodb+srv://<user>:<password>@ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+      "createMode": "Default",
+      "dataApi": {
+       "mode": "Disabled"
+      },
+      "highAvailability": {
+       "targetMode": "Disabled"
+      },
+      "infrastructureVersion": "2.0",
+      "networkBypassMode": "None",
+      "previewFeatures": [
+       "FullTextSearch"
+      ],
+      "privateEndpointConnections": [],
+      "provisioningState": "Updating",
+      "publicNetworkAccess": "Enabled",
+      "replica": {
+       "role": "Primary"
+      },
+      "serverVersion": "8.0",
+      "sharding": {
+       "shardCount": 1
+      },
+      "storage": {
+       "sizeGb": 128,
+       "type": "PremiumSSDv2"
+      }
+     },
+     "resourceGroup": "documentdb-samples-rg",
+     "systemData": {
+      "createdAt": "2026-11-25T20:35:33.2901136Z",
+      "createdBy": "<email-masked>",
+      "createdByType": "User",
+      "lastModifiedAt": "2026-11-25T22:28:32.9215263Z",
+      "lastModifiedBy": "<email-masked>",
+      "lastModifiedByType": "User"
+     },
+     "tags": {
+      "purpose": "samples-factory"
+     },
+     "type": "Microsoft.DocumentDB/mongoClusters"
+    },
+    "stderr": ""
+   },
+   "reading": "The update exited 0 after 155.4 s with no stderr; its returned resource already listed allowedModes [MicrosoftEntraID, NativeAuth] but still showed provisioningState and clusterStatus 'Updating'.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "b2",
+   "step": "Read state right after the update returned",
+   "command": "az documentdb mongocluster show --resource-group documentdb-samples-rg --name ddb-samples-shared --query '{authConfig: properties.authConfig, provisioningState: properties.provisioningState, clusterStatus: properties.clusterStatus, lastModifiedAt: systemData.lastModifiedAt}' -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.59,
+    "stdout_json": {
+     "authConfig": {
+      "allowedModes": [
+       "MicrosoftEntraID",
+       "NativeAuth"
+      ]
+     },
+     "clusterStatus": "Ready",
+     "lastModifiedAt": "2026-11-25T22:28:32.9215263Z",
+     "provisioningState": "Succeeded"
+    },
+    "stderr": ""
+   },
+   "reading": "The first show, 0.6 s after the update returned, reported provisioningState Succeeded, clusterStatus Ready and allowedModes [\"MicrosoftEntraID\", \"NativeAuth\"] (the service reorders the list).",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "b3",
+   "step": "Time to apply",
+   "command": "wall time of the update command (CLI waits for the long-running operation) and of the follow-up show polls",
+   "response": {
+    "update_command_wall_s": 155.4,
+    "polls": [
+     {
+      "t_since_update_start_s": 156.0,
+      "state": {
+       "authConfig": {
+        "allowedModes": [
+         "MicrosoftEntraID",
+         "NativeAuth"
+        ]
+       },
+       "clusterStatus": "Ready",
+       "lastModifiedAt": "2026-11-25T22:28:32.9215263Z",
+       "provisioningState": "Succeeded"
+      }
+     }
+    ]
+   },
+   "reading": "Enabling Entra took 155.4 s end to end through the CLI's long-running-operation wait, and nothing further was pending when it returned.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "b4",
+   "step": "Native SCRAM ping after enabling Entra",
+   "command": [
+    "client.admin.command('ping')   # client: MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000"
+   ],
+   "response": [
+    {
+     "name": "ping (native SCRAM)",
+     "call": "client.admin.command('ping')",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "ok": 1.0
+     },
+     "ok": true,
+     "duration_s": 1.019
+    }
+   ],
+   "reading": "Native authentication kept working after Entra was added (ping ok: 1).",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "b5",
+   "step": "hello saslSupportedMechs after enabling Entra",
+   "command": [
+    "client.admin.command({'hello': 1, 'saslSupportedMechs': 'admin.factoryadmin'})",
+    "client.admin.command({'hello': 1, 'saslSupportedMechs': 'admin.<object-id>'})",
+    "client.admin.command({'hello': 1, 'saslSupportedMechs': '$external.<object-id>'})"
+   ],
+   "response": [
+    {
+     "name": "hello saslSupportedMechs admin.factoryadmin",
+     "call": "client.admin.command({'hello': 1, 'saslSupportedMechs': 'admin.factoryadmin'})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "isWritablePrimary": true,
+      "msg": "isdbgrid",
+      "maxWireVersion": 25,
+      "saslSupportedMechs": [
+       "MONGODB-OIDC",
+       "SCRAM-SHA-256"
+      ],
+      "internal": {
+       "documentdb_versions": [
+        "2.2-1",
+        "2.3.0",
+        "12.1-1"
+       ],
+       "kind": "azuredocumentdb"
+      },
+      "ok": 1.0
+     },
+     "ok": true,
+     "duration_s": 0.973
+    },
+    {
+     "name": "hello saslSupportedMechs admin.<object-id>",
+     "call": "client.admin.command({'hello': 1, 'saslSupportedMechs': 'admin.<object-id>'})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "isWritablePrimary": true,
+      "msg": "isdbgrid",
+      "maxWireVersion": 25,
+      "saslSupportedMechs": [
+       "MONGODB-OIDC",
+       "SCRAM-SHA-256"
+      ],
+      "internal": {
+       "documentdb_versions": [
+        "2.2-1",
+        "2.3.0",
+        "12.1-1"
+       ],
+       "kind": "azuredocumentdb"
+      },
+      "ok": 1.0
+     },
+     "ok": true,
+     "duration_s": 0.091
+    },
+    {
+     "name": "hello saslSupportedMechs $external.<object-id>",
+     "call": "client.admin.command({'hello': 1, 'saslSupportedMechs': '$external.<object-id>'})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "isWritablePrimary": true,
+      "msg": "isdbgrid",
+      "maxWireVersion": 25,
+      "saslSupportedMechs": [
+       "MONGODB-OIDC",
+       "SCRAM-SHA-256"
+      ],
+      "internal": {
+       "documentdb_versions": [
+        "2.2-1",
+        "2.3.0",
+        "12.1-1"
+       ],
+       "kind": "azuredocumentdb"
+      },
+      "ok": 1.0
+     },
+     "ok": true,
+     "duration_s": 0.08
+    }
+   ],
+   "reading": "After enabling Entra, hello advertises saslSupportedMechs ['MONGODB-OIDC', 'SCRAM-SHA-256'] for every user string, including one that is not registered, whereas the open-source gateway only ever advertises SCRAM-SHA-256.",
+   "vs_open_source": "different",
+   "open_source_reference": "findings/phase4/engine-tests-1.2/local-gateway-parity/report.json (documentdb-local pg17-1.2.0) steps 00d-00f"
+  },
+  {
+   "id": "b6",
+   "step": "MONGODB-OIDC ping after enabling Entra but before registering the identity (PyMongo 4.20.2)",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=30000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential())})",
+    "client.admin.command('ping')"
+   ],
+   "response": {
+    "ping": {
+     "ok": false,
+     "duration_s": 1.056,
+     "error": {
+      "type": "pymongo.errors.OperationFailure",
+      "code": 18,
+      "codeName": "AuthenticationFailed",
+      "errmsg": "External identity is not present in the system.",
+      "str": "External identity is not present in the system., full error: {'ok': 0.0, 'code': 18, 'codeName': 'AuthenticationFailed', 'errmsg': 'External identity is not present in the system.'}",
+      "errorLabels_in_reply": null
+     },
+     "traceback_tail": [
+      "  File \"/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/venvs/pm-latest/lib/python3.13/site-packages/pymongo/helpers_shared.py\", line 327, in _check_command_response",
+      "    raise OperationFailure(errmsg, code, response, max_wire_version)",
+      "pymongo.errors.OperationFailure: External identity is not present in the system., full error: {'ok': 0.0, 'code': 18, 'codeName': 'AuthenticationFailed', 'errmsg': 'External identity is not present in the system.'}"
+     ]
+    },
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:31:31+00:00",
+      "context": {
+       "timeout_seconds": 60,
+       "username": "",
+       "version": 1,
+       "refresh_token": null,
+       "idp_info": null
+      }
+     },
+     {
+      "at": "2026-11-25T22:31:32+00:00",
+      "context": {
+       "timeout_seconds": 60,
+       "username": "",
+       "version": 1,
+       "refresh_token": null,
+       "idp_info": null
+      }
+     }
+    ]
+   },
+   "reading": "Once Entra is enabled the token is evaluated, and an unregistered principal gets code 18 AuthenticationFailed \"External identity is not present in the system.\" with no errorLabels; the open-source gateway cannot reach this stage because it rejects the mechanism.",
+   "vs_open_source": "different",
+   "open_source_reference": "findings/phase4/engine-tests-1.2/local-gateway-parity/report.json (documentdb-local pg17-1.2.0) step 00f2"
+  },
+  {
+   "id": "c1",
+   "step": "Find the Entra user command group",
+   "command": "az documentdb mongocluster --help",
+   "response": {
+    "exit_code": 0,
+    "stdout": "\nGroup\n    az documentdb mongocluster : Manage Azure DocumentDB mongo clusters.\n\nSubgroups:\n    firewall-rule           : Manage Firewall Rule.\n    identity                : Manage Identity.\n    microsoft-entra-user    : Manage Microsoft Entra ID users on a mongo cluster.\n    replica                 : Manage Replica.\n\nCommands:\n    check-name-availability : Check if mongo cluster name is available for use.\n    create                  : Create a mongo cluster. Update overwrites all properties for the\n                              resource. To only modify some of the properties, use PATCH.\n    delete                  : Delete a mongo cluster.\n    list                    : List all the mongo clusters in a given subscription.\n    list-connection-strings : List mongo cluster connection strings. This includes the default\n                              connection string using SCRAM-SHA-256, as well as other connection\n                              strings supported by the cluster.\n    reset-password          : Reset the administrator password of a mongo cluster.\n    restore                 : Restore a mongo cluster to a new cluster from a point in time.\n    show                    : Get information about a mongo cluster.\n    update                  : Update a mongo cluster. Only the properties specified in the request\n                              are modified; all other properties are left unchanged (HTTP PATCH).\n                              Generic update arguments (--set, --add, --remove) are supported.\n    wait                    : Place the CLI in a waiting state until a condition is met.\n\n"
+   },
+   "reading": "az documentdb mongocluster lists four subgroups (firewall-rule, identity, microsoft-entra-user, replica); microsoft-entra-user is the one for Entra users.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "c2",
+   "step": "microsoft-entra-user group help",
+   "command": "az documentdb mongocluster microsoft-entra-user --help",
+   "response": {
+    "exit_code": 0,
+    "stdout": "\nGroup\n    az documentdb mongocluster microsoft-entra-user : Manage Microsoft Entra ID users on a mongo\n    cluster.\n\nCommands:\n    assign : Grant a Microsoft Entra ID principal access to a mongo cluster by assigning it database\n             roles.\n    list   : List the Microsoft Entra ID users on a mongo cluster.\n    remove : Remove a Microsoft Entra ID principal's access from a mongo cluster.\n    show   : Get the definition of a Microsoft Entra ID user on a mongo cluster.\n    wait   : Place the CLI in a waiting state until a condition is met.\n\n"
+   },
+   "reading": "The group has assign, list, remove, show and wait.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "c3",
+   "step": "assign --help: accepted --type values (verbatim)",
+   "command": "az documentdb mongocluster microsoft-entra-user assign --help",
+   "response": {
+    "exit_code": 0,
+    "type_parameter_verbatim": "    --type -t              : The Microsoft Entra principal type of the user. Allowed values: User,\n                             ServicePrincipal. Example: --type User.  Allowed values:\n                             ServicePrincipal, User.",
+    "object_id_parameter_verbatim": "    --name --object-id -n  : Object ID (client ID) of the Microsoft Entra principal. Provide the\n                             GUID of the service principal or user, not a friendly name or UPN.",
+    "full_stdout": "\nCommand\n    az documentdb mongocluster microsoft-entra-user assign : Grant a Microsoft Entra ID principal\n    access to a mongo cluster by assigning it database roles.\n\nArguments\n    --no-wait              : Do not wait for the long-running operation to finish.  Allowed values:\n                             0, 1, f, false, n, no, t, true, y, yes.\n\nGlobal Policy Arguments\n    --acquire-policy-token : Acquiring an Azure Policy token automatically for this resource\n                             operation.\n    --change-reference     : The related change reference ID for this resource operation.\n\nProperties Arguments\n    --role --roles         : Database roles that are assigned to the user. Usage: --role db=admin\n                             role=root. Multiple roles can be specified by using more than one\n                             --role argument.  Support shorthand-syntax, json-file and yaml-file.\n                             Try \"??\" to show more.  Singular flags: `--role`.\n    --type -t              : The Microsoft Entra principal type of the user. Allowed values: User,\n                             ServicePrincipal. Example: --type User.  Allowed values:\n                             ServicePrincipal, User.\n\nResource Id Arguments\n    --cluster-name         : The name of the mongo cluster.\n    --ids                  : One or more resource IDs (space-delimited). It should be a complete\n                             resource ID containing all information of 'Resource Id' arguments. You\n                             should provide either --ids or other 'Resource Id' arguments.\n    --name --object-id -n  : Object ID (client ID) of the Microsoft Entra principal. Provide the\n                             GUID of the service principal or user, not a friendly name or UPN.\n    --resource-group -g    : Name of resource group. You can configure the default group using `az\n                             configure --defaults group=<name>`.\n    --subscription         : Name or ID of subscription. You can configure the default subscription\n                             using `az account set -s NAME_OR_ID`.\n\nGlobal Arguments\n    --debug                : Increase logging verbosity to show all debug logs.\n    --help -h              : Show this help message and exit.\n    --only-show-errors     : Only show errors, suppressing warnings.\n    --output -o            : Output format.  Allowed values: json, jsonc, none, table, tsv, yaml,\n                             yamlc.  Default: json.\n    --query                : JMESPath query string. See http://jmespath.org/ for more information\n                             and examples.\n    --verbose              : Increase logging verbosity. Use --debug for full debug logs.\n\nExamples\n    Assign admin access to an Entra ID user (or service principal) by object ID.\n        az documentdb mongocluster microsoft-entra-user assign --object-id\n        11111111-1111-1111-1111-111111111111 --cluster-name MyCluster -g MyResourceGroup --type User\n        --role db=admin role=root\n\n"
+   },
+   "reading": "The --type (-t) parameter accepts exactly User and ServicePrincipal (help: \"Allowed values: User, ServicePrincipal. Example: --type User.  Allowed values: ServicePrincipal, User.\"), and --object-id is still described as \"Object ID (client ID)\", matching DECISIONS topic 5.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "c4-list",
+   "step": "microsoft-entra-user list --help",
+   "command": "az documentdb mongocluster microsoft-entra-user list --help",
+   "response": {
+    "exit_code": 0,
+    "stdout": "\nCommand\n    az documentdb mongocluster microsoft-entra-user list : List the Microsoft Entra ID users on a\n    mongo cluster.\n\nArguments\n    --cluster-name      [Required] : The name of the mongo cluster.\n    --resource-group -g [Required] : Name of resource group. You can configure the default group\n                                     using `az configure --defaults group=<name>`.\n\nPagination Arguments\n    --max-items                    : Total number of items to return in the command's output. If the\n                                     total number of items available is more than the value\n                                     specified, a token is provided in the command's output. To\n                                     resume pagination, provide the token value in `--next-token`\n                                     argument of a subsequent command.\n    --next-token                   : Token to specify where to start paginating. This is the token\n                                     value from a previously truncated response.\n\nGlobal Arguments\n    --debug                        : Increase logging verbosity to show all debug logs.\n    --help -h                      : Show this help message and exit.\n    --only-show-errors             : Only show errors, suppressing warnings.\n    --output -o                    : Output format.  Allowed values: json, jsonc, none, table, tsv,\n                                     yaml, yamlc.  Default: json.\n    --query                        : JMESPath query string. See http://jmespath.org/ for more\n                                     information and examples.\n    --subscription                 : Name or ID of subscription. You can configure the default\n                                     subscription using `az account set -s NAME_OR_ID`.\n    --verbose                      : Increase logging verbosity. Use --debug for full debug logs.\n\nExamples\n    List Entra ID users on a cluster.\n        az documentdb mongocluster microsoft-entra-user list --cluster-name MyCluster -g\n        MyResourceGroup\n\n"
+   },
+   "reading": "The list subcommand help was recorded for completeness; it takes --cluster-name and --resource-group.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "c4-show",
+   "step": "microsoft-entra-user show --help",
+   "command": "az documentdb mongocluster microsoft-entra-user show --help",
+   "response": {
+    "exit_code": 0,
+    "stdout": "\nCommand\n    az documentdb mongocluster microsoft-entra-user show : Get the definition of a Microsoft Entra\n    ID user on a mongo cluster.\n\nArguments\n\nResource Id Arguments\n    --cluster-name        : The name of the mongo cluster.\n    --ids                 : One or more resource IDs (space-delimited). It should be a complete\n                            resource ID containing all information of 'Resource Id' arguments. You\n                            should provide either --ids or other 'Resource Id' arguments.\n    --name --object-id -n : Object ID (client ID) of the Microsoft Entra principal. Provide the GUID\n                            of the service principal or user, not a friendly name or UPN.\n    --resource-group -g   : Name of resource group. You can configure the default group using `az\n                            configure --defaults group=<name>`.\n    --subscription        : Name or ID of subscription. You can configure the default subscription\n                            using `az account set -s NAME_OR_ID`.\n\nGlobal Arguments\n    --debug               : Increase logging verbosity to show all debug logs.\n    --help -h             : Show this help message and exit.\n    --only-show-errors    : Only show errors, suppressing warnings.\n    --output -o           : Output format.  Allowed values: json, jsonc, none, table, tsv, yaml,\n                            yamlc.  Default: json.\n    --query               : JMESPath query string. See http://jmespath.org/ for more information and\n                            examples.\n    --verbose             : Increase logging verbosity. Use --debug for full debug logs.\n\nExamples\n    Get an Entra ID user by object ID.\n        az documentdb mongocluster microsoft-entra-user show --object-id\n        11111111-1111-1111-1111-111111111111 --cluster-name MyCluster -g MyResourceGroup\n\n"
+   },
+   "reading": "The show subcommand help was recorded for completeness; it takes --cluster-name and --resource-group and --object-id.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "c4-remove",
+   "step": "microsoft-entra-user remove --help",
+   "command": "az documentdb mongocluster microsoft-entra-user remove --help",
+   "response": {
+    "exit_code": 0,
+    "stdout": "\nCommand\n    az documentdb mongocluster microsoft-entra-user remove : Remove a Microsoft Entra ID principal's\n    access from a mongo cluster.\n\nArguments\n    --no-wait              : Do not wait for the long-running operation to finish.  Allowed values:\n                             0, 1, f, false, n, no, t, true, y, yes.\n    --yes -y               : Do not prompt for confirmation.\n\nGlobal Policy Arguments\n    --acquire-policy-token : Acquiring an Azure Policy token automatically for this resource\n                             operation.\n    --change-reference     : The related change reference ID for this resource operation.\n\nResource Id Arguments\n    --cluster-name         : The name of the mongo cluster.\n    --ids                  : One or more resource IDs (space-delimited). It should be a complete\n                             resource ID containing all information of 'Resource Id' arguments. You\n                             should provide either --ids or other 'Resource Id' arguments.\n    --name --object-id -n  : Object ID (client ID) of the Microsoft Entra principal. Provide the\n                             GUID of the service principal or user, not a friendly name or UPN.\n    --resource-group -g    : Name of resource group. You can configure the default group using `az\n                             configure --defaults group=<name>`.\n    --subscription         : Name or ID of subscription. You can configure the default subscription\n                             using `az account set -s NAME_OR_ID`.\n\nGlobal Arguments\n    --debug                : Increase logging verbosity to show all debug logs.\n    --help -h              : Show this help message and exit.\n    --only-show-errors     : Only show errors, suppressing warnings.\n    --output -o            : Output format.  Allowed values: json, jsonc, none, table, tsv, yaml,\n                             yamlc.  Default: json.\n    --query                : JMESPath query string. See http://jmespath.org/ for more information\n                             and examples.\n    --verbose              : Increase logging verbosity. Use --debug for full debug logs.\n\nExamples\n    Remove an Entra ID user's access by object ID.\n        az documentdb mongocluster microsoft-entra-user remove --object-id\n        11111111-1111-1111-1111-111111111111 --cluster-name MyCluster -g MyResourceGroup\n\n"
+   },
+   "reading": "The remove subcommand help was recorded for completeness; it takes --cluster-name and --resource-group and --object-id.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "c6-firewall-rule",
+   "step": "firewall-rule subgroup help",
+   "command": "az documentdb mongocluster firewall-rule --help",
+   "response": {
+    "exit_code": 0,
+    "stdout": "\nGroup\n    az documentdb mongocluster firewall-rule : Manage Firewall Rule.\n\nCommands:\n    create : Create a new firewall rule or updates an existing firewall rule on a mongo cluster.\n    delete : Delete a mongo cluster firewall rule.\n    list   : List all the firewall rules in a given mongo cluster.\n    show   : Get information about a mongo cluster firewall rule.\n    update : Update a new firewall rule or updates an existing firewall rule on a mongo cluster.\n    wait   : Place the CLI in a waiting state until a condition is met.\n\n"
+   },
+   "reading": "This subgroup does not manage Entra users.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "c6-identity",
+   "step": "identity subgroup help",
+   "command": "az documentdb mongocluster identity --help",
+   "response": {
+    "exit_code": 0,
+    "stdout": "\nGroup\n    az documentdb mongocluster identity : Manage Identity.\n\nCommands:\n    assign : Assign the user or system managed identities.\n    list   : List the managed identities assigned to a mongo cluster.\n    remove : Remove the user or system managed identities.\n    show   : Show the details of managed identities.\n    wait   : Place the CLI in a waiting state until a condition is met.\n\n"
+   },
+   "reading": "This subgroup does not manage Entra users (identity manages the cluster's own managed identities).",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "c6-replica",
+   "step": "replica subgroup help",
+   "command": "az documentdb mongocluster replica --help",
+   "response": {
+    "exit_code": 0,
+    "stdout": "\nGroup\n    az documentdb mongocluster replica : Manage Replica.\n\nCommands:\n    create  : Create a read replica of an existing mongo cluster.\n    list    : List all the replicas for the mongo cluster.\n    promote : Promotes a replica mongo cluster to a primary role.\n\n"
+   },
+   "reading": "This subgroup does not manage Entra users.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "d1",
+   "step": "Signed-in identity object id (masked)",
+   "command": "az ad signed-in-user show --query id -o tsv",
+   "response": {
+    "exit_code": 0,
+    "stdout": "<object-id-masked>\n",
+    "stderr": ""
+   },
+   "reading": "az ad signed-in-user show returned an object id (a GUID, masked here), so the Graph lookup works for this account.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "d1b",
+   "step": "Characterise the account type without recording personal fields",
+   "command": "az rest --method GET --url 'https://graph.microsoft.com/v1.0/me?$select=userType,creationType,externalUserState,identities,userPrincipalName' --query '{userType: userType, creationType: creationType, externalUserState: externalUserState, upnHasExtMarker: contains(userPrincipalName, '\"'\"'#EXT#'\"'\"'), identities: identities[].{signInType: signInType, issuer: issuer}}' -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.54,
+    "stdout_json": {
+     "creationType": null,
+     "externalUserState": null,
+     "identities": [
+      {
+       "issuer": "MicrosoftAccount",
+       "signInType": "federated"
+      },
+      {
+       "issuer": "<tenant-domain-masked>",
+       "signInType": "userPrincipalName"
+      }
+     ],
+     "upnHasExtMarker": true,
+     "userType": "Member"
+    },
+    "stderr": ""
+   },
+   "reading": "The account is a personal Microsoft account federated into its own directory as userType Member (UPN carries the #EXT# marker, identity issuer MicrosoftAccount), not a B2B guest.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "d2",
+   "step": "Assign the signed-in identity as an administrative Entra identity (Learn CLI example)",
+   "command": "az documentdb mongocluster microsoft-entra-user assign --object-id <object-id-masked> --cluster-name ddb-samples-shared --resource-group documentdb-samples-rg --type User --role db=admin role=root",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 63.59,
+    "stdout_json": {
+     "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared/users/<object-id-masked>",
+     "name": "<object-id-masked>",
+     "properties": {
+      "identityProvider": {
+       "properties": {
+        "principalType": "User"
+       },
+       "type": "MicrosoftEntraID"
+      },
+      "provisioningState": "Succeeded",
+      "roles": [
+       {
+        "db": "admin",
+        "role": "root"
+       }
+      ]
+     },
+     "resourceGroup": "documentdb-samples-rg",
+     "systemData": {
+      "createdAt": "2026-11-25T22:32:10.0930548Z",
+      "createdBy": "<email-masked>",
+      "createdByType": "User",
+      "lastModifiedAt": "2026-11-25T22:32:10.0930548Z",
+      "lastModifiedBy": "<email-masked>",
+      "lastModifiedByType": "User"
+     },
+     "type": "Microsoft.DocumentDB/mongoClusters/users"
+    },
+    "stderr": "",
+    "wall_s": 63.6
+   },
+   "reading": "The assignment succeeded in 63.6 s: users/<object-id> was created with identityProvider MicrosoftEntraID, principalType 'User' and roles [{db: admin, role: root}], so a personal Microsoft account is accepted as an Entra administrator.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "d3",
+   "step": "List registered principals",
+   "command": "az documentdb mongocluster microsoft-entra-user list --cluster-name ddb-samples-shared --resource-group documentdb-samples-rg -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.73,
+    "stdout_json": [
+     {
+      "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared/users/factoryadmin",
+      "name": "factoryadmin",
+      "properties": {
+       "provisioningState": "Succeeded"
+      },
+      "resourceGroup": "documentdb-samples-rg",
+      "systemData": {
+       "createdAt": "2026-11-25T20:35:33.2901136Z",
+       "createdBy": "<email-masked>",
+       "createdByType": "User",
+       "lastModifiedAt": "2026-11-25T20:35:33.2901136Z",
+       "lastModifiedBy": "<email-masked>",
+       "lastModifiedByType": "User"
+      },
+      "type": "Microsoft.DocumentDB/mongoClusters/users"
+     },
+     {
+      "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared/users/<object-id-masked>",
+      "name": "<object-id-masked>",
+      "properties": {
+       "identityProvider": {
+        "properties": {
+         "principalType": "User"
+        },
+        "type": "MicrosoftEntraID"
+       },
+       "provisioningState": "Succeeded",
+       "roles": [
+        {
+         "db": "admin",
+         "role": "root"
+        }
+       ]
+      },
+      "resourceGroup": "documentdb-samples-rg",
+      "systemData": {
+       "createdAt": "2026-11-25T22:32:10.0930548Z",
+       "createdBy": "<email-masked>",
+       "createdByType": "User",
+       "lastModifiedAt": "2026-11-25T22:32:10.0930548Z",
+       "lastModifiedBy": "<email-masked>",
+       "lastModifiedByType": "User"
+      },
+      "type": "Microsoft.DocumentDB/mongoClusters/users"
+     }
+    ],
+    "stderr": ""
+   },
+   "reading": "The list returns the native administrator (no identityProvider) and the new Entra administrator.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "d4",
+   "step": "Show the registered principal",
+   "command": "az documentdb mongocluster microsoft-entra-user show --object-id <object-id-masked> --cluster-name ddb-samples-shared --resource-group documentdb-samples-rg -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.63,
+    "stdout_json": {
+     "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared/users/<object-id-masked>",
+     "name": "<object-id-masked>",
+     "properties": {
+      "identityProvider": {
+       "properties": {
+        "principalType": "User"
+       },
+       "type": "MicrosoftEntraID"
+      },
+      "provisioningState": "Succeeded",
+      "roles": [
+       {
+        "db": "admin",
+        "role": "root"
+       }
+      ]
+     },
+     "resourceGroup": "documentdb-samples-rg",
+     "systemData": {
+      "createdAt": "2026-11-25T22:32:10.0930548Z",
+      "createdBy": "<email-masked>",
+      "createdByType": "User",
+      "lastModifiedAt": "2026-11-25T22:32:10.0930548Z",
+      "lastModifiedBy": "<email-masked>",
+      "lastModifiedByType": "User"
+     },
+     "type": "Microsoft.DocumentDB/mongoClusters/users"
+    },
+    "stderr": ""
+   },
+   "reading": "show returns the same users resource: principalType User, role root on admin, provisioningState Succeeded.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "d5",
+   "step": "ARM REST view of the users child resources (api-version 2026-06-01)",
+   "command": "az rest --method GET --url 'https://management.azure.com/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared/users?api-version=2026-06-01' -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.47,
+    "stdout_json": {
+     "value": [
+      {
+       "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared/users/factoryadmin",
+       "name": "factoryadmin",
+       "properties": {
+        "provisioningState": "Succeeded",
+        "user": "factoryadmin"
+       },
+       "systemData": {
+        "createdAt": "2026-11-25T20:35:33.2901136Z",
+        "createdBy": "<email-masked>",
+        "createdByType": "User",
+        "lastModifiedAt": "2026-11-25T20:35:33.2901136Z",
+        "lastModifiedBy": "<email-masked>",
+        "lastModifiedByType": "User"
+       },
+       "type": "Microsoft.DocumentDB/mongoClusters/users"
+      },
+      {
+       "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared/users/<object-id-masked>",
+       "name": "<object-id-masked>",
+       "properties": {
+        "identityProvider": {
+         "properties": {
+          "entraTenant": "<tenant-id-masked>",
+          "principalType": "User"
+         },
+         "type": "MicrosoftEntraID"
+        },
+        "provisioningState": "Succeeded",
+        "roles": [
+         {
+          "db": "admin",
+          "role": "root"
+         }
+        ],
+        "user": "<object-id-masked>"
+       },
+       "systemData": {
+        "createdAt": "2026-11-25T22:32:10.0930548Z",
+        "createdBy": "<email-masked>",
+        "createdByType": "User",
+        "lastModifiedAt": "2026-11-25T22:32:10.0930548Z",
+        "lastModifiedBy": "<email-masked>",
+        "lastModifiedByType": "User"
+       },
+       "type": "Microsoft.DocumentDB/mongoClusters/users"
+      }
+     ]
+    },
+    "stderr": ""
+   },
+   "reading": "The REST response carries two fields the CLI drops, properties.user and identityProvider.properties.entraTenant (the tenant id, masked), and the native admin appears as users/factoryadmin.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "d6",
+   "step": "First MONGODB-OIDC attempt after the assignment (8 s after assign returned; PyMongo 4.20.2)",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=15000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential())})",
+    "client.admin.command('ping')",
+    "list(client['mt_entra']['items'].find({}, {'_id': 0}).sort('n', 1))"
+   ],
+   "response": {
+    "started_at": "2026-11-25T22:33:21+00:00",
+    "ping": {
+     "ok": true,
+     "duration_s": 1.093,
+     "result": {
+      "ok": 1.0
+     }
+    },
+    "find": {
+     "ok": true,
+     "duration_s": 0.096,
+     "result": [
+      {
+       "n": 1,
+       "src": "native-seed"
+      },
+      {
+       "n": 2,
+       "src": "native-seed"
+      }
+     ]
+    }
+   },
+   "reading": "The very first attempt, 8 s after the assign command returned, authenticated and ran ping and find, so there was no observable replication delay.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "d7",
+   "step": "How the native admin sees the Entra administrator",
+   "command": [
+    "client.admin.command({'usersInfo': 1})",
+    "client.admin.command({'usersInfo': {'forAllDBs': True}})",
+    "client.admin.command({'usersInfo': '<object-id>'})",
+    "client.admin.command({'usersInfo': '<object-id>', 'showPrivileges': True})",
+    "client.admin.command({'connectionStatus': 1, 'showPrivileges': True})"
+   ],
+   "response": [
+    {
+     "name": "usersInfo 1 (native admin)",
+     "call": "client.admin.command({'usersInfo': 1})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "users": [
+       {
+        "_id": "admin.<object-id-masked>",
+        "userId": "admin.<object-id-masked>",
+        "user": "<object-id-masked>",
+        "db": "admin",
+        "roles": [
+         {
+          "role": "root",
+          "db": "admin"
+         }
+        ],
+        "customData": {
+         "IdentityProvider": {
+          "type": "MicrosoftEntraID",
+          "properties": {
+           "principalType": "user"
+          }
+         }
+        }
+       },
+       {
+        "_id": "admin.factoryadmin",
+        "userId": "admin.factoryadmin",
+        "user": "factoryadmin",
+        "db": "admin",
+        "roles": [
+         {
+          "role": "root",
+          "db": "admin"
+         }
+        ]
+       }
+      ],
+      "ok": 1
+     },
+     "ok": true,
+     "duration_s": 0.942
+    },
+    {
+     "name": "usersInfo forAllDBs (native admin)",
+     "call": "client.admin.command({'usersInfo': {'forAllDBs': True}})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "users": [
+       {
+        "_id": "admin.<object-id-masked>",
+        "userId": "admin.<object-id-masked>",
+        "user": "<object-id-masked>",
+        "db": "admin",
+        "roles": [
+         {
+          "role": "root",
+          "db": "admin"
+         }
+        ],
+        "customData": {
+         "IdentityProvider": {
+          "type": "MicrosoftEntraID",
+          "properties": {
+           "principalType": "user"
+          }
+         }
+        }
+       },
+       {
+        "_id": "admin.factoryadmin",
+        "userId": "admin.factoryadmin",
+        "user": "factoryadmin",
+        "db": "admin",
+        "roles": [
+         {
+          "role": "root",
+          "db": "admin"
+         }
+        ]
+       }
+      ],
+      "ok": 1
+     },
+     "ok": true,
+     "duration_s": 0.083
+    },
+    {
+     "name": "usersInfo <object-id> (native admin)",
+     "call": "client.admin.command({'usersInfo': '<object-id>'})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "users": [
+       {
+        "_id": "admin.<object-id-masked>",
+        "userId": "admin.<object-id-masked>",
+        "user": "<object-id-masked>",
+        "db": "admin",
+        "roles": [
+         {
+          "role": "root",
+          "db": "admin"
+         }
+        ],
+        "customData": {
+         "IdentityProvider": {
+          "type": "MicrosoftEntraID",
+          "properties": {
+           "principalType": "user"
+          }
+         }
+        }
+       }
+      ],
+      "ok": 1
+     },
+     "ok": true,
+     "duration_s": 0.081
+    },
+    {
+     "name": "usersInfo <object-id> showPrivileges (native admin)",
+     "call": "client.admin.command({'usersInfo': '<object-id>', 'showPrivileges': True})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "users": [
+       {
+        "_id": "admin.<object-id-masked>",
+        "userId": "admin.<object-id-masked>",
+        "user": "<object-id-masked>",
+        "db": "admin",
+        "roles": [
+         {
+          "role": "root",
+          "db": "admin"
+         }
+        ],
+        "inheritedPrivileges": [
+         {
+          "resource": {
+           "db": "",
+           "collection": ""
+          },
+          "actions": [
+           "analyzeShardKey",
+           "changeStream",
+           "collStats",
+           "createCollection",
+           "createIndex",
+           "dbStats",
+           "dropCollection",
+           "dropDatabase",
+           "dropIndex",
+           "enableSharding",
+           "find",
+           "getDatabaseVersion",
+           "getShardVersion",
+           "indexStats",
+           "insert",
+           "killCursors",
+           "listCollections",
+           "listIndexes",
+           "remove",
+           "reshardCollection",
+           "splitVector",
+           "unshardCollection",
+           "update"
+          ]
+         },
+         {
+          "resource": {
+           "cluster": true
+          },
+          "actions": [
+           "compact",
+           "connPoolStats",
+           "dropConnections",
+           "getChangeStreamState",
+           "getClusterParameter",
+           "getCmdLineOpts",
+           "getDefaultRWConcern",
+           "getLog",
+           "getParameter",
+           "getShardMap",
+           "hostInfo",
+           "killAnyCursor",
+           "killAnySession",
+           "killop",
+           "listDatabases",
+           "listSessions",
+           "listShards",
+           "serverStatus",
+           "setChangeStreamState"
+          ]
+         },
+         {
+          "resource": {
+           "db": "admin",
+           "collection": ""
+          },
+          "actions": [
+           "analyze",
+           "bypassDocumentValidation",
+           "collMod",
+           "collStats",
+           "compact",
+           "createCollection",
+           "createIndex",
+           "createRole",
+           "createUser",
+           "dbStats",
+           "dropCollection",
+           "dropDatabase",
+           "dropIndex",
+           "dropRole",
+           "dropUser",
+           "grantRole",
+           "listCollections",
+           "listIndexes",
+           "reIndex",
+           "revokeRole",
+           "validate",
+           "viewRole",
+           "viewUser"
+          ]
+         }
+        ],
+        "customData": {
+         "IdentityProvider": {
+          "type": "MicrosoftEntraID",
+          "properties": {
+           "principalType": "user"
+          }
+         }
+        }
+       }
+      ],
+      "ok": 1
+     },
+     "ok": true,
+     "duration_s": 0.082
+    },
+    {
+     "name": "connectionStatus showPrivileges (native admin)",
+     "call": "client.admin.command({'connectionStatus': 1, 'showPrivileges': True})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "authInfo": {
+       "authenticatedUsers": [
+        {
+         "user": "factoryadmin",
+         "db": "admin"
+        }
+       ],
+       "authenticatedUserRoles": [
+        {
+         "role": "root",
+         "db": "admin"
+        }
+       ],
+       "authenticatedUserPrivileges": [
+        {
+         "resource": {
+          "db": "",
+          "collection": ""
+         },
+         "actions": [
+          "analyzeShardKey",
+          "changeStream",
+          "collStats",
+          "createCollection",
+          "createIndex",
+          "dbStats",
+          "dropCollection",
+          "dropDatabase",
+          "dropIndex",
+          "enableSharding",
+          "find",
+          "getDatabaseVersion",
+          "getShardVersion",
+          "indexStats",
+          "insert",
+          "killCursors",
+          "listCollections",
+          "listIndexes",
+          "remove",
+          "reshardCollection",
+          "splitVector",
+          "unshardCollection",
+          "update"
+         ]
+        },
+        {
+         "resource": {
+          "cluster": true
+         },
+         "actions": [
+          "compact",
+          "connPoolStats",
+          "dropConnections",
+          "getChangeStreamState",
+          "getClusterParameter",
+          "getCmdLineOpts",
+          "getDefaultRWConcern",
+          "getLog",
+          "getParameter",
+          "getShardMap",
+          "hostInfo",
+          "killAnyCursor",
+          "killAnySession",
+          "killop",
+          "listDatabases",
+          "listSessions",
+          "listShards",
+          "serverStatus",
+          "setChangeStreamState"
+         ]
+        },
+        {
+         "resource": {
+          "db": "admin",
+          "collection": ""
+         },
+         "actions": [
+          "analyze",
+          "bypassDocumentValidation",
+          "collMod",
+          "collStats",
+          "compact",
+          "createCollection",
+          "createIndex",
+          "createRole",
+          "createUser",
+          "dbStats",
+          "dropCollection",
+          "dropDatabase",
+          "dropIndex",
+          "dropRole",
+          "dropUser",
+          "grantRole",
+          "listCollections",
+          "listIndexes",
+          "reIndex",
+          "revokeRole",
+          "validate",
+          "viewRole",
+          "viewUser"
+         ]
+        }
+       ]
+      },
+      "ok": 1
+     },
+     "ok": true,
+     "duration_s": 0.081
+    }
+   ],
+   "reading": "The native admin sees the Entra administrator as user '<object-id>' in db 'admin' with role root and customData.IdentityProvider {type: MicrosoftEntraID, properties: {principalType: 'user'}} (lower-case, unlike ARM's 'User').",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "e0",
+   "step": "Create throwaway venvs and install each PyMongo with azure-identity",
+   "command": [
+    "/opt/homebrew/bin/python3.13 -m venv venvs/pm-4.6.3 venvs/pm-4.7.0 venvs/pm-latest (one call per venv)",
+    "venvs/pm-4.6.3/bin/python -m pip install --disable-pip-version-check -q 'pymongo==4.6.3' azure-identity",
+    "venvs/pm-4.7.0/bin/python -m pip install --disable-pip-version-check -q 'pymongo==4.7.0' azure-identity",
+    "venvs/pm-latest/bin/python -m pip install --disable-pip-version-check -q pymongo azure-identity"
+   ],
+   "response": {
+    "exit_codes": [
+     0,
+     0,
+     0
+    ],
+    "resolved": {
+     "4.6.3": {
+      "python": "3.13.13",
+      "pymongo": "4.6.3",
+      "azure_identity": "1.27.0",
+      "pip_log": "venvs/pm-$v/bin/python -m pip install --disable-pip-version-check -q \"$spec\"   2.42s user 0.95s system 83% cpu 4.023 total"
+     },
+     "4.7.0": {
+      "python": "3.13.13",
+      "pymongo": "4.7.0",
+      "azure_identity": "1.27.0",
+      "pip_log": "venvs/pm-$v/bin/python -m pip install --disable-pip-version-check -q \"$spec\"   0.89s user 0.20s system 71% cpu 1.532 total"
+     },
+     "latest": {
+      "python": "3.13.13",
+      "pymongo": "4.20.2",
+      "azure_identity": "1.27.0",
+      "pip_log": "venvs/pm-$v/bin/python -m pip install --disable-pip-version-check -q \"$spec\"   0.92s user 0.21s system 72% cpu 1.570 total"
+     }
+    },
+    "also_resolved_in_each": "azure-core 1.41.0, msal 1.39.0, dnspython 2.9.2"
+   },
+   "reading": "All three installs succeeded on Python 3.13.13; 'latest' resolved to PyMongo 4.20.2 and every venv got azure-identity 1.27.0.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "e1-import_oidc_callback_api",
+   "step": "PyMongo 4.6.3: import Learn's callback API",
+   "command": "from pymongo.auth_oidc import OIDCCallback, OIDCCallbackContext, OIDCCallbackResult",
+   "response": {
+    "ok": false,
+    "duration_s": 0.001,
+    "error": {
+     "type": "builtins.ImportError",
+     "str": "cannot import name 'OIDCCallback' from 'pymongo.auth_oidc' (/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/venvs/pm-4.6.3/lib/python3.13/site-packages/pymongo/auth_oidc.py)"
+    },
+    "traceback_tail": [
+     "    from pymongo.auth_oidc import OIDCCallback, OIDCCallbackContext, OIDCCallbackResult  # noqa: F401",
+     "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+     "ImportError: cannot import name 'OIDCCallback' from 'pymongo.auth_oidc' (/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/venvs/pm-4.6.3/lib/python3.13/site-packages/pymongo/auth_oidc.py)"
+    ]
+   },
+   "reading": "PyMongo 4.6.3 has no OIDCCallback class, so Learn's Python sample fails at import with ImportError before any network traffic.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e1-construct-OIDC_CALLBACK",
+   "step": "PyMongo 4.6.3: OIDC_CALLBACK with a Learn-shaped callback object",
+   "command": "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential())})",
+   "response": {
+    "ok": false,
+    "duration_s": 0.052,
+    "error": {
+     "type": "builtins.ValueError",
+     "str": "Auth mechanism property values must be strings or callback functions"
+    },
+    "traceback_tail": [
+     "        \"Auth mechanism property values must be strings or callback functions\"",
+     "    )",
+     "ValueError: Auth mechanism property values must be strings or callback functions"
+    ]
+   },
+   "reading": "Passing a callback object under OIDC_CALLBACK is rejected at MongoClient construction with ValueError \"Auth mechanism property values must be strings or callback functions\".",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e1-request_token_callback_default_hosts-ping",
+   "step": "PyMongo 4.6.3 pre-GA API: request_token_callback, default allowed_hosts",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'request_token_callback': request_token_callback})",
+    "client.admin.command('ping')"
+   ],
+   "response": {
+    "construct": {
+     "ok": true,
+     "duration_s": 0.054,
+     "result": "constructed"
+    },
+    "ping": {
+     "ok": false,
+     "duration_s": 0.686,
+     "error": {
+      "type": "pymongo.errors.ConfigurationError",
+      "str": "Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     },
+     "traceback_tail": [
+      "        f\"Refusing to connect to {address[0]}, which is not in authOIDCAllowedHosts: {allowed_hosts}\"",
+      "    )",
+      "pymongo.errors.ConfigurationError: Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     ]
+    },
+    "find": {
+     "ok": false,
+     "duration_s": 0.293,
+     "error": {
+      "type": "pymongo.errors.ConfigurationError",
+      "str": "Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     },
+     "traceback_tail": [
+      "        f\"Refusing to connect to {address[0]}, which is not in authOIDCAllowedHosts: {allowed_hosts}\"",
+      "    )",
+      "pymongo.errors.ConfigurationError: Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     ]
+    }
+   },
+   "reading": "The undocumented pre-GA request_token_callback is refused client-side with ConfigurationError because the resolved host fc-a472369cc681-000.mongocluster.cosmos.azure.com is not in the default authOIDCAllowedHosts list.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e1-request_token_callback_allowed_hosts-ping",
+   "step": "PyMongo 4.6.3 pre-GA API: request_token_callback with allowed_hosts ['*.mongocluster.cosmos.azure.com']",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'request_token_callback': request_token_callback, 'allowed_hosts': ['*.mongocluster.cosmos.azure.com']})",
+    "client.admin.command('ping')"
+   ],
+   "response": {
+    "construct": {
+     "ok": true,
+     "duration_s": 0.056,
+     "result": "constructed"
+    },
+    "ping": {
+     "ok": false,
+     "duration_s": 0.679,
+     "error": {
+      "type": "builtins.KeyError",
+      "str": "'MONGODB-OIDC'"
+     },
+     "traceback_tail": [
+      "    auth_func = _AUTH_MAP[mechanism]",
+      "                ~~~~~~~~~^^^^^^^^^^^",
+      "KeyError: 'MONGODB-OIDC'"
+     ]
+    },
+    "find": {
+     "ok": false,
+     "duration_s": 0.348,
+     "error": {
+      "type": "builtins.KeyError",
+      "str": "'MONGODB-OIDC'"
+     },
+     "traceback_tail": [
+      "    auth_func = _AUTH_MAP[mechanism]",
+      "                ~~~~~~~~~^^^^^^^^^^^",
+      "KeyError: 'MONGODB-OIDC'"
+     ]
+    }
+   },
+   "reading": "With the Azure host allowed, PyMongo 4.6.3 fails inside its own authenticate() with KeyError 'MONGODB-OIDC' (the mechanism is missing from _AUTH_MAP), so 4.6.3 cannot authenticate with MONGODB-OIDC at all and the callback is never called.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e2",
+   "step": "PyMongo 4.7.0: Learn's Python callback as written (no ALLOWED_HOSTS), plain host",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential())})",
+    "client.admin.command('ping')",
+    "list(client['mt_entra']['items'].find({}, {'_id': 0}).sort('n', 1))"
+   ],
+   "response": {
+    "construct": {
+     "ok": true,
+     "duration_s": 0.07,
+     "result": "constructed"
+    },
+    "ping": {
+     "ok": false,
+     "duration_s": 0.635,
+     "error": {
+      "type": "pymongo.errors.ConfigurationError",
+      "str": "Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     },
+     "traceback_tail": [
+      "        f\"Refusing to connect to {address[0]}, which is not in authOIDCAllowedHosts: {allowed_hosts}\"",
+      "    )",
+      "pymongo.errors.ConfigurationError: Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     ]
+    },
+    "find": {
+     "ok": false,
+     "duration_s": 0.299,
+     "error": {
+      "type": "pymongo.errors.ConfigurationError",
+      "str": "Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     },
+     "traceback_tail": [
+      "        f\"Refusing to connect to {address[0]}, which is not in authOIDCAllowedHosts: {allowed_hosts}\"",
+      "    )",
+      "pymongo.errors.ConfigurationError: Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     ]
+    },
+    "callback_calls": [],
+    "other_calls": "insert, connectionStatus and usersInfo failed with the same ConfigurationError (raw/oidc_py_e2-pymongo-4.7.0.json)"
+   },
+   "reading": "PyMongo 4.7.0 refuses to authenticate to the Azure host with ConfigurationError \"Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: [...]\" before calling the callback, so Learn's Python sample does not work on 4.7.0 as written.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e2b",
+   "step": "PyMongo 4.7.0 with ALLOWED_HOSTS ['*.azure.com']: ping, find, insert",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential()), 'ALLOWED_HOSTS': ['*.azure.com']})",
+    "client.admin.command('ping')",
+    "list(client['mt_entra']['items'].find({}, {'_id': 0}).sort('n', 1))",
+    "client['mt_entra']['items'].insert_one({'n': 100, 'src': 'oidc-e2b-pymongo-4.7.0-allowed-azure'})",
+    "list(client['mt_entra']['items'].find({'n': 100}, {'_id': 0}))"
+   ],
+   "response": {
+    "construct": {
+     "ok": true,
+     "duration_s": 0.083,
+     "result": "constructed"
+    },
+    "ping": {
+     "ok": true,
+     "duration_s": 1.117,
+     "result": {
+      "ok": 1.0
+     }
+    },
+    "find": {
+     "ok": true,
+     "duration_s": 0.081,
+     "result": [
+      {
+       "n": 1,
+       "src": "native-seed"
+      },
+      {
+       "n": 2,
+       "src": "native-seed"
+      }
+     ]
+    },
+    "insert_one": {
+     "ok": true,
+     "duration_s": 0.075,
+     "result": {
+      "acknowledged": true
+     }
+    },
+    "find_after_insert": {
+     "ok": true,
+     "duration_s": 0.077,
+     "result": [
+      {
+       "n": 100,
+       "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+      }
+     ]
+    },
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:35:21+00:00",
+      "context": {
+       "timeout_seconds": 60,
+       "username": null,
+       "version": 1,
+       "refresh_token": null,
+       "idp_info": null
+      }
+     }
+    ]
+   },
+   "reading": "Adding ALLOWED_HOSTS ['*.azure.com'] to the same 4.7.0 client makes it authenticate (one callback call) and ping, find and insert all succeed.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e2c",
+   "step": "PyMongo 4.7.0 with ALLOWED_HOSTS ['*.mongocluster.cosmos.azure.com']: ping, find",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential()), 'ALLOWED_HOSTS': ['*.mongocluster.cosmos.azure.com']})",
+    "client.admin.command('ping')",
+    "list(client['mt_entra']['items'].find({}, {'_id': 0}).sort('n', 1))"
+   ],
+   "response": {
+    "construct": {
+     "ok": true,
+     "duration_s": 0.057,
+     "result": "constructed"
+    },
+    "ping": {
+     "ok": true,
+     "duration_s": 1.128,
+     "result": {
+      "ok": 1.0
+     }
+    },
+    "find": {
+     "ok": true,
+     "duration_s": 0.076,
+     "result": [
+      {
+       "n": 1,
+       "src": "native-seed"
+      },
+      {
+       "n": 2,
+       "src": "native-seed"
+      },
+      {
+       "n": 100,
+       "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+      }
+     ]
+    }
+   },
+   "reading": "The narrower pattern '*.mongocluster.cosmos.azure.com' works on 4.7.0 too.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3",
+   "step": "PyMongo 4.20.2 (latest): Learn's callback as written, plain host: ping, find, insert",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential())})",
+    "client.admin.command('ping')",
+    "list(client['mt_entra']['items'].find({}, {'_id': 0}).sort('n', 1))",
+    "client['mt_entra']['items'].insert_one({'n': 100, 'src': 'oidc-e3-pymongo-latest'})",
+    "list(client['mt_entra']['items'].find({'n': 100}, {'_id': 0}))"
+   ],
+   "response": {
+    "construct": {
+     "ok": true,
+     "duration_s": 0.076,
+     "result": "constructed"
+    },
+    "ping": {
+     "ok": true,
+     "duration_s": 1.213,
+     "result": {
+      "ok": 1.0
+     }
+    },
+    "find": {
+     "ok": true,
+     "duration_s": 0.08,
+     "result": [
+      {
+       "n": 1,
+       "src": "native-seed"
+      },
+      {
+       "n": 2,
+       "src": "native-seed"
+      },
+      {
+       "n": 100,
+       "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+      }
+     ]
+    },
+    "insert_one": {
+     "ok": true,
+     "duration_s": 0.085,
+     "result": {
+      "acknowledged": true
+     }
+    },
+    "find_after_insert": {
+     "ok": true,
+     "duration_s": 0.078,
+     "result": [
+      {
+       "n": 100,
+       "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+      },
+      {
+       "n": 100,
+       "src": "oidc-e3-pymongo-latest"
+      }
+     ]
+    },
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:35:34+00:00",
+      "context": {
+       "timeout_seconds": 60,
+       "username": "",
+       "version": 1,
+       "refresh_token": null,
+       "idp_info": null
+      }
+     }
+    ]
+   },
+   "reading": "PyMongo 4.20.2 connects with Learn's callback and no ALLOWED_HOSTS, calls the callback once (context timeout_seconds 60, version 1, username '', no idp_info) and runs ping, find and insert.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-connectionStatus_showPrivileges",
+   "step": "PyMongo 4.20.2 as the Entra identity: connectionStatus_showPrivileges",
+   "command": "client.admin.command({'connectionStatus': 1, 'showPrivileges': True})",
+   "response": {
+    "ok": true,
+    "duration_s": 0.083,
+    "result": {
+     "authInfo": {
+      "authenticatedUsers": [
+       {
+        "user": "<object-id-masked>",
+        "db": "admin"
+       }
+      ],
+      "authenticatedUserRoles": [
+       {
+        "role": "root",
+        "db": "admin"
+       }
+      ],
+      "authenticatedUserPrivileges": [
+       {
+        "resource": {
+         "db": "",
+         "collection": ""
+        },
+        "actions": [
+         "analyzeShardKey",
+         "changeStream",
+         "collStats",
+         "createCollection",
+         "createIndex",
+         "dbStats",
+         "dropCollection",
+         "dropDatabase",
+         "dropIndex",
+         "enableSharding",
+         "find",
+         "getDatabaseVersion",
+         "getShardVersion",
+         "indexStats",
+         "insert",
+         "killCursors",
+         "listCollections",
+         "listIndexes",
+         "remove",
+         "reshardCollection",
+         "splitVector",
+         "unshardCollection",
+         "update"
+        ]
+       },
+       {
+        "resource": {
+         "cluster": true
+        },
+        "actions": [
+         "compact",
+         "connPoolStats",
+         "dropConnections",
+         "getChangeStreamState",
+         "getClusterParameter",
+         "getCmdLineOpts",
+         "getDefaultRWConcern",
+         "getLog",
+         "getParameter",
+         "getShardMap",
+         "hostInfo",
+         "killAnyCursor",
+         "killAnySession",
+         "killop",
+         "listDatabases",
+         "listSessions",
+         "listShards",
+         "serverStatus",
+         "setChangeStreamState"
+        ]
+       },
+       {
+        "resource": {
+         "db": "admin",
+         "collection": ""
+        },
+        "actions": [
+         "analyze",
+         "bypassDocumentValidation",
+         "collMod",
+         "collStats",
+         "compact",
+         "createCollection",
+         "createIndex",
+         "createRole",
+         "createUser",
+         "dbStats",
+         "dropCollection",
+         "dropDatabase",
+         "dropIndex",
+         "dropRole",
+         "dropUser",
+         "grantRole",
+         "listCollections",
+         "listIndexes",
+         "reIndex",
+         "revokeRole",
+         "validate",
+         "viewRole",
+         "viewUser"
+        ]
+       }
+      ]
+     },
+     "ok": 1
+    }
+   },
+   "reading": "connectionStatus with showPrivileges reports the Entra identity as user '<object-id>' in db 'admin' with role root and three privilege entries (any db/collection, cluster, and admin db).",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-connectionStatus",
+   "step": "PyMongo 4.20.2 as the Entra identity: connectionStatus",
+   "command": "client.admin.command({'connectionStatus': 1})",
+   "response": {
+    "ok": true,
+    "duration_s": 0.079,
+    "result": {
+     "authInfo": {
+      "authenticatedUsers": [
+       {
+        "user": "<object-id-masked>",
+        "db": "admin"
+       }
+      ],
+      "authenticatedUserRoles": [
+       {
+        "role": "root",
+        "db": "admin"
+       }
+      ]
+     },
+     "ok": 1
+    }
+   },
+   "reading": "Plain connectionStatus returns authenticatedUsers and authenticatedUserRoles only.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-usersInfo_oid_admin",
+   "step": "PyMongo 4.20.2 as the Entra identity: usersInfo_oid_admin",
+   "command": "client.admin.command({'usersInfo': '<object-id>'})",
+   "response": {
+    "ok": true,
+    "duration_s": 0.083,
+    "result": {
+     "users": [
+      {
+       "_id": "admin.<object-id-masked>",
+       "userId": "admin.<object-id-masked>",
+       "user": "<object-id-masked>",
+       "db": "admin",
+       "roles": [
+        {
+         "role": "root",
+         "db": "admin"
+        }
+       ],
+       "customData": {
+        "IdentityProvider": {
+         "type": "MicrosoftEntraID",
+         "properties": {
+          "principalType": "user"
+         }
+        }
+       }
+      }
+     ],
+     "ok": 1
+    }
+   },
+   "reading": "usersInfo '<object-id>' on admin returns the identity's user document with roles [root@admin] and customData.IdentityProvider {type: MicrosoftEntraID, properties: {principalType: 'user'}}.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-usersInfo_userdoc_admin",
+   "step": "PyMongo 4.20.2 as the Entra identity: usersInfo_userdoc_admin",
+   "command": "client.admin.command({'usersInfo': {'user': '<object-id>', 'db': 'admin'}})",
+   "response": {
+    "ok": true,
+    "duration_s": 0.08,
+    "result": {
+     "users": [
+      {
+       "_id": "admin.<object-id-masked>",
+       "userId": "admin.<object-id-masked>",
+       "user": "<object-id-masked>",
+       "db": "admin",
+       "roles": [
+        {
+         "role": "root",
+         "db": "admin"
+        }
+       ],
+       "customData": {
+        "IdentityProvider": {
+         "type": "MicrosoftEntraID",
+         "properties": {
+          "principalType": "user"
+         }
+        }
+       }
+      }
+     ],
+     "ok": 1
+    }
+   },
+   "reading": "usersInfo {user: '<object-id>', db: 'admin'} returns the same document.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-usersInfo_userdoc_external",
+   "step": "PyMongo 4.20.2 as the Entra identity: usersInfo_userdoc_external",
+   "command": "client.admin.command({'usersInfo': {'user': '<object-id>', 'db': '$external'}})",
+   "response": {
+    "ok": false,
+    "duration_s": 0.092,
+    "error": {
+     "type": "pymongo.errors.OperationFailure",
+     "code": 2,
+     "codeName": "BadValue",
+     "errmsg": "Unsupported value specified for 'db' field. Only 'admin' is allowed.",
+     "str": "Unsupported value specified for 'db' field. Only 'admin' is allowed., full error: {'ok': 0.0, 'code': 2, 'codeName': 'BadValue', 'errmsg': \"Unsupported value specified for 'db' field. Only 'admin' is allowed.\"}",
+     "errorLabels_in_reply": null
+    },
+    "traceback_tail": [
+     "  File \"/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/venvs/pm-latest/lib/python3.13/site-packages/pymongo/helpers_shared.py\", line 327, in _check_command_response",
+     "    raise OperationFailure(errmsg, code, response, max_wire_version)",
+     "pymongo.errors.OperationFailure: Unsupported value specified for 'db' field. Only 'admin' is allowed., full error: {'ok': 0.0, 'code': 2, 'codeName': 'BadValue', 'errmsg': \"Unsupported value specified for 'db' field. Only 'admin' is allowed.\"}"
+    ]
+   },
+   "reading": "usersInfo {user: '<object-id>', db: '$external'} is rejected with code 2 BadValue \"Unsupported value specified for 'db' field. Only 'admin' is allowed.\", so Entra users live in admin, not $external.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-usersInfo_external_db",
+   "step": "PyMongo 4.20.2 as the Entra identity: usersInfo_external_db",
+   "command": "client['$external'].command({'usersInfo': '<object-id>'})",
+   "response": {
+    "ok": true,
+    "duration_s": 0.082,
+    "result": {
+     "users": [
+      {
+       "_id": "admin.<object-id-masked>",
+       "userId": "admin.<object-id-masked>",
+       "user": "<object-id-masked>",
+       "db": "admin",
+       "roles": [
+        {
+         "role": "root",
+         "db": "admin"
+        }
+       ],
+       "customData": {
+        "IdentityProvider": {
+         "type": "MicrosoftEntraID",
+         "properties": {
+          "principalType": "user"
+         }
+        }
+       }
+      }
+     ],
+     "ok": 1
+    }
+   },
+   "reading": "Running usersInfo '<object-id>' against the $external database succeeds and still returns the user in db 'admin'.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-usersInfo_oid_showPrivileges",
+   "step": "PyMongo 4.20.2 as the Entra identity: usersInfo_oid_showPrivileges",
+   "command": "client.admin.command({'usersInfo': '<object-id>', 'showPrivileges': True})",
+   "response": {
+    "ok": true,
+    "duration_s": 0.085,
+    "result": {
+     "users": [
+      {
+       "_id": "admin.<object-id-masked>",
+       "userId": "admin.<object-id-masked>",
+       "user": "<object-id-masked>",
+       "db": "admin",
+       "roles": [
+        {
+         "role": "root",
+         "db": "admin"
+        }
+       ],
+       "inheritedPrivileges": [
+        {
+         "resource": {
+          "db": "",
+          "collection": ""
+         },
+         "actions": [
+          "analyzeShardKey",
+          "changeStream",
+          "collStats",
+          "createCollection",
+          "createIndex",
+          "dbStats",
+          "dropCollection",
+          "dropDatabase",
+          "dropIndex",
+          "enableSharding",
+          "find",
+          "getDatabaseVersion",
+          "getShardVersion",
+          "indexStats",
+          "insert",
+          "killCursors",
+          "listCollections",
+          "listIndexes",
+          "remove",
+          "reshardCollection",
+          "splitVector",
+          "unshardCollection",
+          "update"
+         ]
+        },
+        {
+         "resource": {
+          "cluster": true
+         },
+         "actions": [
+          "compact",
+          "connPoolStats",
+          "dropConnections",
+          "getChangeStreamState",
+          "getClusterParameter",
+          "getCmdLineOpts",
+          "getDefaultRWConcern",
+          "getLog",
+          "getParameter",
+          "getShardMap",
+          "hostInfo",
+          "killAnyCursor",
+          "killAnySession",
+          "killop",
+          "listDatabases",
+          "listSessions",
+          "listShards",
+          "serverStatus",
+          "setChangeStreamState"
+         ]
+        },
+        {
+         "resource": {
+          "db": "admin",
+          "collection": ""
+         },
+         "actions": [
+          "analyze",
+          "bypassDocumentValidation",
+          "collMod",
+          "collStats",
+          "compact",
+          "createCollection",
+          "createIndex",
+          "createRole",
+          "createUser",
+          "dbStats",
+          "dropCollection",
+          "dropDatabase",
+          "dropIndex",
+          "dropRole",
+          "dropUser",
+          "grantRole",
+          "listCollections",
+          "listIndexes",
+          "reIndex",
+          "revokeRole",
+          "validate",
+          "viewRole",
+          "viewUser"
+         ]
+        }
+       ],
+       "customData": {
+        "IdentityProvider": {
+         "type": "MicrosoftEntraID",
+         "properties": {
+          "principalType": "user"
+         }
+        }
+       }
+      }
+     ],
+     "ok": 1
+    }
+   },
+   "reading": "usersInfo with showPrivileges for the identity returns inheritedPrivileges for the root role.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-usersInfo_1",
+   "step": "PyMongo 4.20.2 as the Entra identity: usersInfo_1",
+   "command": "client.admin.command({'usersInfo': 1})",
+   "response": {
+    "ok": true,
+    "duration_s": 0.08,
+    "result": {
+     "users": [
+      {
+       "_id": "admin.<object-id-masked>",
+       "userId": "admin.<object-id-masked>",
+       "user": "<object-id-masked>",
+       "db": "admin",
+       "roles": [
+        {
+         "role": "root",
+         "db": "admin"
+        }
+       ],
+       "customData": {
+        "IdentityProvider": {
+         "type": "MicrosoftEntraID",
+         "properties": {
+          "principalType": "user"
+         }
+        }
+       }
+      },
+      {
+       "_id": "admin.factoryadmin",
+       "userId": "admin.factoryadmin",
+       "user": "factoryadmin",
+       "db": "admin",
+       "roles": [
+        {
+         "role": "root",
+         "db": "admin"
+        }
+       ]
+      }
+     ],
+     "ok": 1
+    }
+   },
+   "reading": "usersInfo: 1 lists both administrators (the Entra identity and factoryadmin).",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-usersInfo_forAllDBs",
+   "step": "PyMongo 4.20.2 as the Entra identity: usersInfo_forAllDBs",
+   "command": "client.admin.command({'usersInfo': {'forAllDBs': True}})",
+   "response": {
+    "ok": true,
+    "duration_s": 0.082,
+    "result": {
+     "users": [
+      {
+       "_id": "admin.<object-id-masked>",
+       "userId": "admin.<object-id-masked>",
+       "user": "<object-id-masked>",
+       "db": "admin",
+       "roles": [
+        {
+         "role": "root",
+         "db": "admin"
+        }
+       ],
+       "customData": {
+        "IdentityProvider": {
+         "type": "MicrosoftEntraID",
+         "properties": {
+          "principalType": "user"
+         }
+        }
+       }
+      },
+      {
+       "_id": "admin.factoryadmin",
+       "userId": "admin.factoryadmin",
+       "user": "factoryadmin",
+       "db": "admin",
+       "roles": [
+        {
+         "role": "root",
+         "db": "admin"
+        }
+       ]
+      }
+     ],
+     "ok": 1
+    }
+   },
+   "reading": "usersInfo {forAllDBs: true} returns the same two users.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3-listDatabases_nameOnly",
+   "step": "PyMongo 4.20.2 as the Entra identity: listDatabases_nameOnly",
+   "command": "client.admin.command({'listDatabases': 1, 'nameOnly': True})",
+   "response": {
+    "ok": true,
+    "duration_s": 0.079,
+    "result": {
+     "databases": [
+      {
+       "name": "mt_entra"
+      }
+     ],
+     "ok": 1.0
+    }
+   },
+   "reading": "listDatabases works for the Entra administrator (only mt_entra existed at that moment).",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e3b",
+   "step": "PyMongo 4.20.2 against the .global. host",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.global.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential())})",
+    "client.admin.command('ping')",
+    "list(client['mt_entra']['items'].find({}, {'_id': 0}).sort('n', 1))"
+   ],
+   "response": {
+    "ping": {
+     "ok": true,
+     "duration_s": 1.195,
+     "result": {
+      "ok": 1.0
+     }
+    },
+    "find": {
+     "ok": true,
+     "duration_s": 0.086,
+     "result": [
+      {
+       "n": 1,
+       "src": "native-seed"
+      },
+      {
+       "n": 2,
+       "src": "native-seed"
+      },
+      {
+       "n": 100,
+       "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+      },
+      {
+       "n": 100,
+       "src": "oidc-e3-pymongo-latest"
+      }
+     ]
+    }
+   },
+   "reading": "The global read-write host form works with MONGODB-OIDC too.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e4",
+   "step": "Extra: which PyMongo release stopped enforcing ALLOWED_HOSTS for machine callbacks (source of each release)",
+   "command": [
+    "/opt/homebrew/bin/python3.13 -m venv venvs/pm-bisect; venvs/pm-bisect/bin/python -m pip install -q azure-identity dnspython",
+    "for v in 4.7.0 4.7.1 4.7.2 4.7.3 4.8.0 4.9.0 4.9.1 4.9.2 4.10.0 4.10.1 4.11 4.11.3 4.12.0 4.13.0: pip install -q --no-deps --force-reinstall pymongo==$v; grep -rh -A1 'Validate that the address is allowed' <site-packages>/pymongo --include='*.py'"
+   ],
+   "response": {
+    "line_after_'# Validate that the address is allowed'": {
+     "4.7.0": "if not properties.environment:",
+     "4.7.1": "if not properties.environment:",
+     "4.7.2": "if not properties.environment:",
+     "4.7.3": "if not properties.environment:",
+     "4.8.0": "if not properties.environment:",
+     "4.9.0": "if not properties.environment:",
+     "4.9.1": "if not properties.environment:",
+     "4.9.2": "if not properties.environment:",
+     "4.10.0": "if not properties.environment:",
+     "4.10.1": "if not properties.environment:",
+     "4.11": "if properties.human_callback is not None:",
+     "4.11.3": "if properties.human_callback is not None:",
+     "4.12.0": "if properties.human_callback is not None:",
+     "4.13.0": "if properties.human_callback is not None:"
+    },
+    "4.20.2 (pm-latest venv)": "auth_oidc_shared.py line 208: if properties.human_callback is not None:",
+    "pymongo_changelog": "the 4.7.x-4.11 changelog entries do not mention the change (learn/pymongo-changelog.rst)"
+   },
+   "reading": "From 4.7.0 through 4.10.1 PyMongo checks ALLOWED_HOSTS for every MONGODB-OIDC credential without ENVIRONMENT, including a custom OIDC_CALLBACK, and from 4.11 only for human callbacks.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e5-4.10.1",
+   "step": "Extra: live check of PyMongo 4.10.1 with Learn's callback and no ALLOWED_HOSTS",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential())})",
+    "client.admin.command('ping')"
+   ],
+   "response": {
+    "pymongo": "4.10.1",
+    "ping": {
+     "ok": false,
+     "duration_s": 0.666,
+     "error": {
+      "type": "pymongo.errors.ConfigurationError",
+      "str": "Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     },
+     "traceback_tail": [
+      "        f\"Refusing to connect to {address[0]}, which is not in authOIDCAllowedHosts: {allowed_hosts}\"",
+      "    )",
+      "pymongo.errors.ConfigurationError: Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     ]
+    },
+    "find": {
+     "ok": false,
+     "duration_s": 0.25,
+     "error": {
+      "type": "pymongo.errors.ConfigurationError",
+      "str": "Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     },
+     "traceback_tail": [
+      "        f\"Refusing to connect to {address[0]}, which is not in authOIDCAllowedHosts: {allowed_hosts}\"",
+      "    )",
+      "pymongo.errors.ConfigurationError: Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: ['*.mongodb.net', '*.mongodb-dev.net', '*.mongodb-qa.net', '*.mongodbgov.net', 'localhost', '127.0.0.1', '::1']"
+     ]
+    },
+    "callback_calls": 0
+   },
+   "reading": "PyMongo 4.10.1 still refuses the Azure host with the same ConfigurationError.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "e5-4.11",
+   "step": "Extra: live check of PyMongo 4.11 with Learn's callback and no ALLOWED_HOSTS",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', connectTimeoutMS=120000, serverSelectionTimeoutMS=20000, tls=True, retryWrites=False, maxIdleTimeMS=120000, authMechanism='MONGODB-OIDC', authMechanismProperties={'OIDC_CALLBACK': AzureIdentityTokenCallback(AzureCliCredential())})",
+    "client.admin.command('ping')"
+   ],
+   "response": {
+    "pymongo": "4.11",
+    "ping": {
+     "ok": true,
+     "duration_s": 1.095,
+     "result": {
+      "ok": 1.0
+     }
+    },
+    "find": {
+     "ok": true,
+     "duration_s": 0.081,
+     "result": [
+      {
+       "n": 1,
+       "src": "native-seed"
+      },
+      {
+       "n": 2,
+       "src": "native-seed"
+      },
+      {
+       "n": 100,
+       "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+      },
+      {
+       "n": 100,
+       "src": "oidc-e3-pymongo-latest"
+      }
+     ]
+    },
+    "callback_calls": 1
+   },
+   "reading": "PyMongo 4.11 connects without ALLOWED_HOSTS, so 4.11 is the first release on which Learn's Python sample works as written.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f0",
+   "step": "Install mongodb@6.6.0, mongodb@6.7.0 (and latest as an extra) with the latest @azure/identity in a temp directory",
+   "command": "cd <test-dir>/node && npm install --ignore-scripts --no-audit --no-fund mongodb660@npm:mongodb@6.6.0 mongodb670@npm:mongodb@6.7.0 mongodblatest@npm:mongodb@latest @azure/identity@latest",
+   "response": {
+    "exit_code": 0,
+    "npm_log": "added 65 packages in 2s\nnpm install --ignore-scripts --no-audit --no-fund mongodb660@npm:mongodb@6.6.  1.39s user 1.25s system 105% cpu 2.496 total",
+    "resolved": {
+     "mongodb660": "6.6.0",
+     "mongodb670": "6.7.0",
+     "mongodblatest": "7.9.1",
+     "@azure/identity": "4.14.1"
+    },
+    "node": "v24.21.0",
+    "npm": "11.19.0"
+   },
+   "reading": "npm installed 65 packages; latest resolved to mongodb 7.9.1 and @azure/identity 4.14.1 on Node v24.21.0.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "f1",
+   "step": "Node 6.6.0-oidc_callback-allowed-azure.com",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token>, ALLOWED_HOSTS: ['*.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "6.6.0",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": false,
+      "error": {
+       "name": "MongoInvalidArgumentError",
+       "constructor": "MongoInvalidArgumentError",
+       "message": "Either a PROVIDER_NAME or a REQUEST_TOKEN_CALLBACK must be specified for mechanism 'MONGODB-OIDC'.",
+       "errmsg": "Either a PROVIDER_NAME or a REQUEST_TOKEN_CALLBACK must be specified for mechanism 'MONGODB-OIDC'.",
+       "errorLabels": []
+      }
+     }
+    ],
+    "callback_calls": []
+   },
+   "reading": "Node driver 6.6.0 does not know OIDC_CALLBACK: the client constructor throws MongoInvalidArgumentError \"Either a PROVIDER_NAME or a REQUEST_TOKEN_CALLBACK must be specified for mechanism 'MONGODB-OIDC'.\"",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f2",
+   "step": "Node 6.6.0-oidc_callback-allowed-mongocluster",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token>, ALLOWED_HOSTS: ['*.mongocluster.cosmos.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "6.6.0",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": false,
+      "error": {
+       "name": "MongoInvalidArgumentError",
+       "constructor": "MongoInvalidArgumentError",
+       "message": "Either a PROVIDER_NAME or a REQUEST_TOKEN_CALLBACK must be specified for mechanism 'MONGODB-OIDC'.",
+       "errmsg": "Either a PROVIDER_NAME or a REQUEST_TOKEN_CALLBACK must be specified for mechanism 'MONGODB-OIDC'.",
+       "errorLabels": []
+      }
+     }
+    ],
+    "callback_calls": []
+   },
+   "reading": "The same constructor error occurs with ALLOWED_HOSTS ['*.mongocluster.cosmos.azure.com'], so 6.6.0 cannot run Learn's TypeScript sample with either pattern.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f3",
+   "step": "Node 6.6.0-oidc_callback-no-allowed-hosts",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token> } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "6.6.0",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": false,
+      "error": {
+       "name": "MongoInvalidArgumentError",
+       "constructor": "MongoInvalidArgumentError",
+       "message": "Either a PROVIDER_NAME or a REQUEST_TOKEN_CALLBACK must be specified for mechanism 'MONGODB-OIDC'.",
+       "errmsg": "Either a PROVIDER_NAME or a REQUEST_TOKEN_CALLBACK must be specified for mechanism 'MONGODB-OIDC'.",
+       "errorLabels": []
+      }
+     }
+    ],
+    "callback_calls": []
+   },
+   "reading": "Without ALLOWED_HOSTS 6.6.0 fails the same way at construction.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f4",
+   "step": "Node 6.6.0-legacy-request_token_callback-allowed-mongocluster",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { REQUEST_TOKEN_CALLBACK: <pre-GA callback (info, context) returning AzureCliCredential token>, ALLOWED_HOSTS: ['*.mongocluster.cosmos.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "6.6.0",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": false,
+      "error": {
+       "name": "MongoServerError",
+       "constructor": "MongoServerError",
+       "message": "JWT token missing from OIDC payload",
+       "code": 18,
+       "codeName": "AuthenticationFailed",
+       "errmsg": "JWT token missing from OIDC payload",
+       "errorLabels": [
+        "HandshakeError",
+        "ResetPool"
+       ],
+       "errorResponse": {
+        "ok": 0,
+        "code": 18,
+        "codeName": "AuthenticationFailed",
+        "errmsg": "JWT token missing from OIDC payload"
+       }
+      },
+      "ms": 921
+     },
+     {
+      "step": "ping",
+      "ok": false,
+      "error": {
+       "name": "MongoTopologyClosedError",
+       "constructor": "MongoTopologyClosedError",
+       "message": "Topology is closed",
+       "errmsg": "Topology is closed",
+       "errorLabels": []
+      },
+      "ms": 1
+     },
+     {
+      "step": "find",
+      "ok": false,
+      "error": {
+       "name": "MongoTopologyClosedError",
+       "constructor": "MongoTopologyClosedError",
+       "message": "Topology is closed",
+       "errmsg": "Topology is closed",
+       "errorLabels": []
+      },
+      "ms": 2
+     }
+    ],
+    "callback_calls": []
+   },
+   "reading": "Extra: 6.6.0's pre-GA REQUEST_TOKEN_CALLBACK sends a token-less saslStart first and the service answers code 18 AuthenticationFailed \"JWT token missing from OIDC payload\" (errorLabels HandshakeError and ResetPool are added by the driver; the server reply has none), so the pre-GA two-step flow does not work either.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f5",
+   "step": "Node 6.7.0-oidc_callback-allowed-azure.com",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token>, ALLOWED_HOSTS: ['*.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "6.7.0",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": true,
+      "result": "connected",
+      "ms": 1278
+     },
+     {
+      "step": "ping",
+      "ok": true,
+      "result": {
+       "ok": 1
+      },
+      "ms": 80
+     },
+     {
+      "step": "find",
+      "ok": true,
+      "result": [
+       {
+        "n": 1,
+        "src": "native-seed"
+       },
+       {
+        "n": 2,
+        "src": "native-seed"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e3-pymongo-latest"
+       }
+      ],
+      "ms": 85
+     }
+    ],
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:38:37.108Z",
+      "paramKeys": [
+       "timeoutContext",
+       "version"
+      ],
+      "version": 1,
+      "username": null,
+      "idpInfo": null,
+      "hasRefreshToken": false,
+      "expiresInSeconds": 4020
+     }
+    ]
+   },
+   "reading": "Node driver 6.7.0 with Learn's OIDC_CALLBACK and ALLOWED_HOSTS ['*.azure.com'] connects, pings and finds; the callback is called once with params {timeoutContext, version: 1}.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f6",
+   "step": "Node 6.7.0-oidc_callback-allowed-mongocluster",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token>, ALLOWED_HOSTS: ['*.mongocluster.cosmos.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "6.7.0",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": true,
+      "result": "connected",
+      "ms": 1167
+     },
+     {
+      "step": "ping",
+      "ok": true,
+      "result": {
+       "ok": 1
+      },
+      "ms": 80
+     },
+     {
+      "step": "find",
+      "ok": true,
+      "result": [
+       {
+        "n": 1,
+        "src": "native-seed"
+       },
+       {
+        "n": 2,
+        "src": "native-seed"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e3-pymongo-latest"
+       }
+      ],
+      "ms": 84
+     }
+    ],
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:38:38.549Z",
+      "paramKeys": [
+       "timeoutContext",
+       "version"
+      ],
+      "version": 1,
+      "username": null,
+      "idpInfo": null,
+      "hasRefreshToken": false,
+      "expiresInSeconds": 4019
+     }
+    ]
+   },
+   "reading": "6.7.0 with ALLOWED_HOSTS ['*.mongocluster.cosmos.azure.com'] also connects, pings and finds.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f7",
+   "step": "Node 6.7.0-oidc_callback-no-allowed-hosts",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token> } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "6.7.0",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": false,
+      "error": {
+       "name": "MongoInvalidArgumentError",
+       "constructor": "MongoInvalidArgumentError",
+       "message": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1'",
+       "errmsg": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1'",
+       "errorLabels": []
+      },
+      "ms": 33
+     },
+     {
+      "step": "ping",
+      "ok": false,
+      "error": {
+       "name": "MongoInvalidArgumentError",
+       "constructor": "MongoInvalidArgumentError",
+       "message": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1'",
+       "errmsg": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1'",
+       "errorLabels": []
+      },
+      "ms": 35
+     },
+     {
+      "step": "find",
+      "ok": false,
+      "error": {
+       "name": "MongoInvalidArgumentError",
+       "constructor": "MongoInvalidArgumentError",
+       "message": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1'",
+       "errmsg": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1'",
+       "errorLabels": []
+      },
+      "ms": 35
+     }
+    ],
+    "callback_calls": []
+   },
+   "reading": "Control: without ALLOWED_HOSTS 6.7.0 refuses client-side with MongoInvalidArgumentError \"Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,...'\" and never calls the callback.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f8",
+   "step": "Node 6.7.0-learn-ts-expiry-allowed-azure.com",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <Learn TypeScript callback: expiresInSeconds = expiresOnTimestamp - Math.floor(Date.now()/1000)>, ALLOWED_HOSTS: ['*.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "6.7.0",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": true,
+      "result": "connected",
+      "ms": 1106
+     },
+     {
+      "step": "ping",
+      "ok": true,
+      "result": {
+       "ok": 1
+      },
+      "ms": 76
+     },
+     {
+      "step": "find",
+      "ok": true,
+      "result": [
+       {
+        "n": 1,
+        "src": "native-seed"
+       },
+       {
+        "n": 2,
+        "src": "native-seed"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e3-pymongo-latest"
+       }
+      ],
+      "ms": 79
+     }
+    ],
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:38:39.943Z",
+      "paramKeys": [
+       "timeoutContext",
+       "version"
+      ],
+      "version": 1,
+      "username": null,
+      "idpInfo": null,
+      "hasRefreshToken": false,
+      "expiresInSeconds": 1793854691680
+     }
+    ]
+   },
+   "reading": "Extra: Learn's TypeScript expiry formula yields expiresInSeconds 1793854691680 and 6.7.0 still connects, so the documented bug has no runtime effect here.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f9",
+   "step": "Node latest-oidc_callback-allowed-azure.com",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token>, ALLOWED_HOSTS: ['*.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "7.9.1",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": true,
+      "result": "connected",
+      "ms": 1108
+     },
+     {
+      "step": "ping",
+      "ok": true,
+      "result": {
+       "ok": 1
+      },
+      "ms": 95
+     },
+     {
+      "step": "find",
+      "ok": true,
+      "result": [
+       {
+        "n": 1,
+        "src": "native-seed"
+       },
+       {
+        "n": 2,
+        "src": "native-seed"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e3-pymongo-latest"
+       }
+      ],
+      "ms": 86
+     }
+    ],
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:38:41.345Z",
+      "paramKeys": [
+       "timeoutContext",
+       "version"
+      ],
+      "version": 1,
+      "username": null,
+      "idpInfo": null,
+      "hasRefreshToken": false,
+      "expiresInSeconds": 4016
+     }
+    ]
+   },
+   "reading": "Node driver 7.9.1 with ALLOWED_HOSTS ['*.azure.com'] connects, pings and finds.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f10",
+   "step": "Node latest-oidc_callback-allowed-mongocluster",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token>, ALLOWED_HOSTS: ['*.mongocluster.cosmos.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "7.9.1",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": true,
+      "result": "connected",
+      "ms": 1035
+     },
+     {
+      "step": "ping",
+      "ok": true,
+      "result": {
+       "ok": 1
+      },
+      "ms": 81
+     },
+     {
+      "step": "find",
+      "ok": true,
+      "result": [
+       {
+        "n": 1,
+        "src": "native-seed"
+       },
+       {
+        "n": 2,
+        "src": "native-seed"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e3-pymongo-latest"
+       }
+      ],
+      "ms": 85
+     }
+    ],
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:38:42.576Z",
+      "paramKeys": [
+       "timeoutContext",
+       "version"
+      ],
+      "version": 1,
+      "username": null,
+      "idpInfo": null,
+      "hasRefreshToken": false,
+      "expiresInSeconds": 4015
+     }
+    ]
+   },
+   "reading": "7.9.1 with ALLOWED_HOSTS ['*.mongocluster.cosmos.azure.com'] connects, pings and finds.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f11",
+   "step": "Node latest-oidc_callback-no-allowed-hosts",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token> } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "7.9.1",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": false,
+      "error": {
+       "name": "MongoInvalidArgumentError",
+       "constructor": "MongoInvalidArgumentError",
+       "message": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1,*.mongo.com'",
+       "errmsg": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1,*.mongo.com'",
+       "errorLabels": []
+      },
+      "ms": 38
+     },
+     {
+      "step": "ping",
+      "ok": false,
+      "error": {
+       "name": "MongoInvalidArgumentError",
+       "constructor": "MongoInvalidArgumentError",
+       "message": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1,*.mongo.com'",
+       "errmsg": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1,*.mongo.com'",
+       "errorLabels": []
+      },
+      "ms": 37
+     },
+     {
+      "step": "find",
+      "ok": false,
+      "error": {
+       "name": "MongoInvalidArgumentError",
+       "constructor": "MongoInvalidArgumentError",
+       "message": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1,*.mongo.com'",
+       "errmsg": "Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1,*.mongo.com'",
+       "errorLabels": []
+      },
+      "ms": 41
+     }
+    ],
+    "callback_calls": []
+   },
+   "reading": "Control: 7.9.1 without ALLOWED_HOSTS fails the same way as 6.7.0 (MongoInvalidArgumentError for host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260'), its default list now ending in '*.mongo.com' and still containing no Azure domain.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f12",
+   "step": "Node latest-learn-ts-expiry-allowed-azure.com",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <Learn TypeScript callback: expiresInSeconds = expiresOnTimestamp - Math.floor(Date.now()/1000)>, ALLOWED_HOSTS: ['*.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "7.9.1",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": true,
+      "result": "connected",
+      "ms": 1081
+     },
+     {
+      "step": "ping",
+      "ok": true,
+      "result": {
+       "ok": 1
+      },
+      "ms": 89
+     },
+     {
+      "step": "find",
+      "ok": true,
+      "result": [
+       {
+        "n": 1,
+        "src": "native-seed"
+       },
+       {
+        "n": 2,
+        "src": "native-seed"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e3-pymongo-latest"
+       }
+      ],
+      "ms": 141
+     }
+    ],
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:38:43.925Z",
+      "paramKeys": [
+       "timeoutContext",
+       "version"
+      ],
+      "version": 1,
+      "username": null,
+      "idpInfo": null,
+      "hasRefreshToken": false,
+      "expiresInSeconds": 1793854691676
+     }
+    ]
+   },
+   "reading": "Extra: 7.9.1 also ignores the wrong expiresInSeconds and connects.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "f13",
+   "step": "Node latest-oidc_callback-allowed-mongocluster-global-host",
+   "command": "new MongoClient('mongodb+srv://ddb-samples-shared.global.mongocluster.cosmos.azure.com/', { connectTimeoutMS: 120000, serverSelectionTimeoutMS: 20000, tls: true, retryWrites: false, maxIdleTimeMS: 120000, authMechanism: 'MONGODB-OIDC', authMechanismProperties: { OIDC_CALLBACK: <callback returning AzureCliCredential token>, ALLOWED_HOSTS: ['*.mongocluster.cosmos.azure.com'] } }); await client.connect(); await client.db('admin').command({ ping: 1 }); await client.db('mt_entra').collection('items').find({}, { projection: { _id: 0 } }).sort({ n: 1 }).toArray()",
+   "response": {
+    "driver_version": "7.9.1",
+    "steps": [
+     {
+      "step": "construct",
+      "ok": true
+     },
+     {
+      "step": "connect",
+      "ok": true,
+      "result": "connected",
+      "ms": 1059
+     },
+     {
+      "step": "ping",
+      "ok": true,
+      "result": {
+       "ok": 1
+      },
+      "ms": 75
+     },
+     {
+      "step": "find",
+      "ok": true,
+      "result": [
+       {
+        "n": 1,
+        "src": "native-seed"
+       },
+       {
+        "n": 2,
+        "src": "native-seed"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e2b-pymongo-4.7.0-allowed-azure"
+       },
+       {
+        "n": 100,
+        "src": "oidc-e3-pymongo-latest"
+       }
+      ],
+      "ms": 78
+     }
+    ],
+    "callback_calls": [
+     {
+      "at": "2026-11-25T22:38:45.243Z",
+      "paramKeys": [
+       "timeoutContext",
+       "version"
+      ],
+      "version": 1,
+      "username": null,
+      "idpInfo": null,
+      "hasRefreshToken": false,
+      "expiresInSeconds": 4012
+     }
+    ]
+   },
+   "reading": "Extra: against the .global. host, '*.mongocluster.cosmos.azure.com' still matches (the check runs on the SRV-resolved host) and 7.9.1 connects.",
+   "vs_open_source": "not_tested_locally"
+  },
+  {
+   "id": "g1",
+   "step": "Raw unauthenticated MONGODB-OIDC saslStart without a token (same command as open-source parity step 00f2)",
+   "command": [
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&retrywrites=false')['admin'].command({'saslStart': 1, 'mechanism': 'MONGODB-OIDC', 'payload': Binary(bson.encode({}))})  # unauthenticated client, no token",
+    "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&retrywrites=false')['admin'].command({'saslStart': 1, 'mechanism': 'MONGODB-OIDC', 'payload': Binary(bson.encode({\"n\": \"<object-id>\"}))})  # unauthenticated client, no token"
+   ],
+   "response": [
+    {
+     "name": "empty payload",
+     "call": "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&retrywrites=false')['admin'].command({'saslStart': 1, 'mechanism': 'MONGODB-OIDC', 'payload': Binary(bson.encode({}))})  # unauthenticated client, no token",
+     "ok": false,
+     "error": {
+      "type": "OperationFailure",
+      "code": 18,
+      "codeName": "AuthenticationFailed",
+      "errmsg": "JWT token missing from OIDC payload",
+      "errorLabels_in_reply": null,
+      "reply": {
+       "ok": 0.0,
+       "code": 18,
+       "codeName": "AuthenticationFailed",
+       "errmsg": "JWT token missing from OIDC payload"
+      }
+     },
+     "duration_s": 0.846
+    },
+    {
+     "name": "principal-only payload {n: <object-id>}",
+     "call": "MongoClient('mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&retrywrites=false')['admin'].command({'saslStart': 1, 'mechanism': 'MONGODB-OIDC', 'payload': Binary(bson.encode({\"n\": \"<object-id>\"}))})  # unauthenticated client, no token",
+     "ok": false,
+     "error": {
+      "type": "OperationFailure",
+      "code": 18,
+      "codeName": "AuthenticationFailed",
+      "errmsg": "JWT token missing from OIDC payload",
+      "errorLabels_in_reply": null,
+      "reply": {
+       "ok": 0.0,
+       "code": 18,
+       "codeName": "AuthenticationFailed",
+       "errmsg": "JWT token missing from OIDC payload"
+      }
+     },
+     "duration_s": 0.079
+    }
+   ],
+   "reading": "With Entra enabled, a saslStart without a JWT (empty or principal-only payload) gets code 18 AuthenticationFailed \"JWT token missing from OIDC payload\" with no errorLabels, so the service supports only the one-step JWT flow, whereas the open-source gateway answers the identical command with \"'MONGODB-OIDC' is not a supported authentication scheme.\"",
+   "vs_open_source": "different",
+   "open_source_reference": "findings/phase4/engine-tests-1.2/local-gateway-parity/report.json (documentdb-local pg17-1.2.0) step 00f2"
+  },
+  {
+   "id": "z1",
+   "step": "properties.authConfig after the test (left enabled)",
+   "command": "az documentdb mongocluster show --resource-group documentdb-samples-rg --name ddb-samples-shared --query properties.authConfig -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.83,
+    "stdout_json": {
+     "allowedModes": [
+      "MicrosoftEntraID",
+      "NativeAuth"
+     ]
+    },
+    "stderr": ""
+   },
+   "reading": "Entra stays enabled alongside native auth: allowedModes [\"MicrosoftEntraID\", \"NativeAuth\"].",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "z2",
+   "step": "Full cluster resource after the test (masked)",
+   "command": "az documentdb mongocluster show --resource-group documentdb-samples-rg --name ddb-samples-shared -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.63,
+    "stdout_json": {
+     "id": "/subscriptions/<subscription-id-masked>/resourceGroups/documentdb-samples-rg/providers/Microsoft.DocumentDB/mongoClusters/ddb-samples-shared",
+     "identity": {
+      "type": "None"
+     },
+     "location": "eastus",
+     "name": "ddb-samples-shared",
+     "properties": {
+      "administrator": {
+       "userName": "factoryadmin"
+      },
+      "authConfig": {
+       "allowedModes": [
+        "MicrosoftEntraID",
+        "NativeAuth"
+       ]
+      },
+      "backup": {
+       "earliestRestoreTime": "2026-11-25T20:55:55Z"
+      },
+      "clusterStatus": "Ready",
+      "compute": {
+       "tier": "M30"
+      },
+      "connectionString": "mongodb+srv://<user>:<password>@ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+      "createMode": "Default",
+      "dataApi": {
+       "mode": "Disabled"
+      },
+      "highAvailability": {
+       "targetMode": "Disabled"
+      },
+      "infrastructureVersion": "2.0",
+      "networkBypassMode": "None",
+      "previewFeatures": [
+       "FullTextSearch"
+      ],
+      "privateEndpointConnections": [],
+      "provisioningState": "Succeeded",
+      "publicNetworkAccess": "Enabled",
+      "replica": {
+       "role": "Primary"
+      },
+      "serverVersion": "8.0",
+      "sharding": {
+       "shardCount": 1
+      },
+      "storage": {
+       "sizeGb": 128,
+       "type": "PremiumSSDv2"
+      }
+     },
+     "resourceGroup": "documentdb-samples-rg",
+     "systemData": {
+      "createdAt": "2026-11-25T20:35:33.2901136Z",
+      "createdBy": "<email-masked>",
+      "createdByType": "User",
+      "lastModifiedAt": "2026-11-25T22:28:32.9215263Z",
+      "lastModifiedBy": "<email-masked>",
+      "lastModifiedByType": "User"
+     },
+     "tags": {
+      "purpose": "samples-factory"
+     },
+     "type": "Microsoft.DocumentDB/mongoClusters"
+    },
+    "stderr": ""
+   },
+   "reading": "Apart from authConfig and lastModifiedAt (22:28:32Z) the resource is unchanged; properties.connectionString is still the SCRAM-SHA-256 string.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "z3",
+   "step": "Connection strings after enabling Entra",
+   "command": "az documentdb mongocluster list-connection-strings --resource-group documentdb-samples-rg --cluster-name ddb-samples-shared -o json",
+   "response": {
+    "exit_code": 0,
+    "duration_s": 0.6,
+    "stdout_json": {
+     "connectionStrings": [
+      {
+       "connectionString": "mongodb+srv://<user>:<password>@ddb-samples-shared.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+       "description": "Global read-write cluster connection string",
+       "name": "GlobalReadWrite"
+      },
+      {
+       "connectionString": "mongodb+srv://<user>:<password>@ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+       "description": "Cluster connection string",
+       "name": "Self"
+      },
+      {
+       "connectionString": "mongodb+srv://ddb-samples-shared.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=MONGODB-OIDC&retrywrites=false&maxIdleTimeMS=120000",
+       "description": "Global Microsoft Entra ID cluster connection string",
+       "name": "GlobalMicrosoftEntraId"
+      },
+      {
+       "connectionString": "mongodb+srv://ddb-samples-shared.mongocluster.cosmos.azure.com/?tls=true&authMechanism=MONGODB-OIDC&retrywrites=false&maxIdleTimeMS=120000",
+       "description": "Cluster Microsoft Entra ID connection string",
+       "name": "MicrosoftEntraId"
+      }
+     ]
+    },
+    "stderr": ""
+   },
+   "reading": "Enabling Entra adds two MONGODB-OIDC strings without credentials, GlobalMicrosoftEntraId and MicrosoftEntraId, next to the two SCRAM strings.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "y1",
+   "step": "Drop the test database",
+   "command": [
+    "client.drop_database('mt_entra')",
+    "client.admin.command({'listDatabases': 1, 'nameOnly': True, 'filter': {'name': 'mt_entra'}})"
+   ],
+   "response": [
+    {
+     "name": "dropDatabase",
+     "call": "client.drop_database('mt_entra')",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": null,
+     "ok": true,
+     "duration_s": 1.018
+    },
+    {
+     "name": "listDatabases filter",
+     "call": "client.admin.command({'listDatabases': 1, 'nameOnly': True, 'filter': {'name': 'mt_entra'}})",
+     "client": "MongoClient($MANAGED_URI)  # mongodb+srv://factoryadmin:<password>@<plain host>/?tls=true&authMechanism=SCRAM-SHA-256&retrywrites=false&maxIdleTimeMS=120000",
+     "response": {
+      "databases": [],
+      "ok": 1.0
+     },
+     "ok": true,
+     "duration_s": 0.088
+    }
+   ],
+   "reading": "mt_entra was dropped and a filtered listDatabases confirms it is gone.",
+   "vs_open_source": "n/a"
+  },
+  {
+   "id": "y2",
+   "step": "Delete the throwaway venvs and node_modules",
+   "command": "shutil.rmtree on venvs/pm-4.6.3, venvs/pm-4.7.0, venvs/pm-latest, venvs/pm-bisect and node/node_modules",
+   "response": {
+    "removed": [
+     "venvs/pm-4.6.3",
+     "venvs/pm-4.7.0",
+     "venvs/pm-latest",
+     "venvs/pm-bisect",
+     "node/node_modules",
+     "venvs (empty dir)"
+    ],
+    "still_present": []
+   },
+   "reading": "All four venvs (4.6.3, 4.7.0, latest, bisect) and node/node_modules were deleted; package.json and package-lock.json are kept as a record.",
+   "vs_open_source": "n/a"
+  }
+ ],
+ "config_changes": [
+  "properties.authConfig.allowedModes changed from [\"NativeAuth\"] to [\"MicrosoftEntraID\", \"NativeAuth\"] with `az documentdb mongocluster update --name ddb-samples-shared --resource-group documentdb-samples-rg --auth-allowed-modes NativeAuth MicrosoftEntraID` (started 2026-11-25T22:28:32Z, 155.4 s); left enabled as instructed.",
+  "Added the administrative Entra user resource Microsoft.DocumentDB/mongoClusters/ddb-samples-shared/users/<object-id-masked> (identityProvider MicrosoftEntraID, principalType User, roles [{db: admin, role: root}]) for the signed-in account with `az documentdb mongocluster microsoft-entra-user assign --object-id <object-id-masked> --cluster-name ddb-samples-shared --resource-group documentdb-samples-rg --type User --role db=admin role=root` (created 2026-11-25T22:32:10Z, 63.6 s); not removed."
+ ],
+ "not_config_changes": "Database mt_entra was created and dropped; no other database was touched. The throwaway venvs and node_modules were deleted.",
+ "scripts": {
+  "common": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/common.py",
+  "az_steps": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/az_steps.py",
+  "native_helper": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/native.py",
+  "python_oidc_probe": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/oidc_py.py",
+  "node_oidc_probe": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/oidc_node.mjs",
+  "node_runner": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/run_node.py",
+  "raw_saslStart": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw_sasl.py",
+  "report_builder": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/build_report.py",
+  "conclusions": "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/conclusions.json",
+  "raw": [
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/steps.jsonl",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_node.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_a6-probe-before-enable.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_b6-probe-after-enable-before-assign.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_d6-probe-after-assign-1.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_e1-pymongo-4.6.3.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_e2-pymongo-4.7.0.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_e2b-pymongo-4.7.0-allowed-azure.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_e2c-pymongo-4.7.0-allowed-mongocluster.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_e3-pymongo-latest.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_e3b-pymongo-latest-global-host.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_e5-bisect-pymongo-4.10.1.json",
+   "/private/tmp/claude-501/-Users-julietai-claude/40f65f7c-640c-44c6-8eab-a8434709e1ff/scratchpad/managed-tests/m-entra/raw/oidc_py_e5-bisect-pymongo-4.11.json"
+  ]
+ },
+ "masking": "Password, URIs with credentials, subscription id, tenant id, tenant domain, object ids, e-mail addresses and the account name are masked; access tokens were never recorded (only a claims subset).",
+ "conclusions": [
+  {
+   "question": "What was properties.authConfig before the test?",
+   "answer": "{\"allowedModes\": [\"NativeAuth\"]}: native (SCRAM) authentication only.",
+   "vs_open_source": "n/a",
+   "confidence": "observed"
+  },
+  {
+   "question": "How does Learn enable Entra ID, does it work, and how long does it take to apply?",
+   "answer": "Learn's CLI pivot uses `az documentdb mongocluster update --name <cluster> --resource-group <rg> --auth-allowed-modes NativeAuth MicrosoftEntraID`. The documentdb extension 1.0.0 has that flag (allowed values NativeAuth, MicrosoftEntraID), so no az rest PATCH was needed. The command exited 0 after 155.4 s with no stderr. The body it returned already had allowedModes [MicrosoftEntraID, NativeAuth] but still showed provisioningState and clusterStatus 'Updating'. A show 0.6 s later reported Succeeded and Ready. The service stores the list as [\"MicrosoftEntraID\", \"NativeAuth\"], and native SCRAM logins kept working.",
+   "vs_open_source": "n/a",
+   "confidence": "observed"
+  },
+  {
+   "question": "Does enabling Entra change what hello advertises?",
+   "answer": "Yes. hello.saslSupportedMechs changes from ['SCRAM-SHA-256'] to ['MONGODB-OIDC', 'SCRAM-SHA-256'], and the same list comes back for every user string, registered or not. Before the change the managed service matched open-source 1.2.0, which always returns ['SCRAM-SHA-256'].",
+   "vs_open_source": "different",
+   "confidence": "observed"
+  },
+  {
+   "question": "Which CLI command manages Entra users on the cluster, and what values does --type accept?",
+   "answer": "`az documentdb mongocluster microsoft-entra-user` (assign, list, remove, show, wait); the other subgroups (firewall-rule, identity, replica) do not manage Entra users. From assign --help, verbatim: \"--type -t : The Microsoft Entra principal type of the user. Allowed values: User, ServicePrincipal. Example: --type User.  Allowed values: ServicePrincipal, User.\" There is no managed-identity value. --object-id is still described as \"Object ID (client ID) of the Microsoft Entra principal. Provide the GUID of the service principal or user, not a friendly name or UPN.\" This matches DECISIONS topic 5.",
+   "vs_open_source": "n/a",
+   "confidence": "observed"
+  },
+  {
+   "question": "Can the signed-in personal Microsoft account be registered as an administrative Entra identity?",
+   "answer": "Yes. The account is a personal Microsoft account (token idp live.com) that is a Member of its own directory (UPN carries #EXT#, identity issuer MicrosoftAccount); it is not a B2B guest. `az documentdb mongocluster microsoft-entra-user assign --object-id <object-id> --cluster-name ddb-samples-shared --resource-group documentdb-samples-rg --type User --role db=admin role=root` succeeded in 63.6 s (users/<object-id>, principalType User, roles [{db: admin, role: root}], provisioningState Succeeded). The first OIDC connection, 8 s after the command returned, authenticated. A B2B guest from another tenant, a service principal and a managed identity were not tested.",
+   "vs_open_source": "n/a",
+   "confidence": "observed"
+  },
+  {
+   "question": "What does the service return for MONGODB-OIDC at each stage?",
+   "answer": "NativeAuth only: code 18 AuthenticationFailed \"The authentication mechanism provided is not supported in the service.\". Entra enabled, principal not registered: code 18 AuthenticationFailed \"External identity is not present in the system.\". saslStart with no JWT (an empty or principal-only payload) on an Entra-enabled cluster: code 18 AuthenticationFailed \"JWT token missing from OIDC payload\". No server reply carried errorLabels; the Node driver adds HandshakeError and ResetPool on the client side. Open-source 1.2.0 answers MONGODB-OIDC with code 18 \"'MONGODB-OIDC' is not a supported authentication scheme.\", so the code is the same and every message differs.",
+   "vs_open_source": "different",
+   "confidence": "observed"
+  },
+  {
+   "question": "Which PyMongo versions connect with Learn's Python OIDC callback (AzureCliCredential token for https://ossrdbms-aad.database.windows.net/.default, plain host, tls=True, retryWrites=False)?",
+   "answer": "4.6.3 cannot authenticate at all. `from pymongo.auth_oidc import OIDCCallback` raises ImportError, and a callback object under OIDC_CALLBACK raises ValueError \"Auth mechanism property values must be strings or callback functions\". Its undocumented pre-GA request_token_callback is refused for the Azure host by the default allowed_hosts; with allowed_hosts set, it fails inside the driver with KeyError 'MONGODB-OIDC'. 4.7.0 fails with Learn's code as written: ConfigurationError \"Refusing to connect to fc-a472369cc681-000.mongocluster.cosmos.azure.com, which is not in authOIDCAllowedHosts: [...]\" is raised before the callback runs. With ALLOWED_HOSTS ['*.azure.com'] or ['*.mongocluster.cosmos.azure.com'], 4.7.0 connects and ping, find and insert work. 4.10.1 still refuses. 4.11 and 4.20.2 (latest) connect with no ALLOWED_HOSTS, on both the plain and .global. hosts. The source of every release checked from 4.7.0 to 4.10.1 (4.7.0-4.7.3, 4.8.0, 4.9.0-4.9.2, 4.10.0, 4.10.1) checks ALLOWED_HOSTS for any credential without ENVIRONMENT. 4.11, 4.11.3, 4.12.0, 4.13.0 and 4.20.2 check it only for human callbacks. So 4.7 is the MONGODB-OIDC floor only if ALLOWED_HOSTS is set, and Learn's sample as written needs 4.11 or later. This corrects the DECISIONS topic 5 line saying pymongo checks ALLOWED_HOSTS only for human callbacks: that is true only from 4.11.",
+   "vs_open_source": "not_tested_locally",
+   "confidence": "observed"
+  },
+  {
+   "question": "Which Node.js driver versions connect with Learn's OIDC_CALLBACK, and which ALLOWED_HOSTS pattern works?",
+   "answer": "6.6.0 does not connect. The constructor throws MongoInvalidArgumentError \"Either a PROVIDER_NAME or a REQUEST_TOKEN_CALLBACK must be specified for mechanism 'MONGODB-OIDC'.\" with ['*.azure.com'], with ['*.mongocluster.cosmos.azure.com'] and with no ALLOWED_HOSTS. Its pre-GA REQUEST_TOKEN_CALLBACK gets server code 18 \"JWT token missing from OIDC payload\". 6.7.0 and 7.9.1 (latest) connect, ping and find with both ['*.azure.com'] (Learn) and ['*.mongocluster.cosmos.azure.com'] (MCP); the narrow pattern also matches through the .global. host. Without ALLOWED_HOSTS, both refuse on the client side and never call the callback. 6.7.0 raises MongoInvalidArgumentError \"Host 'fc-a472369cc681-000.mongocluster.cosmos.azure.com:10260' is not valid for OIDC authentication with ALLOWED_HOSTS of '*.mongodb.net,*.mongodb-qa.net,*.mongodb-dev.net,*.mongodbgov.net,localhost,127.0.0.1,::1'\". 7.9.1 raises the same error with ',*.mongo.com' appended to the list; neither default list has an Azure domain. This matches DECISIONS 4.2 (floor 6.7.0) and the topic 5 ALLOWED_HOSTS item.",
+   "vs_open_source": "not_tested_locally",
+   "confidence": "observed"
+  },
+  {
+   "question": "Does Learn's TypeScript expiresInSeconds bug break the connection?",
+   "answer": "No visible effect. With Learn's formula, expiresInSeconds came out as 1793854691680, and both 6.7.0 and 7.9.1 still connected, pinged and found. This matches DECISIONS topic 5 ('runtime impact nil').",
+   "vs_open_source": "not_tested_locally",
+   "confidence": "observed"
+  },
+  {
+   "question": "What do connectionStatus with showPrivileges and usersInfo return for the Entra administrator?",
+   "answer": "connectionStatus returns authenticatedUsers [{user: '<object-id>', db: 'admin'}] and authenticatedUserRoles [{role: 'root', db: 'admin'}]; with showPrivileges it adds three privilege entries (db ''/collection '', cluster, admin db). usersInfo '<object-id>' (run on admin, or on the $external database) returns _id 'admin.<object-id>', db 'admin', roles [root@admin] and customData.IdentityProvider {type: 'MicrosoftEntraID', properties: {principalType: 'user'}}; showPrivileges adds inheritedPrivileges. usersInfo {user: '<object-id>', db: '$external'} fails with code 2 BadValue \"Unsupported value specified for 'db' field. Only 'admin' is allowed.\". usersInfo: 1 lists the Entra administrator and factoryadmin. Results were the same on PyMongo 4.7.0 (with ALLOWED_HOSTS) and 4.20.2. This identity is root, so the DECISIONS question about non-admin callers stays open.",
+   "vs_open_source": "not_tested_locally",
+   "confidence": "observed"
+  },
+  {
+   "question": "How is an Entra administrator represented across the surfaces?",
+   "answer": "In the database, the user name is the object id in db admin, not $external, although drivers run the SASL conversation against $external. In ARM it is users/<object-id> with identityProvider.type MicrosoftEntraID and principalType 'User'; the database customData has 'user' in lower case. The ARM REST GET (api-version 2026-06-01) also returns properties.user and identityProvider.properties.entraTenant (the tenant id), and the CLI output leaves both out. The native admin is listed as users/factoryadmin with no identityProvider.",
+   "vs_open_source": "n/a",
+   "confidence": "observed"
+  },
+  {
+   "question": "Do the connection strings change when Entra is enabled?",
+   "answer": "list-connection-strings gains two strings without credentials: GlobalMicrosoftEntraId (mongodb+srv://ddb-samples-shared.global.mongocluster.cosmos.azure.com/?tls=true&authMechanism=MONGODB-OIDC&retrywrites=false&maxIdleTimeMS=120000) and MicrosoftEntraId (the same on the plain host). properties.connectionString stays the SCRAM-SHA-256 string.",
+   "vs_open_source": "n/a",
+   "confidence": "observed"
+  },
+  {
+   "question": "Does the service support the two-step OIDC human flow (server returns IdP info first)?",
+   "answer": "No sign of it. Every saslStart without a token got code 18 \"JWT token missing from OIDC payload\" rather than IdP information, so only the one-step JWT flow (machine or custom callback) works. Human flows that need the server's IdP info (OIDC_HUMAN_CALLBACK, PyMongo human_callback, the pre-GA two-step APIs) should fail. No human callback was actually run.",
+   "vs_open_source": "different",
+   "confidence": "inferred"
+  },
+  {
+   "question": "DECISIONS 4.12-open: does the service accept MONGODB-OIDC from these drivers on a given compatibility version?",
+   "answer": "Yes on serverVersion 8.0 (wire version 25, engine 2.2-1/2.3.0) with PyMongo 4.7.0+ (with ALLOWED_HOSTS), 4.11+ (without), and Node 6.7.0 and 7.9.1. Versions 5.0, 6.0 and 7.0 were not tested.",
+   "vs_open_source": "n/a",
+   "confidence": "observed"
+  }
+ ]
+}

@@ -32,7 +32,7 @@ The fork changes one line of the pipeline: `factory/llm.py` raises Agent Framewo
 | `requirements/` | One reference requirements file per sample, drafted with the model, then reviewed and rewritten by two review workflows (`requirements/REVIEW.md`). |
 | `runs/` | Every run folder, including the generated applications, and `runs/loop-state.json` with every run's outcome. `runs/gallery-insights.md` is the pipeline's own roll-up over the default arm. |
 | `findings/` | `TRIAGE.md` and `findings.jsonl` (every finding extracted from the runs, grouped by where the fix belongs), `PHASE-REPORT.md` (default arm) and `PHASE-REPORT-control.md`. |
-| `findings/phase4/` | The triage into filing-ready items: `FILINGS.md` (index), `filings/` (43 items), `drafts/` (the 135 drafts they were consolidated from), `SME-QUESTIONS.md`, `DECISIONS.md`, `REVIEW.md`. |
+| `findings/phase4/` | The triage into filing-ready items: `FILINGS.md` (index), `filings/` (44 items), `drafts/` (the 135 drafts they were consolidated from), `SME-QUESTIONS.md`, `DECISIONS.md`, `REVIEW.md`, and `ENGINE-TESTS.md` with the test scripts and raw reports in `engine-tests/`, `engine-tests-1.2/` and `engine-tests-managed/`. |
 
 ## How the experiment ran
 
@@ -46,7 +46,8 @@ The fork changes one line of the pipeline: `factory/llm.py` raises Agent Framewo
 - Phase 4: findings triage. Two Claude workflows clustered 3,528 default-arm findings into 135
   themes, drafted one issue or PR per theme, verified each draft three ways (already covered?
   premise true? would the maintainer accept?), then consolidated overlapping drafts into 43 filings
-  and checked each merge. Nothing has been filed anywhere.
+  and checked each merge; a 44th, X02, was added after the managed-service test. Nothing has been
+  filed anywhere.
 
 ## Headline results (default arm, 100 samples)
 
@@ -68,9 +69,9 @@ than missing features.
 
 ## What the triage proposes
 
-43 filing-ready items in `findings/phase4/filings/`, indexed in `findings/phase4/FILINGS.md`:
+44 filing-ready items in `findings/phase4/filings/`, indexed in `findings/phase4/FILINGS.md`:
 18 pull requests for the Agent Kit (one per skill or cross-cutting change), 11 Learn feedback items,
-1 item for the DocumentDB MCP server, 1 for the Azure CLI extension, and 12 for the pipeline itself
+1 item for the DocumentDB MCP server, 2 for the Azure CLI extension, and 12 for the pipeline itself
 (on hold). The five P0 items: the kit's connection-string files contradict the published string
 (retryWrites, host suffix, CLI spelling); 85 of 100 builds fell back to `az cosmosdb` because no
 skill names the documentdb CLI extension; the MCP server's gated-tool refusals are not actionable for
@@ -79,6 +80,18 @@ an agent; and two harness defects that inflated the sample counts.
 Many items carried questions only the service team can answer. `findings/phase4/SME-QUESTIONS.md`
 lists them by topic; `findings/phase4/DECISIONS.md` records each one that has since been settled
 from primary sources, with the exact pages, issues and files, and what remains open.
+
+Questions that depended on how the service behaves were then tested directly: on the open-source
+engine (`documentdb-local` 0.117 and 1.2.0) and on a disposable managed cluster (M30, one shard,
+server version 8.0), which was deleted afterwards. `findings/phase4/ENGINE-TESTS.md` has the
+results. The managed tests answered or narrowed 13 open questions. Among the findings: the Learn
+vector sample's `cosmosSearch` key is wrong (the service reports `cosmosSearchOptions`); if another
+client changes a document after a snapshot transaction has read it, and the transaction then updates
+it, the transaction is rolled back while `commitTransaction` reports success; transactions end 30 to
+41 seconds after they start, busy or idle, with no retry labels; client-level `bulkWrite` from
+PyMongo 4.20.1 fails at run time; full-text search became usable about 3.5 minutes after it was
+enabled, returning 115 and then 67 meanwhile; and a server-version downgrade from 8.0 to 7.0 was
+accepted without warning.
 
 Counts in every filing come from this single run, whose harness had defects that are now identified
 (MCP management and write tools left off, the installed kit reported as missing, empty builds graded).

@@ -79,7 +79,7 @@ In a 100-sample experiment (gpt-5-mini building sample apps with this kit plus t
   | Claim in the agent's answer | Samples (of 24) | Azure DocumentDB |
   |---|---|---|
   | Multi-document transactions "limited" or "only within a partition/shard key" | 20 | Supported across collections and across logical and physical shards (`startSession` / `withTransaction` / `commitTransaction` / `abortTransaction`, wire versions 5.0 to 8.0); 30-second maximum lifetime; conflicts arrive as `WriteConflict` (112) without the `TransientTransactionError` label, so the application retries |
-  | Change streams "not supported" or "support varies" | 8 | Supported on single-shard clusters with no enablement step: `watch()`, `resumeAfter` / `startAtOperationTime`, pre-images, 400 MB active log plus historical replay up to 35 days; `updateDescription` (opt-in per collection) and multi-shard change streams (enabled under Settings > Features) are preview |
+  | Change streams "not supported" or "support varies" | 8 | Supported on single-shard clusters with no enablement step: `watch()`, `resumeAfter` / `startAtOperationTime`, pre-images, 400 MB active log plus historical replay up to 35 days; `updateDescription` (Learn: opt-in per collection; not observed on a single-shard cluster even after the opt-in) and multi-shard change streams (enabled under Settings > Features) are preview |
   | "Some aggregation stages may be missing" | 18 | 58/60 stages, 181/181 aggregation operators, 99.03% overall; the missing stages are diagnostic |
   | No server-side JavaScript; no host-level admin commands | 22 / 15 | Correct |
 
@@ -241,7 +241,7 @@ test("options reach the driver", () => {
 
 ### 2. New `skills/connection/connection-retry-helpers.md` (K07, cross-linked to K15's transactions rule)
 
-Text: "Retry on what the driver and the gateway report: network and server-selection errors, `HostUnreachable` (6), `ShutdownInProgress` (91) and `ExceededTimeLimit` (50), the codes a client can see while a shard failover or primary drain outlives the gateway's own internal retry (Learn documents failover as 'write slowness' and 'brief transient errors' and names no code; these are the open-source gateway's candidates). Code 50 is also what a `maxTimeMS` expiry returns, so the bounded attempt count is what keeps a genuinely slow query from being re-run forever. Never retry `DuplicateKey` (11000), validation errors, `IllegalOperation` (20: a write to a replica or demoted cluster, fix the connection string), `TooManyLogicalSessions` (261: reduce the pool, do not back off) or `OperationNotSupportedInTransaction` (263). Do not code against 16500 or 429: Azure DocumentDB has no request units and never returns them (not in any engine error-mapping file, not on Learn's troubleshooting table, never observed in 120 runs); do not code against `PrimarySteppedDown` (189), which the engine cannot emit, or `NotWritablePrimary` (10107), which the engine raises only on its own, with a message that points at a full disk ('may be due to the database disk being full'). The server sends no error labels at all (`TransientTransactionError`, `UnknownTransactionCommitResult`, `RetryableWriteError`; engine issue documentdb/documentdb#339); the helpers still check them because drivers attach `UnknownTransactionCommitResult` themselves to their own network errors on commit. Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). With `retrywrites=false` the driver does not retry writes for you; retry a write through this helper only if it is idempotent (upsert on a stable key, `$setOnInsert`, client-supplied `_id`). For multi-document work use `with_transaction` / `withTransaction` inside `retry_transaction` / `retryTransaction` below: because the server sends no labels, `withTransaction` does not retry a `WriteConflict` (112) or `NoSuchTransaction` (251) for you, and those two codes mean 're-run the whole transaction', not 'repeat the statement', so they are deliberately not in `is_transient` (see `driver/driver-transactions-session.md`). Capacity is vCore tiers, not request units: sustained overload is fixed by scaling the tier (or adding shards), not by backing off. 429 + `Retry-After` comes from Azure OpenAI and other HTTP APIs, never from the database; use the SDK's `maxRetries` or honor the header there."
+Text: "Retry on what the driver and the gateway report: network and server-selection errors, `HostUnreachable` (6), `ShutdownInProgress` (91) and `ExceededTimeLimit` (50), the codes a client can see while a shard failover or primary drain outlives the gateway's own internal retry (Learn documents failover as 'write slowness' and 'brief transient errors' and names no code; these are the open-source gateway's candidates). Code 50 is also what a `maxTimeMS` expiry returns (confirmed on the managed service), so the bounded attempt count is what keeps a genuinely slow query from being re-run forever. Never retry `DuplicateKey` (11000), validation errors, `IllegalOperation` (20: a write to a replica or demoted cluster, fix the connection string; or 'readConcern.afterClusterTime is not supported on this deployment' from a causally consistent session that has an operation time), `TooManyLogicalSessions` (261: reduce the pool, do not back off) or `OperationNotSupportedInTransaction` (263). Do not code against 16500 or 429: Azure DocumentDB has no request units and never returns them (not in any engine error-mapping file, not on Learn's troubleshooting table, never observed in 120 runs); do not code against `PrimarySteppedDown` (189), which the engine cannot emit, or `NotWritablePrimary` (10107), which the engine raises only on its own, with a message that points at a full disk ('may be due to the database disk being full'). The server sends no error labels at all (`TransientTransactionError`, `UnknownTransactionCommitResult`, `RetryableWriteError`; engine issue documentdb/documentdb#339); the helpers still check them because drivers attach `UnknownTransactionCommitResult` themselves to their own network errors on commit. Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). With `retrywrites=false` the driver does not retry writes for you; retry a write through this helper only if it is idempotent (upsert on a stable key, `$setOnInsert`, client-supplied `_id`). For multi-document work use `with_transaction` / `withTransaction` inside `retry_transaction` / `retryTransaction` below: because the server sends no labels, `withTransaction` does not retry a `WriteConflict` (112) or `NoSuchTransaction` (251) for you (confirmed for 112 on the managed service: `with_transaction` ran the callback once and re-raised; 251 was not run through it), and those codes, plus 117 `ConflictingOperationInProgress` from a snapshot transaction and code 1 `InternalError` from a statement after an idle gap (the commit then returned 251), mean 're-run the whole transaction', not 'repeat the statement', so they are deliberately not in `is_transient` (see `driver/driver-transactions-session.md`). A code 1 from the commit itself was never observed and its outcome would be unknown, so the helpers re-raise it: check with a read before re-running. Capacity is vCore tiers, not request units: sustained overload is fixed by scaling the tier (or adding shards), not by backing off. 429 + `Retry-After` comes from Azure OpenAI and other HTTP APIs, never from the database; use the SDK's `maxRetries` or honor the header there."
 
 ```python
 # retry_util.py  (stdlib; tenacity is an acceptable drop-in)
@@ -250,7 +250,7 @@ from pymongo.errors import (AutoReconnect, ConnectionFailure, NetworkTimeout,
     ServerSelectionTimeoutError, OperationFailure, PyMongoError, BulkWriteError)
 
 TRANSIENT_CODES = {6, 50, 91}       # HostUnreachable, ExceededTimeLimit (also a maxTimeMS expiry), ShutdownInProgress
-TXN_RETRY_CODES = {112, 251}        # WriteConflict, NoSuchTransaction: re-run the whole transaction (retry_transaction)
+TXN_RETRY_CODES = {112, 117, 251}   # WriteConflict, ConflictingOperationInProgress (snapshot), NoSuchTransaction: re-run the whole transaction
 # Never retried: 11000 DuplicateKey, 20 IllegalOperation (replica/demoted cluster), 261 TooManyLogicalSessions,
 # 263 OperationNotSupportedInTransaction. 16500/429 (RU throttling) and 189 do not exist on this service.
 
@@ -278,13 +278,25 @@ def with_retry(fn, *, attempts=5, base=0.2, cap=5.0):
 
 def retry_transaction(client, txn, *, attempts=3):
     """txn(session) runs inside with_transaction; it must be idempotent. Re-runs the whole
-    transaction on WriteConflict/NoSuchTransaction, which arrive without a transient label."""
+    transaction on WriteConflict/NoSuchTransaction (and 117 from a snapshot transaction, whose
+    commit would otherwise report success for discarded writes), which arrive without a transient label,
+    and on code 1 InternalError from a statement (seen after an idle gap; the commit then returned 251).
+    A code 1 from the commit itself was never observed and its outcome is unknown, so it is re-raised:
+    check with a read before re-running."""
     for i in range(attempts):
+        in_commit = False
+        def run(s):
+            nonlocal in_commit
+            in_commit = False
+            result = txn(s)
+            in_commit = True            # txn returned, so a later error came from the commit
+            return result
         try:
             with client.start_session() as s:
-                return s.with_transaction(txn)
+                return s.with_transaction(run)
         except OperationFailure as e:
-            if i == attempts - 1 or e.code not in TXN_RETRY_CODES:
+            rerun = e.code in TXN_RETRY_CODES or (e.code == 1 and not in_commit)
+            if i == attempts - 1 or not rerun:
                 raise
             _sleep(i)
 
@@ -300,7 +312,7 @@ def partition_bulk_errors(exc: BulkWriteError, ops):
 // retry.js  (replaces the withRetry block in SKILL.md)
 const { MongoNetworkError, MongoServerSelectionError } = require("mongodb");
 const TRANSIENT_CODES = new Set([6, 50, 91]);   // HostUnreachable, ExceededTimeLimit (also maxTimeMS expiry), ShutdownInProgress
-const TXN_RETRY_CODES = new Set([112, 251]);    // WriteConflict, NoSuchTransaction: re-run the whole transaction
+const TXN_RETRY_CODES = new Set([112, 117, 251]); // WriteConflict, ConflictingOperationInProgress (snapshot), NoSuchTransaction: re-run the whole transaction
 // Never retried: 11000, 20 IllegalOperation, 261 TooManyLogicalSessions, 263. 16500/429 and 189 do not exist here.
 const isTransient = (e) =>
   e instanceof MongoNetworkError || e instanceof MongoServerSelectionError ||
@@ -319,13 +331,20 @@ async function withRetry(fn, { attempts = 5, baseMs = 200, capMs = 5000 } = {}) 
     }
   }
 }
-// txn(session) must be idempotent; withTransaction will not retry 112/251 on this service (no labels).
+// txn(session) must be idempotent; withTransaction will not retry 112/117/251 on this service (no labels).
+// Code 1 from a statement (seen after an idle gap) is re-run too; a code 1 from the commit was never
+// observed and its outcome is unknown, so it is thrown: check with a read before re-running.
 async function retryTransaction(client, txn, { attempts = 3 } = {}) {
   for (let i = 0; ; i++) {
     const session = client.startSession();
-    try { return await session.withTransaction(() => txn(session)); }
-    catch (e) {
-      if (!TXN_RETRY_CODES.has(e?.code) || i >= attempts - 1) throw e;
+    let inCommit = false;
+    try {
+      return await session.withTransaction(async () => {
+        inCommit = false; const r = await txn(session); inCommit = true; return r;
+      });
+    } catch (e) {
+      const rerun = TXN_RETRY_CODES.has(e?.code) || (e?.code === 1 && !inCommit);
+      if (!rerun || i >= attempts - 1) throw e;
       await sleep(i);
     } finally { await session.endSession(); }
   }
@@ -338,7 +357,7 @@ function partitionBulkErrors(err, ops) {   // MongoBulkWriteError, ordered:false
 module.exports = { withRetry, retryTransaction, isTransient, partitionBulkErrors };
 ```
 
-Rules (one line each): set `maxTimeMS` on interactive `find`/`aggregate` (the service default is 120 s) and `timeoutMS` on the client (Node driver 6.x / PyMongo 4.x); `bulkWrite` in batches of 500-1000 with `ordered: false` (service limit 25,000 writes per batch), partition errors, count duplicates, retry only the retryable subset, and never swallow batch errors; make seed/merge writes idempotent `updateOne(..., upsert: true)` keyed on a natural id with a unique index on that key; with `ordered: true` unattempted ops do not appear in `writeErrors`; cap LLM/embedding concurrency (`asyncio.Semaphore(4)` / `p-limit(4)`) and set `timeout=30` on those clients and 5-10 s on web-search tools; external tools (web search, LLM) may fall back to a deterministic mock after the last attempt so demos stay responsive, but never fall back silently on DB writes. Usage examples, about 10 lines each per language: one seed path (`bulkWrite` + partition + retry) and one query path (`aggregate` with `maxTimeMS` inside `with_retry`). Test: a fake raising `AutoReconnect` twice then succeeding is called 3 times; a duplicate-key `BulkWriteError` is partitioned and not retried; an `OperationFailure` with code 112 is not retried by `with_retry` but is re-run by `retry_transaction`.
+Rules (one line each): set `maxTimeMS` on interactive `find`/`aggregate` (the service default is 120 s; it limits only the command that carries it, so a `getMore` is not limited unless it carries its own `maxTimeMS`) and `timeoutMS` on the client (Node driver 6.x / PyMongo 4.x); `bulkWrite` in batches of 500-1000 with `ordered: false` (service limit 25,000 writes per batch; `hello.maxWriteBatchSize` is 25,000, so drivers split larger batches), partition errors, count duplicates, retry only the retryable subset, and never swallow batch errors; make seed/merge writes idempotent `updateOne(..., upsert: true)` keyed on a natural id with a unique index on that key; with `ordered: true` unattempted ops do not appear in `writeErrors`; cap LLM/embedding concurrency (`asyncio.Semaphore(4)` / `p-limit(4)`) and set `timeout=30` on those clients and 5-10 s on web-search tools; external tools (web search, LLM) may fall back to a deterministic mock after the last attempt so demos stay responsive, but never fall back silently on DB writes. Usage examples, about 10 lines each per language: one seed path (`bulkWrite` + partition + retry) and one query path (`aggregate` with `maxTimeMS` inside `with_retry`). Test: a fake raising `AutoReconnect` twice then succeeding is called 3 times; a duplicate-key `BulkWriteError` is partitioned and not retried; an `OperationFailure` with code 112 is not retried by `with_retry` but is re-run by `retry_transaction`.
 
 ### 3. `skills/connection/SKILL.md` (K07, K37, K21, K29)
 
@@ -382,10 +401,15 @@ Edits in file order:
   - Multi-document ACID transactions across collections and across logical and
     physical shards (`startSession` → `withTransaction` or
     `commitTransaction`/`abortTransaction`). They are not partition-key scoped.
-    Keep each transaction under the 30-second maximum lifetime. The server
-    returns `WriteConflict` (112) and `NoSuchTransaction` (251) **without** the
+    Keep each transaction under the 30-second maximum lifetime (transactions
+    end 30 to 41 s after they start, busy or idle). The server returns
+    `WriteConflict` (112) and `NoSuchTransaction` (251) **without** the
     `TransientTransactionError` label, so `withTransaction` does not retry a
-    conflict: re-run the transaction in application code. DDL and admin
+    conflict: re-run the transaction in application code. With the default
+    read concern a transaction's reads are not repeatable (a second read can
+    see a concurrent commit), so a read-modify-write inside it can lose a
+    concurrent update; use conditional
+    updates or atomic operators. DDL and admin
     commands (`createIndexes`, `dropIndexes`, `drop`, `renameCollection`,
     `listCollections`, ...) are refused inside a transaction (code 263).
     See `documentdb-driver` → `driver-transactions-session`.
@@ -395,33 +419,53 @@ Edits in file order:
     replay, up to 35 days back. Preview: multi-shard change streams (enable per
     cluster under Settings > Features > "Change streams for multishard
     clusters"; cannot be enabled while "Rebalancer for multishard clusters" is
-    on) and `updateDescription` (opt in per collection with
-    `collMod ... enableUpdateDescription`).
+    on) and `updateDescription` (Learn: opt in per collection with
+    `collMod ... enableUpdateDescription`; on a single-shard cluster the
+    managed test saw none even after the opt-in, while every update event
+    carried `fullDocument`). Use collection streams: `db.watch()` delivered no
+    event on the service.
   - All common aggregation stages (`$lookup`, `$facet`, `$graphLookup`,
     `$setWindowFields`, `$merge`, `$out`, `$unionWith`, ...).
   - Vector search via `cosmosSearch` (`vector-ivf`, `vector-hnsw`, `vector-diskann`);
     vectors must be `number[]`.
   - Full-text search via `createSearchIndexes` + `$search` (preview; enable it
-    under Settings > Features > Full-text search and wait about ten minutes
-    before creating a search index; `compound` with `must`/`should`/`mustNot`/
-    `filter` works; see the documentdb-full-text-search skill).
+    under Settings > Features > Full-text search, then retry
+    `createSearchIndexes` while it fails with "Search index creation is not
+    supported yet" (115, then 67; it worked about 210 s after enabling in one
+    test, and ten minutes is an upper bound); `compound` with `must`/`should`/
+    `mustNot`/`filter` works, `minimumShouldMatch`, `$searchMeta` and
+    `$rankFusion` do not; see the documentdb-full-text-search skill).
 
   **Not available (do not generate):**
   - Server-side JavaScript: `$where`, `$function`, `$accumulator`, `mapReduce`.
   - Host-level admin/diagnostic commands: `serverStatus`, `top`, `connPoolStats`,
     `fsync`, `setFeatureCompatibilityVersion`, replication and shard-balancer
     commands (the service manages these).
-  - The MongoDB 8.0 database-level `bulkWrite` *server command*; the driver's
-    collection-level `bulkWrite()` / `insertMany()` helpers are fine
-    (max 25,000 writes per batch).
+  - The MongoDB 8.0 database-level `bulkWrite` *server command*, which
+    client-level bulk writes send (`MongoClient.bulk_write` in PyMongo,
+    `client.bulkWrite` in Node): on an 8.0 cluster (wire version 25) PyMongo's
+    call fails at run time with code 2 `BadValue` (other drivers were not
+    tried). The driver's collection-level `bulkWrite()` / `insertMany()`
+    helpers are fine (max 25,000 writes per batch; drivers split larger ones).
   - Retryable writes (`retrywrites=false` is required) and the
     `TransientTransactionError` / `UnknownTransactionCommitResult` /
     `RetryableWriteError` labels: the server never sends them.
   - `readPreference` routing: `nearest`/`primaryPreferred`/`secondaryPreferred`
     are accepted and ignored, `secondary`, tag sets and hedged reads are
-    rejected; reads always go to the primary shards. `writeConcern` and
-    `readConcern` are validated and ignored (`w` above 1 other than
-    `"majority"` is rejected); durability comes from the cluster's HA setting.
+    rejected; reads always go to the primary shards. `writeConcern` is
+    validated and ignored (on a cluster without HA, `w` of 2 or more is
+    rejected with `BadValue` and the write is not applied; `j` and `wtimeout`
+    are accepted with no observable effect); durability comes from the
+    cluster's HA setting.
+    `readConcern`: all five levels are accepted outside a transaction (snapshot
+    pins nothing there); inside a transaction `available` and `linearizable`
+    fail with 115 and `snapshot` is honoured (see `driver-transactions-session`
+    for its 117 caveat).
+  - Causally consistent reads: `afterClusterTime` fails with 20
+    `IllegalOperation` and `atClusterTime` with 72, so reads and writes in a
+    session that has an operation time (from `hello`, a change stream run in
+    the session, or `advance_operation_time`) fail; do not rely on causal
+    consistency.
   - Atlas-only `$vectorSearch` (use `cosmosSearch`).
   - Time series, capped and clustered collections.
 
@@ -469,7 +513,7 @@ Azure DocumentDB (resource type `Microsoft.DocumentDB/mongoClusters`) always req
 | `retrywrites` | `false` (required; the service does not support retryable writes, see below) |
 | `maxIdleTimeMS` | `120000` |
 
-The portal string leaves out the password, so fill in the placeholder yourself. Legacy Azure Cosmos DB for MongoDB (RU) strings (`*.mongo.cosmos.azure.com`, port 10255, `replicaSet=globaldb`) belong to a different service and will not connect.
+The portal string leaves out the password, so fill in the placeholder yourself. Legacy Azure Cosmos DB for MongoDB (RU) strings (`*.mongo.cosmos.azure.com`, port 10255, `replicaSet=globaldb`) belong to a different service and will not connect. PyMongo prints "You appear to be connected to a CosmosDB cluster" for every `*.cosmos.azure.com` host, Azure DocumentDB included (managed test, 2026-11-25); the warning does not mean the string points at the RU-based service, and the connection works.
 
 Keep `retrywrites=false` in every Azure DocumentDB connection string. The service does not support retryable writes: the server does not de-duplicate a retried write, so a driver retry can apply a non-idempotent write twice. Handle transient write failures in application code with idempotent operations (upserts, deterministic keys). Learn's connection strings carry `retrywrites=false` but do not yet explain why; the reason above is the one to repeat.
 
@@ -524,10 +568,11 @@ client = MongoClient(uri, tlsAllowInvalidCertificates=True)  # local emulator on
 
 Azure DocumentDB supports multi-document transactions through the standard
 driver session API, across collections and across logical and physical shards
-(they are not partition-key scoped). Five things agents often miss: the session
+(they are not partition-key scoped). Six things agents often miss: the session
 must be passed to **every** operation, or that write silently lands outside the
 transaction; the service enforces a **30-second maximum transaction lifetime**
-(same limit on sharded clusters); the server returns `WriteConflict` (112) and
+(same limit on sharded clusters; on the service transactions ended 30 to 41 s
+after they started, busy or idle); the server returns `WriteConflict` (112) and
 `NoSuchTransaction` (251) **without** the `TransientTransactionError` label
 (engine issue documentdb/documentdb#339, reproduced against the managed
 service), so `withTransaction()` does **not** retry a conflict for you and the
@@ -536,9 +581,14 @@ application must re-run the whole transaction with a bounded, idempotent retry
 their own network errors on commit); DDL and admin commands (`createIndexes`,
 `createSearchIndexes`, `dropIndexes`, `drop`, `renameCollection`,
 `listCollections`, ...) are refused inside a transaction with code 263, so
-create indexes before the transaction; and `readConcern`, `writeConcern` and
-`readPreference` are validated and ignored by the gateway (durability comes from
-the cluster's HA setting), so omit them from transaction options.
+create indexes before the transaction; `writeConcern` and `readPreference` are
+validated and otherwise ignored by the gateway (durability comes from the
+cluster's HA setting; on a cluster without HA, `w` of 2 or more is
+rejected), so omit them, and
+`readConcern`, from transaction options; and with the default read concern a
+transaction's reads are not repeatable, so a value read early can
+change before commit and a write based on it can overwrite a concurrent update
+(observed on the managed service and on documentdb-local).
 
 ## Incorrect
 
@@ -587,7 +637,7 @@ def txn(s):
     ledger.insert_one(entry, session=s)
     accounts.update_one({"_id": _id}, {"$inc": {"balance": -amt}}, session=s)
 
-retry_transaction(client, txn)   # connection-retry-helpers.md: with_transaction inside a bounded 112/251 retry
+retry_transaction(client, txn)   # connection-retry-helpers.md: with_transaction inside a bounded 112/117/251 retry
 ```
 
 Wrap the Node and Mongoose variants the same way with `retryTransaction(client, (session) => ...)`
@@ -600,12 +650,26 @@ Rules of thumb:
 - Make the callback idempotent (for example a unique `idempotencyKey` index and
   `$setOnInsert`), because it will be re-run on a conflict and the driver may
   also re-run it for its own network errors on commit.
-- Retry the **whole transaction** on codes 112 and 251, with a bounded attempt
-  count and backoff; the general `isTransient` helper in `documentdb-connection`
-  → `connection-retry-helpers` deliberately excludes those two codes because
-  they mean "re-run the transaction", not "repeat the statement".
-- Expect the server to abort a transaction that passes 30 seconds; later
-  statements and the commit then fail (the exact code is undocumented).
+- Retry the **whole transaction** on codes 112 and 251 (and on 117 and a
+  statement's code 1, below), with a bounded attempt count and backoff; the
+  general `isTransient` helper in `documentdb-connection` →
+  `connection-retry-helpers` deliberately excludes those codes because they
+  mean "re-run the transaction", not "repeat the statement".
+- Guard read-modify-write inside a transaction with a conditional update on the
+  value read (or an atomic operator such as `$inc`); the transaction alone does
+  not prevent a lost update.
+- If you set `readConcern: { level: "snapshot" }` (honoured in transactions on
+  the service, rejected with 115 by documentdb-local), treat 117
+  `ConflictingOperationInProgress` as fatal: never catch it and commit, because
+  the commit then returns `ok: 1` while discarding every write of the
+  transaction (3 of 3 runs; likely a service bug). Re-run the whole transaction.
+- Expect the server to end a transaction 30 to 41 s after it starts, busy or
+  idle: the next statement and the commit then return 251 `NoSuchTransaction`
+  (after an idle gap of 31 s or more the next statement can return code 1
+  `InternalError` instead, and the commit then 251), with no labels, and every
+  write is discarded (managed test, 2026-11-25). Re-run the whole transaction
+  on either; a code 1 from the commit itself was never observed, and its
+  outcome would be unknown, so check with a read before re-running.
 
 ## References
 
@@ -625,8 +689,8 @@ Rules of thumb:
 
 ## Why it matters
 A sample that installs differently tomorrow than it did when it was verified is not a sample. Driver
-versions also gate features (for example PyMongo 4.13 for the GA `AsyncMongoClient`, PyMongo 4.7 /
-`mongodb` 6.7.0 for MONGODB-OIDC), so an unpinned driver can silently change what works against
+versions also gate features (for example PyMongo 4.13 for the GA `AsyncMongoClient`, PyMongo 4.11
+(4.7 with `ALLOWED_HOSTS`) / `mongodb` 6.7.0 for MONGODB-OIDC), so an unpinned driver can silently change what works against
 Azure DocumentDB. Never write a version you remember; look it up.
 
 ## Rules
@@ -713,7 +777,7 @@ Maintainers should replace each `<fill>` with versions actually exercised by `ev
 
   ```markdown
   - Construct the client through one `get_client()` factory (tls, retryWrites=false, timeouts, pool, shutdown hook); never bare `MongoClient(uri)`: see `connection/connection-client-factory.md`.
-  - Wrap idempotent DB calls in the bounded backoff helper in `connection/connection-retry-helpers.md`; Azure DocumentDB never returns 16500/429 (no request units), and the server sends no transient-error labels, so re-run transactions on 112/251 yourself.
+  - Wrap idempotent DB calls in the bounded backoff helper in `connection/connection-retry-helpers.md`; Azure DocumentDB never returns 16500/429 (no request units), and the server sends no transient-error labels, so re-run transactions on 112, 117 and 251 (and on code 1 from a statement before commit) yourself.
 
   Python async / Beanie: use `AsyncMongoClient` (GA in PyMongo 4.13) and Beanie 2, never Motor. See the Python async note in `documentdb-connection`.
   ```
@@ -749,7 +813,7 @@ Change the `driver/` row from "singleton client, pooling" to "singleton client, 
 
 ### 13. `CHANGELOG.md` (K07 + K29 + others)
 
-One entry: "Added `connection-client-factory` and `connection-retry-helpers` (replacing the RU-era Retry Logic snippet; Azure DocumentDB never returns 16500/429 and sends no transient-error labels), `driver-python-connect`, `driver-transactions-session` (application-level retry on 112/251, 30 s lifetime, cross-shard support, DDL refused with 263) and `driver-reproducible-installs` (registry-resolved versions, lockfile + `npm ci`, pinned `requirements.txt`, tested-stack matrix); added a 'Compatibility at a glance' block, corrected Motor dates and the `AsyncMongoClient` GA floor (PyMongo 4.13), Beanie 2.x guidance and the read-preference line in the connection skill; fixed compatibility links and Cosmos DB vCore naming in natural-language-querying, data-modeling and compat."
+One entry: "Added `connection-client-factory` and `connection-retry-helpers` (replacing the RU-era Retry Logic snippet; Azure DocumentDB never returns 16500/429 and sends no transient-error labels), `driver-python-connect`, `driver-transactions-session` (application-level retry on 112, 117 and 251 and on a statement's code 1, 30 s lifetime, cross-shard support, DDL refused with 263) and `driver-reproducible-installs` (registry-resolved versions, lockfile + `npm ci`, pinned `requirements.txt`, tested-stack matrix); added a 'Compatibility at a glance' block, corrected Motor dates and the `AsyncMongoClient` GA floor (PyMongo 4.13), Beanie 2.x guidance and the read-preference line in the connection skill; fixed compatibility links and Cosmos DB vCore naming in natural-language-querying, data-modeling and compat."
 
 ### 14. `CONTRIBUTING.md` (optional, K07 and K29)
 
@@ -804,8 +868,8 @@ Run folders in the experiment harness (`runs/`):
 - Motor dates (was open question 6): deprecated May 14, 2025; end of life May 14, 2026; critical fixes only until May 14, 2027; the kit's "May 2024" and "through May 2026" are wrong under every source; the PyMongo migration guide's "deprecated on May 14th, 2026" is the one-year outlier. Sources: DECISIONS.md topic 4, item 4.7; mongodb.com/docs/drivers/motor; github.com/mongodb/motor README; pypi.org/pypi/motor (3.7.1, 2025-05-14).
 - Cross-shard transactions (was open question 8): supported across collections and across logical and physical shards, with the single 30-second lifetime stated without any shard qualifier (gateway default `TRANSACTION_TIMEOUT_DEFAULT_SEC = 30`). Sources: DECISIONS.md topic 9; learn.microsoft.com/azure/documentdb/partitioning (Logical shards); learn.microsoft.com/azure/documentdb/compare-mongodb-atlas; learn.microsoft.com/azure/documentdb/limitations; documentdb/documentdb dynamic.rs:26.
 - Multi-shard change streams (was open question 9): enabled per cluster under Settings > Features > "Change streams for multishard clusters", cannot be enabled while "Rebalancer for multishard clusters" is on, single-shard clusters need no enablement step; the active change log is 400 MB and historical replay through PITR reaches up to 35 days or the cluster's creation. Sources: DECISIONS.md topic 8; learn.microsoft.com/azure/documentdb/change-streams; learn.microsoft.com/azure/documentdb/how-to-scale-cluster; learn.microsoft.com/azure/documentdb/how-to-restore-cluster.
-- Preview labels (was open question 10): full-text search "remains in preview" (self-serve enablement under Features, wait ten minutes), multi-shard change streams and `updateDescription` are preview (the latter opt-in per collection via `collMod enableUpdateDescription`); single-shard change streams carry no preview label on Learn (GA announced on Microsoft DevBlogs 2025-05-21, supporting evidence only). Sources: DECISIONS.md topics 7 and 8; learn.microsoft.com/azure/documentdb/full-text-search-overview; learn.microsoft.com/azure/documentdb/change-streams.
-- Transient-error labels (was open question 11): the gateway never writes an `errorLabels` field, so `TransientTransactionError`, `UnknownTransactionCommitResult` and `RetryableWriteError` are never sent; a write conflict arrives as code 112 with no label (issue #339, reproduced against the managed service) and `withTransaction` therefore does not retry it; the application must re-run the transaction on 112/251. Sources: DECISIONS.md topics 2 and 9; github.com/documentdb/documentdb/issues/339, /698, /428, /836; documentdb/documentdb @ a5f1636 responses/error.rs:64-71, pg.rs:245-258 and 297-315.
+- Preview labels (was open question 10): full-text search "remains in preview" (self-serve enablement under Features; Learn says to wait ten minutes, and the managed test saw creation work about 210 s after enabling, after 115 and then 67 responses), multi-shard change streams and `updateDescription` are preview (the latter opt-in per collection via `collMod enableUpdateDescription` on Learn; on a single-shard cluster the managed test saw no `updateDescription` even after the opt-in, and Learn's `{enabled: true}` form fails with 14); single-shard change streams carry no preview label on Learn (GA announced on Microsoft DevBlogs 2025-05-21, supporting evidence only). Sources: DECISIONS.md topics 7 and 8; learn.microsoft.com/azure/documentdb/full-text-search-overview; learn.microsoft.com/azure/documentdb/change-streams.
+- Transient-error labels (was open question 11): the gateway never writes an `errorLabels` field, so `TransientTransactionError`, `UnknownTransactionCommitResult` and `RetryableWriteError` are never sent; a write conflict arrives as code 112 with no label (issue #339, reproduced against the managed service) and `withTransaction` therefore does not retry it; the application must re-run the transaction on 112/251. Confirmed by the managed test of 2026-11-25: no error reply in its eleven tests carried `errorLabels`, and `with_transaction` ran the callback once and re-raised the 112 (ENGINE-TESTS.md, Managed service). Sources: DECISIONS.md topics 2 and 9; github.com/documentdb/documentdb/issues/339, /698, /428, /836; documentdb/documentdb @ a5f1636 responses/error.rs:64-71, pg.rs:245-258 and 297-315.
 
 ## Open questions
 
@@ -815,7 +879,7 @@ Run folders in the experiment harness (`runs/`):
 4. Which versions of `mongodb`, `mongoose`, `pymongo` and `beanie` has the kit's CI actually verified against Azure DocumentDB, so every `<fill>` cell in the tested-stack table is a tested fact, and should kit skills state driver minimums at all (DECISIONS.md topic 4, open item 4.11, a maintainer decision; this PR states floors only where a feature is gated and otherwise says "resolve current stable and pin exactly")? (K07, K37, K29)
 5. Sample counts come from one experiment run with known harness artifacts; some Python install failures may be environment artifacts (for example interpreter-version issues) rather than pinning gaps. Recount after the harness re-run before quoting 85 (or any per-member figure) externally, and resolve the cross-member overlap, which the drafts' finding ids did not allow. (K07, K29, K37, K21)
 6. [needs SME confirmation] Is there a plan or ETA to emit `TransientTransactionError` (and `RetryableWriteError` / `UnknownTransactionCommitResult`) labels in the gateway, so that drivers' `withTransaction` retry works as on MongoDB? Issue documentdb/documentdb#339 has been open since 2025-09-30 with no maintainer statement of intent; until then `driver-transactions-session` documents application-level retry on 112/251. (K15; DECISIONS.md topic 2, open item 4)
-7. [needs SME confirmation] Should every client set `maxIdleTimeMS=120000`, or is 120000 only the portal default? The factory uses 120000 long-running and 30000 serverless; `driver-python-connect` uses 120000 to match the published string. DECISIONS.md does not cover this option. (K16)
+7. [needs SME confirmation] Should every client set `maxIdleTimeMS=120000`, or is 120000 only the portal default? (Every service-issued string carries it, the CLI's `list-connection-strings` output included; managed test, 2026-11-25.) The factory uses 120000 long-running and 30000 serverless; `driver-python-connect` uses 120000 to match the published string. DECISIONS.md does not cover this option. (K16)
 
 ## Source drafts
 

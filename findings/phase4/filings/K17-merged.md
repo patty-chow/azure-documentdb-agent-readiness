@@ -1,9 +1,9 @@
 ---
 id: K17
-title: "full-text-search skill: Azure AI Search is not required, document preview enablement with CommandNotSupported fail-fast, and add the server-side $unionWith RRF hybrid pipeline"
+title: "full-text-search skill: Azure AI Search is not required, document preview enablement with a bounded createSearchIndexes retry during activation, and add the server-side $unionWith RRF hybrid pipeline"
 repo: Azure/documentdb-agent-kit
 type: pr
-status: needs_sme
+status: ready
 priority: P1
 sample_count: 73
 member_drafts:
@@ -14,10 +14,10 @@ merged_from:
   - K17
   - K18
   - K19
-open_questions: 1
+open_questions: 0
 ---
 
-# full-text-search skill: Azure AI Search is not required, document preview enablement with `CommandNotSupported` fail-fast, and add the server-side `$unionWith` RRF hybrid pipeline
+# full-text-search skill: Azure AI Search is not required, document preview enablement with a bounded `createSearchIndexes` retry during activation, and add the server-side `$unionWith` RRF hybrid pipeline
 
 All counts come from one experiment run: gpt-5-mini built 100 Azure DocumentDB sample apps with this kit plus the DocumentDB, Azure and Learn MCP servers installed. Some runs were repeated. Treat the counts as indicative.
 
@@ -60,11 +60,11 @@ Full-text search (`createSearchIndexes` + `$search`) is a **preview** feature an
 
 - **Azure portal:** open the cluster > **Settings** > **Features** > **Full-text search** > **Enable**.
 - **ARM / CLI / IaC:** add `"FullTextSearch"` to `properties.previewFeatures` on the `Microsoft.DocumentDB/mongoClusters` resource (api-version `2024-07-01`), preserving any other preview features already listed. Exact `az rest`, Terraform (AzAPI) and Bicep snippets: https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search
-- **Wait 10 minutes** after enabling before creating a search index or running a query. Seeing `FullTextSearch` in the resource configuration does not mean activation has finished.
+- **Then retry `createSearchIndexes` until it succeeds.** Activation takes minutes, not a fixed ten: in one test the call returned 115 "Search index creation is not supported yet" for about 90 seconds after enabling, then 67 `CannotCreateIndex` with the same message, and succeeded about 210 seconds after enabling (0 to 30 seconds after `provisioningState` first read `Succeeded`). Retry on that message under either code with backoff, and treat Learn's 10 minutes as an upper bound. Seeing `FullTextSearch` in the resource configuration, `provisioningState: Succeeded` or an answer from `$listSearchIndexes` does not mean activation has finished. Existing connections keep working; no reconnect is needed.
 
 Full-text search has no cluster-tier restriction (the Learn limitations page lists none; HNSW and DiskANN vector indexes, by contrast, need M30 or higher); the preview flag is the only prerequisite. The GA `$text` operator and `{ field: "text" }` indexes are unaffected by the flag and are **not** a substitute.
 
-**In generated samples:** do not assume the flag is on. Treat `createSearchIndexes` failing with `code: 115` / `codeName: "CommandNotSupported"` (errmsg `Search index creation is not supported yet`) as "feature not enabled yet": fail fast with a message that names the portal path and the Learn anchor above, and do not silently fall back to a `{ field: "text" }` index.
+**In generated samples:** do not assume the flag is on. Treat `createSearchIndexes` failing with errmsg `Search index creation is not supported yet` (`code: 115` / `codeName: "CommandNotSupported"`, or `code: 67` / `codeName: "CannotCreateIndex"` late in activation) as "feature not enabled, or not active yet": retry with backoff for at most 10 minutes, then fail with a message that names the portal path and the Learn anchor above, and do not silently fall back to a `{ field: "text" }` index. Match on the message as well as the code: 67 is also the code for real definition errors (for example `mappings.dynamic: true`).
 ```
 
 Settled 2026-11-25: full-text search is preview, not GA (Learn overview updated 2026-11-17; DocumentDB blog post of 2026-11-17), so the "preview" wording stays.
@@ -98,31 +98,43 @@ The Azure Cosmos DB for NoSQL / RU pattern of syncing documents into **Azure AI 
 ```markdown
 ## Prerequisite
 
-Full-text search is in preview and must be enabled on the cluster first (self-serve; portal: Settings > Features > Full-text search > Enable, or `previewFeatures: ["FullTextSearch"]` via ARM). Allow 10 minutes after enabling before creating a search index or running a query. See https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search. On a cluster without the flag, `createSearchIndexes` returns `code 115 CommandNotSupported: "Search index creation is not supported yet"`.
+Full-text search is in preview and must be enabled on the cluster first (self-serve; portal: Settings > Features > Full-text search > Enable, or `previewFeatures: ["FullTextSearch"]` via ARM). Activation takes a few minutes after enabling (about 210 seconds in one test; Learn's 10 minutes is an upper bound). See https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search. On a cluster without the flag, `createSearchIndexes` returns `code 115 CommandNotSupported: "Search index creation is not supported yet"`; while activation finishes it returns that message under 115 and then under 67 `CannotCreateIndex`, so retry on the message.
 ```
 
-**b. Append to `## Correct`** (Node.js shown; in pymongo check `OperationFailure.code`):
+**b. Append to `## Correct`** (Node.js shown; in pymongo check `OperationFailure.code` and `str(e)`):
 
 ```javascript
-try {
-  await db.command({ createSearchIndexes: "products_10M", indexes: [/* ... */] });
-} catch (err) {
-  if (err.code === 115 /* CommandNotSupported */) {
-    throw new Error(
-      "Full-text search is not enabled on this Azure DocumentDB cluster. " +
-      "Enable it (portal: Settings > Features > Full-text search > Enable, or add " +
-      "\"FullTextSearch\" to previewFeatures), wait 10 minutes, then rerun. " +
-      "https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search"
-    );
+// After enabling, the call fails with "Search index creation is not supported yet" (115, then 67)
+// until activation finishes; it succeeded about 210 s after enabling in one test.
+const NOT_ACTIVE = "Search index creation is not supported yet";
+const waitMs = Number(process.env.FTS_ACTIVATION_WAIT_MS ?? 10 * 60_000); // Learn's 10 min as an upper bound
+if (!Number.isFinite(waitMs)) throw new Error("FTS_ACTIVATION_WAIT_MS must be a number of milliseconds");
+const deadline = Date.now() + waitMs;
+for (let delay = 5_000; ; delay = Math.min(delay * 2, 60_000)) {
+  try {
+    await db.command({ createSearchIndexes: "products_10M", indexes: [/* ... */] });
+    break;
+  } catch (err) {
+    const notActive = (err.code === 115 || err.code === 67) && String(err.message).includes(NOT_ACTIVE);
+    if (!notActive) throw err;                       // other 67s are index-definition errors
+    if (Date.now() + delay > deadline) {
+      throw new Error(
+        "Full-text search is not enabled (or not active yet) on this Azure DocumentDB cluster. " +
+        "Enable it (portal: Settings > Features > Full-text search > Enable, or add " +
+        "\"FullTextSearch\" to previewFeatures), then rerun. " +
+        "https://learn.microsoft.com/azure/documentdb/full-text-search-overview#enable-full-text-search"
+      );
+    }
+    await new Promise((r) => setTimeout(r, delay));
   }
-  throw err;
 }
 ```
 
 **c. Add two items to the guidelines list:**
 
-- "**Check the preview flag before you debug index syntax.** `CommandNotSupported` (code 115) means full-text search is not enabled yet on the cluster, not that the index definition is wrong. If you enabled it less than 10 minutes ago, wait and retry." (Whether the same code is returned during the activation window is open question 1; the wording above holds either way.)
-- "**Wait for the index to be ready.** After `createSearchIndexes` returns, poll `$listSearchIndexes` until the index reports `status: "READY"` and `queryable: true` before running `$search`." The Learn keyword and structured-search pages and the limitations page ("Search-index management supports creation and listing") use `$listSearchIndexes` this way; the compatibility table row marking it unsupported is stale. Our runs never called it, so this rests on documentation.
+- "**Check the preview flag before you debug index syntax.** `Search index creation is not supported yet` (code 115 `CommandNotSupported`, or 67 `CannotCreateIndex` late in activation) means full-text search is not enabled, or not active yet, on the cluster, not that the index definition is wrong. After enabling, retry on that message with backoff; in one test creation worked about 210 seconds after enabling." (Managed test, 2026-11-25; DECISIONS.md topic 7.)
+- "**Index lifecycle.** `mappings.dynamic: true` fails with 67 `CannotCreateIndex` (errmsg `Error in specification {...}:mappings.dynamic is not supported in search indexes yet`), so `dynamic: false` with explicit `fields` is required, not only safe. Drop a search index with `dropIndexes`; `dropSearchIndex` and `updateSearchIndex` (what PyMongo's `drop_search_index` and `update_search_index` send) return 59 `CommandNotFound`." Change the existing "`dynamic: false` + explicit `fields`" guideline to match: its "Don't enable `dynamic: true` on large collections" implies the option works. (Managed test, 2026-11-25.)
+- "**Wait for the index to be ready.** After `createSearchIndexes` returns, poll `$listSearchIndexes` until the index reports `status: "READY"` and `queryable: true` before running `$search`." The Learn keyword and structured-search pages and the limitations page ("Search-index management supports creation and listing") use `$listSearchIndexes` this way; the compatibility table row marking it unsupported is stale. The managed test of 2026-11-25 observed it: the new index was `READY` and `queryable: true` on the first listing (3 documents). It is not a check that the feature is active: during activation it answered, with an empty list, a minute or more before `createSearchIndexes` worked. Also replace the existing `// Verify db.products_10M.getIndexes();` line with this poll: `listIndexes` omits search indexes (index counts include them).
 
 **d. Add to `## References`:**
 
@@ -139,7 +151,7 @@ try {
 
 **b. Rename the existing step 2** to "Option A: client-side RRF (extra ranked lists)". Leave its code unchanged.
 
-**c. Add step 3, "Option B: server-side RRF with `$unionWith` (one round trip)"**, directly after Option A. The pipeline mirrors the one on Learn:
+**c. Add step 3, "Option B: server-side RRF with `$unionWith` (one round trip)"**, directly after Option A. The pipeline mirrors the one on Learn, which the managed test of 2026-11-25 ran as written: one round trip, with the same ranking as a client-side RRF:
 
 ```javascript
 // One aggregation, one round trip, no fusion code in the app.
@@ -184,7 +196,7 @@ To weight an arm, multiply that arm's `$divide` expression by a weight `w`, for 
 | Server-side `$unionWith` (Option B) | Default for two arms, weighted or not. One round trip, no fusion code, and only the projected fields of the fused top N leave the server. |
 | Client-side `rrf()` (Option A) | You fuse a third list (a phrase arm, another retriever, business signals) without rewriting the pipeline each time, or you cache one arm's results separately. |
 
-**e. Tips.** Keep the existing tips (20-100 candidates per arm, weight multiplier, embedding cache). Rewrite the "when `compound` ships" tip in the present tense: `compound` is available, so a keyword arm that needs several clauses uses `compound` with `must` / `should` / `mustNot` / `filter` (`minimumShouldMatch` is unsupported). Say that `DEPTH` and `K` apply to both options. The weight tip today reads `score += w / (k + rank)`; rewrite it with the same formula the helper uses: `score += w / (k + rank + 1)`. Add one tip: each arm can use its own RRF `k`, and a **smaller** `k` penalizes that arm's lower-ranked hits more aggressively (with score 1/(k + rank), k = 10 makes rank 1 worth about 5.5 times rank 50; k = 60 about 1.8 times); the Learn hybrid page's example gives the vector arm k = 60 and the keyword arm k = 10. Do not copy the Learn tuning bullet's phrase "a larger k for the keyword query": its example is right and the word "larger" is wrong (a Learn fix, outside this PR).
+**e. Tips.** Keep the existing tips (20-100 candidates per arm, weight multiplier, embedding cache). Rewrite the "when `compound` ships" tip in the present tense: `compound` is available, so a keyword arm that needs several clauses uses `compound` with `must` / `should` / `mustNot` / `filter` (`minimumShouldMatch` is unsupported). Say that `DEPTH` and `K` apply to both options. The weight tip today reads `score += w / (k + rank)`; rewrite it with the same formula the helper uses: `score += w / (k + rank + 1)`. Add one tip: each arm can use its own RRF `k`, and a **smaller** `k` penalizes that arm's lower-ranked hits more aggressively (with score 1/(k + rank), k = 10 makes rank 1 worth about 5.5 times rank 50; k = 60 about 1.8 times); the Learn hybrid page's example gives the vector arm k = 60 and the keyword arm k = 10. Do not copy the Learn tuning bullet's phrase "a larger k for the keyword query": its example is right and the word "larger" is wrong (a Learn fix, outside this PR). Add one more tip: MongoDB's `$rankFusion` stage fails with 40324 and `$searchMeta` with 115 on the service (managed test, 2026-11-25), so fuse with Option A or B.
 
 **f. Replace the References section** (K17's list, which also covers K18's request to link the Learn hybrid page):
 
@@ -236,16 +248,17 @@ Run folders in the experiment harness repository:
 
 ## Resolved
 
-1. Preview or GA: full-text search is in preview, not GA (`$text` and classic text indexes are GA); enablement is self-serve (portal Settings > Features > Full-text search > Enable, `az rest` PATCH of `properties.previewFeatures` adding `FullTextSearch`, Terraform AzAPI or Bicep) and Learn says to wait 10 minutes before creating a search index or running a query; the release-notes line saying preview features need a support request is stale. Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview (dated 2026-11-04, updated 2026-11-17); DocumentDB blog post of 2026-11-17 (https://devblogs.microsoft.com/documentdb/?p=259); https://learn.microsoft.com/en-us/azure/documentdb/release-notes (stale sentence).
+1. Preview or GA: full-text search is in preview, not GA (`$text` and classic text indexes are GA); enablement is self-serve (portal Settings > Features > Full-text search > Enable, `az rest` PATCH of `properties.previewFeatures` adding `FullTextSearch`, Terraform AzAPI or Bicep) and Learn says to wait 10 minutes before creating a search index or running a query (an upper bound: the managed test saw creation work about 210 seconds after enabling, see item 7); the release-notes line saying preview features need a support request is stale. Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview (dated 2026-11-04, updated 2026-11-17); DocumentDB blog post of 2026-11-17 (https://devblogs.microsoft.com/documentdb/?p=259); https://learn.microsoft.com/en-us/azure/documentdb/release-notes (stale sentence).
 2. `compound` availability: `compound` is available with `must`, `should`, `mustNot` and `filter`; only `compound.minimumShouldMatch` is unsupported, so the kit's "not available yet" statements are wrong (change 5). Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-structured; https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-overview ("What's available today").
 3. No extra cost: Learn states "Both full-text and vector search are included with your cluster at no extra cost", and the blog post says there is no separate feature charge, so change 1b states it without a qualifier. Sources: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-hybrid; DocumentDB blog post of 2026-11-17.
 4. RRF `k` direction: the Learn example (k = 60 for the vector arm, k = 10 for the keyword arm) is right and the word "larger" in the tuning bullet is wrong, because with score 1/(k + rank) a smaller k penalizes lower ranks more (k = 10: rank 1 scores about 5.5 times rank 50; k = 60: about 1.8 times); a Learn doc fix, no SME needed, and change 3e now states the direction. Source: https://learn.microsoft.com/en-us/azure/documentdb/full-text-search-hybrid (tuning bullet and example).
-5. Code 115 on a cluster without the preview: `CommandNotSupported`, code 115, "Search index creation is not supported yet" was observed when `createSearchIndexes` ran against a cluster without the preview enabled; no Learn page documents it, so this filing cites the observation and Learn should document the error next to the enablement steps (the activation-window half of the original question stays open below). Sources: `runs/07-voice-of-customer-sentiment-hub/20261124-204049` and `runs/11-correspondent-banking-risk-screener/20261124-201541` (Evidence items 7 and 8); DECISIONS.md topic 7.
+5. Code 115 on a cluster without the preview: `CommandNotSupported`, code 115, "Search index creation is not supported yet" was observed when `createSearchIndexes` ran against a cluster without the preview enabled; no Learn page documents it, so this filing cites the observation and Learn should document the error next to the enablement steps (the activation-window half is answered in item 7); the managed test of 2026-11-25 reproduced the error before enabling. Sources: `runs/07-voice-of-customer-sentiment-hub/20261124-204049` and `runs/11-correspondent-banking-risk-screener/20261124-201541` (Evidence items 7 and 8); DECISIONS.md topic 7.
 6. Tier restriction: the Learn limitations page lists no tier restriction for full-text search (HNSW and DiskANN vector indexes need M30 or higher; the limitations page's free-tier line saying HNSW needs M40 is stale), so change 1a states it as fact. Sources: https://learn.microsoft.com/en-us/azure/documentdb/limitations; release note 2025-07-15 (https://learn.microsoft.com/en-us/azure/documentdb/release-notes).
+7. Errors during the activation window (former open question 1): answered by the managed test of 2026-11-25 (M30, one observation). `createSearchIndexes` returned 115 "Search index creation is not supported yet" for about 90 seconds after the PATCH, then 67 `CannotCreateIndex` with the same message, and succeeded about 210 seconds after enabling, 0 to 30 seconds after `provisioningState` first read `Succeeded`; `$listSearchIndexes` answered a minute or more before creation worked; existing connections kept working. Changes 1a and 2 now retry on that message under either code and treat 10 minutes as an upper bound. Sources: ENGINE-TESTS.md, Managed service; DECISIONS.md topic 7.
 
 ## Open questions
 
-1. Is `code 115 CommandNotSupported` / "Search index creation is not supported yet" also returned during the 10-minute activation window after enabling the preview, or a different error? Not blocking: changes 1a and 2 tell agents to wait 10 minutes and to treat code 115 as "feature not enabled yet". [needs SME confirmation]
+None.
 
 ## Source drafts
 
